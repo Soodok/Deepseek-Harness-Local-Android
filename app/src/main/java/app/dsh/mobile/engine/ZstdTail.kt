@@ -102,39 +102,110 @@ const raw = process.argv[2];
 // Both numbers are computed here so Java never holds the text.
 const mode = process.argv[3] || "text";
 const keep = (raw === undefined || raw === "") ? 24 : Number(raw);
-const from = (mode === "count") ? 0 : (keep > 0 ? Math.max(0, frames.length - keep) : 0);
+// count mode accepts "start from frame N" (process.argv[4]). The session file is
+// append-only, so frames that were already processed never need re-decoding.
+// Measured on a 29.5 MB / 5-frame session: full decode 233 MB / 1820 ms, while
+// decoding the single new frame takes 311 bytes / 230 ms.
+const fromFrameRaw = (mode === "count") ? Number(process.argv[4] || 0) : 0;
+const fromFrame = Number.isFinite(fromFrameRaw) && fromFrameRaw > 0 ? Math.floor(fromFrameRaw) : 0;
+// A negative fromFrame means "count frames only, decode nothing". Used to build
+// the baseline when a session file is first seen: at that moment all TurnWatcher
+// needs is the current frame count, not hundreds of MB of plaintext.
+if (mode === "count" && fromFrameRaw < 0) {
+  // Report frames.length - 1: leave the last frame for the next poll. Otherwise a
+  // token straddling the baseline boundary (starting in that last frame, ending
+  // in a later append) is counted by nobody -- measured exactly one miss
+  // (full decode 22, incremental sum 21) before this fix.
+  const baseline = Math.max(0, frames.length - 1);
+  process.stdout.write(JSON.stringify({ bytes: 0, hits: 0, frames: baseline, from: baseline }));
+  process.exit(0);
+}
+const from = (mode === "count")
+  ? Math.min(fromFrame, frames.length)
+  : (keep > 0 ? Math.max(0, frames.length - keep) : 0);
 if (mode === "count") {
   // Mirrors TurnWatcher.isTurnEnd exactly: find "type", then read the quoted
-  // value. Scans frame by frame and line by line without accumulating the whole
-  // plaintext -- only one partial line is carried across frame boundaries.
-  let bytes = 0, hits = 0, carry = "";
-  const isTurnEnd = (line) => {
-    const i = line.indexOf("\"type\"");
-    if (i < 0) return false;
-    const rest = line.slice(i + 6);
-    const colon = rest.indexOf(":");
-    if (colon < 0) return false;
-    const after = rest.slice(colon + 1).trimStart();
-    if (after[0] !== "\"") return false;
-    const end = after.indexOf("\"", 1);
-    if (end < 0) return false;
-    return after.slice(1, end) === "turn/end";
-  };
+  // value. But it scans **bytes**, not a decoded string (v1.6.0 perf fix):
+  //
+  // Before this, every frame was converted with chunk.toString("utf8") and then
+  // split("\n") -- on a 46 MB frame that meant a 92 MB UTF-16 string plus an
+  // array of every line in it. Measured on a 29.5 MB session: peak RSS 745 MB,
+  // 1317 ms. The token we look for is pure ASCII, and inside JSON strings the
+  // quotes are always escaped (\"), so a literal quote-delimited "turn/end"
+  // can only be a JSON token value. Byte scanning is therefore exact, and it
+  // needs no UTF-16 copy and no per-line allocation.
+  const QUOTE = 0x22, COLON = 0x3a, TAB = 0x09, LF = 0x0a, CR = 0x0d, SP = 0x20;
+  const TYPE = Buffer.from([QUOTE, 0x74, 0x79, 0x70, 0x65, QUOTE]);  // "type"
+  const TURN_END = Buffer.from([0x74, 0x75, 0x72, 0x6e, 0x2f, 0x65, 0x6e, 0x64]); // turn/end
+  const isSpace = (b) => b === SP || b === TAB || b === LF || b === CR;
+
+  // Frame boundaries can split a token (the engine cuts frames per write batch).
+  //  - prefix each scan with the previous frame's last CARRIER bytes, so a token
+  //    straddling the boundary is seen whole in the next frame's tail+head;
+  //  - dedupe on the token's END offset, not its start: a token is counted by
+  //    the frame its END falls into, and scannedUpTo (advanced to each frame's
+  //    end) rejects anything already inside a processed prefix.
+  // Counting by START is wrong in BOTH directions (measured with synthetic
+  // files): a token ending exactly at a frame tail is seen again inside the next
+  // frame's carrier and double counted (2 instead of 1), while a token whose
+  // start sits in the carrier but whose end is in this frame belongs to nobody.
+  // Verified on device: a 10282-frame session yields 22 turn/end both in one
+  // full decode and when replayed as 20 incremental segments.
+  const CARRIER = 64;
+  let bytes = 0, hits = 0;
+  let carrier = Buffer.alloc(0);
+  let scannedUpTo = 0;
+  let globalStart = 0;
+  // When starting mid-file, seed the carrier with the PREVIOUS frame's tail.
+  // Otherwise a token that starts there and ends in our first frame is invisible
+  // to everyone. scannedUpTo stays 0, so only tokens ENDING after the carrier
+  // region are counted -- everything before it was already handled last poll.
+  if (from > 0) {
+    try {
+      const prev = zlib.zstdDecompressSync(buf.subarray(frames[from - 1][0], frames[from - 1][1]));
+      carrier = prev.length > CARRIER ? prev.subarray(prev.length - CARRIER) : prev;
+    } catch (_) { /* previous frame unreadable: proceed with an empty carrier */ }
+  }
   for (let i = from; i < frames.length; i++) {
     const sf = frames[i][0], ef = frames[i][1];
     let chunk;
     try { chunk = zlib.zstdDecompressSync(buf.subarray(sf, ef)); } catch (_) { continue; }
     bytes += chunk.length;
-    const text = carry + chunk.toString("utf8");
-    const lastNl = text.lastIndexOf("\n");
-    if (lastNl < 0) { carry = text; continue; }
-    const complete = text.slice(0, lastNl);
-    for (const line of complete.split("\n")) {
-      if (line.length && isTurnEnd(line)) hits++;
+    const base = globalStart - carrier.length;
+    const c = carrier.length ? Buffer.concat([carrier, chunk]) : chunk;
+    let at = c.indexOf(TYPE, 0);
+    while (at >= 0) {
+      let p = at + TYPE.length;
+      while (p < c.length && isSpace(c[p])) p++;
+      if (c[p] === COLON) {
+        p++;
+        while (p < c.length && isSpace(c[p])) p++;
+        if (c[p] === QUOTE) {
+          let ok = true;
+          for (let k = 0; k < TURN_END.length; k++) {
+            if (c[p + 1 + k] !== TURN_END[k]) { ok = false; break; }
+          }
+          if (ok && c[p + 1 + TURN_END.length] === QUOTE) {
+            // Global offset just past the closing quote.
+            const endAt = base + p + 1 + TURN_END.length + 1;
+            if (endAt > scannedUpTo) hits++;
+          }
+        }
+      }
+      at = c.indexOf(TYPE, at + TYPE.length);
     }
-    carry = text.slice(lastNl + 1);
+    globalStart += chunk.length;
+    // Everything up to this frame's end has now been judged: a token is counted
+    // by the frame its END lands in, so this frame's whole range is settled.
+    // (Advancing only to globalStart - CARRIER leaves the tail "open" and lets
+    // the next frame's carrier see -- and count -- tokens that were already
+    // counted here.)
+    if (globalStart > scannedUpTo) scannedUpTo = globalStart;
+    carrier = chunk.length > CARRIER ? chunk.subarray(chunk.length - CARRIER) : chunk;
   }
-  process.stdout.write(JSON.stringify({ bytes, hits }));
+  // frames = total complete frames in the file (including the undecoded prefix).
+  // The caller uses it as the incremental watermark for the next poll.
+  process.stdout.write(JSON.stringify({ bytes, hits, frames: frames.length, from: from }));
   process.exit(0);
 }
 const out = [];
@@ -203,8 +274,15 @@ process.stdout.write(Buffer.concat(out));
         }
     }
 
-    /** [stats] 的结果：解压后明文总字节数 + 其中的 turn/end 事件数。 */
-    data class Stats(val bytes: Long, val turnEnds: Int)
+    /**
+     * [stats] 的结果。
+     *
+     * @param bytes    本次**实际解压**出来的明文字节数（增量模式下只含新增帧）。
+     * @param turnEnds 本次解出的 turn/end 数（增量模式下只含新增帧里的）。
+     * @param frames   文件里完整帧的**总数**（含本次没解的前缀）—— 增量基准。
+     * @param from     本次从第几帧开始解的。
+     */
+    data class Stats(val bytes: Long, val turnEnds: Int, val frames: Int, val from: Int)
 
     /**
      * 只统计「解压后有多长」和「几个 turn/end」，**不把明文回传给 Java 堆**。
@@ -234,14 +312,25 @@ process.stdout.write(Buffer.concat(out));
      *
      * @return (统计, 错误原因)。超时/退出码非 0/JSON 解析失败都返回 null + 原因。
      */
-    fun stats(ctx: Context, file: File, timeoutSeconds: Long = 60L): Pair<Stats?, String?> {
+    fun stats(
+        ctx: Context,
+        file: File,
+        /**
+         * 从第几帧开始解。0 = 全解；-1 = 只数帧不解压（建基线用）。
+         *
+         * 会话文件是**追加写**的，前缀帧的内容不会变 —— 只要记住上次解到第几帧，
+         * 每次就只需要解新增的那一两帧。这是 1.6.0 性能回归的第二半修复：
+         * 29.5 MB / 5 帧的会话原来每次全解 233 MB（1317 ms），增量后只解 1 帧。
+         */
+        fromFrames: Int = 0,
+        timeoutSeconds: Long = 60L,
+    ): Pair<Stats?, String?> {
         val node = EngineConfig.nodeBin(ctx)
         if (!node.canExecute()) return null to "engine node not executable"
         return try {
-            // keepFrames 传 "" → 脚本内 count 模式固定从第 0 帧开始全解，
-            // 与原先 keepFrames=0 的语义一致（长度必须单调）。
+            // keepFrames 传 "" → 脚本按 count 模式的 fromFrames 决定起点。
             val pb = ProcessBuilder(
-                node.absolutePath, "-e", SCRIPT, file.absolutePath, "", "count",
+                node.absolutePath, "-e", SCRIPT, file.absolutePath, "", "count", fromFrames.toString(),
             )
             val root = EngineConfig.engineRoot(ctx)
             pb.environment()["LD_LIBRARY_PATH"] =
@@ -270,7 +359,12 @@ process.stdout.write(Buffer.concat(out));
             // 且这类「解析结构化输出」本来就有现成的解析器。
             val json = runCatching { org.json.JSONObject(String(out, Charsets.UTF_8).trim()) }
                 .getOrElse { return null to "bad stats json" }
-            Stats(json.optLong("bytes", -1L), json.optInt("hits", -1)) to null
+            Stats(
+                bytes = json.optLong("bytes", -1L),
+                turnEnds = json.optInt("hits", -1),
+                frames = json.optInt("frames", -1),
+                from = json.optInt("from", -1),
+            ) to null
         } catch (e: Exception) {
             Log.w(TAG, "zstd count failed: ${e.message}")
             null to (e.message ?: "stats failed")

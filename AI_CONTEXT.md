@@ -11410,6 +11410,160 @@ AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
 - 只验了真机深色与浅色两套；平板/横屏形态未验。
 - 未改 MD3 暖中性令牌（#F1EFEE 那套）—— 那是其他页内部体系，超出本次范围。
 - 未改用户强调色对工作台的影响（工作台不吃 accent，这是设计选择，不是遗漏）。
+
+## 一百一十七、AI 直接开关系统设置：飞行/省电/勿扰/旋转/护眼/热点 + 三处「假成功」修复（2026-11-13，v1.6.0 工作区）
+
+### 起因
+用户问「AI 调用系统能力的命令行实现里，有没有实现开关手电筒、护眼模式、省电模式、热点飞行模式等一系列系统设置」—— 实测答案是**四项完全没有**，另有三处把请求值当结果回给 AI 的假成功。
+
+### 改前事实（grep 全 `app/src/main` 取证）
+- `ControlCap.kt:57` op 白名单只有六项：`op must be wifi|bt|volume|brightness|torch|vibrate`。
+- 飞行模式 / 省电 / 热点 / 护眼 **零命中**：`setPowerSaveMode`、`airplane_mode_on`、`TetheringManager`、`eyeprotect` 在代码里一次都没出现（`AndroidManifest.xml:1140-1141` 声明了两条 eyeprotect 权限，代码从未使用）。
+- `StatusCap.kt:94` 的 dnd 判据是 `audio?.ringerMode == RINGER_MODE_SILENT` —— 静音铃音 ≠ 勿扰。
+- `ControlCap.kt:113` 手电筒返回 `obj.optBoolean("enabled")`（请求值原样回），相机被占时静默失败仍报 ok=true。
+- `RadioCap.kt:579-582` wifi enable/disable 直接 200 `{"ok":true}`，enabled 字段是 `runCatching{}.isSuccess`。
+
+### 真机实测确认可用的命令（PLZ110 / Android 16 / 192.168.101.21:9000）
+| 开关 | 读 | 写 |
+|---|---|---|
+| 飞行模式 | `cmd connectivity airplane-mode` → `enabled`/`disabled` | `cmd connectivity airplane-mode enable\|disable` |
+| 省电 | `settings get global low_power` → 0/1 | `cmd power set-mode 1\|0`（`settings put` 只是影子键，硬件层不生效） |
+| 勿扰 | `settings get global zen_mode` → 0/2 | `cmd notification set_dnd on\|off` |
+| 自动旋转 | `settings get system accelerometer_rotation` → 1/0 | `settings put system accelerometer_rotation 0\|1` |
+| 护眼(ColorOS) | `settings get system oplus_customize_custom_eye_protect_enable`；色温 `eyeprotect_display_cct` | 同上键 `put 0\|1` |
+| 热点 | `dumpsys wifi \| grep -cF 'SoftApManager{'` → 0/1 | `cmd wifi start-softap <ssid> open\|wpa2 <pass>` / `cmd wifi stop-softap` |
+
+### 新增实现（`ControlCap.kt`，+339 行）
+`op=system` + `target=airplane|battery_saver|dnd|rotation|eye_comfort|hotspot` + `action=status|on|off|toggle`。六个 target 全部经 `Privilege.runPrivileged`（Shizuku shell 身份优先、su 兜底）；两条通道都不可用时回 403 `privileged_required`，不假装成功。
+
+核心是共用的 `toggle()` 骨架：**写 → 按 deadline 轮询回读 → 比对**，返回 `requested` / `enabled` / `before` / `verified` / `mismatch`；不一致回 409。settings 类预算 1.2s，热点 6s（SoftAP 停启要走状态机）。
+
+### 踩坑记录（四条都是实测出来的，不是推测）
+1. **热点回读不能用裸词 `SoftApManager`** —— dumpsys 里恒有约 117 行含这个词（`mAmmToReadyForChangeMap`、日志条目），写成裸词会把「已开」读成常量真值，于是 on 永远报 `before=true`、off 永远报 `mismatch`。必须带花括号：`grep -cF 'SoftApManager{'`（0→1）。
+2. **`registerTorchCallback(cb, null)` 直接抛** `No handler given, and current thread has no looper!` —— 桥的请求线程没有 Looper，必须传独立 `HandlerThread` 的 handler。
+3. **`registerTorchCallback` 注册时会立刻用当前状态回调一次** —— 用 `CountDownLatch` 等「第一次回调」会被这个初始值提前释放，读到变化前的状态（实测：首次 `on=true` 回 `false`，第二次才成功）。改成回调只更新 `AtomicReference`、主流程轮询到 want 或超时。
+4. **`cmd` / `settings` 都是异步生效** —— 写完立刻读会读到旧值，然后误判 mismatch。必须轮询，且不同开关预算不同。
+
+### 顺带修掉的三处假成功 / 错误判据
+- `ControlCap.torch`：改为 `registerTorchCallback` + 轮询回读，800ms→1.5s 预算；相机被占时回 409 + 真实原因。
+- `RadioCap.wifi` enable/disable：新增 `wifiSetEnabled()`，写完轮询 `isWifiEnabled`，不一致回 409 + `user_confirmation_required`（Android 10+ 系统拦是真实原因，不该报 ok）。
+- `StatusCap.dnd`：改读 `settings get global zen_mode != 0`，铃音模式单独保留在 `ringer_silent` 字段。
+
+### 三处对外能力描述同步（不同步等于白加）
+AI 只看得见 `EndpointCatalog` 渲染出来的 `dev <能力>` 用法，所以：
+- `EndpointCatalog.kt` control 条目：补 `op=system`、六个 target、九条 limits。
+- `android-plugins/device-tools.mjs` `device_control`：enum 加 `system`，新增 `target`/`action`/`ssid`/`password`/`security` 参数。
+- `assets/gates/device-control`：修正错误的字段名注释（原来是 `on`/`level`，实际要 `enabled`/`value`），补 `op=system` 用法。
+
+### 新探针 `scripts/probes/_test_system_toggles.py`
+11 组判据（分发接线 / 六 target 分支 / 回读骨架 / 提权拒绝 / 六条真实命令 / 护眼双后端 / 热点 needs_root / 热点花括号 / 手电筒 HandlerThread 与禁 latch / wifi 回读 / dnd 读 zen_mode / 三处目录同步）。
+
+**变异反验（5 个变换全部命中，还原后全绿）**：
+| 变换 | 结果 |
+|---|---|
+| `"system" -> system(...)` 改成 `"system_disabled"` | FAIL（分发） |
+| `val matched = (actual == want)` → `val matched = true` | FAIL（回读退化） |
+| MCP enum 去掉 `"system"` | FAIL（目录） |
+| StatusCap dnd 改回 ringerMode | FAIL（判据） |
+| 初次版本缺 `matched` 断言时上面第 2 条**没变红** | 已补断言（典型假绿，直接改判据结构） |
+
+### 真机端到端验收（22 项全 PASS）
+通过 `curl -H 'X-DSH-Token: ...' POST http://127.0.0.1:3083/dev/control` 实调（token 从引擎进程 `/proc/<pid>/environ` 的 `DSH_BRIDGE_TOKEN` 取）：
+- 五开关 × status/on/off = 15 项 PASS（每项 `verified=true`、`mismatch=false`、`before` 与 `enabled` 正确翻转）。
+- 热点 status/on/off = 3 项 PASS（`softap on` 后 `grep -cF 'SoftApManager{'` 从 0 → 1）。
+- toggle 语义 2 项 PASS（连续两次 toggle 状态正确交替）。
+- 手电筒 on/off 2 项 PASS。
+- 错误路径：坏 target → `target must be airplane|battery_saver|dnd|rotation|eye_comfort|hotspot`；坏 action → `action must be status|on|off|toggle`；坏 op → 白名单含 `|system`。
+- **dnd 判据的对照证据**：设备当前 `ringer_silent=true`（铃音静音）而 `dnd=false` —— 旧代码在同样状态下会误报 `dnd=true`；开 DND 后 `/dev/status` 的 dnd 变 true，关后变 false。
+
+测完已把六项开关全部还原（rotation=1、eye_comfort=1、其余 off、热点关）。
+
+### 未覆盖
+- 只在 OnePlus ColorOS（Android 16）上验；AOSP 原生机的 `night_display_activated` 分支**未实测**（代码有，未触达）。
+- Shizuku 通道未单独验（本机是 ROOT 模式，`runPrivileged` 先走 Shizuku 但设备上 su 先成功）；热点在 Shizuku 下必被拒这一点是**按 SecurityException 报错推断**，未在 Shizuku 模式实测。
+- 平板/横屏、移动数据总开关、定位总开关、屏幕旋转锁定均未做。
+## 一百〇四、局域网访问 WebUI 显示错 IP —— 虚拟网卡抢占 wlan0（2026-11-13，提交 7f7edcff）
+
+用户报「局域网访问 WebUI 开启后显示的是移动网络 IPv4，不是 192.168 开头，可能是近几个
+版本引进来的」。**不是移动网络**。
+
+### 真机取证（OnePlus PLZ110 / Android 16，192.168.101.21:9000）
+
+```
+$ adb shell ip -4 -o addr show
+27: wlan0    inet 192.168.101.21/24 brd 192.168.101.255 scope global wlan0
+30: vgate0   inet 172.30.250.61/32 scope global vgate0
+```
+
+只有两个非环回 IPv4，用户看到的「移动网络地址」实为 `vgate0`（厂商虚拟网关，`/32`）。
+
+### 根因（`app/src/main/java/app/dsh/mobile/engine/LanAddress.kt`）
+
+v1.7.1 的评分把 172.16/12 当私有网段，所以 `vgate0` 与 `wlan0` **同得 50 分**；
+并列之后排序键退化成 `thenBy { it.iface }`（接口名字典序），`v` < `w`，
+虚拟网关胜出。**不是「没排序」，是并列判据本身不可靠**。
+
+复现（纯逻辑，无 IO）：
+```
+vgate0  172.30.250.61   score=50
+wlan0   192.168.101.21  score=50
+best() -> 172.30.250.61
+```
+
+### 修法
+
+1. **排斥名单补虚拟/隧道族**（`REJECT_VIRTUAL`）：`vgate` / `tun` / `tap` / `ppp` /
+   `vti` / `veth` / `ovnet` / `ifb` / `gre` / `erspan` / `sit` / `ip6` /
+   `wifi-aware` / `r_rmnet` / `br-` / `docker`。命中即**丢弃**，不是扣分。
+2. **结构性判据优先于名字**：改用 `nif.interfaceAddresses`（旧代码用 `inetAddresses`，
+   拿不到广播地址与前缀长度）—— `prefixLen >= 31 && !hasBroadcast` 的点对点/主机路由
+   一律沉底；局域网入口**限定私有网段**，公网地址不再靠接口名拿高分。
+3. **排序第二级改「有广播地址的在前」**：即使两个接口同分，`/24` 的真局域网口也赢过
+   `/32` 隧道口；厂商把虚拟网卡改名也挡得住。
+4. **抽出纯函数** `scoreOf(name, host, hasBroadcast, prefixLen)` / `order(candidates)` /
+   `bestOf(candidates)`。真机上「vgate0 与 wlan0 并存」的组合本机重现不出来，
+   能测的只有判据本身，所以必须能在宿主 JVM 上断言。
+5. `wlan0` 从「普通私有网段 50 分」提到 90 分，热点 AP（`ap/wlan1/swlan/eth`）仍是
+   100-97，v1.7.1 的原始需求（热点优先）没有被压掉。
+
+### 顺手修掉一条假绿
+
+`scripts/probes/_rv_remote_access.py` 的 C5 变异锚点**早已失效**：代码里早改成
+`.replace("@DSH_BASH@", "/bin/bash")`，脚本还在找 `"/usr/bin/env bash"`，
+于是每轮都静默 `SKIP` —— C5 从来没被反向验证过。锚点更正后恢复 RED。
+
+（该脚本按项目惯例不入库，改动只在工作区。若要让它长期生效，需要单独决定是否入库。）
+
+### 验证
+
+- `bash scripts/run-a11y-jvm-test.sh` → **2386 passed / 0 failed**
+  （第 20 节 `assertLanAddress` 24 条：vgate0 直接被拒、同分时广播优先、`/32` 与 `/31`
+  沉底、公网不入选、热点 AP 仍高于 wlan0、空清单返回 null）
+- `python scripts/probes/_test_remote_access.py` → **45 passed / 0 failed**
+  （A4 改判「并列不靠字典序」、新增 A4b 虚拟接口名单 / A4c 点对点沉底 / A4d 私有网段限定）
+- `python scripts/probes/_rv_remote_access.py` → **17 条变异全部按预期变红，0 条不符合**
+- `python scripts/check-i18n.py` → All i18n checks passed
+- 真机：同一次开机 `LanWebProxy: LAN notice shown (http://192.168.101.21:3090)`
+  —— 改前为 `http://172.30.250.61:3090`
+- PC 侧 `curl http://192.168.101.21:3090/` → 200（端口本身一直可连，只是显示的地址错）
+
+### 构建/装机的两个坑（本轮踩到）
+
+- **隔离 worktree 会缺签名材料**：`keystore/dsh-release.keystore` 与 `release.properties`
+  已被 gitignore，新开的 worktree 里没有，`assembleRelease` 只产出
+  `app-release-unsigned.apk`（`cp` 找不到 `app-release.apk` 就是这个原因）。
+  解法：从主树拷 `keystore/` 过去，或用主树直接构建。
+- **并行会话装了更高 versionCode 的包**：设备上被换成 `versionCode=380 / 1.6.0-beta.5`
+  （不是我装的），`install -r` 直接拒绝降级；装好后又发现拉回来的 APK 与我构建的
+  sha256 不符（`ee2a97be…` vs 我的 `b672250f…`，dex 只有 2 个而不是 11 个）。
+  必须先 `install` 成功、`dumpsys package` 核 versionCode，再 `pm path` → `pull` →
+  解 dex 查特征串（`vgate` 在 `classes6.dex`），确认装上去的确实是自己的包。
+
+### 未覆盖
+
+多网卡热切换（开关 WiFi / 热点过程中地址实时刷新）本次没动，仍是「取值时算一次」的
+老行为；UI 里显示的地址要等下次进入设置页才刷新。
+
 ## 一百一十一、双端会话同步 PeerSync v1：手机 ↔ 电脑对齐 session.v4.jsonl.zstd（2026-11-13，提交 97b80474 / v1.6.0-beta.3 / 378）
 
 ### 结论：已真机跑通，自研不复用 PR #105 的协议前提
@@ -11633,3 +11787,149 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
 ### 未做
 - 未改 `/dev/peersync` 端点行为，未删任何 strings/layout/Activity。
 - 未验证真机界面（本轮只做编译 + 探针，未装机）。
+
+**补记九（2026-11-13）**：引导页 v2 按两轮只读复审（expert-gpt）修订完毕，仍未落 Android。
+- 欢迎页：副文案改为「克隆仓库、编译项目、运行测试、提交代码，也能读屏、点按、输入。引擎与工具在手机本地执行。」；
+  五行顺序 = 同源引擎 / 电脑级工作流（原生 Node.js 与真实终端）/ 自研 Linux 容器（按需装软件与工具链）/ 手机操控 / 与电脑协同（需配对）；
+  新增首屏前提一行「运行环境随安装包自带；模型与 API Key 进入后单独配置」。
+- 能力页：6 组四字短名（设备环境/通知媒体/设备控制/个人数据/录屏感知/应用容器），chip 两行（名称 + 已允许 n/m）、56dp（窄屏 48dp）；
+  副标题全部按 values-zh-rCN 的 setting_cap_*_sub 重写；推荐按钮前明列 6 项，文案改「只新增允许，不重置你已选的」。
+- 强调色拆 --accent / --accent-fill / --accent-text 三角色，6 色×深浅按实测重算；浅琥珀正文压到 #8a3e06（原 #b45309 在 12% 底纹上仅 4.25:1）。
+- 完成页：光晕 180→120dp；四态标题与 CTA 分离；ready CTA「进入应用，继续配置模型」、次按钮「先浏览应用」「上一步」；
+  failed 去掉「或重新安装」；lite 标题改「界面设置已完成」。
+- 步骤编号：欢迎页侧轨不编号（「·」），其余 1–8；四页可选项眉标「可选，之后可改」、主按钮「保留当前设置并继续」。
+- 截图门：docs/ui-preview/shoot-onboarding.mjs 改为逐图断言（页编号/关键文案/DOM 尺寸/PNG 像素=CSS×DPR/画廊 9 卡），43 张全通过；
+  支持传文件名片段只跑子集。曾踩两个坑：headless --window-size 最小 500 会裁切→改 CDP Emulation；clean 模式强制 .page opacity 会把 9 页全叠起来→只对 .page.on。
+- 文档：docs/ONBOARDING_REDESIGN.md 增 §12「两轮只读复审记录」（21 条已修 + 5 条未采纳/待决策 + 覆盖边界）。
+- 仍未验证：Android 侧未实现、未跑构建、未做真机与 TalkBack 实测；Root 双确认可绕过是静态结论，未真机复现。
+
+## 一百一十、apt 装包失败根因：lists 树被 root 身份写坏 + reset 假绿（2026-11-13）
+
+**用户报障**：「装乌班图环境遇到报错」——`apt-get install failed`，日志里全是
+`Ign: ... Translation-en` 与 `W: GPG error: ... At least one invalid signature was encountered`。
+
+### 真根因（真机复现，PLZ110 / Android 16 / uid 10499）
+
+`/var/lib/apt/lists`（含 `partial`）在**任何一次以 root 身份装包之后**（CHROOT 沙箱、
+或在终端里 `su` 装包）会变成 `root:root 0700`，且标签退化成裸 `u:object_r:app_data_file:s0`
+（缺 MCS 分类）。此时 App 域：
+
+| 现场 | 实测报错 |
+|---|---|
+| lists 目录 0700 root | `E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)` |
+| lists 里 InRelease 不可读 | `W: chmod 0600 of file ... failed - 400::URIFailure (1: Operation not permitted)` + `W: GPG error: ... Splitting up ... into data and signature failed` |
+| keyring 不可读 | `W: ... NO_PUBKEY 871920D1991BC93C` |
+| dpkg/updates 有残条目 | `E: dpkg was interrupted, you must manually run dpkg --configure -a` |
+
+三条都会以「装包失败」的形式落到 UI，实测**属主一改回来，同一条命令立刻恢复正常**
+（`gpgv` 直跑 `Good signature`；`apt-get update` 首行从 `Err:` 变 `Hit:`）。
+
+### 修复（`LinuxEnvironmentManager.kt` + `Privilege.kt`）
+
+1. **⓪-1 装包前交还三棵子树**：`var/lib/apt/lists`、`etc/apt/trusted.gpg.d`、`var/lib/dpkg`
+   各走 `Privilege.normalizeOwnership`（`find -xdev ! -user <uid> -exec chown -h` +
+   `chcon -R -h` 基准取父目录；基准是裸 s0 时放弃打标）。
+2. **⓪ reset partial 换成 `resetAptPartial()`**：App 域先 Java `deleteRecursively`+`mkdirs`，
+   不行再走特权 `rm -rf` + `chown` + `chmod 0755`，判据是 `dir.canWrite()`。
+   旧脚本结尾是 `true` → rm/mkdir 被拒也 exit 0（transcript 写 `[exit 0]` 却紧接着失败，假绿）。
+   新的写入 `[ok=true|false]`，false 时**直接中止安装**并如实报错。
+3. **⓪-2 dpkg 中断自愈**：`var/lib/dpkg/updates` 里只要有文件就先跑
+   `dpkg --force-not-root --configure -a`，不再让用户自己猜该敲什么。
+
+### 验证
+
+| 项目 | 结果 |
+|---|---|
+| 真机 e2e（把三棵子树 chown 0:0 + 0700 + 删 curl → 点「开始」） | `reset apt lists/partial` `[ok=true]`，curl 重新落地，页面回到「已就绪」109 工具 / 650.2 MB |
+| `_test_linux_apt_nonroot.py` | **42 checks / 0 failed**（新增 S3b/S3c/S5–S9b） |
+| 变异反验 MUT8（删掉 lists 交还） | S5/S6 立刻转红，还原转绿 |
+| `_test_linux_delete_residue.py` / `_test_linux_workbench.py` | 28/0、79/0 |
+| `check-i18n.py` / `check-ui-tokens.py` | 0 / 0 |
+| `compileDebugKotlin` / `assembleRelease` | BUILD SUCCESSFUL |
+
+### 未解决 / 已知限制
+
+- **交还后第一次 `apt-get update` 仍会打一次 `W: GPG error`**（第二次起 `Hit:`）。
+  装包不受影响（走的是上一份索引），但提示不干净，根因待查（推测：apt 对刚重建的
+  `partial` 里残留的 InRelease 复用失败，未验证）。
+- worktree `E:/tmp/wt-del`，分支 `fix/delete-residue`，当前 `versionCode = 389`（本地调试用，未提交）。
+- 主仓未回灌：主仓有他人 WIP，按惯例另交 worktree diff。
+
+
+## 一百一十八、1.6.0 用起来变卡：TurnWatcher 每次会话写入都整份解压 zstd（2026-11-13，v1.6.0-beta.7 · 382）
+
+> 宝宝反馈（m06922）：「有人说我们软件现在1.6.0版本感觉用得很卡顿，不如1.4.76那么流畅，
+> 你查一下代码，看看有什么额外的资源占用，性能消耗」。m07605「可以」批准按 P0–P3 一并修。
+
+### 根因：这条开销在 1.4.76 里从未真正发生过
+同一份真机会话 `8f947baf-…/session.v4.jsonl.zstd`（29.5 MB，5 帧），同一台真机实测：
+
+| 项目 | 1.4.76 路径 | 1.6.0 路径 |
+|---|---|---|
+| 扫出帧数 | 1 帧 | 5 帧 |
+| 解压出明文 | 0 MB（帧解压全失败） | 233.4 MB |
+| 单次耗时 | 24 ms | 1317~1820 ms |
+| 子进程峰值 RSS | 73 MB | 745~799 MB |
+
+- `ZstdTail.kt` 的帧扫描器在 1.4.76 里**漏跳过 zstd 尾部 4 字节 XXH64 校验和**，扫完第 1 帧
+  就 break；第 1 帧只有文件头、无对话内容 → 解压全失败 → 「整份解压」这条路径**根本没跑过**。
+- `b87d7f62`（2026-11-01，v1.5.0-beta.13）补上 checksum skip 后它开始真跑。
+- `4c576dfe`（2026-11-11，v1.6.0-beta.1，issue #104 OOM 修复）只把明文从 Java 堆挪进 node
+  子进程，**内存解决了但工作量没减**，每次仍全解。
+- `TurnWatcher.kt` 的去重键 `lastModified xor (length shl 21)` 在 turn 进行中每几百毫秒就变
+  → 每 1.5 秒轮询都触发一次全解。设备 `SwapFree` 一度 0 kB 时，子进程要 745 MB 只能靠换页。
+- 两处注释写着「只对最近 2 分钟内修改过的文件做解压」，**代码里从来没有这个判断**（1.4.76 与
+  HEAD 都没有）—— 注释与实现不符本身就是要修的东西。
+
+### 修法：三道闸 + 按帧序号增量
+`TurnWatcher.kt`：
+- `MIN_DECOMPRESS_INTERVAL_MS = 10_000L`：同一文件两次解压最小间隔。**窗口内 return 时不更新
+  stamp** —— 若「先写再比」，这次变化会被下一轮的第一道闸永久吞掉，那个 turn/end 通知再也不来。
+- `DIR_SCAN_EVERY_POLLS = 5`：`walkTopDown(maxDepth = 4)` 在 508 文件 / 524 目录上是 24~44 ms，
+  每 1.5 秒一次 ≈ 2% 单核常驻（90 秒实测：文件变化 0 次，线程仍烧 1.76 秒 CPU）。改为每 5 轮重扫，
+  其余轮次只 stat 上一轮拿到的文件名。
+- 首次见到某文件时传 `fromFrames = -1`：只数帧、不解压，建基线。**基线豁免时间闸**（它 0.23 秒
+  就完，却能让「建基线 → 真正解第一段」从「再等 10 秒」变成「下一轮就解」）；只有
+  `prevStats == null && lastAt == null` 的第一次豁免，失败重试仍受闸门约束。
+
+`ZstdTail.kt`：
+- `Stats` 增加 `frames`／`from`；`stats(ctx, file, fromFrames)` 把起始帧号作 argv[4]。
+- count 分支从「`toString("utf8")` + `split("\n")`」改为**纯字节扫描**（`Buffer.indexOf` 找
+  `"type"`，跳空白后比对 `turn/end`）—— 46 MB 帧原会先变 92 MB UTF-16 字符串。
+- 跨帧 token：每帧扫描前置上一帧末尾 `CARRIER = 64` 字节；`from > 0` 时先解第 `from-1` 帧取尾巴
+  预置 carrier，否则「起点在上一帧、结尾在本段」的 token 谁也看不到。
+- **判重按 token 的结束偏移**（`endAt > scannedUpTo`），每帧把 `scannedUpTo` 推进到帧尾。
+  按起点判两个方向都错，合成文件实测：恰好结束在帧尾的 token 会被下一帧 carrier 再数一次
+  （1 变 2）；起点落在 carrier 里、结束在本帧的 token 谁都不认（漏计）。
+- 基线模式输出 `frames = frames.length - 1`：让出最后一帧，否则跨基线边界的 token 会丢 1 个
+  （实测全解 22、增量累加 21）。
+
+### 验证证据
+- 真机（`-s 192.168.101.21:9000`，29.5 MB / 5 帧会话）：基线 `0.25s / frames=4`；
+  全解 `1.82s / 244744333 bytes / 峰值 799 MB`；增量 `0.23s / 311 bytes / **峰值 64 MB**`。
+  5731 帧会话：全解 `0.68s / 33242072 bytes`，增量 `0.20s / 2057 bytes`。
+- 增量等价性（生产脚本本体 + vm 沙箱，20 个增长点重放、首点必须只有 1 帧）：
+  `session-81f915c2` 53.46 MB / 39801 帧 → 全解 192、增量累计 192、字节数完全相同；
+  `session-7933ac10` 74.05 MB / 19751 帧 → 98 / 98 相同。
+- 变异反验（`_test_turnwatcher_perf.py`，含 6 个合成会话行为用例）：
+  判重退回起点 → A 1→2、D 3→2；边界退回 `globalStart - CARRIER` → A 1→2、D 3→6；
+  去掉 carrier 预置 → E@1 1→0；`MIN_DECOMPRESS_INTERVAL_MS = 1_000L` → A2 红；
+  `needRescan = true` → C6 红；基线改成 `frames.length` → D9 红。
+- 隔离 worktree（`E:/tmp/wt-tw` = HEAD + 本次 4 个文件）：`compileDebugKotlin` EXIT=0；
+  JVM `passed=2386 failed=0`；**128 个探针 0 失败**；i18n / ui-tokens / no-bulk-perms 全 rc=0。
+
+### 三个假绿教训（写进探针注释）
+1. 探针锚 `mode === "count"` 会切到基线块（脚本里还有 `const fromFrameRaw = (mode === "count") ? …`）
+   → 必须锚 `if (mode === "count") {` 这条语句。
+2. 注释里的字面量会喂饱断言（注释里就写着 `frames.length - 1`、`DIR_SCAN_EVERY_POLLS`、
+   `toString("utf8")`）→ 判据必须先剥注释行。
+3. 「变量存在」≠「逻辑还在」：`countedUpTo` 改成裸 `hits++` 时变量仍在，必须断言那个**比较**。
+4. 探针里跑生产脚本必须 `node -e <脚本> <数据文件>`（生产就是这么调的）；写成 .js 再
+   `node file.js` 会让 argv[1] 变成脚本自身 → 一律 rc=3 `no complete zstd frame`。
+
+### 未做
+- **真机端到端未验**：设备 `192.168.101.21:9000` 上是并行会话的包（versionCode 389 / md5
+  `4af3e3d2…`，本地构建是 382 / `cb660540…`），按「不覆盖另一个对话」的约定没装。
+  待装后观察 turn/end 通知是否仍按时到达（节流后最多晚 10 秒）。
+- 主工作区 `OnboardingActivity.kt` 有并行会话未完成的 WIP（9 个编译错误，`children` 未解析），
+  所以编译/探针都在隔离 worktree 里跑。

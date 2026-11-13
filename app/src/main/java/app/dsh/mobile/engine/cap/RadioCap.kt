@@ -576,14 +576,46 @@ object RadioCap {
         return when (op) {
             "status" -> wifiStatus(wm)
             "scan" -> wifiScan(ctx, wm, body)
-            "enable" -> 200 to JSONObject().put("ok", true)
-                .put("enabled", runCatching { wm.isWifiEnabled = true }.isSuccess).toString()
-            "disable" -> 200 to JSONObject().put("ok", true)
-                .put("disabled", runCatching { wm.isWifiEnabled = false }.isSuccess).toString()
+            // ★这两个分支曾直接把 200 {"ok":true} + runCatching{}.isSuccess 回给调用方 ——
+            //   Android 10+ 的 setWifiEnabled 对普通 App 已经不生效（系统弹确认框或直接忽略），
+            //   而 isSuccess 只表示"没有抛异常"，于是 AI 永远看到 ok=true。现在写后回读真值。
+            "enable" -> wifiSetEnabled(ctx, wm, true)
+            "disable" -> wifiSetEnabled(ctx, wm, false)
             "link" -> wifiLink(ctx)
             "capture" -> wifiCapture(ctx, body)
             else -> 400 to error("op must be status|scan|enable|disable|link|capture")
         }
+    }
+
+
+    /**
+     * WiFi 开关 + 回读核对。
+     *
+     * Android 10 (Q) 起 setWifiEnabled 对普通 App 只在少数场景生效：系统会把请求变成
+     * 通知栏的确认卡片（user_confirmation_required），App 侧的调用本身「成功」但状态没变。
+     * 所以这里写完轮询最多 1.2s 读 isWifiEnabled，不一致就如实回 409，不再假装成功。
+     */
+    @SuppressLint("MissingPermission")
+    private fun wifiSetEnabled(ctx: Context, wm: WifiManager, want: Boolean): Pair<Int, String> {
+        val before = runCatching { wm.isWifiEnabled }.getOrDefault(false)
+        val threw = runCatching { wm.isWifiEnabled = want }.exceptionOrNull()
+        var actual = before
+        for (i in 0 until 6) {
+            Thread.sleep(if (i == 0) 150L else 200L)
+            actual = runCatching { wm.isWifiEnabled }.getOrDefault(actual)
+            if (actual == want) break
+        }
+        val body = JSONObject()
+            .put("target", "wifi")
+            .put("requested", want)
+            .put("enabled", actual)
+            .put("before", before)
+            .put("mismatch", actual != want)
+        if (actual == want) return 200 to body.put("ok", true).toString()
+        if (Build.VERSION.SDK_INT >= 29) body.put("reason", "user_confirmation_required")
+            .put("hint", "Android 10+ requires the user to accept the Wi-Fi toggle prompt")
+        threw?.message?.let { body.put("error", it) }
+        return 409 to body.put("ok", false).toString()
     }
 
     @SuppressLint("MissingPermission")

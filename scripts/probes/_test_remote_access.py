@@ -79,10 +79,29 @@ def main():
         "A3 只认私有网段或明确优先",
         "isPrivateIPv4" in la and "192" in la and "172" in la,
     )
+    # v1.7.12：用户第二次报同一个症状 —— 这次显示的是 vgate0（172.30.250.61/32
+    # 虚拟网关），不是 rmnet。根因不是「没排序」，而是**并列时按接口名字典序**：
+    # 两个地址都在私有网段各拿 50 分，`v` < `w`，虚拟口赢了。所以判据要有结构性
+    # 依据（无广播 / /32 沉底），不能只靠一份名字黑名单。
     check(
-        "A4 有排序而不是取第一个",
-        "sortedWith" in la and "score" in la,
-        "★旧实现是 firstOrNull，枚举顺序不保证 —— 这就是用户报的 bug 根因",
+        "A4 并列时不再靠接口名字典序决定",
+        "hasBroadcast" in la and "prefixLen" in la and "thenByDescending { it.hasBroadcast }" in la,
+        "★vgate0 与 wlan0 同分，字典序 v<w 让虚拟网关赢了",
+    )
+    check(
+        "A4b 虚拟/隧道接口被排斥（含 vgate）",
+        all(k in la for k in ('"vgate"', '"tun"', '"tap"', '"vti"', '"ovnet"', '"r_rmnet"')),
+    )
+    check(
+        "A4c 点对点路由（/31、/32 无广播）沉底",
+        re.search(r"prefixLen\s*>=\s*31[^\n]*\n?[^\n]*pointToPoint", la) is not None
+        or ("pointToPoint" in la and ">= 31" in la),
+        "这类口是主机路由，不可能是别人连进来的入口",
+    )
+    check(
+        "A4d 局域网入口限定私有网段",
+        re.search(r"if \(!isPrivate\) return", la) is not None,
+        "公网地址不该被当成同网段地址显示给用户",
     )
     check(
         "A5 LanWebProxy 已委托（不再自己取第一个）",

@@ -196,23 +196,41 @@ object EndpointCatalog {
         Triple(
             "控制", "让设备做动作", listOf(
                 e(
-                    "control", "POST", "/dev/control", "开硬件：WiFi/蓝牙/音量/亮度/手电/震动",
+                    "control", "POST", "/dev/control", "开关：WiFi/蓝牙/音量/亮度/手电/震动/飞行/省电/勿扰/旋转/护眼/热点",
                     cap = "control",
-                    params = "op=wifi|bt|volume|brightness|torch|vibrate（只有这六个）\n" +
+                    params = "op=wifi|bt|volume|brightness|torch|vibrate（App 自身能做的）\n" +
                         "  op=wifi/bt   → enabled=true|false（Android 10+ 改不动，返回 user_confirmation_required）\n" +
                         "  op=volume    → value=0..max, stream=music|ring|alarm|notification|voice\n" +
                         "  op=brightness→ value=1..255\n" +
                         "  op=torch     → enabled=true|false\n" +
-                        "  op=vibrate   → ms=1..10000",
-                    body = "{\"op\":\"torch\",\"enabled\":true}",
+                        "  op=vibrate   → ms=1..10000\n" +
+                        "op=system（系统级开关，需提权：Root 或 Shizuku）\n" +
+                        "  target=airplane       → 飞行模式\n" +
+                        "  target=battery_saver  → 省电模式\n" +
+                        "  target=dnd            → 勿扰（真 zen_mode，不是靠铃音猜）\n" +
+                        "  target=rotation       → 自动旋转\n" +
+                        "  target=eye_comfort    → 护眼（ColorOS 私有键 / AOSP 夜灯双后端）\n" +
+                        "  target=hotspot        → 热点（ssid / password / security=open|wpa2，**必须 root**）\n" +
+                        "  action=status|on|off|toggle 缺省 status",
+                    body = "{\"op\":\"system\",\"target\":\"airplane\",\"action\":\"on\"}",
                     examples = listOf(
                         "dev control op=torch enabled=true",
                         "dev control op=brightness value=128",
                         "dev control op=volume value=8 stream=music",
+                        "dev control op=system target=airplane action=on",
+                        "dev control op=system target=dnd action=toggle",
+                        "dev control op=system target=hotspot action=on ssid=DSH password=12345678",
                     ),
-                    limits = "① 没有 ringer / dnd / settings_action 这三个 op（曾写错，实测报 op must be wifi|bt|volume|brightness|torch|vibrate）。" +
+                    limits = "① 没有 ringer / settings_action 这些 op（实测报 op must be wifi|bt|volume|brightness|torch|vibrate|system）。" +
                         "② torch 要字段名 enabled 不是 on。③ wifi/bt 的开关在 Android 13+ 被系统拦，返回 user_confirmation_required。" +
-                        "④ brightness 需要 WRITE_SETTINGS（可 grant），否则 409 write_settings_required。",
+                        "④ brightness 需要 WRITE_SETTINGS（可 grant），否则 409 write_settings_required。" +
+                        "⑤ op=system 六项都**没有公开 API**，一律走 settings/cmd 命令 + Privilege.runPrivileged；" +
+                        "没 Root 也没 Shizuku 时返回 403 privileged_required。" +
+                        "⑥ 每一项写完都会回读核对：requested 与 enabled 不一致时回 409 + mismatch=true，不要当成功。" +
+                        "⑦ 热点在 Shizuku（shell uid 2000）下会被 SecurityException 拒绝，实际只有 root 能开。" +
+                        "⑧ 护眼后端厂商相关：ColorOS 用 system.oplus_customize_custom_eye_protect_enable，" +
+                        "AOSP 用 secure.night_display_activated；两族都没有时回 501 unsupported。" +
+                        "⑨ 飞行模式会同时断 WiFi 与热点，这是系统行为不是 bug。",
                 ),
                 e(
                     "clipboard", "POST", "/dev/clipboard", "剪贴板读写",

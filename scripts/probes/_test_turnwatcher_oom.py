@@ -106,8 +106,11 @@ if readzstd:
           "readZstd 没调 ZstdTail.stats —— 又回到明文路径了")
     check("C3", "ZstdTail.read" not in readzstd,
           "readZstd 仍在调 ZstdTail.read（传 keepFrames=0 就是又要把明文读进堆）")
-    check("C4", "turnEnds" in readzstd and "prevStats.turnEnds" in readzstd,
-          "增量不是「累计值相减」—— 拿明文切片数行会跨行截断")
+    # v1.6.0 起改成**按帧增量**：脚本只解 [上次帧数, 现在帧数)，回传的 turnEnds
+    # 已经是本次新增帧里的个数，所以不再需要「累计值相减」。锚点随之改成
+    # 「必须按 fromFrames 传增量基准」+「必须直接用 stats.turnEnds」。
+    check("C4", "fromFrames" in readzstd and "stats.turnEnds" in readzstd,
+          "没把帧序号当增量基准（fromFrames）或没直接用增量 hits")
     # 不得再出现凭明文长度切片
     check("C5", "substring(" not in readzstd,
           "readZstd 里还有 substring —— 说明仍在切明文")

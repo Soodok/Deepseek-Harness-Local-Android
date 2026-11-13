@@ -62,6 +62,7 @@ import app.dsh.mobile.engine.MemoryReplay
 import app.dsh.mobile.engine.ExtensionVersionPlan
 import app.dsh.mobile.engine.EntryState
 import app.dsh.mobile.engine.GuestPaths
+import app.dsh.mobile.engine.LanAddress
 import app.dsh.mobile.engine.VersionPresence
 
 /**
@@ -107,6 +108,7 @@ object BehaviourTest {
         assertMarkGeometry()
         assertIslandPalette()
         assertContrastColor()
+        assertLanAddress()
         assertWorkbenchReduce()
         assertSwipePath()
         assertHumanPace()
@@ -1017,6 +1019,74 @@ object BehaviourTest {
         check(deploying.currentStep == 2, "部署进行中引导停在第 2 步")
         check(deploying.banner == BannerKind.DEPLOYING, "部署中横幅为 DEPLOYING")
         check(!deploying.actionsAllowed, "部署中禁止再点其它操作")
+    }
+
+    /**
+     * 局域网地址选择：虚拟网卡不能抢走 wlan0（v1.7.12）。
+     *
+     * 用户报「局域网访问 WebUI 显示的是移动网络 IP」的第二次复发：这次不是 `rmnet`，
+     * 而是 `vgate0`（虚拟网关，172.30.250.61/32）。它与 `wlan0`（192.168.101.21/24）
+     * 都落在私有网段拿同样的分，旧实现用接口名字典序决胜负 —— `v` < `w`，虚拟口赢。
+     *
+     * 这些都是纯函数断言：真机上「vgate0 与 wlan0 并存」的组合本机重现不出来，
+     * 能测的只有判据本身。
+     */
+    private fun assertLanAddress() {
+        println("== 20. lan address selection ==")
+
+        fun c(name: String, host: String, bcast: Boolean, prefix: Int) =
+            LanAddress.scoreOf(name, host, bcast, prefix)
+
+        // 1. 真机现状：两个私有地址，wlan0 必须赢
+        val vgate = c("vgate0", "172.30.250.61", false, 32)
+        val wlan = c("wlan0", "192.168.101.21", true, 24)
+        check(vgate == null, "vgate0 is rejected outright, not merely outscored")
+        check(wlan != null && wlan >= 90, "wlan0 is a first-class candidate (got $wlan)")
+
+        // 2. 排序层面：即使 vgate 混进来（比如厂商改名），有广播的那个也要在前
+        val ordered = LanAddress.order(
+            listOf(
+                LanAddress.Candidate("172.30.250.61", "zzz0", 60, false, 32),
+                LanAddress.Candidate("192.168.101.21", "wlan0", 60, true, 24),
+            ),
+        )
+        check(ordered.first().address == "192.168.101.21") {
+            "same score => broadcast wins, got ${ordered.first().address}"
+        }
+
+        // 3. /32 与 /31 是点对点或主机路由，不可能是「别人连进来」的入口
+        check((c("wwan0", "172.20.1.5", false, 32) ?: 100) < 30, "64: no-broadcast /32 is buried")
+        check((c("eth9", "172.20.1.5", false, 31) ?: 100) < 30, "31: point-to-point is buried")
+        check((c("eth9", "192.168.5.9", true, 24) ?: 0) >= 60, "a real /24 private iface stays high")
+
+        // 4. 排斥名单覆盖两代错法
+        for (n in listOf("rmnet_data0", "ccmni0", "pdp0", "p2p0", "clat", "dummy0")) {
+            check(c(n, "10.1.2.3", false, 32) == null, "mobile iface $n is rejected")
+        }
+        for (n in listOf("tun0", "tap0", "ppp0", "vti0", "ovnet0", "ifb0", "gre0", "r_rmnet_data0")) {
+            check(c(n, "172.30.1.1", true, 24) == null, "virtual iface $n is rejected")
+        }
+
+        // 5. 热点 AP 仍高于普通 wlan0（v1.7.1 的原始需求不能被后来的改动压掉）
+        val ap = c("wlan1", "192.168.43.1", true, 24) ?: 0
+        check(ap > (wlan ?: 0), "hotspot AP outranks wlan0 ($ap vs $wlan)")
+        val eth = c("eth0", "192.168.1.9", true, 24) ?: 0
+        check(eth >= 90, "wired ethernet is a strong candidate (got $eth)")
+
+        // 6. 公网地址不能当局域网入口
+        check((c("wlan0", "8.8.8.8", true, 24) ?: 0) < 60, "public address does not score as LAN")
+
+        // 7. bestOf 与候选打分串起来可用（空清单返回 null，不抛）
+        check(LanAddress.bestOf(emptyList()) == null, "no candidates => null")
+        check(
+            LanAddress.bestOf(
+                listOf(
+                    LanAddress.Candidate("10.0.0.5", "rmnet_data0", 60),
+                    LanAddress.Candidate("192.168.1.7", "wlan0", 90, true, 24),
+                ),
+            ) == "192.168.1.7",
+            "bestOf picks the LAN address",
+        )
     }
 
     /**

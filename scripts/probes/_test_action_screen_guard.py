@@ -25,6 +25,7 @@ import os
 import re
 import sys
 
+# 按脚本位置定位仓库根，避免依赖某台机器上的绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BRIDGE = ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"
 DIALOG = ROOT + "/app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt"
