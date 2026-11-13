@@ -10,7 +10,7 @@
 
 ## 当前 Flutter Native Chat worktree（2026-11-14 02:18）
 
-- 工作区：/e/tmp/wt-flutter-native-chat；分支：feat/flutter-native-chat；提交：3419082cc4d3cd6257fe416a21798fb3a8478c07；基线：99de8534d11702c8dd85d1bf2899ebb9dc816867。main 未改。
+- 工作区：/e/tmp/wt-flutter-native-chat；分支：feat/flutter-native-chat；提交：4599c181728917dddef8dcc1d576f87e043cda7b；基线：99de8534d11702c8dd85d1bf2899ebb9dc816867。main 未改。
 - 本轮版本：v1.6.0-beta.8，versionCode 383；变更摘要：独立 Flutter 原生聊天界面、fixture-first 全流程状态、Android HostBridge 与 Web fallback；MainActivity 顶部工具栏已新增可达 Native Chat 入口。
 - Dart 证据：Flutter 3.50.0；dart format 与 --set-exit-if-changed 检查通过；flutter analyze 通过（No issues found）；chat_reducer_test.dart 7/7、transport_fixture_test.dart 3/3、chat_screen_test.dart 3/3、widget_test.dart 1/1；四文件多目标聚合 14/14，test 目录运行也通过。generation gate 变异为 <= 后测试按预期失败，恢复 < 后通过；队列、快照缺帧、动作互斥和不可变列表均有回归覆盖。
 - Android 接线：NativeChatActivity、MethodChannel app.dsh.mobile/native_chat、Flutter module include、app implementation(project(":flutter"))、NativeChatActivity manifest 注册、MainActivity toolbar listener、ic_native_chat.xml 与六套 strings.xml 已落盘。AGP 已升至 9.1.1；移除外部 Kotlin 1.9.24 plugin，使用 AGP built-in Kotlin 与 JVM 17 compilerOptions。

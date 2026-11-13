@@ -3,7 +3,7 @@
 Date: 2026-11-14 (Asia/Shanghai)
 Worktree: /e/tmp/wt-flutter-native-chat
 Branch: feat/flutter-native-chat
-Commit: 3419082cc4d3cd6257fe416a21798fb3a8478c07
+Commit: 4599c181728917dddef8dcc1d576f87e043cda7b
 Baseline: 99de8534d11702c8dd85d1bf2899ebb9dc816867
 Validation version: v1.6.0-beta.8, versionCode 383
 
