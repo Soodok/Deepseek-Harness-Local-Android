@@ -9,7 +9,7 @@
     android:background="?android:attr/colorBackground">
 
     <!-- 顶部栏：返回箭头 + 标题 -->
-        <com.google.android.material.appbar.MaterialToolbar
+    <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
@@ -43,30 +43,34 @@
         android:paddingHorizontal="20dp"
         android:gravity="center_vertical">
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTabMarket"
+            style="@style/Md3ButtonText"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
+            android:minWidth="0dp"
+            android:textAllCaps="false"
             android:gravity="center"
             android:paddingHorizontal="12dp"
             android:text="@string/plugin_tab_market"
             android:textColor="@color/accent"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true" />
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTabInstalled"
+            style="@style/Md3ButtonText"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
+            android:minWidth="0dp"
+            android:textAllCaps="false"
             android:gravity="center"
             android:paddingHorizontal="12dp"
             android:text="@string/plugin_tab_installed"
             android:textColor="@color/text_muted"
             android:textSize="14sp"
-            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true" />
 
@@ -75,29 +79,33 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSort"
+            style="@style/Md3ButtonText"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
+            android:minWidth="0dp"
+            android:textAllCaps="false"
             android:gravity="center"
             android:paddingHorizontal="10dp"
             android:text="@string/plugin_sort_title"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="12sp"
-            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true" />
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCheckUpdates"
+            style="@style/Md3ButtonText"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
+            android:minWidth="0dp"
+            android:textAllCaps="false"
             android:gravity="center"
             android:paddingHorizontal="10dp"
             android:text="@string/plugin_check_updates"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="12sp"
-            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true" />
     </LinearLayout>
@@ -111,49 +119,40 @@
         android:layout_gravity="center_horizontal"
         android:orientation="vertical">
 
-    <!-- 搜索行（v1.2.118 极简）：图标集成在输入框内，无独立按钮 -->
+    <!-- Material 3 搜索输入；清除按钮保留原 ID 和原点击逻辑。 -->
     <FrameLayout
+        android:id="@+id/searchRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingHorizontal="20dp"
         android:paddingBottom="10dp">
 
-        <EditText
-            android:id="@+id/etSearch"
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="wrap_content"
             android:hint="@string/plugin_search_hint"
-            android:textColor="?attr/colorOnSurface"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp"
-            android:singleLine="true"
-            android:imeOptions="actionSearch"
-            android:paddingStart="40dp"
-            android:paddingEnd="40dp"
-            android:background="@drawable/bg_search_field" />
+            app:startIconDrawable="@drawable/ic_search">
 
-        <!-- 左侧放大镜（纯装饰，不接收点击） -->
-        <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_gravity="start|center_vertical"
-            android:layout_marginStart="14dp"
-            android:src="@drawable/ic_search"
-            android:alpha="0.5"
-            android:importantForAccessibility="no" />
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingEnd="@dimen/md3_topbar_height"
+                android:singleLine="true"
+                android:imeOptions="actionSearch" />
+        </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- 右侧清除（有输入时才显示） -->
-        <ImageView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnClear"
+            style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_gravity="end|center_vertical"
             android:layout_marginEnd="4dp"
-            android:padding="10dp"
-            android:src="@drawable/ic_close"
-            android:alpha="0.5"
+            android:contentDescription="@string/plugin_search_clear"
             android:visibility="gone"
-            android:contentDescription="@string/plugin_search_clear" />
+            app:icon="@drawable/ic_close" />
     </FrameLayout>
 
     <!-- v1.4.24：分类筛选（dsh-market 目录的 23 个分类，横向滚动） -->

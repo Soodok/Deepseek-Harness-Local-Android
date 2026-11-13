@@ -38,7 +38,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="@string/voice_service_asr"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -104,16 +104,13 @@
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/asr_step_3" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/asr_step_4" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
 
-                <TextView
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAsrRepo"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
+                    android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:gravity="center"
-                    android:text="@string/asr_repo_open"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:background="@drawable/bg_voice_input" />
+                    android:text="@string/asr_repo_open" />
             </LinearLayout>
 
 
@@ -149,6 +146,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:background="@drawable/bg_status_chip"
+                        android:backgroundTint="?attr/colorSurfaceContainerHighest"
                         android:paddingHorizontal="10dp"
                         android:paddingVertical="4dp"
                         android:text="@string/asr_local_state_checking"
@@ -171,14 +169,32 @@
                     android:layout_marginTop="10dp"
                     android:orientation="horizontal">
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAsrInstall"
-                        style="@style/VoiceChip"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:text="@string/asr_local_install" />
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAsrOpenConfig"
-                        style="@style/VoiceChip"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:layout_marginStart="8dp"
                         android:text="@string/asr_local_configure" />
                 </LinearLayout>
@@ -189,14 +205,32 @@
                     android:layout_marginTop="8dp"
                     android:orientation="horizontal">
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAsrSetDefault"
-                        style="@style/VoiceChip"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:text="@string/asr_local_set_default" />
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAsrSelfCheck"
-                        style="@style/VoiceChip"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:layout_marginStart="8dp"
                         android:text="@string/asr_local_self_check" />
                 </LinearLayout>
@@ -218,19 +252,22 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="@string/asr_engine_label"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-            <Spinner
-                android:id="@+id/asrEngineSpinner"
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:background="@drawable/bg_voice_input"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="8dp"
-                android:popupTheme="@style/Theme.Dsh.Spinner" />
+                android:hint="@string/asr_engine_label">
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/asrEngineSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="none" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <TextView
                 android:layout_width="match_parent"
@@ -255,20 +292,14 @@
                     android:textColor="?attr/colorOnSurface"
                     android:textSize="14sp" />
 
-                <!-- 很小的问号按钮：说明为什么配、能选哪些服务商 -->
-                <TextView
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAsrHelp"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_marginStart="6dp"
-                    android:background="@drawable/bg_md3_icon_chip"
-                    android:gravity="center"
-                    android:text="?"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:clickable="true"
-                    android:focusable="true" />
+                    android:contentDescription="@string/asr_help_title"
+                    app:icon="@drawable/ic_info" />
             </LinearLayout>
 
             <TextView
@@ -276,7 +307,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="@string/cloud_asr_key"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -307,7 +338,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="@string/cloud_asr_endpoint"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -330,7 +361,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="@string/cloud_asr_model"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -356,7 +387,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="26dp"
                 android:text="@string/voice_service_tts"
-                android:textColor="@color/success"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -398,38 +429,44 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="@string/cloud_tts_voice"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-            <Spinner
-                android:id="@+id/ttsVoiceSpinner"
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:background="@drawable/bg_voice_input"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="8dp"
-                android:popupTheme="@style/Theme.Dsh.Spinner" />
+                android:hint="@string/cloud_tts_voice">
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/ttsVoiceSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="none" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="@string/cloud_tts_rate"
-                android:textColor="@color/accent"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-            <Spinner
-                android:id="@+id/ttsRateSpinner"
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:background="@drawable/bg_voice_input"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="8dp"
-                android:popupTheme="@style/Theme.Dsh.Spinner" />
+                android:hint="@string/cloud_tts_rate">
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/ttsRateSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="none" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <!-- 保存 / 试听 -->
             <LinearLayout
@@ -439,47 +476,23 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/rowTestTts"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="44dp"
-                    android:minWidth="104dp"
-                    android:gravity="center"
-                    android:background="@drawable/bg_voice_input"
-                    android:paddingHorizontal="18dp"
-                    android:paddingVertical="10dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/cloud_tts_test"
-                        android:textColor="@color/accent"
-                        android:textSize="13sp" />
-                </LinearLayout>
+                    android:layout_height="wrap_content"
+                    android:text="@string/cloud_tts_test" />
 
                 <View
                     android:layout_width="0dp"
                     android:layout_height="1dp"
                     android:layout_weight="1" />
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/rowSave"
                     android:layout_width="wrap_content"
-                    android:layout_height="44dp"
-                    android:minWidth="104dp"
-                    android:gravity="center"
-                    android:background="?attr/selectableItemBackground"
-                    android:paddingHorizontal="24dp"
-                    android:paddingVertical="10dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/cloud_asr_save"
-                        android:textColor="@color/on_accent"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
+                    android:layout_height="wrap_content"
+                    android:text="@string/cloud_asr_save" />
             </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>

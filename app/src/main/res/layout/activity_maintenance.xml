@@ -31,7 +31,7 @@
                             <TextView android:id="@+id/valPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtPluginKillSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill_sub_idle" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_disable" android:textColor="@color/accent" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:id="@+id/btnPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_disable" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                 <com.google.android.material.divider.MaterialDivider
                     android:layout_width="match_parent"
@@ -44,7 +44,7 @@
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_self_check" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtSelfCheckSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_self_check_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_check" android:textColor="@color/accent" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:id="@+id/btnCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_check" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                 <com.google.android.material.divider.MaterialDivider
                     android:layout_width="match_parent"
@@ -57,7 +57,7 @@
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_fix_owner" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtFixOwnerSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_fix_owner_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnFixOwner" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_fix" android:textColor="@color/accent" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:id="@+id/btnFixOwner" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_fix" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                 <com.google.android.material.divider.MaterialDivider
                     android:layout_width="match_parent"
@@ -70,7 +70,7 @@
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtWipeChatsSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnWipeChats" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_manage" android:textColor="@color/accent" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:id="@+id/btnWipeChats" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_manage" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                 <com.google.android.material.divider.MaterialDivider
                     android:layout_width="match_parent"
@@ -83,7 +83,7 @@
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtGrantPermsSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_grant_perms_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnGrantPerms" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="@color/accent" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:id="@+id/btnGrantPerms" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                 <com.google.android.material.divider.MaterialDivider
                     android:layout_width="match_parent"

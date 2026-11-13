@@ -1,7 +1,7 @@
 package app.dsh.mobile
 
 import android.content.Context
-import android.os.Build
+import com.google.android.material.color.DynamicColors
 
 /**
  * 动态取色偏好（v1.6.x）。
@@ -21,9 +21,9 @@ object ThemeAccent {
     private const val PREFS = "dsh_ui_prefs"
     private const val KEY_DYNAMIC = "theme_dynamic_enabled"
 
-    /** 本机是否支持系统动态取色（Android 12 / API 31）。 */
+    /** 使用 Material 库的设备可用性判断，而非仅检查系统版本。 */
     val dynamicSupported: Boolean
-        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        get() = DynamicColors.isDynamicColorAvailable()
 
     /**
      * 用户是否打开了动态取色。

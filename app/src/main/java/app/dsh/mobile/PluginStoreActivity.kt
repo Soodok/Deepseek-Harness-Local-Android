@@ -8,8 +8,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -18,6 +16,8 @@ import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PluginMarket
 import app.dsh.mobile.engine.PluginMarket.Compat
 import app.dsh.mobile.engine.PluginMarket.Entry
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
 
 /**
  * 插件中心（v1.4.21 重写）。
@@ -57,8 +57,8 @@ class PluginStoreActivity : ThemedActivity() {
     private lateinit var container: LinearLayout
     private lateinit var listScroll: android.widget.ScrollView
     private lateinit var tvSubtitle: TextView
-    private lateinit var etSearch: EditText
-    private lateinit var btnClear: ImageView
+    private lateinit var etSearch: TextInputEditText
+    private lateinit var btnClear: MaterialButton
     private lateinit var btnTabMarket: TextView
     private lateinit var btnTabInstalled: TextView
     private lateinit var btnSort: TextView
@@ -315,7 +315,7 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     private fun loadMarket(force: Boolean) {
-        val query = etSearch.text.toString().trim()
+        val query = etSearch.text?.toString().orEmpty().trim()
         if (!force && query.isBlank() && marketEntries.isNotEmpty()) {
             render()
             return
@@ -370,7 +370,7 @@ class PluginStoreActivity : ThemedActivity() {
         btnTabMarket.setTypeface(null, if (market) Typeface.BOLD else Typeface.NORMAL)
         btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
         btnTabInstalled.setTypeface(null, if (!market) Typeface.BOLD else Typeface.NORMAL)
-        etSearch.visibility = if (market) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.searchRow).visibility = if (market) View.VISIBLE else View.GONE
         btnCheckUpdates.visibility = if (market) View.GONE else View.VISIBLE
         reload(verbose = true)
         findViewById<View>(R.id.listContainer).post { /* 列表从顶部开始 */ }
@@ -389,7 +389,7 @@ class PluginStoreActivity : ThemedActivity() {
         val byCategory = if (onMarket && selectedCategory.isNotBlank()) {
             source.filter { it.category == selectedCategory }
         } else source
-        val filtered = PluginMarket.filter(byCategory, etSearch.text.toString(), onlyInstalled = !onMarket)
+        val filtered = PluginMarket.filter(byCategory, etSearch.text?.toString().orEmpty(), onlyInstalled = !onMarket)
         val sorted = PluginMarket.sort(filtered, sortMode)
 
         tvSubtitle.text = when {
@@ -409,7 +409,7 @@ class PluginStoreActivity : ThemedActivity() {
                     when {
                         failed -> getString(R.string.plugin_search_fail)
                         !onMarket -> getString(R.string.plugin_none_installed)
-                        etSearch.text.isNotBlank() -> getString(R.string.plugin_search_none)
+                        !etSearch.text.isNullOrBlank() -> getString(R.string.plugin_search_none)
                         else -> getString(R.string.plugin_empty)
                     }
                 )
