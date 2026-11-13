@@ -167,6 +167,14 @@ class MainActivity : ThemedActivity() {
     private var splashMinMs = 700L
     /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
     private var appliedTheme: ThemeMode? = null
+    /**
+     * 当前 Activity 已应用的强调色（v1.7.9）。
+     *
+     * 之前这里只比对 [appliedTheme]，改强调色后回主界面不会重建：布局里靠
+     * ?attr/colorPrimary 与 @color/accent 取色的控件仍是旧色，用户看到「切了没效果」。
+     * 记一个快照，onResume 对不上就重建（与 SettingsActivity 的做法一致）。
+     */
+    private var appliedAccent: Int = 0
     /** 运行时下载面板（v1.6.18）。持有引用判重，同 gateDialog 范式。 */
     private var runtimeSetupDialog: AlertDialog? = null
     /** 预热历史条目是否已清理（幂等标记；clearHistory 只该做一次） */
@@ -180,6 +188,7 @@ class MainActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appliedTheme = ThemePref.get(this)
+        appliedAccent = Accent.current(this).argb
         // 用户主动打开了 App → 清除「显式退出」标记，恢复正常保活行为。
         // 与 EngineService.exitCompletely() 的置位成对：退出后不复活，重开即恢复。
         runCatching { DshApp.setUserExitedExplicitly(this, false) }
@@ -405,8 +414,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 配置项后已不成立，那个入口也早已是空壳。
         runCatching { applyDock() }
         val currentTheme = ThemePref.get(this)
-        if (appliedTheme != null && appliedTheme != currentTheme) {
+        val currentAccent = Accent.current(this).argb
+        if ((appliedTheme != null && appliedTheme != currentTheme) || appliedAccent != currentAccent) {
             appliedTheme = currentTheme
+            appliedAccent = currentAccent
             recreate()
             return
         }

@@ -13,6 +13,21 @@
         <item name="colorOnSurfaceVariant">@color/text_secondary</item>
         <item name="colorOutline">@color/divider</item>
         <item name="colorOutlineVariant">@color/divider</item>
+        <!-- v1.7.9：弹窗容器色（与 values/themes.xml 同构）。Material 的 MaterialAlertDialog 不读 windowBackground，
+             而是取 `?attr/colorSurfaceContainerHigh` 当 backgroundTint
+             （@macro/m3_comp_dialog_container_color，反查 material-1.12.0 确认）。
+             这些 role 以前没映射，于是落回 Material3 自带的暖灰板：容器跟随
+             ThemeManager 覆写的 uiMode，而文字色走 @color/text_primary 的取值分支，
+             两者不是同一套条件 → 深色下出现「深底深字」、浅色下出现「浅底白字」。
+             映射到我们自己的 @color 引用后，容器与文字必然同源。 -->
+        <item name="colorSurfaceContainer">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerLow">@color/surface</item>
+        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_alt</item>
+        <item name="colorSurfaceContainerLowest">@color/surface</item>
+        <item name="colorSurfaceBright">@color/surface</item>
+        <item name="colorSurfaceDim">@color/surface_alt</item>
+        <item name="colorOnSurfaceInverse">@color/text_primary</item>
         <item name="android:colorBackground">@color/bg</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
@@ -39,6 +54,21 @@
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColor">@color/text_primary</item>
+
+        <!-- 与 values/themes.xml 的 Theme.Dsh.Dialog 保持同构（原因见那边的长注释）：
+             Material 弹窗的标题/正文/容器分别取 colorOnSurface /
+             colorOnSurfaceVariant / colorSurfaceContainerHigh，不读 textColorPrimary。
+             两个文件必须同时补齐，否则明暗任一侧仍然会「字色不跟随」。 -->
+        <item name="colorSurface">@color/dialog_bg</item>
+        <item name="colorSurfaceContainer">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/surface</item>
+        <item name="colorOutline">@color/divider</item>
+        <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
     </style>
 
     <!-- MD3 试点 —— 深色变体（色板由 values-night/colors.xml 提供） -->
@@ -62,6 +92,17 @@
         <item name="colorOnSurfaceVariant">@color/text_secondary</item>
         <item name="colorOutline">@color/divider</item>
         <item name="colorOutlineVariant">@color/divider</item>
+        <!-- 弹窗容器色，与 values/themes.xml 的 Theme.Dsh.MD3 同构。
+             MaterialAlertDialogBuilder 的对话框主题是**从当前 Activity 主题派生**的
+             （materialAlertDialogTheme 没设 → 用 activity 主题 + Material 的 overlay），
+             所以这一组必须写在这两个 Activity 主题里，只写在 Theme.Dsh.Dialog 里不够。 -->
+        <item name="colorSurfaceContainer">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerLow">@color/surface</item>
+        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_alt</item>
+        <item name="colorSurfaceContainerLowest">@color/surface</item>
+        <item name="colorSurfaceBright">@color/surface</item>
+        <item name="colorSurfaceDim">@color/surface_alt</item>
         <item name="android:colorBackground">@color/bg</item>
         <!-- 与 values/themes.xml 的 Theme.Dsh.MD3 保持同构：漏了这行，
              设置体系 17 个页面（覆写 usesSettingsBackground 的 Activity）的
