@@ -11802,3 +11802,134 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
   支持传文件名片段只跑子集。曾踩两个坑：headless --window-size 最小 500 会裁切→改 CDP Emulation；clean 模式强制 .page opacity 会把 9 页全叠起来→只对 .page.on。
 - 文档：docs/ONBOARDING_REDESIGN.md 增 §12「两轮只读复审记录」（21 条已修 + 5 条未采纳/待决策 + 覆盖边界）。
 - 仍未验证：Android 侧未实现、未跑构建、未做真机与 TalkBack 实测；Root 双确认可绕过是静态结论，未真机复现。
+
+## 一百一十、apt 装包失败根因：lists 树被 root 身份写坏 + reset 假绿（2026-11-13）
+
+**用户报障**：「装乌班图环境遇到报错」——`apt-get install failed`，日志里全是
+`Ign: ... Translation-en` 与 `W: GPG error: ... At least one invalid signature was encountered`。
+
+### 真根因（真机复现，PLZ110 / Android 16 / uid 10499）
+
+`/var/lib/apt/lists`（含 `partial`）在**任何一次以 root 身份装包之后**（CHROOT 沙箱、
+或在终端里 `su` 装包）会变成 `root:root 0700`，且标签退化成裸 `u:object_r:app_data_file:s0`
+（缺 MCS 分类）。此时 App 域：
+
+| 现场 | 实测报错 |
+|---|---|
+| lists 目录 0700 root | `E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)` |
+| lists 里 InRelease 不可读 | `W: chmod 0600 of file ... failed - 400::URIFailure (1: Operation not permitted)` + `W: GPG error: ... Splitting up ... into data and signature failed` |
+| keyring 不可读 | `W: ... NO_PUBKEY 871920D1991BC93C` |
+| dpkg/updates 有残条目 | `E: dpkg was interrupted, you must manually run dpkg --configure -a` |
+
+三条都会以「装包失败」的形式落到 UI，实测**属主一改回来，同一条命令立刻恢复正常**
+（`gpgv` 直跑 `Good signature`；`apt-get update` 首行从 `Err:` 变 `Hit:`）。
+
+### 修复（`LinuxEnvironmentManager.kt` + `Privilege.kt`）
+
+1. **⓪-1 装包前交还三棵子树**：`var/lib/apt/lists`、`etc/apt/trusted.gpg.d`、`var/lib/dpkg`
+   各走 `Privilege.normalizeOwnership`（`find -xdev ! -user <uid> -exec chown -h` +
+   `chcon -R -h` 基准取父目录；基准是裸 s0 时放弃打标）。
+2. **⓪ reset partial 换成 `resetAptPartial()`**：App 域先 Java `deleteRecursively`+`mkdirs`，
+   不行再走特权 `rm -rf` + `chown` + `chmod 0755`，判据是 `dir.canWrite()`。
+   旧脚本结尾是 `true` → rm/mkdir 被拒也 exit 0（transcript 写 `[exit 0]` 却紧接着失败，假绿）。
+   新的写入 `[ok=true|false]`，false 时**直接中止安装**并如实报错。
+3. **⓪-2 dpkg 中断自愈**：`var/lib/dpkg/updates` 里只要有文件就先跑
+   `dpkg --force-not-root --configure -a`，不再让用户自己猜该敲什么。
+
+### 验证
+
+| 项目 | 结果 |
+|---|---|
+| 真机 e2e（把三棵子树 chown 0:0 + 0700 + 删 curl → 点「开始」） | `reset apt lists/partial` `[ok=true]`，curl 重新落地，页面回到「已就绪」109 工具 / 650.2 MB |
+| `_test_linux_apt_nonroot.py` | **42 checks / 0 failed**（新增 S3b/S3c/S5–S9b） |
+| 变异反验 MUT8（删掉 lists 交还） | S5/S6 立刻转红，还原转绿 |
+| `_test_linux_delete_residue.py` / `_test_linux_workbench.py` | 28/0、79/0 |
+| `check-i18n.py` / `check-ui-tokens.py` | 0 / 0 |
+| `compileDebugKotlin` / `assembleRelease` | BUILD SUCCESSFUL |
+
+### 未解决 / 已知限制
+
+- **交还后第一次 `apt-get update` 仍会打一次 `W: GPG error`**（第二次起 `Hit:`）。
+  装包不受影响（走的是上一份索引），但提示不干净，根因待查（推测：apt 对刚重建的
+  `partial` 里残留的 InRelease 复用失败，未验证）。
+- worktree `E:/tmp/wt-del`，分支 `fix/delete-residue`，当前 `versionCode = 389`（本地调试用，未提交）。
+- 主仓未回灌：主仓有他人 WIP，按惯例另交 worktree diff。
+
+
+## 一百一十八、1.6.0 用起来变卡：TurnWatcher 每次会话写入都整份解压 zstd（2026-11-13，v1.6.0-beta.7 · 382）
+
+> 宝宝反馈（m06922）：「有人说我们软件现在1.6.0版本感觉用得很卡顿，不如1.4.76那么流畅，
+> 你查一下代码，看看有什么额外的资源占用，性能消耗」。m07605「可以」批准按 P0–P3 一并修。
+
+### 根因：这条开销在 1.4.76 里从未真正发生过
+同一份真机会话 `8f947baf-…/session.v4.jsonl.zstd`（29.5 MB，5 帧），同一台真机实测：
+
+| 项目 | 1.4.76 路径 | 1.6.0 路径 |
+|---|---|---|
+| 扫出帧数 | 1 帧 | 5 帧 |
+| 解压出明文 | 0 MB（帧解压全失败） | 233.4 MB |
+| 单次耗时 | 24 ms | 1317~1820 ms |
+| 子进程峰值 RSS | 73 MB | 745~799 MB |
+
+- `ZstdTail.kt` 的帧扫描器在 1.4.76 里**漏跳过 zstd 尾部 4 字节 XXH64 校验和**，扫完第 1 帧
+  就 break；第 1 帧只有文件头、无对话内容 → 解压全失败 → 「整份解压」这条路径**根本没跑过**。
+- `b87d7f62`（2026-11-01，v1.5.0-beta.13）补上 checksum skip 后它开始真跑。
+- `4c576dfe`（2026-11-11，v1.6.0-beta.1，issue #104 OOM 修复）只把明文从 Java 堆挪进 node
+  子进程，**内存解决了但工作量没减**，每次仍全解。
+- `TurnWatcher.kt` 的去重键 `lastModified xor (length shl 21)` 在 turn 进行中每几百毫秒就变
+  → 每 1.5 秒轮询都触发一次全解。设备 `SwapFree` 一度 0 kB 时，子进程要 745 MB 只能靠换页。
+- 两处注释写着「只对最近 2 分钟内修改过的文件做解压」，**代码里从来没有这个判断**（1.4.76 与
+  HEAD 都没有）—— 注释与实现不符本身就是要修的东西。
+
+### 修法：三道闸 + 按帧序号增量
+`TurnWatcher.kt`：
+- `MIN_DECOMPRESS_INTERVAL_MS = 10_000L`：同一文件两次解压最小间隔。**窗口内 return 时不更新
+  stamp** —— 若「先写再比」，这次变化会被下一轮的第一道闸永久吞掉，那个 turn/end 通知再也不来。
+- `DIR_SCAN_EVERY_POLLS = 5`：`walkTopDown(maxDepth = 4)` 在 508 文件 / 524 目录上是 24~44 ms，
+  每 1.5 秒一次 ≈ 2% 单核常驻（90 秒实测：文件变化 0 次，线程仍烧 1.76 秒 CPU）。改为每 5 轮重扫，
+  其余轮次只 stat 上一轮拿到的文件名。
+- 首次见到某文件时传 `fromFrames = -1`：只数帧、不解压，建基线。**基线豁免时间闸**（它 0.23 秒
+  就完，却能让「建基线 → 真正解第一段」从「再等 10 秒」变成「下一轮就解」）；只有
+  `prevStats == null && lastAt == null` 的第一次豁免，失败重试仍受闸门约束。
+
+`ZstdTail.kt`：
+- `Stats` 增加 `frames`／`from`；`stats(ctx, file, fromFrames)` 把起始帧号作 argv[4]。
+- count 分支从「`toString("utf8")` + `split("\n")`」改为**纯字节扫描**（`Buffer.indexOf` 找
+  `"type"`，跳空白后比对 `turn/end`）—— 46 MB 帧原会先变 92 MB UTF-16 字符串。
+- 跨帧 token：每帧扫描前置上一帧末尾 `CARRIER = 64` 字节；`from > 0` 时先解第 `from-1` 帧取尾巴
+  预置 carrier，否则「起点在上一帧、结尾在本段」的 token 谁也看不到。
+- **判重按 token 的结束偏移**（`endAt > scannedUpTo`），每帧把 `scannedUpTo` 推进到帧尾。
+  按起点判两个方向都错，合成文件实测：恰好结束在帧尾的 token 会被下一帧 carrier 再数一次
+  （1 变 2）；起点落在 carrier 里、结束在本帧的 token 谁都不认（漏计）。
+- 基线模式输出 `frames = frames.length - 1`：让出最后一帧，否则跨基线边界的 token 会丢 1 个
+  （实测全解 22、增量累加 21）。
+
+### 验证证据
+- 真机（`-s 192.168.101.21:9000`，29.5 MB / 5 帧会话）：基线 `0.25s / frames=4`；
+  全解 `1.82s / 244744333 bytes / 峰值 799 MB`；增量 `0.23s / 311 bytes / **峰值 64 MB**`。
+  5731 帧会话：全解 `0.68s / 33242072 bytes`，增量 `0.20s / 2057 bytes`。
+- 增量等价性（生产脚本本体 + vm 沙箱，20 个增长点重放、首点必须只有 1 帧）：
+  `session-81f915c2` 53.46 MB / 39801 帧 → 全解 192、增量累计 192、字节数完全相同；
+  `session-7933ac10` 74.05 MB / 19751 帧 → 98 / 98 相同。
+- 变异反验（`_test_turnwatcher_perf.py`，含 6 个合成会话行为用例）：
+  判重退回起点 → A 1→2、D 3→2；边界退回 `globalStart - CARRIER` → A 1→2、D 3→6；
+  去掉 carrier 预置 → E@1 1→0；`MIN_DECOMPRESS_INTERVAL_MS = 1_000L` → A2 红；
+  `needRescan = true` → C6 红；基线改成 `frames.length` → D9 红。
+- 隔离 worktree（`E:/tmp/wt-tw` = HEAD + 本次 4 个文件）：`compileDebugKotlin` EXIT=0；
+  JVM `passed=2386 failed=0`；**128 个探针 0 失败**；i18n / ui-tokens / no-bulk-perms 全 rc=0。
+
+### 三个假绿教训（写进探针注释）
+1. 探针锚 `mode === "count"` 会切到基线块（脚本里还有 `const fromFrameRaw = (mode === "count") ? …`）
+   → 必须锚 `if (mode === "count") {` 这条语句。
+2. 注释里的字面量会喂饱断言（注释里就写着 `frames.length - 1`、`DIR_SCAN_EVERY_POLLS`、
+   `toString("utf8")`）→ 判据必须先剥注释行。
+3. 「变量存在」≠「逻辑还在」：`countedUpTo` 改成裸 `hits++` 时变量仍在，必须断言那个**比较**。
+4. 探针里跑生产脚本必须 `node -e <脚本> <数据文件>`（生产就是这么调的）；写成 .js 再
+   `node file.js` 会让 argv[1] 变成脚本自身 → 一律 rc=3 `no complete zstd frame`。
+
+### 未做
+- **真机端到端未验**：设备 `192.168.101.21:9000` 上是并行会话的包（versionCode 389 / md5
+  `4af3e3d2…`，本地构建是 382 / `cb660540…`），按「不覆盖另一个对话」的约定没装。
+  待装后观察 turn/end 通知是否仍按时到达（节流后最多晚 10 秒）。
+- 主工作区 `OnboardingActivity.kt` 有并行会话未完成的 WIP（9 个编译错误，`children` 未解析），
+  所以编译/探针都在隔离 worktree 里跑。

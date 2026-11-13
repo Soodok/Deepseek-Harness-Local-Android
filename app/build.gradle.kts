@@ -256,14 +256,18 @@ android {
         // v1.6.0-beta.6（2026-11-13）：双端同步入口暂时隐藏（PEERSYNC_UI_ENABLED=false）——
         // 电脑侧还要自己起 tools/peersync/pc-sync-server.mjs，门槛太高；
         // PeerSyncActivity 与 /dev/peersync 全部保留，改回 true 即恢复。
-        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380 → 381。
-        versionCode = 381
+        // v1.6.0-beta.7（2026-11-13）：1.6.0「用起来变卡」的性能回归 ——
+        // TurnWatcher 每 1.5 秒给每次会话写入都整份解压 zstd（29.5 MB 会话 → 233 MB
+        // 明文 / 1.8 秒 / 子进程峰值 799 MB），现改为三道闸 + 按帧序号增量，
+        // 常态开销降到几百字节；目录遍历也按 5 轮节流。
+        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380 → 381 → 382。
+        versionCode = 382
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.6"
+        versionName = "1.6.0-beta.7"
 
         ndk {
             abiFilters += listOf(targetAbi)

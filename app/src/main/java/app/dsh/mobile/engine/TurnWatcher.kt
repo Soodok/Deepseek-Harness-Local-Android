@@ -1,6 +1,7 @@
 package app.dsh.mobile.engine
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
@@ -36,11 +37,60 @@ object TurnWatcher {
     /** 轮询间隔：够快（用户几乎无感）又不浪费（每次只读增量） */
     private const val POLL_MS = 1_500L
 
+    /**
+     * 同一个 zstd 会话两次解压之间的最小间隔。
+     *
+     * ## 为什么必须有（v1.6.0 性能回归）
+     *
+     * 引擎写会话是**持续的**：一个 turn 进行中每几百毫秒就可能追加一次。
+     * 原来的去重键是 `lastModified xor (length shl 21)` —— 文件一动键就变，
+     * 于是每 1.5 秒轮询到的每一次变化都会触发**整份会话重新解压**。
+     *
+     * 实测（真机 OnePlus PLZ110 / Android 16，29.5 MB 会话，同一份文件）：
+     * ```
+     * 1.4.76 路径：24 ms / 解压 0 MB    （帧扫描器漏跳过 XXH64 校验和 → 只认出 1 帧且解不开）
+     * 1.6.0 路径：1317 ms / 解压 233 MB （帧扫描器修好后开始真解压）
+     * ```
+     * 也就是说这条开销在 1.4.76 里**从未真正发生**过，是 b87d7f62 修好帧扫描
+     * 之后才存在的；4c576dfe 把明文挪出 Java 堆解决了 OOM，但每次仍是全解。
+     *
+     * 10 秒是折中：turn 结束后最多晚 10 秒弹通知（用户几乎无感），
+     * 而一个持续几十秒的 turn 只会解压 2~3 次而不是 20 多次。
+     */
+    private const val MIN_DECOMPRESS_INTERVAL_MS = 10_000L
+
     /** 单次增量读取上限：防异常情况下一次读入巨大文件 */
     private const val MAX_CHUNK = 256 * 1024
 
+    /**
+     * 每隔多少轮重新走一次 sessions 目录。
+     *
+     * `walkTopDown(maxDepth = 4)` 在 508 个文件 / 524 个目录上是 24~44 ms
+     * （真机实测），每 1.5 秒一次 ≈ 2% 单核常驻 —— 而且**全程零变化时也在跑**
+     * （90 秒实测：文件变化 0 次，线程仍烧掉 1.76 秒 CPU）。
+     * 改成每 5 轮（7.5 秒）重扫一次，其余轮次只 stat 上次拿到的几个文件：
+     * 新会话最多晚 7.5 秒被发现（完成通知本身就有 1.5 秒轮询粒度），
+     * 而常态目录遍历开销降到 1/5。
+     */
+    private const val DIR_SCAN_EVERY_POLLS = 5
+
     /** 每个文件记住已读到的字节偏移 */
     private val offsets = HashMap<String, Long>()
+
+    /**
+     * 每个 zstd 会话上次真正解压的时刻（[SystemClock.elapsedRealtime]）。
+     *
+     * 与 [zstdMtime] 的分工：那边判「有没有变」，这边判「变了但还不到时候」。
+     * 用 elapsedRealtime 而不是 currentTimeMillis —— 后者会被用户改时钟/时区
+     * 影响，一改就可能让节流窗意外变成几小时或负数。
+     */
+    private val lastDecompressAt = HashMap<String, Long>()
+
+    /** 上一轮目录扫描拿到的会话文件（两次目录扫描之间只 stat 这几个） */
+    private var cachedLogs: List<File> = emptyList()
+
+    /** scan() 被调用的轮次，用于 [DIR_SCAN_EVERY_POLLS] 节流 */
+    private var pollCount = 0L
 
     /** 是否已完成首次基线扫描（首次只记录偏移，不把历史对话当成新完成） */
     @Volatile private var primed = false
@@ -88,6 +138,11 @@ object TurnWatcher {
     /** 重置基线（引擎重启后调用：把现有文件偏移当基线，不误报历史对话） */
     fun resetBaseline() {
         synchronized(offsets) { offsets.clear() }
+        synchronized(zstdMtime) { zstdMtime.clear() }
+        synchronized(zstdSeen) { zstdSeen.clear() }
+        synchronized(lastDecompressAt) { lastDecompressAt.clear() }
+        cachedLogs = emptyList()
+        pollCount = 0L
         primed = false
     }
 
@@ -95,17 +150,27 @@ object TurnWatcher {
         val root = File(EngineConfig.dshHome(ctx), "sessions")
         if (!root.isDirectory) return
 
-        // 收集所有 .jsonl，按最后修改时间取最新的若干个（活跃会话必在其中）
-        val logs = root.walkTopDown()
-            .maxDepth(4)
-            .filter {
-            // v1.2.105：放宽到同时收 .json.zstd（引擎两种落盘形态都要认）
-            it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd") ||
-                it.name.endsWith(".json.zstd"))
+        // 收集所有 .jsonl，按最后修改时间取最新的若干个（活跃会话必在其中）。
+        //
+        // ⚡ 目录遍历按 [DIR_SCAN_EVERY_POLLS] 节流：这是 508 个文件 / 524 个目录
+        // 的全量 walk（真机 24~44 ms），每 1.5 秒一次就是 2% 单核常驻。两次扫描
+        // 之间沿用上一轮的文件清单、只 stat 这几个 —— 新会话最多晚 7.5 秒被发现，
+        // 而完成通知本身就有 1.5 秒轮询粒度，用户感知不到差别。
+        pollCount++
+        val needRescan = cachedLogs.isEmpty() || pollCount % DIR_SCAN_EVERY_POLLS == 1L
+        if (needRescan) {
+            cachedLogs = root.walkTopDown()
+                .maxDepth(4)
+                .filter {
+                    // v1.2.105：放宽到同时收 .json.zstd（引擎两种落盘形态都要认）
+                    it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd") ||
+                        it.name.endsWith(".json.zstd"))
+                }
+                .sortedByDescending { it.lastModified() }
+                .take(6)
+                .toList()
         }
-            .sortedByDescending { it.lastModified() }
-            .take(6)
-            .toList()
+        val logs = cachedLogs
 
         // 首次扫描只建基线：避免把历史会话的 turn/end 当成「刚刚完成」
         if (!primed) {
@@ -147,8 +212,12 @@ object TurnWatcher {
             // （dsh-session-persistence-jsonl 的 DEFAULT_COMPRESSION = "zstd"，
             //  文件名是 `.jsonl.zstd`）。初版只找 `.jsonl` → 永远匹配不到文件 →
             // 对话完成通知从不触发（用户实测「还是没有接到系统通知」）。
-            // zstd 是**帧压缩**：不能按字节偏移读增量，只能整体解压后比对。
-            // 为控制开销，只对「最后修改时间在最近 2 分钟内」的文件做解压。
+            // zstd 是**帧压缩**：不能按字节偏移读增量。但仍然可以按**帧序号**做增量
+            // —— 会话文件是追加写的，前缀帧不变，所以只解新增帧（见 [readZstd]）。
+            //
+            // ⚠️ 这里原来写着「只对最近 2 分钟内修改过的文件做解压」，但**没有
+            // 任何代码实现这个判断** —— 那个 2 分钟窗口是注释里的想象，实际是
+            // 「mtime 一变就全解」。本条注释已按实现改写，别再按旧说法推断开销。
             if (f.name.endsWith(".zstd")) {
                 readZstd(ctx, f, key, onTurnEnd)
                 return
@@ -183,22 +252,28 @@ object TurnWatcher {
 
 
     /**
-     * 已处理过的 zstd 会话文件签名（路径 → 上次的解压后字节数与 turn/end 总数）。
+     * 已处理过的 zstd 会话快照（路径 → [ZstdTail.Stats]）。
      *
-     * 原来是 `HashMap<String, Int>`（解压后**字符数**），改成记两个数是因为
-     * issue #104：不能再把明文拿进 Java 堆，只能拿 Node 侧算好的统计。
+     * 原来是 `HashMap<String, Int>`（解压后**字符数**），改成 `Bytes + turnEnds`
+     * 两个数是因为 issue #104：明文不能进 Java 堆，只能拿 Node 侧算好的统计。
+     * v1.6.0 性能修复又加了 **frames** —— 它才是现在的增量基准：下一轮只解
+     * `[frames, 现在的帧数)` 这一段。bytes/turnEnds 只剩诊断价值。
      */
     private val zstdSeen = HashMap<String, ZstdTail.Stats>()
 
-    /** zstd 文件的 mtime+大小 缓存（没变化就不解压 —— 每次全解压太重） */
+    /** zstd 文件的 mtime+大小 快照（没变化就不解压 —— 解一次 29.5 MB 会话要 1.8 秒 / 799 MB 峰值） */
     private val zstdMtime = HashMap<String, Long>()
 
     /**
      * zstd 会话文件的完成检测。
      *
-     * zstd 是帧压缩，无法按字节偏移增量读 —— 只能整体解压。
-     * 为控制开销：只解压「最近 2 分钟内修改过」的文件（活跃会话），
-     * 并用「解压后字节数」做去重（变多了 = 有新内容 = 可能有新 turn/end）。
+     * zstd 是帧压缩，无法按**字节**偏移增量读，但可以按**帧序号**增量读：
+     * 会话文件是追加写的，已经处理过的前缀帧内容不变，所以只解新增的那几帧。
+     *
+     * 三道闸（从便宜到贵，前一道挡住就不进下一道）：
+     * 1. `mtime xor (length shl 21)` 没变 → 直接返回；
+     * 2. 变了但距上次解压不足 [MIN_DECOMPRESS_INTERVAL_MS] → 返回（下轮再解，不丢）；
+     * 3. 过了时间闸 → 只解 `[上次帧数, 现在帧数)` 这一段。
      *
      * ## 为什么不拿明文了（issue #104）
      *
@@ -219,33 +294,71 @@ object TurnWatcher {
      * 两者都交给 Node 子进程算，回传几十字节 JSON —— Java 侧内存占用与会话
      * 大小彻底解耦（38 MB 与 380 MB 的会话都只占几十字节）。
      *
-     * 注意 `turnEnds` 是**累计值**，所以增量 = 本次 − 上次。这比原来「拿明文
-     * 切片数行」更稳：切片会跨行截断（prevLen 落在某行中间时，那半行会被当成
-     * 新行的一部分，`isTurnEnd` 判断失真），累计差值没有这个问题。
+     * v1.6.0 起 `turnEnds` 不再是累计值：脚本按帧序号只解新增帧，回传的就是
+     * 「这几帧里有几个 turn/end」。这比原来「拿明文切片数行」更稳：切片会跨行
+     * 截断（prevLen 落在某行中间时半行会被当成新行的一部分，`isTurnEnd` 失真），
+     * 而按帧切只在帧边界上切，配合脚本内的 carrier 预置还不会漏跨帧 token。
      */
     private fun readZstd(ctx: Context, f: File, key: String, onTurnEnd: (String) -> Unit) {
-        // ⚡ mtime 去重：文件没更新就不解压（活跃会话少则几十秒写一次）
+        // ⚡ 第一道闸：文件没更新就不解压（活跃会话少则几十秒写一次）。
+        //
+        // ⚠️ 这里**只读不写** `zstdMtime`：写成「先写再比」会让第二道闸提前
+        // return 时把这次变化永久吞掉 —— 下一轮 prev 已经等于 stamp，第一道闸
+        // 就把它挡掉了，那个 turn/end 通知再也不会来。所以 stamp 在真正解压
+        // 之后才落库（见函数末尾）。
         val stamp = f.lastModified() xor (f.length() shl 21)
         val prev = synchronized(zstdMtime) { zstdMtime[key] }
-        synchronized(zstdMtime) { zstdMtime[key] = stamp }
         if (prev != null && prev == stamp) return
 
-        val (stats, why) = ZstdTail.stats(ctx, f)
+        // ⚡ 第二道闸（v1.6.0 性能回归的修复）：变了也不一定现在就解。
+        //
+        // 引擎在 turn 进行中每几百毫秒就追加一次，「变了就解」等于把整份会话
+        // 反复全解（29.5 MB 会话一次 1317 ms / 233 MB 明文，见常量注释）。
+        // 这里给一个最小间隔；窗口内直接返回，**不更新 stamp**，所以下一轮
+        // poll 看到的变化仍在，会再进来真正解压 —— 最多晚一个窗口，不丢事件。
+        val now = SystemClock.elapsedRealtime()
+        val lastAt = synchronized(lastDecompressAt) { lastDecompressAt[key] }
+
+        // 首次见到这个文件：只数帧、不解压（fromFrames = -1）。
+        // 那一步只需要知道「现在有几帧」当基线，把几百 MB 明文解一遍纯浪费。
+        val prevStats = synchronized(zstdSeen) { zstdSeen[key] }
+        val fromFrames = prevStats?.frames ?: -1
+
+        // 基线（本次不解压）不受时间闸限制：它只扫帧头，实测 29.5 MB 会话 0.23 秒，
+        // 却能让「建基线 → 真正解第一段」从「再等 10 秒」变成「下一轮就解」——
+        // 引擎刚重启时用户最可能立刻问一句话，那时不该多等一个窗口。
+        // 只在**第一次**见到该文件时豁免（prevStats 与 lastAt 都为空）；一旦
+        // 落过账，后面的失败重试仍受闸门约束，避免坏文件每 1.5 秒被重扫一遍。
+        val baseline = prevStats == null && lastAt == null
+        if (!baseline && lastAt != null && now - lastAt < MIN_DECOMPRESS_INTERVAL_MS) return
+        val (stats, why) = ZstdTail.stats(ctx, f, fromFrames = fromFrames)
+        // 无论成败都在这里落两个记账：stamp 表示「这份内容已处理过」，
+        // lastDecompressAt 表示「刚花过钱」。失败也落，否则一个坏文件会每
+        // 1.5 秒被重试一次 —— 解压成本与失败重试叠加更糟。
+        synchronized(zstdMtime) { zstdMtime[key] = stamp }
+        // 基线不解压，也就不该占掉一个节流窗口（见上面的 baseline 说明）。
+        if (!baseline) synchronized(lastDecompressAt) { lastDecompressAt[key] = now }
         if (stats == null) {
-            // 解不开不是致命错误：下一轮 mtime 变了会再试。但必须留痕，
+            // 解不开不是致命错误：内容再变（stamp 变了）时会再试。但必须留痕，
             // 否则又变成「什么都不发生」的静默失败。
             if (why != null) Log.w(TAG, "zstd stats failed for ${f.name}: $why")
             return
         }
-        val prevStats = synchronized(zstdSeen) { zstdSeen[key] }
+        if (prevStats == null) {
+            // 基线只记帧数，bytes/turnEnds 都是 0（本次没解压）。
+            synchronized(zstdSeen) { zstdSeen[key] = stats }
+            return
+        }
+        // 帧数回落 = 文件被重建（会话迁移/压缩比异常）→ 重建基线，不上报。
+        if (stats.frames < prevStats.frames) {
+            synchronized(zstdSeen) { zstdSeen[key] = stats }
+            return
+        }
         synchronized(zstdSeen) { zstdSeen[key] = stats }
-        if (prevStats == null) return                 // 首次见到：只建基线
-        // 文件被重建/压缩比异常导致字节数回落 → 重建基线，不上报
-        if (stats.bytes <= prevStats.bytes) return
 
-        val deltaHits = stats.turnEnds - prevStats.turnEnds
-        if (deltaHits <= 0) return
-        repeat(deltaHits) { onTurnEnd(f.name) }
+        // 增量模式下 turnEnds 已经是「本次新增帧里的」个数，直接用它。
+        if (stats.turnEnds <= 0) return
+        repeat(stats.turnEnds) { onTurnEnd(f.name) }
     }
 
 
