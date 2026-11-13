@@ -11933,3 +11933,80 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
   待装后观察 turn/end 通知是否仍按时到达（节流后最多晚 10 秒）。
 - 主工作区 `OnboardingActivity.kt` 有并行会话未完成的 WIP（9 个编译错误，`children` 未解析），
   所以编译/探针都在隔离 worktree 里跑。
+
+## 一百〇五、灵动岛收起态「缩小后彻底消失」（2026-11-13，提交 9894be26）
+
+用户在群里收到多人反馈：「点击隐藏灵动岛的时候，那个缩小态的按钮不会显示」。
+用户自己手机起初复现不了，随后也出现同样现象，并明确两条关键信息：
+**「是彻底消失，不是看不看得见」**、**「缩小之后是有边缘阴影的」**。
+真机状态：`island_dock=RIGHT`、`theme_mode=light`、`island_along_ratio=0.318`。
+
+### 三条根因（都不是"配色"）
+
+**① 几何被 insets 抢写 —— 最直接的消失**
+
+`app/src/main/java/app/dsh/mobile/MainActivity.kt` 的 `applyIslandInsets` 里，
+「按挖孔对齐」那一段**无条件**把 `handleBar` 的 layoutParams 改成
+`26×26` 正方形 + 水平居中/贴挖孔中心。而贴边停靠时把手本该是 `26×44`
+且贴着屏幕边缘。只要一次 insets 回调（旋屏、状态栏显隐、下拉通知栏、
+字体缩放、多窗口）跑过，把手就被搬到顶部中央并压成正方形 ——
+此时贴边停靠的 `statusBarOverlay` 是 `GONE`，屏幕上**什么都没有**。
+
+**② 可见性散在 4 处，且依赖动画回调一定会执行**
+
+| 位置 | 旧行为 |
+|---|---|
+| `applyDock()` TOP 分支 | `handle.visibility = GONE`（无条件） |
+| `toggleToolbar()` 收起分支 | 只在 `withEndAction`（160ms 后）里才设 VISIBLE |
+| `toggleSidePanel()` 收起 | 同上是 `withEndAction`（120ms 后） |
+| `closeSidePanelNow()` | 同上 |
+
+动画被任何后续 `animate()` / 状态刷新打断（引擎状态每 220ms 刷新一次、
+onResume 又调 applyDock、用户连点两下），`withEndAction` 就不执行 →
+row 已淡出、handle 仍 GONE → 一个都不剩。
+
+**③ 浅色把手丢掉描边**
+
+XML 原始 `app/src/main/res/drawable/bg_dynamic_island_dot.xml` 是 `layer-list`：
+外层 `0.5dp` stroke + 淡光环，内层实心本体。而三个**代码生成**的背景
+（`collapsedHandleBackground` / `sideHandleBackground` / `floatingHandleBackground`）
+只有 `setColor` —— 用户记得的「边缘阴影」在代码路径里根本不存在。
+再加上浅色填充 `#F1F5F9` 对页面 `#F5F7FA` 只有 **1.02:1**、对纯白 **1.10:1**，
+阴影又不生效的机型上就是一块隐形方块。
+
+### 修法
+
+- **几何收敛成纯函数** `IslandChrome.collapsedRect(dock, parentW, parentH, density,
+  ratio, safeTopPx)`，Activity 只负责套用；`applyIslandInsets` 里那段
+  挖孔对齐**加守卫** `if (islandDock == IslandDock.TOP)`，贴左/贴右时一个字段都不许碰。
+- **显式状态 + 唯一渲染入口**：新增 `private var islandCollapsed` 与
+  `renderIslandVisibility()`。规则只依赖状态，不依赖动画：
+  贴边 → 胶囊隐藏、把手可见；贴顶收起 → 胶囊隐藏、把手可见；贴顶未收起 → 反过来。
+  `toggleToolbar` 改成「先改状态 → 再渲染 → 最后播动画」，动画只负责 scale/alpha。
+  侧面板两处 `withEndAction` 也改成回调渲染入口（不再自己点亮把手）。
+  另外 `showHandle` 增加 `panelOpen` 判据，避免面板展开时把手叠在边缘。
+- **描边补回来，但不动填充色**（用户明确「浅色模式下不要改灵动岛收起态颜色，
+  很难看」）：`IslandPalette.Colors` 新增 `outline` 字段 ——
+  浅色 `#7B8899`（对填充 **3.29:1**、对纯白 **3.61:1**），深色 `0` 表示不描边、
+  观感与改前完全一致。三个背景函数统一按它 `setStroke(1dp)`。
+
+### 验证
+
+- `bash scripts/run-a11y-jvm-test.sh` → **2402 passed / 0 failed**
+  （第 18 节新增 10 条几何断言 + 6 条 outline 口径配色断言）
+- 真机 OnePlus PLZ110 / Android 16 / light / dock=RIGHT：
+  收起态把手带 1dp 描边清晰可见；**点把手展开 → 点「隐藏」收起 →
+  按 Home 切后台再回前台**（这正是旧代码会把把手设 GONE 的路径）→
+  把手仍在原位，前后两张截图 sha256 完全一致。
+
+### 环境备忘（本轮新增）
+
+- 并行会话把设备上的包换到 `versionCode=391`（`1.6.0-beta.4`），
+  `install -r` 直接拒绝降级。隔离树编译前必须先把 `versionCode`
+  抬到比设备现值更大，否则一路 `INSTALL_FAILED_VERSION_DOWNGRADE`。
+- 隔离树 `/e/tmp/wt-lan` 需要从主树拷 `keystore/dsh-release.keystore`
+  与 `keystore/release.properties`，否则只产出 `app-release-unsigned.apk`。
+- **`scripts/jvm/BehaviourTest.kt` 严禁 read→write 整文件回写**：
+  `read` 默认只返回前 2000 行，回写会把 3300+ 行的文件截成 900 多行，
+  JVM 立刻报 `missing '}'` 与一堆 unresolved reference。
+  这条文件只能用 `edit` 做单点替换；万一被截，从 `git show HEAD:...` 恢复。
