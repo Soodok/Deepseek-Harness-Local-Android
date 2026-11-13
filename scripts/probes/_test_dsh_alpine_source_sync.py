@@ -292,6 +292,30 @@ print("[5d] loader .so 里真的带着新 PATH（编译期字符串，必须是�
 ok(b"/eng/bin:/usr/local/sbin" in so_raw,
    "产物含 PATH=/eng/bin:… 字符串（没有就说明 .so 没重编）")
 
+print("[5e] bind 目录下的路径必须真探测存在性（v1.7.16 真机）")
+# 根因：resolve_guest_path 命中 bind 前缀后直接 return 0 并清 g_resolve_missing，
+# 等于向调用方断言「这个路径一定存在」，而 bind_map 是纯前缀匹配、从不 stat。
+# 后果：DSH_DEFAULT_PATH 首位 /eng/bin 是 bind 挂载点，裸名 exec 的第一个候选
+# `/eng/bin/tar` 不存在却被判存在 -> 轻量 preload 返回 0（不是 -ENOENT）->
+# execve 的 PATH 搜索链断掉 -> 进程进 reexec 分支 -> 完整 preload 失败，打出
+#   REEXEC: preload FAIL   + exit_group(11)
+# 实测判据：与 PATH 无关，只跟「PATH 里有 bind 目录」有关。
+#   env tar / env dpkg-split / env <不存在的命令>  全部变成 REEXEC FAIL
+#   PATH=/usr/bin:/bin tar 正常（不含 bind 目录，走 rootfs 路径）
+_s5e = strip_c_comments(src)
+i5e = _s5e.find("if (bind_map(full, hp)) {")
+ok(i5e >= 0, "源码里有 resolve_guest_path 的 bind 分支")
+if i5e >= 0:
+    # 取该分支到下一个右花括号块（够长即可，只做局部切片）
+    seg = _s5e[i5e:i5e + 2600]
+    ok("pfd" in seg, "bind 分支里有存在性探测句柄（pfd）")
+    ok("0x200000" in seg, "探测用 O_PATH(0x200000) 而不是 O_RDONLY（后者会 EACCES 假缺失）")
+    ok("if (pfd >= 0) { g_resolve_missing = 0; return 0; }" in seg,
+       "命中的判定条件是「openat 成功」，不是「bind_map 命中」")
+    ok("g_resolve_missing = 1;" in seg and "return -2;" in seg,
+       "未命中必须回 -2，让 execve 收到 ENOENT 继续 PATH 搜索")
+    ok("g_resolve_missing = (_r == -2);" in _s5e,
+       "rootfs 分支仍按 resolve_in_rootfs 的 -2 约定同步标志")
 print("[6] 无调试残留")
 ok(b"[HIT]" not in so_raw, "产物无 [HIT] 打印")
 ok(b"[DIAG" not in so_raw, "产物无 [DIAG 打印")

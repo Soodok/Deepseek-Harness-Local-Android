@@ -3810,9 +3810,30 @@ static long resolve_guest_path(const char *gpath, char *out) {
     {
         char hp[PATH_MAX];
         if (bind_map(full, hp)) {
+            // ★bind 目录里的条目也必须真探测一次（v1.7.16，真机 2026-11-13）。
+            //
+            //   旧实现命中 bind 前缀后直接 return 0 并把 g_resolve_missing 清 0，
+            //   等于向调用方**断言这个路径一定存在**。但 bind_map 是纯前缀匹配、
+            //   从不 stat 宿主文件。
+            //
+            //   后果（决定性）：DSH_DEFAULT_PATH 首位就是 /eng/bin，而 /eng/bin 是
+            //   bind 挂载点（-m /eng:<宿主 engine 目录>）。裸名 exec 的 PATH 搜索
+            //   第一个候选是 /eng/bin/tar —— 该文件并不存在，却因 bind 命中被判
+            //   「存在」：轻量 preload 返回 0（而非 -ENOENT），execve 的 PATH 搜索链
+            //   就此断掉，进程直接进 reexec 分支，再于完整 preload 里失败：
+            //       REEXEC: preload FAIL      + exit_group(11)
+            //   dpkg 内部 fork 的 dpkg-split / tar 全挂在这一条上，表现为
+            //   subprocess dpkg-split returned error exit status 11。
+            //   而 PATH=/usr/bin:/bin tar（不含 /eng/bin）正常 —— 正是本缺陷的判据。
+            //
+            //   O_PATH 而不是 O_RDONLY：只需目录的可搜索权限，连 chmod 111 的
+            //   可执行文件也能探到，而 O_RDONLY 会 EACCES 造成假缺失。
+            long pfd = raw6(SYS_openat, -100 /*AT_FDCWD*/, (long)hp, 0x200000 /*O_PATH*/, 0, 0, 0);
+            if (pfd >= 0) raw6(SYS_close, pfd, 0, 0, 0, 0, 0);
             scopy_(out, full);
-            g_resolve_missing = 0;
-            return 0;
+            if (pfd >= 0) { g_resolve_missing = 0; return 0; }
+            g_resolve_missing = 1;
+            return -2;
         }
     }
     long _r = resolve_in_rootfs(full, out);
