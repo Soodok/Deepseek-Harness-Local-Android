@@ -12087,3 +12087,29 @@ compileDebugKotlin BUILD SUCCESSFUL（2m57s）。
 `app/build.gradle.kts` 的 versionCode 调试值 391 已还原（未进提交）。
 本分支**未推送**，也**未合入 main**；主仓工作区仍有他人 66 项 WIP，未动。
 
+
+### 一百一十一·补二：已合入主仓 main（2026-11-13）
+
+主仓 `E:/Deepeek harness/dsh-android` 当前 `main`：
+
+| SHA | 内容 |
+|---|---|
+| `b2b54f11` | docs(context): 一百一十一 插件中心 UNEXPECTED_STORE 根因与修法 + 三个提交记录 |
+| `53e70675` | merge: 删镜像残留 + apt lists 失权 + ERR_PNPM_UNEXPECTED_STORE（--no-ff，7 文件 +451/−24） |
+| `b3a2b8bd` | test(probes): 删除残留探针补进仓库（229 行） |
+
+**踩到的坑**：`_test_linux_delete_residue.py` 一直没进仓 —— `.gitignore:74` 的
+`/scripts/probes/*` 把它一起忽略了（只有 `_test_narrow_*.mjs`、`_test_ask_bridge*` 等
+有显式 `!` 例外）。所以 `270986b1` 只带了实现，断言从未被 CI 跑到。已 `git add -f` 补进。
+
+**主仓合并后门禁**：`_test_linux_apt_nonroot` 42/0、`_test_plugin_install_errors` 50/0、
+`_test_linux_delete_residue` 28/0、`_test_linux_workbench` 79/0、
+`_test_dsh_alpine_source_sync` 55/0、`check-i18n` 0、`compileDebugKotlin` BUILD SUCCESSFUL（2m18s）。
+
+**`check-ui-tokens.py` 在主仓报 B1/B2/B3 红（17 档字号，多出 11.5/13.5/25sp）——不是本轮引入**：
+新增字号全部来自他人未提交的 `app/src/main/res/layout/activity_onboarding.xml` WIP（+21 处 textSize）；
+同一脚本在 worktree（无该 WIP）为 0。
+
+**未推送**：本地 `main` 比 `origin/main` 多 2 个他人提交（`9894be26`、`a11fd358`），
+推 main 会把它们一起带上去，需先确认。
+
