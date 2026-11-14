@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-14 · `main` HEAD `d67c0eef` · 本轮新增「任务化执行 `/dev/jobs`」（见一百二十二节）。
+**最后更新**：2026-11-14 · `main` HEAD `6098f19f` · 本轮新增「任务化执行 `/dev/jobs`」（见一百二十二节）。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
