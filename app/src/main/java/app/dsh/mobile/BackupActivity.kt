@@ -8,6 +8,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.dsh.mobile.engine.ChatRecovery
+import app.dsh.mobile.engine.FullBackup
 
 /**
  * 备份与恢复（v1.4.46）：从设置主页数据区收拢的低频数据操作子页。
@@ -26,8 +27,8 @@ class BackupActivity : ThemedActivity() {
 
     /** 导入行的副标题（v1.4.29） */
     private var importSub: TextView? = null
-    @Volatile private var importing = false
-    @Volatile private var exporting = false
+    private var pendingOptions: FullBackup.Options? = null
+    private var pendingRequest = 0
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -35,6 +36,16 @@ class BackupActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState?.containsKey(STATE_PLUGINS) == true) {
+            pendingOptions = FullBackup.Options(
+                includePlugins = savedInstanceState.getBoolean(STATE_PLUGINS),
+                includeCredentials = savedInstanceState.getBoolean(STATE_CREDENTIALS),
+                includeExtensions = savedInstanceState.getBoolean(STATE_EXTENSIONS),
+                includeLinux = savedInstanceState.getBoolean(STATE_LINUX),
+                replaceExisting = savedInstanceState.getBoolean(STATE_REPLACE_EXISTING, false),
+            )
+            pendingRequest = savedInstanceState.getInt(STATE_REQUEST)
+        }
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_backup)
 
@@ -43,27 +54,39 @@ class BackupActivity : ThemedActivity() {
         // —— 数据导出（issue #31 第一步）：系统文件选择器选保存位置 ——
         exportSub = findViewById(R.id.txtExportSub)
         findViewById<LinearLayout>(R.id.rowExportData).setOnClickListener {
-            if (exporting) return@setOnClickListener
-            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-                .format(java.util.Date())
-            val pick = Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/zip")
-                .putExtra(Intent.EXTRA_TITLE, "dsh-backup-$stamp.zip")
-            runCatching { startActivityForResult(pick, REQ_EXPORT) }.onFailure {
-                exportSub?.text = getString(R.string.export_failed, it.message ?: it.javaClass.simpleName)
+            if (exporting || importing || pendingRequest != 0) return@setOnClickListener
+            showBackupOptions(isExport = true) { options ->
+                pendingOptions = options
+                pendingRequest = REQ_EXPORT
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                    .format(java.util.Date())
+                val pick = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("application/zip")
+                    .putExtra(Intent.EXTRA_TITLE, "dsh-backup-$stamp.zip")
+                runCatching { startActivityForResult(pick, REQ_EXPORT) }.onFailure {
+                    pendingOptions = null
+                    pendingRequest = 0
+                    exportSub?.text = getString(R.string.export_failed, it.message ?: it.javaClass.simpleName)
+                }
             }
         }
 
         // —— 数据导入（v1.4.29，issue #31 第二步）：合并式恢复，不覆盖现有数据 ——
         importSub = findViewById(R.id.txtImportSub)
         findViewById<LinearLayout>(R.id.rowImportData).setOnClickListener {
-            if (importing) return@setOnClickListener
-            val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/zip")
-            runCatching { startActivityForResult(pick, REQ_IMPORT) }.onFailure {
-                importSub?.text = getString(R.string.import_failed, it.message ?: it.javaClass.simpleName)
+            if (importing || exporting || pendingRequest != 0) return@setOnClickListener
+            showBackupOptions(isExport = false) { options ->
+                pendingOptions = options
+                pendingRequest = REQ_IMPORT
+                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("application/zip")
+                runCatching { startActivityForResult(pick, REQ_IMPORT) }.onFailure {
+                    pendingOptions = null
+                    pendingRequest = 0
+                    importSub?.text = getString(R.string.import_failed, it.message ?: it.javaClass.simpleName)
+                }
             }
         }
 
@@ -138,6 +161,85 @@ class BackupActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingOptions?.let {
+            outState.putBoolean(STATE_PLUGINS, it.includePlugins)
+            outState.putBoolean(STATE_CREDENTIALS, it.includeCredentials)
+            outState.putBoolean(STATE_EXTENSIONS, it.includeExtensions)
+            outState.putBoolean(STATE_LINUX, it.includeLinux)
+            outState.putBoolean(STATE_REPLACE_EXISTING, it.replaceExisting)
+            outState.putInt(STATE_REQUEST, pendingRequest)
+        }
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun showBackupOptions(isExport: Boolean, onSelected: (FullBackup.Options) -> Unit) {
+        val checked = booleanArrayOf(false, false, false, false)
+        val labels = arrayOf(
+            getString(R.string.backup_option_plugins),
+            getString(R.string.backup_option_credentials),
+            getString(R.string.backup_option_extensions),
+            getString(R.string.backup_option_linux),
+        )
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(if (isExport) R.string.setting_export_data else R.string.setting_import_data)
+            .setMultiChoiceItems(labels, checked) { _, which, selected -> checked[which] = selected }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                if (exporting || importing || pendingRequest != 0) return@setPositiveButton
+                val options = FullBackup.Options(
+                    includePlugins = checked[0],
+                    includeCredentials = checked[1],
+                    includeExtensions = checked[2],
+                    includeLinux = checked[3],
+                )
+                if (options.includeCredentials || isExport) {
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                        .setTitle(if (options.includeCredentials) R.string.backup_credentials_warning_title else R.string.backup_plain_warning_title)
+                        .setMessage(if (options.includeCredentials) R.string.backup_credentials_warning else R.string.backup_plain_warning)
+                        .setPositiveButton(if (options.includeCredentials) R.string.backup_credentials_confirm else android.R.string.ok) { _, _ ->
+                            if (!exporting && !importing && pendingRequest == 0) {
+                                if (isExport) onSelected(options) else showImportConflictPolicy(options, onSelected)
+                            }
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                } else {
+                    showImportConflictPolicy(options, onSelected)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showImportConflictPolicy(options: FullBackup.Options, onSelected: (FullBackup.Options) -> Unit) {
+        var replaceExisting = false
+        val labels = arrayOf(
+            getString(R.string.backup_conflict_keep),
+            getString(R.string.backup_conflict_replace),
+        )
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.backup_conflict_title)
+            .setSingleChoiceItems(labels, 0) { _, which -> replaceExisting = which == 1 }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                if (exporting || importing || pendingRequest != 0) return@setPositiveButton
+                val selected = options.copy(replaceExisting = replaceExisting)
+                if (replaceExisting) {
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.backup_replace_warning_title)
+                        .setMessage(R.string.backup_replace_warning)
+                        .setPositiveButton(R.string.backup_replace_confirm) { _, _ ->
+                            if (!exporting && !importing && pendingRequest == 0) onSelected(selected)
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                } else {
+                    onSelected(selected)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     /**
      * 常用配置文件选择器（v1.4.29，issue #25）。
      *
@@ -190,14 +292,14 @@ class BackupActivity : ThemedActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_IMPORT) {
-            val uri = data?.data
-            if (resultCode == RESULT_OK && uri != null) runImport(uri)
-            return
-        }
-        if (requestCode != REQ_EXPORT) return
+        if (requestCode != REQ_IMPORT && requestCode != REQ_EXPORT) return
+        if (requestCode != pendingRequest) return
+        val options = pendingOptions
+        pendingOptions = null
+        pendingRequest = 0
         val uri = data?.data
-        if (resultCode == RESULT_OK && uri != null) runExport(uri)
+        if (resultCode != RESULT_OK || uri == null || options == null || importing || exporting) return
+        if (requestCode == REQ_IMPORT) runImport(uri, options) else runExport(uri, options)
     }
 
     /**
@@ -206,7 +308,7 @@ class BackupActivity : ThemedActivity() {
      * 先把 URI 复制到私有缓存再解包 —— ContentResolver 的流不可 seek，
      * 而 ZipFile 需要随机访问。
      */
-    private fun runImport(uri: Uri) {
+    private fun runImport(uri: Uri, options: FullBackup.Options) {
         importing = true
         importSub?.text = getString(R.string.import_preparing)
         Thread({
@@ -217,7 +319,7 @@ class BackupActivity : ThemedActivity() {
                         cache.outputStream().use { outs -> ins.copyTo(outs, 128 * 1024) }
                     } ?: throw java.io.IOException("cannot open $uri")
                     var lastShown = 0L
-                    app.dsh.mobile.engine.DataExport.import(this, cache) { done, total ->
+                    FullBackup.import(this, cache, options) { done, total ->
                         val now = System.currentTimeMillis()
                         if (done == total || now - lastShown >= 200) {
                             lastShown = now
@@ -230,16 +332,14 @@ class BackupActivity : ThemedActivity() {
                     runCatching { cache.delete() }
                 }
             }
+            importing = false
             runOnUiThread {
-                importing = false
                 result.onSuccess { s ->
-                    importSub?.text = getString(
-                        R.string.import_done, s.sessionFiles, s.workspaceFiles, s.overwritten,
-                    )
-                    if (s.sessionFiles > 0 || s.workspaceFiles > 0) {
+                    importSub?.text = getString(R.string.backup_import_result, s.files, s.skipped)
+                    if (s.files > 0 && !isFinishing && !isDestroyed) {
                         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.import_done_title)
-                            .setMessage(getString(R.string.import_done_body, s.sessionFiles + s.workspaceFiles))
+                            .setMessage(getString(R.string.backup_import_restart, s.files))
                             .setPositiveButton(R.string.import_done_restart) { _, _ ->
                                 (application as DshApp).supervisor.restart()
                             }
@@ -261,9 +361,8 @@ class BackupActivity : ThemedActivity() {
 
     /**
      * 后台导出到 [uri]。失败时删掉已创建的半成品文件，避免用户误以为备份可用。
-     * 详细过程与失败原因见 engine.log 的 `[export]` 行（DataExport 负责写）。
      */
-    private fun runExport(uri: Uri) {
+    private fun runExport(uri: Uri, options: FullBackup.Options) {
         exporting = true
         exportSub?.text = getString(R.string.export_preparing)
         Thread({
@@ -272,7 +371,7 @@ class BackupActivity : ThemedActivity() {
                 val out = contentResolver.openOutputStream(uri)
                     ?: throw java.io.IOException("cannot open $uri")
                 out.use { stream ->
-                    app.dsh.mobile.engine.DataExport.export(this, stream) { done, total ->
+                    FullBackup.export(this, stream, options) { done, total ->
                         // 节流：最多每 200ms 刷新一次文字，最后一个文件必刷
                         val now = System.currentTimeMillis()
                         if (done == total || now - lastShown >= 200) {
@@ -285,14 +384,14 @@ class BackupActivity : ThemedActivity() {
             if (result.isFailure) {
                 runCatching { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) }
             }
+            exporting = false
             runOnUiThread {
-                exporting = false
                 result.onSuccess { s ->
-                    val done = getString(R.string.export_done, s.sessionFiles, s.workspaceFiles)
+                    val done = getString(R.string.backup_export_result, s.files, s.skipped)
                     exportSub?.text = done
                     val msg = buildString {
-                        append(done).append("\n\n").append(getString(R.string.export_no_creds))
-                        if (!s.hasRegistry) append("\n\n").append(getString(R.string.export_no_registry))
+                        append(done)
+                        append("\n\n").append(getString(R.string.backup_plain_warning))
                     }
                     if (!isFinishing && !isDestroyed) {
                         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
@@ -308,7 +407,7 @@ class BackupActivity : ThemedActivity() {
                     if (!isFinishing && !isDestroyed) {
                         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.setting_export_data)
-                            .setMessage(failed + "\n\n" + getString(R.string.export_log_hint))
+                            .setMessage(failed + "\n\n" + getString(R.string.backup_plain_warning))
                             .setPositiveButton(android.R.string.ok, null)
                             .show()
                     }
@@ -318,7 +417,15 @@ class BackupActivity : ThemedActivity() {
     }
 
     private companion object {
+        @Volatile var importing = false
+        @Volatile var exporting = false
         const val REQ_EXPORT = 4204
         const val REQ_IMPORT = 4205
+        const val STATE_PLUGINS = "backup_plugins"
+        const val STATE_CREDENTIALS = "backup_credentials"
+        const val STATE_EXTENSIONS = "backup_extensions"
+        const val STATE_LINUX = "backup_linux"
+        const val STATE_REPLACE_EXISTING = "backup_replace_existing"
+        const val STATE_REQUEST = "backup_request"
     }
 }
