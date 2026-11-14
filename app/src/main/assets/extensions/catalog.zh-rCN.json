@@ -226,6 +226,21 @@
       "iconRes": "ic_ext_zig"
     },
     {
+      "id": "bun",
+      "name": "Bun",
+      "category": "语言运行时",
+      "categoryKey": "lang",
+      "desc": "Bun 1.4 —— JavaScript/TypeScript 运行时与打包器，可直接替换 Node.js 且快得多（bun / bunx）",
+      "bins": [
+        "bun",
+        "bunx"
+      ],
+      "packages": [
+        "bun"
+      ],
+      "iconRes": "ic_ext_bun"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "编译构建",
