@@ -258,8 +258,9 @@ object JobsCap {
             .put("workdir", userWorkdir ?: containerJobDir)
             .put(
                 "hint",
-                "相对路径落到 workdir（= 本任务目录，可取走）；" +
-                    "要往别处写请用绝对路径（/ws 之类需先 bind）",
+                "relative paths land in workdir (this job's own dir, fetchable via " +
+                    "/dev/jobs/artifact); write elsewhere with an absolute path " +
+                    "(/ws etc. must be bind-mounted first)",
             )
             .put("poll", "GET /dev/jobs/get?id=" + id)
             .put("log", "GET /dev/jobs/log?id=" + id)
