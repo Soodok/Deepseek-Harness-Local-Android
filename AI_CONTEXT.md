@@ -11933,7 +11933,6 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
   待装后观察 turn/end 通知是否仍按时到达（节流后最多晚 10 秒）。
 - 主工作区 `OnboardingActivity.kt` 有并行会话未完成的 WIP（9 个编译错误，`children` 未解析），
   所以编译/探针都在隔离 worktree 里跑。
-
 ## 一百一十一、插件中心 ERR_PNPM_UNEXPECTED_STORE 复发根因与修法（2026-11-13）
 
 **用户报障**：「插件中心下载也有问题，提示 ERR_PNPM_UNEXPECTED_STORE」，并补充
@@ -12414,4 +12413,72 @@ rc.3 发布于 `2026-11-13T08:05:45Z` —— 本仓 pin 落后，可以升。
   两提交在本地，`origin` 无同名分支；
 - **App 进程内整链未验**：只验到「引擎在本机能起、前端能服务、rg 可用」；
   App 通过 `EngineProcess` 拉起 + 内置插件 + 权限体系的完整回归，要等 runtime.zip 重打后做。
+## 一百一十九、远程访问三处真缺陷修复 + 截图并发（2026-11-13，v1.6.0-beta.11 · 387）
+
+### 修的三个问题（都在真机上复现过）
+1. **setup.sh 忽略 URL 里的密钥**（`engine/RemoteAccessServer.kt`）
+   脚本头注释教用户跑 `curl -s "http://<phone>:3091/setup.sh?key=<KEY>" | sh`，
+   正文却是 `KEY="${DSH_PHONE_KEY:-PASTE_YOUR_KEY_HERE}"` —— URL 的 key 没被取用，
+   拿占位符去下 gates.tgz 必然 403（实测 `curl: (22)`）。修法：新增
+   `presentedKey(lines, query)`（头优先、其次 `?key=`，URLDecoder 解码），
+   `setupScript(key)` 把密钥内联进脚本；没带 key 仍回落可读占位符。
+2. **GET /screenshot 并发必有一张失败**（`DshAccessibilityService.kt`）
+   `screenshotBase64()` 缺三件事（同文件的 `screenshotArgb` 全做了）：
+   TakeScreenshot 的 `INTERVAL_TIME_SHORT` 配额无退避重试、没隐藏自家悬浮窗、
+   无并发互斥。改为 450ms 退避 ×3 + `beginCaptureAvoid/endCaptureAvoid`(try-finally)
+   + `synchronized(shotLock)`，失败路径补日志。
+3. **gatesArchive 恒真空操作**（`RemoteAccessServer.kt`）
+   `.filter { it != "_dsh_http.sh" || true }` 恒真，注释写「不排除」，代码与意图相反。
+   34 个门脚本都 `. "$DIR/_dsh_http.sh"` 依赖它，真排除会打瘫整包 → 改显式不过滤。
+
+### 口径修正
+- 三处「144 个设备端点」不再写死（RemoteAccessServer.kt:24 / SettingsActivity.kt:129 /
+  activity_settings.xml:197），统一为「以 GET /dev/routes 为准」。
+- `RemoteAccess.kt` 的 `summary()` KDoc 原称「UI 与 `/remote/status` 共用」——
+  该路由从未实现、summary() 零调用方，改为如实说明。
+- `docs/SSH.md` 原写「引擎只监听 127.0.0.1」，补上例外：开关打开后桥改绑
+  `0.0.0.0:3083` 并另开 `0.0.0.0:3091`（配对/门脚本分发），只认配对密钥且只收私网来源。
+
+### 探针
+- `_test_remote_access.py`：C7（setup.sh 用本次请求的 key）、C8（不排除 `_dsh_http.sh`）、
+  E 段 `langs` 补 `values-ru`。**C8 不能拿剥注释全文判** —— 本文件前面有 `"""` 多行
+  脚本字面量，`_kstrip` 会在那里把引号状态翻乱，所以只在 `gatesArchive` 代码切片上
+  自剥 `//` 后断言。结果 49 passed。
+- `_test_device_caps_new.py`：新增 J1~J4（截图退避/浮窗/串行/日志）。变异反验：
+  `repeat(3)→1` 让 J1 红、删 `synchronized` 让 J3 红、删 `beginCaptureAvoid` 让 J2 红，
+  还原后 **116 checks 0 failed**。
+
+### 门禁（全绿）
+JVM `passed=2386 failed=0`；**128 个探针 0 失败**；i18n / ui-tokens / no-bulk-perms rc=0；
+`count-catalog-limits.py` entries 167 missing 0。
+
+### 真机验收（OnePlus PLZ110 / 192.168.101.21:9000，装 vC387 / 1.6.0-beta.11）
+- 一行 `curl "http://192.168.101.21:3091/setup.sh?key=<KEY>" | sh` 全新目录：
+  拉到 **40 个门脚本**，`env` 里 `DSH_BRIDGE_HOST=192.168.101.21`（LanAddress 的
+  vgate0 修复生效）、`DSH_BRIDGE_TOKEN` 是本次密钥；source 后 `dev status`、
+  `dev routes`（**181 条**）通。
+- 鉴权矩阵：3091 无 key/错 key → 403、正确 → 200；3083 无 key/错 key → 403；
+  局域网带引擎 token → **403**（只认配对密钥）；环回引擎 token → 200。
+- 截图：4 路并发全 200（0.34/1.13/1.66/2.43s）、10 连发全 200、与 `/screen` 并发亦 200。
+- 能力面抽验：`/dev/linux/exec uname -m` → aarch64；`/dev/control volume` → 40；
+  `/dev/clipboard` 写读一致（probe386）；`/dev/bt status` → 「一加 15T」；`/dev/remind`
+  → `exact:true, precision:exact`；`/notif` 读到 QQ 通知；`/screen` 1216x2640 41 nodes；
+  `/tap` 对不存在的文本正确报 `text not found`。
+- 并发：20 路 `/dev/status` 448ms；慢端点（scene/screenshot）不拖死快请求（429ms 内全完）。
+
+### 未做 / 边界
+- 相机、定位、通知读取三个能力在**这次真机上开关是关的**（`cap.camera`/`cap.location`/
+  `cap.notify_read` 无值），端点如实返回 `capability disabled` —— 未验证打开后的行为。
+- 界面视觉仍未人眼确认（远程访问详情面板、配对码倒计时只在 prefs/dumpsys 层面验过）。
+- `/dev/packages` 在 ColorOS 上仍被锁成 1 个包（`visibility_op:ignored`，`hint` 已如实说明）；
+  `/dev/wifi` 的正确路由名是 `/dev/wifi-radio`。
+- 版本号被并行会话占用过（382→384/385/386 都出现过别人的包），本次取 **387**。
+
+### 关键文件
+- `app/src/main/java/app/dsh/mobile/engine/RemoteAccessServer.kt`（presentedKey / setupScript / gatesArchive）
+- `app/src/main/java/app/dsh/mobile/engine/RemoteAccess.kt`（authorise / summary KDoc）
+- `app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt`（screenshotBase64 / screenshotBase64Once / shotLock）
+- `scripts/probes/_test_remote_access.py`（C7/C8/E langs）
+- `scripts/probes/_test_device_caps_new.py`（J1~J4）
+
 

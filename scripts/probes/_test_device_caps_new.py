@@ -311,6 +311,31 @@ def main():
     check("I2 解析到足够的目录条目（>=50）", n_http >= 50, "只解析到 %d 条" % n_http)
     check("I3 解析到足够的路由（>=60）", len(route_keys) >= 60, "只解析到 %d 条" % len(route_keys))
 
+    # ---- J. 截图端点的三个真机缺陷（2026-11-13 实测：并发两张必有一张 400）----
+    # 背景：GET /screenshot 调用的是 DshAccessibilityService.screenshotBase64()，
+    # 而它当时**三件事都没做**（同一文件里的 screenshotArgb 全都做了）：
+    #   ① 没有节流退避 —— takeScreenshot 有 INTERVAL_TIME_SHORT 配额，一次失败即
+    #      返回 null，调用方只看到「screenshot failed (timeout or unsupported)」；
+    #   ② 没隐藏自己的悬浮窗 —— 状态球被截进画面，AI 当成页面内容；
+    #   ③ 没有并发互斥 —— 桥是 4 线程池，两个 /screenshot 同来必有一张失败。
+    # 这三条都只能靠「代码里真的做了」判，光断言函数存在是假绿。
+    svc = strip_comments(read(os.path.join(JAVA, "DshAccessibilityService.kt")))
+    sb64 = svc[svc.find("fun screenshotBase64"):]
+    sb64 = sb64[: sb64.find("private fun screenshotBase64Once")]
+    check("J1 截图有节流退避重试（不是一次失败就返回）",
+          "repeat(3)" in sb64 and "Thread.sleep" in sb64,
+          "takeScreenshot 有配额，失败一次就 null 会让调用方误判不可用")
+    check("J2 截图前隐藏自己的悬浮窗且 finally 恢复",
+          "beginCaptureAvoid" in sb64 and "endCaptureAvoid" in sb64
+          and re.search(r"try\s*\{", sb64) is not None,
+          "否则状态球会截进画面被 AI 当成页面内容")
+    check("J3 截图串行化（并发两张不互相吃配额）",
+          "synchronized(" in sb64,
+          "实测并发两张必有一张 400")
+    check("J4 失败路径会打日志（不留静默失败）",
+          "screenshotBase64 failed" in svc,
+          "否则再出问题只能靠猜")
+
     npass = sum(1 for _, ok, _ in checks if ok)
     nfail = len(checks) - npass
     for name, ok, detail in checks:
