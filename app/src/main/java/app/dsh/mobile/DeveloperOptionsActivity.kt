@@ -17,6 +17,11 @@ class DeveloperOptionsActivity : ThemedActivity() {
     override fun attachBaseContext(newBase: Context) { super.attachBaseContext(LocaleHelper.wrap(newBase)) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Guard stale or explicit in-app launches after developer mode has been disabled.
+        if (!DeveloperModePrefs.isEnabled(this)) {
+            finish()
+            return
+        }
         OrientationPrefs.applyToSettingsPage(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
