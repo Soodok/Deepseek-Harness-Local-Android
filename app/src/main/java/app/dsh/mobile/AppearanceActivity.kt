@@ -65,6 +65,10 @@ class AppearanceActivity : ThemedActivity() {
         }
         findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(orientMode))
 
+        findViewById<LinearLayout>(R.id.rowIslandDock).setOnClickListener {
+            showIslandDockDialog()
+        }
+
         // —— 设置页跟随屏幕方向（v1.5.x）——
         // 默认关：手机上的设置页固定竖屏（v1.4.64 的诉求），平板跟随上面的朝向选择。
         // 打开后：任何尺寸的设置页都跟随朝向偏好（等同主界面）。
@@ -171,6 +175,8 @@ class AppearanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
         findViewById<TextView>(R.id.valLayoutMode)?.text =
             getString(SettingsLayoutMode.current(this).labelRes)
+        findViewById<TextView>(R.id.valIslandDock)?.text =
+            getString(islandDockLabel(CustomVisualPref.islandDock(this)))
     }
 
     /**
@@ -204,6 +210,28 @@ class AppearanceActivity : ThemedActivity() {
         OrientationMode.PORTRAIT -> R.string.setting_orient_portrait
         OrientationMode.LANDSCAPE -> R.string.setting_orient_landscape
         OrientationMode.AUTO -> R.string.setting_orient_auto
+    }
+
+    private fun islandDockLabel(dock: IslandDock): Int = when (dock) {
+        IslandDock.TOP -> R.string.setting_island_dock_top
+        IslandDock.LEFT -> R.string.setting_island_dock_left
+        IslandDock.RIGHT -> R.string.setting_island_dock_right
+        IslandDock.BOTTOM -> R.string.setting_island_dock_bottom
+    }
+
+    private fun showIslandDockDialog() {
+        val docks = listOf(IslandDock.TOP, IslandDock.LEFT, IslandDock.RIGHT, IslandDock.BOTTOM)
+        val labels = docks.map { getString(islandDockLabel(it)) }.toTypedArray()
+        val checked = docks.indexOf(CustomVisualPref.islandDock(this))
+        md3Dialog()
+            .setTitle(R.string.setting_island_dock)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                CustomVisualPref.setIslandDock(this, docks[which])
+                refreshValueRows()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /**

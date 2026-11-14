@@ -76,14 +76,15 @@ check('toggleToolbar dispatches to toggleSidePanel when docked',
 # v1.7.13: applyDock routes visibility through the state-driven renderer.
 check('side dock hides the top XML capsule via state-driven visibility',
       'renderIslandVisibility()' in main
-      and 'val showOverlay = !side && !islandCollapsed' in main
+      and 'val showOverlay = !side && !bottom && !islandCollapsed' in main
       and 'overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE' in main)
 check('applyDock restores the XML handle gravity for TOP',
       'Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL' in main)
-check('long press cycles TOP -> LEFT -> RIGHT -> TOP',
+check('dock cycle includes all four positions',
       'IslandDock.TOP -> IslandDock.LEFT' in main
       and 'IslandDock.LEFT -> IslandDock.RIGHT' in main
-      and 'IslandDock.RIGHT -> IslandDock.TOP' in main)
+      and 'IslandDock.RIGHT -> IslandDock.BOTTOM' in main
+      and 'IslandDock.BOTTOM -> IslandDock.TOP' in main)
 check('dock switch is persisted', 'CustomVisualPref.setIslandDock(this, next)' in main)
 check('pref key island_dock exists', 'KEY_DOCK = "island_dock"' in pref)
 check('pref reader defaults to TOP',

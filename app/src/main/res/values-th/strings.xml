@@ -1611,6 +1611,15 @@
     <string name="island_side_no_plugins">ยังไม่มีปลั๊กอินที่ติดตั้ง</string>
     <string name="island_side_plugin_count">ติดตั้งแล้ว %1$d</string>
     <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
+    <string name="setting_island_dock">ตำแหน่งแผงสถานะ</string>
+    <string name="setting_island_dock_sub">เลือกขอบหน้าจอสำหรับแผงสถานะ</string>
+    <string name="setting_island_dock_top">ด้านบน</string>
+    <string name="setting_island_dock_left">ด้านซ้าย</string>
+    <string name="setting_island_dock_right">ด้านขวา</string>
+    <string name="setting_island_dock_bottom">ด้านล่าง</string>
+    <string name="bottom_toolbar_expand">แสดงแถบเครื่องมือ</string>
+    <string name="bottom_toolbar_home">หน้าแรก</string>
+    <string name="bottom_toolbar_menu">เมนู</string>
     <string name="linux_err_selinux_drift">ป้ายกำกับไฟล์ SELinux ของสภาพแวดล้อม Linux เบี่ยงเบนแล้ว (%1$s) และอุปกรณ์นี้ไม่ได้ให้สิทธิ์แก่แอปในการซ่อมแซม คอนเทนเนอร์จึงอ่านไฟล์ของตัวเองไม่ได้ โปรดเปิด root (หรือ Shizuku) แล้วเปิดหน้านี้ใหม่ หรือลบและติดตั้งสภาพแวดล้อมใหม่</string>
 
     <string name="theme_source">แหล่งสี</string>

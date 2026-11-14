@@ -1625,6 +1625,15 @@
     <string name="island_side_no_plugins">Плагины пока не установлены</string>
     <string name="island_side_plugin_count">установлено: %1$d</string>
     <string name="island_dock_switched">Док: %1$s</string>
+    <string name="setting_island_dock">Положение панели состояния</string>
+    <string name="setting_island_dock_sub">Выберите край экрана для панели состояния</string>
+    <string name="setting_island_dock_top">Сверху</string>
+    <string name="setting_island_dock_left">Слева</string>
+    <string name="setting_island_dock_right">Справа</string>
+    <string name="setting_island_dock_bottom">Снизу</string>
+    <string name="bottom_toolbar_expand">Показать панель инструментов</string>
+    <string name="bottom_toolbar_home">Главная</string>
+    <string name="bottom_toolbar_menu">Меню</string>
     <string name="linux_err_selinux_drift">У среды Linux съехали метки файлов SELinux (%1$s), а это устройство не даёт приложению привилегированного канала, чтобы их исправить, поэтому контейнер не может прочитать свои же файлы. Включите root (или Shizuku) и откройте эту страницу снова либо удалите и разверните среду заново.</string>
 
     <string name="asr_mode_local">На устройстве</string>

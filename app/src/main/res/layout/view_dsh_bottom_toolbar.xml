@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <com.google.android.material.dockedtoolbar.DockedToolbarLayout
+        android:id="@+id/dsh_bottom_toolbar_expanded"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        app:paddingBottomSystemWindowInsets="false"
+        app:paddingTopSystemWindowInsets="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/dsh_bottom_toolbar_collapse"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center_horizontal"
+                android:contentDescription="@string/menu_hide_toolbar"
+                android:minWidth="48dp"
+                android:minHeight="48dp"
+                android:padding="0dp"
+                app:icon="@drawable/ic_expand_more"
+                app:iconGravity="textStart"
+                app:iconSize="20dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dsh_bottom_toolbar_home"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:contentDescription="@string/bottom_toolbar_home"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:padding="0dp"
+                    app:icon="@drawable/ic_bottom_home"
+                    app:iconGravity="textStart"
+                    app:iconSize="24dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dsh_bottom_toolbar_menu"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:contentDescription="@string/bottom_toolbar_menu"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:padding="0dp"
+                    app:icon="@drawable/ic_bottom_menu"
+                    app:iconGravity="textStart"
+                    app:iconSize="24dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dsh_bottom_toolbar_settings"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:contentDescription="@string/settings_title"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:padding="0dp"
+                    app:icon="@drawable/ic_settings"
+                    app:iconGravity="textStart"
+                    app:iconSize="24dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </com.google.android.material.dockedtoolbar.DockedToolbarLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/dsh_bottom_toolbar_collapsed"
+        style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom|left"
+        android:contentDescription="@string/bottom_toolbar_expand"
+        android:minWidth="48dp"
+        android:minHeight="48dp"
+        android:padding="0dp"
+        android:visibility="gone"
+        app:icon="@drawable/ic_expand_less"
+        app:iconGravity="textStart"
+        app:iconSize="20dp" />
+</FrameLayout>

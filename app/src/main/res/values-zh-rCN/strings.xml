@@ -1675,6 +1675,15 @@
     <string name="island_side_no_plugins">还没有安装插件</string>
     <string name="island_side_plugin_count">已装 %1$d 个</string>
     <string name="island_dock_switched">停靠位置：%1$s</string>
+    <string name="setting_island_dock">状态悬浮窗位置</string>
+    <string name="setting_island_dock_sub">选择状态悬浮窗停靠的屏幕边缘</string>
+    <string name="setting_island_dock_top">顶部</string>
+    <string name="setting_island_dock_left">左侧</string>
+    <string name="setting_island_dock_right">右侧</string>
+    <string name="setting_island_dock_bottom">底部</string>
+    <string name="bottom_toolbar_expand">展开工具栏</string>
+    <string name="bottom_toolbar_home">主页</string>
+    <string name="bottom_toolbar_menu">菜单</string>
     <string name="linux_err_selinux_drift">Linux 环境的 SELinux 文件标签已漂移（%1$s），而这台设备没有给 App 可用的特权通道去修复，容器因此读不到自己的文件。请开启 root（或 Shizuku）后重新进入本页，或删除并重新部署环境。</string>
 
     <string name="theme_source">颜色来源</string>

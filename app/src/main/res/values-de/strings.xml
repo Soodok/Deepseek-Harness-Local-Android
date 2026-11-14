@@ -1670,6 +1670,15 @@ Zuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
     <string name="island_side_no_plugins">Noch keine Plugins installiert</string>
     <string name="island_side_plugin_count">%1$d installiert</string>
     <string name="island_dock_switched">Andocken: %1$s</string>
+    <string name="setting_island_dock">Position des Status-Docks</string>
+    <string name="setting_island_dock_sub">Bildschirmrand für das Status-Dock wählen</string>
+    <string name="setting_island_dock_top">Oben</string>
+    <string name="setting_island_dock_left">Links</string>
+    <string name="setting_island_dock_right">Rechts</string>
+    <string name="setting_island_dock_bottom">Unten</string>
+    <string name="bottom_toolbar_expand">Symbolleiste anzeigen</string>
+    <string name="bottom_toolbar_home">Startseite</string>
+    <string name="bottom_toolbar_menu">Menü</string>
     <string name="linux_err_selinux_drift">Die SELinux-Dateilabels der Linux-Umgebung sind abgedriftet (%1$s), und dieses Gerät gibt der App keinen privilegierten Kanal zur Reparatur. Der Container kann seine eigenen Dateien daher nicht lesen. Root (oder Shizuku) aktivieren und diese Seite erneut öffnen oder die Umgebung löschen und neu bereitstellen.</string>
 
     <string name="theme_source">Farbquelle</string>

@@ -44,6 +44,8 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     private lateinit var statusText: TextView
     private lateinit var subText: TextView
     private lateinit var dot: View
+    private lateinit var statusHead: View
+    var onStatus: (() -> Unit)? = null
 
     /** 当前主题下的配色（v1.7.11）：暗色沿用旧值，浅色是新补的一套。 */
     private val pal: IslandPalette.Colors by lazy { IslandPalette.themed(act) }
@@ -70,6 +72,8 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(10), dp(12), dp(9))
         }
+        statusHead = head
+        head.setOnClickListener { onStatus?.invoke() }
         dot = View(act).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -266,8 +270,10 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     }
 
     /** 由主界面在状态变化时调用。 */
-    fun update(state: String, detail: String, dotColor: Int) {
+    fun update(state: String, detail: String, dotColor: Int, statusClickable: Boolean = false) {
         if (!::statusText.isInitialized) return
+        statusHead.isClickable = statusClickable
+        statusHead.isFocusable = statusClickable
         statusText.text = state
         subText.text = detail
         subText.visibility = if (detail.isBlank()) View.GONE else View.VISIBLE

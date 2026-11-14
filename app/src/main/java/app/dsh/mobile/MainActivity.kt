@@ -212,6 +212,7 @@ class MainActivity : ThemedActivity() {
             return
         }
         setContentView(R.layout.activity_main)
+        bottomToolbarCollapsed = savedInstanceState?.getBoolean("bottom_toolbar_collapsed") ?: false
 
         // 记录本页生效的语言（onResume 里比对，设置页改过就重建本页）
         appliedLocale = LocaleHelper.get(this)
@@ -403,6 +404,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         setIntent(intent)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("bottom_toolbar_collapsed", bottomToolbarCollapsed)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onRetainNonConfigurationInstance(): Any? {
         val state = (application as DshApp).supervisor.state.value
         val snapshot = BootTrace.snapshot.value
@@ -452,7 +458,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 外侧圆角」这套几何的地方。
         // ⚠️ 原注释写「按新图片/形状/尺寸重绘」——v1.7.6 删掉外观里的圆点
         // 配置项后已不成立，那个入口也早已是空壳。
-        runCatching { applyDock() }
+        runCatching {
+            val storedDock = CustomVisualPref.islandDock(this)
+            if (storedDock != islandDock) {
+                islandDock = storedDock
+                sideHost?.visibility = View.GONE
+            }
+            applyDock()
+        }
         val currentTheme = ThemePref.get(this)
         val currentAccent = Accent.current(this).argb
         val currentPalette = ThemeAccent.selected(this)
@@ -1184,6 +1197,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     // 竖排面板 IslandSidePanel。两者互斥：切到侧边就把 XML 那套藏起来，切回顶部
     // 再按原样恢复，避免两套视图同时出现。
     private var islandDock: IslandDock = IslandDock.TOP
+    private var bottomToolbar: DshBottomToolbarController? = null
+    private var bottomToolbarCollapsed = false
+    private var bottomToolbarInset = 0
+    private var bottomToolbarImeVisible = false
 
     /**
      * 灵动岛是否处于「收起态」（只剩下把手的缩小状态）。
@@ -1206,12 +1223,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun setupIslandDock() {
         islandDock = CustomVisualPref.islandDock(this)
+        setupBottomToolbar()
         // 长按把手循环切换停靠边：顶部 → 左 → 右 → 顶部
         findViewById<View>(R.id.handleBar)?.setOnLongClickListener {
             val next = when (islandDock) {
                 IslandDock.TOP -> IslandDock.LEFT
                 IslandDock.LEFT -> IslandDock.RIGHT
-                IslandDock.RIGHT -> IslandDock.TOP
+                IslandDock.RIGHT -> IslandDock.BOTTOM
+                IslandDock.BOTTOM -> IslandDock.TOP
             }
             CustomVisualPref.setIslandDock(this, next)
             islandDock = next
@@ -1226,6 +1245,52 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         applyDock()
     }
 
+    private fun setupBottomToolbar() {
+        val parent = findViewById<View>(R.id.statusBarOverlay).parent as? android.widget.FrameLayout ?: return
+        val controller = DshBottomToolbarController(
+            layoutInflater, parent,
+            object : DshBottomToolbarController.Callbacks {
+                override fun onHome() {
+                    sideHost?.visibility = View.GONE
+                    hideRunModeOverlay()
+                    val url = (application as DshApp).supervisor.webUrl()
+                    if (url.isNotEmpty()) loadLocalUrl(url)
+                    else Toast.makeText(this@MainActivity, R.string.status_idle, Toast.LENGTH_SHORT).show()
+                }
+                override fun onMenu() { toggleSidePanel() }
+                override fun onSettings() { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+                override fun onExpand() { bottomToolbarCollapsed = false; renderBottomToolbar() }
+                override fun onCollapse() { bottomToolbarCollapsed = true; renderBottomToolbar() }
+                override fun onDragRatio(ratio: Float) {
+                    CustomVisualPref.setIslandBottomAlongRatio(this@MainActivity, ratio)
+                }
+            },
+            initialDragRatio = CustomVisualPref.islandBottomAlongRatio(this),
+            initiallyShown = false,
+        )
+        bottomToolbar = controller
+        val lp = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM,
+        )
+        val splashIndex = parent.indexOfChild(findViewById<View>(R.id.splash))
+        parent.addView(controller.root, splashIndex.coerceAtLeast(0), lp)
+        controller.root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+                findViewById<View>(android.R.id.content)?.requestApplyInsets()
+            }
+        }
+    }
+
+    private fun renderBottomToolbar() {
+        val toolbar = bottomToolbar ?: return
+        val active = islandDock == IslandDock.BOTTOM
+        toolbar.setExpanded(!bottomToolbarCollapsed)
+        toolbar.setShown(active && !bottomToolbarImeVisible)
+        if (active) toolbar.setDragRatio(CustomVisualPref.islandBottomAlongRatio(this))
+        findViewById<View>(android.R.id.content)?.requestApplyInsets()
+    }
+
     private fun applyDock() {
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup
         val overlay = findViewById<View>(R.id.statusBarOverlay)
@@ -1237,7 +1302,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val ph = container.height.takeIf { it > 0 } ?: dm.heightPixels
         val ratio = CustomVisualPref.islandAlongRatio(this)
 
-        if (islandDock == IslandDock.TOP) {
+        if (islandDock == IslandDock.TOP || islandDock == IslandDock.BOTTOM) {
             sideHost?.visibility = View.GONE
         } else {
             // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
@@ -1249,7 +1314,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
         }
         // 先把把手按当前停靠边摆好（尺寸/贴边/沿边位置都在 placeCollapsedHandle 里）
-        placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        if (islandDock != IslandDock.BOTTOM) placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        renderBottomToolbar()
         // ★ v1.7.13：可见性一律由 renderIslandVisibility() 按状态推导，
         // 不再在这里「TOP 就无条件 GONE」——
         // 旧代码在贴顶且已收起时把把手设成 GONE，而 statusBarRow 又是 GONE，
@@ -1278,11 +1344,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val overlay = findViewById<View>(R.id.statusBarOverlay) ?: return
         val row = findViewById<View>(R.id.statusBarRow) ?: return
         val handle = findViewById<View>(R.id.handleBar) ?: return
-        val side = islandDock != IslandDock.TOP
+        val side = islandDock == IslandDock.LEFT || islandDock == IslandDock.RIGHT
+        val bottom = islandDock == IslandDock.BOTTOM
         // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）
         val panelOpen = sideHost?.visibility == View.VISIBLE
-        val showOverlay = !side && !islandCollapsed
-        val showHandle = !panelOpen && (side || islandCollapsed)
+        val showOverlay = !side && !bottom && !islandCollapsed
+        val showHandle = !bottom && !panelOpen && (side || islandCollapsed)
         overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE
         row.visibility = if (showOverlay) View.VISIBLE else View.GONE
         handle.visibility = if (showHandle) View.VISIBLE else View.GONE
@@ -1356,6 +1423,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
             cornerRadii = when (dock) {
                 IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+                IslandDock.BOTTOM -> floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
                 IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
             }
@@ -1465,18 +1533,23 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }.start()
             return
         }
-        val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
+        val menuDock = if (islandDock == IslandDock.BOTTOM) IslandDock.RIGHT else islandDock
+        val panel = sidePanel?.takeIf { sidePanelDock == menuDock } ?: IslandSidePanel(this, menuDock).also { sp ->
             sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
             // 先收起侧面板再开运行模式浮层：否则面板会从卡片左边露出一条，
             // 看起来像"两个浮层叠在一起"（真机截图一眼可见）。
             sp.onRunMode = { runOnUiThread { closeSidePanelNow(); showRunModeOverlay() } }
+            sp.onStatus = {
+                val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+                if (failed != null) FailureDialog.show(this, failed)
+            }
             sp.onRestart = {
                 urlLoaded = false
                 (application as DshApp).supervisor.restart()
                 Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
             }
             sidePanel = sp
-            sidePanelDock = islandDock
+            sidePanelDock = menuDock
         }
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup ?: return
         val host = existing ?: android.widget.FrameLayout(this).also { h ->
@@ -1501,26 +1574,28 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         host.addView(content, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
-            gravity = if (islandDock == IslandDock.LEFT)
+            gravity = if (menuDock == IslandDock.LEFT)
                 android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
         })
         val dm = resources.displayMetrics
+        val hostWidth = container.width.takeIf { it > 0 } ?: dm.widthPixels
+        val hostHeight = container.height.takeIf { it > 0 } ?: dm.heightPixels
         // ⚠️ 面板高度必须按**内容**量出来再夹到 70% 屏高。
         // 之前传的是屏幕高度，被 clamp 成 70% 后 ScrollView 填满，
         // 结果面板下半截一大片空白（真机截图一眼可见）。
-        val wPx = (IslandChrome.PANEL_W_DP * dm.density).toInt()
+        val wPx = (IslandChrome.PANEL_W_DP * dm.density).toInt().coerceAtMost(hostWidth)
         content.measure(
             android.view.View.MeasureSpec.makeMeasureSpec(wPx, android.view.View.MeasureSpec.EXACTLY),
             android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
         )
         val m = IslandChrome.expanded(
-            dock = islandDock,
-            screenW = dm.widthPixels,
-            screenH = dm.heightPixels,
+            dock = menuDock,
+            screenW = hostWidth,
+            screenH = hostHeight,
             density = dm.density,
             contentH = content.measuredHeight,
-            yCenter = dm.heightPixels / 2,
+            yCenter = hostHeight / 2,
         )
         val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
         lp.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -1542,6 +1617,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 副标题留空：停靠方位是实现细节，不是用户关心的状态。
             detail = "",
             dotColor = islandPal().dot,
+            statusClickable = (application as DshApp).supervisor.state.value is EngineSupervisor.State.Failed,
         )
         // v1.7.13：面板展开时把手隐藏 —— 交给唯一渲染入口（它按状态推导）
         renderIslandVisibility()
@@ -1549,6 +1625,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun toggleToolbar() {
         // 贴长边时展开的是竖排面板（见 IslandSidePanel），与顶部横条是两套形态。
+        if (islandDock == IslandDock.BOTTOM) {
+            bottomToolbarCollapsed = !bottomToolbarCollapsed
+            renderBottomToolbar()
+            return
+        }
         if (islandDock != IslandDock.TOP) { hideRunModeOverlay(); toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
@@ -1703,7 +1784,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val dLeft = cx
         val dRight = pw - cx
         val dTop = cy
+        val dBottom = parent.height - cy
         val next = when {
+            dBottom <= dTop && dBottom <= dLeft && dBottom <= dRight -> IslandDock.BOTTOM
             dTop <= dLeft && dTop <= dRight -> IslandDock.TOP
             dLeft <= dRight -> IslandDock.LEFT
             else -> IslandDock.RIGHT
@@ -1714,13 +1797,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val d = resources.displayMetrics.density
         val safe = IslandChrome.EDGE_SAFE_DP * d
         val ratio = when (next) {
-            IslandDock.TOP -> (cx / pw.toFloat()).coerceIn(0f, 1f)
+            IslandDock.TOP, IslandDock.BOTTOM -> (cx / pw.toFloat()).coerceIn(0f, 1f)
             else -> {
                 val usable = (parent.height - v.height - safe).coerceAtLeast(1f)
                 ((cy - safe) / usable).coerceIn(0f, 1f)
             }
         }
-        CustomVisualPref.setIslandAlongRatio(this, ratio)
+        if (next == IslandDock.BOTTOM) CustomVisualPref.setIslandBottomAlongRatio(this, ratio)
+        else CustomVisualPref.setIslandAlongRatio(this, ratio)
         islandDock = next
         CustomVisualPref.setIslandDock(this, next)
         // 先把拖拽位移收回，再由 applyDock 按新停靠边重新摆位
@@ -2640,14 +2724,25 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
             } else {
                 @Suppress("DEPRECATION")
-                if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
+                if (insets.systemWindowInsetBottom >= (96 * d).toInt()) insets.systemWindowInsetBottom else 0
             }
             val visibleRect = android.graphics.Rect()
-            root.getWindowVisibleDisplayFrame(visibleRect)
-            val imeFromFrame = (root.height - visibleRect.bottom).let {
-                if (it >= (96 * d).toInt()) it else 0
-            }
-            val imeBottom = maxOf(imeFromInsets, imeFromFrame)
+            val location = IntArray(2)
+            val content = findViewById<View>(R.id.webView).parent as? View ?: root
+            content.getWindowVisibleDisplayFrame(visibleRect)
+            content.getLocationOnScreen(location)
+            val overlap = if (!visibleRect.isEmpty && content.height > 0) {
+                (location[1] + content.height - visibleRect.bottom).coerceIn(0, content.height)
+            } else 0
+            val imeFromFrame = if (overlap >= (96 * d).toInt()) overlap else 0
+            val imeReported = if (Build.VERSION.SDK_INT >= 30) {
+                insets.isVisible(android.view.WindowInsets.Type.ime())
+            } else imeFromInsets > 0
+            val imeVisible = imeReported || imeFromFrame > 0
+            val imeBottom = if (islandDock != IslandDock.BOTTOM || immersive) {
+                maxOf(imeFromInsets, imeFromFrame)
+            } else imeFromFrame
+            val imeAffectsViewport = imeVisible || imeBottom > 0
             val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(
                     android.view.WindowInsets.Type.navigationBars()
@@ -2671,13 +2766,36 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //     直接顶到键盘上方）；
             //   · 键盘收起 → 让位 navBottom **仅在全屏时**需要（窗口铺到屏幕最底，
             //     手势条会压住内容）；非全屏时系统已让开，留 0。
-            val bottomPad = if (imeBottom > 0) {
+            val bottomPad = if (imeAffectsViewport) {
                 imeBottom
             } else if (immersive) {
                 navBottom
             } else {
                 0
             }
+            val toolbar = bottomToolbar
+            if (bottomToolbarImeVisible != imeVisible) {
+                bottomToolbarImeVisible = imeVisible
+                renderBottomToolbar()
+            }
+            val barShown = islandDock == IslandDock.BOTTOM && !imeVisible && toolbar != null
+            if (toolbar != null) {
+                val sideInsets = if (immersive && Build.VERSION.SDK_INT >= 30) {
+                    insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                } else null
+                toolbar.setHorizontalInsets(sideInsets?.left ?: 0, sideInsets?.right ?: 0)
+            }
+            val bar = toolbar?.root
+            if (bar != null) {
+                val barLp = bar.layoutParams as? android.widget.FrameLayout.LayoutParams
+                val barBottom = if (immersive) navBottom else 0
+                if (barLp != null && barLp.bottomMargin != barBottom) {
+                    barLp.bottomMargin = barBottom
+                    bar.layoutParams = barLp
+                }
+            }
+            bottomToolbarInset = if (barShown) bar?.height ?: 0 else 0
+            val viewportBottom = bottomPad + bottomToolbarInset
 
             // v1.4.63（宝宝反馈「网页感觉有点被压缩太狠了，还是改回全屏吧，
             // 到时候被遮挡就收起灵动岛即可」）：
@@ -2711,10 +2829,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
             val wlp = webView.layoutParams
             if (wlp is android.view.ViewGroup.MarginLayoutParams) {
-                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != bottomPad
+                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != viewportBottom
                 if (dirty) {
                     wlp.topMargin = 0
-                    wlp.bottomMargin = bottomPad
+                    wlp.bottomMargin = viewportBottom
                     webView.layoutParams = wlp
                 }
             }
@@ -2920,6 +3038,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
         }
         applyIslandActivity(state)
+        if (sideHost?.visibility == View.VISIBLE) {
+            sidePanel?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
+        }
     }
 
     /**
@@ -2983,6 +3104,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * WebView 历史短暂不同步时，宁可提示一次，也不能退到未知条目上。
      */
     override fun onBackPressed() {
+        if (runModeHost != null) { hideRunModeOverlay(); return }
+        if (sideHost?.visibility == View.VISIBLE) { closeSidePanelNow(); return }
         // v1.6.15：先问页面「有没有东西可关」，再考虑历史，最后才退出。
         //
         // 顺序为什么是这样：WebUI 是单页应用，切页面不写浏览器历史（实测
@@ -3775,12 +3898,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             stopHangWatchdog()
             val parent = webView.parent as? android.view.ViewGroup
             val oldUrl = runCatching { webView.url }.getOrNull()
+            val index = parent?.indexOfChild(webView) ?: -1
+            val params = webView.layoutParams
             parent?.removeView(webView)
             runCatching { webView.destroy() }
             val fresh = WebView(this)
             fresh.id = R.id.webView
-            parent?.addView(fresh, android.view.ViewGroup.LayoutParams(-1, -1))
+            parent?.addView(fresh, index.coerceAtLeast(0), params)
             webView = fresh
+            webView.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+                if (right - left != oldRight - oldLeft) scheduleViewportReapply("layout ${right - left}px")
+            }
+            findViewById<View>(android.R.id.content)?.requestApplyInsets()
             // 新渲染层还没有页面上报：先回到「不认识」状态，让 onBackPressed
             // 走原逻辑，避免拿旧 WebView 的条目判断去退新页面。
             backMobile = false

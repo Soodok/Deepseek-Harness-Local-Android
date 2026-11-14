@@ -105,8 +105,9 @@ object CustomVisualPref {
 
     private const val KEY_DOCK = "island_dock"
     private const val KEY_ALONG = "island_along_ratio"
+    private const val KEY_BOTTOM_ALONG = "island_bottom_along_ratio"
 
-    /** 灵动岛停靠边：TOP（默认，顶部横向胶囊）/ LEFT / RIGHT（贴长边竖排面板）。 */
+    /** 状态工具栏停靠边；旧偏好仍默认 TOP。 */
     fun islandDock(context: Context): IslandDock {
         val raw = prefs(context).getString(KEY_DOCK, IslandDock.TOP.name) ?: IslandDock.TOP.name
         return runCatching { IslandDock.valueOf(raw) }.getOrDefault(IslandDock.TOP)
@@ -121,6 +122,14 @@ object CustomVisualPref {
 
     fun setIslandAlongRatio(context: Context, ratio: Float) {
         prefs(context).edit().putFloat(KEY_ALONG, ratio.coerceIn(0f, 1f)).apply()
+    }
+
+    /** Bottom handle horizontal position, independent of the other dock positions. */
+    fun islandBottomAlongRatio(context: Context): Float =
+        prefs(context).getFloat(KEY_BOTTOM_ALONG, 0.5f).coerceIn(0f, 1f)
+
+    fun setIslandBottomAlongRatio(context: Context, ratio: Float) {
+        prefs(context).edit().putFloat(KEY_BOTTOM_ALONG, ratio.coerceIn(0f, 1f)).apply()
     }
 
     fun setIslandDock(context: Context, dock: IslandDock) {

@@ -1664,6 +1664,15 @@ Remove the installed version first, then pick this one?</string>
     <string name="island_side_no_plugins">No plugins installed yet</string>
     <string name="island_side_plugin_count">%1$d installed</string>
     <string name="island_dock_switched">Dock: %1$s</string>
+    <string name="setting_island_dock">Status dock position</string>
+    <string name="setting_island_dock_sub">Choose a screen edge for the status dock</string>
+    <string name="setting_island_dock_top">Top</string>
+    <string name="setting_island_dock_left">Left</string>
+    <string name="setting_island_dock_right">Right</string>
+    <string name="setting_island_dock_bottom">Bottom</string>
+    <string name="bottom_toolbar_expand">Show toolbar</string>
+    <string name="bottom_toolbar_home">Home</string>
+    <string name="bottom_toolbar_menu">Menu</string>
     <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
 
     <string name="theme_source">Colour source</string>
