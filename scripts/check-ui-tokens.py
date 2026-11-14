@@ -110,7 +110,8 @@ def res_path(*parts):
 
 bg_card = read(res_path('drawable', 'bg_card.xml'))
 check('D1 card token keeps a 1dp stroke (separation must survive dark mode)',
-      '<stroke' in bg_card and '1dp' in bg_card and '@color/stroke' in bg_card)
+      '<stroke' in bg_card and '1dp' in bg_card
+      and ('@color/stroke' in bg_card or '?attr/dshStroke' in bg_card))
 check('D2 group card corners come from md3_card_radius',
       '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
 
