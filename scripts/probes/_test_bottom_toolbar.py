@@ -29,7 +29,8 @@ checks = {
         and 'val viewportBottom = bottomPad + bottomToolbarInset' in main
         and 'wlp.bottomMargin = viewportBottom' in main,
     'toolbar opens existing menu and settings':
-        'override fun onMenu() { toggleSidePanel() }' in main
+        'override fun onMenu() { showBottomMenu() }' in main
+        and 'BottomSheetDialog(activity)' in (java / 'DshBottomMenu.kt').read_text(encoding='utf-8')
         and 'SettingsActivity::class.java' in main,
     'collapse and expand use accessible clicks and persisted drag':
         'collapseButton.setOnClickListener' in controller
@@ -37,7 +38,9 @@ checks = {
         and 'view.performClick()' in controller
         and 'setIslandBottomAlongRatio(this@MainActivity, ratio)' in main
         and 'collapsedView.performLongClick()' in controller
-        and 'override fun onMoveDock()' in main,
+        and 'override fun onMoveDock()' in main
+        and 'setIslandBottomPosition(this@MainActivity, xRatio, yRatio)' in main
+        and 'parent.addView(controller.floatingView' in main,
     'keyboard temporarily hides toolbar without mistaking navigation for IME':
         'toolbar.setShown(active && !bottomToolbarImeVisible)' in main
         and 'insets.systemWindowInsetBottom >= (96 * d).toInt()' in main

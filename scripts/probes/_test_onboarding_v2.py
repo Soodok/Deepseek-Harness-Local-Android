@@ -137,8 +137,8 @@ check("old accent enum is not offered", "Accent.entries" not in act and "Accent.
 accent_preview = fn_body(act, "private fun updateAccentPreview(")
 check("palette preview is refreshed", "updateAccentPreview()" in dynamic)
 check("palette repaints progress and next button",
-      "progress.progressTintList" in accent_preview and "btnNext.background" in accent_preview
-      and "setTint(accent)" in accent_preview)
+      "progress.progressTintList = ColorStateList.valueOf(accent)" in accent_preview
+      and "btnNext.backgroundTintList = ColorStateList.valueOf(accent)" in accent_preview)
 
 print("\n=== 4. 方向页真机预览 ===")
 check("preview view is a real custom view", os.path.exists(PREVIEW))

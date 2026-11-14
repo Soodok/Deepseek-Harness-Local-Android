@@ -1199,6 +1199,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     // 再按原样恢复，避免两套视图同时出现。
     private var islandDock: IslandDock = IslandDock.TOP
     private var bottomToolbar: DshBottomToolbarController? = null
+    private var bottomMenu: DshBottomMenu? = null
     private var bottomToolbarCollapsed = false
     private var bottomToolbarInset = 0
     private var bottomToolbarImeVisible = false
@@ -1259,12 +1260,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     if (url.isNotEmpty()) loadLocalUrl(url)
                     else Toast.makeText(this@MainActivity, R.string.status_idle, Toast.LENGTH_SHORT).show()
                 }
-                override fun onMenu() { toggleSidePanel() }
+                override fun onMenu() { showBottomMenu() }
                 override fun onSettings() { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
                 override fun onExpand() { bottomToolbarCollapsed = false; renderBottomToolbar() }
                 override fun onCollapse() { bottomToolbarCollapsed = true; renderBottomToolbar() }
                 override fun onDragRatio(ratio: Float) {
                     CustomVisualPref.setIslandBottomAlongRatio(this@MainActivity, ratio)
+                }
+                override fun onPosition(xRatio: Float, yRatio: Float) {
+                    CustomVisualPref.setIslandBottomPosition(this@MainActivity, xRatio, yRatio)
                 }
                 override fun onMoveDock() {
                     islandDock = IslandDock.TOP
@@ -1283,6 +1287,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         )
         val splashIndex = parent.indexOfChild(findViewById<View>(R.id.splash))
         parent.addView(controller.root, splashIndex.coerceAtLeast(0), lp)
+        val floatingParams = android.widget.FrameLayout.LayoutParams(
+            dpV(48), dpV(48), android.view.Gravity.TOP or android.view.Gravity.LEFT,
+        )
+        parent.addView(controller.floatingView, parent.indexOfChild(findViewById<View>(R.id.splash)).coerceAtLeast(0), floatingParams)
+        controller.setPosition(CustomVisualPref.islandBottomAlongRatio(this), CustomVisualPref.islandBottomVerticalRatio(this))
         controller.root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
                 findViewById<View>(android.R.id.content)?.requestApplyInsets()
@@ -1290,12 +1299,31 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
     }
 
+    private fun showBottomMenu() {
+        val menu = bottomMenu ?: DshBottomMenu(this).also { sheet ->
+            sheet.onRunMode = { showRunModeOverlay() }
+            sheet.onRestart = {
+                urlLoaded = false
+                (application as DshApp).supervisor.restart()
+                Toast.makeText(this, R.string.engine_restarting, Toast.LENGTH_SHORT).show()
+            }
+            sheet.onStatus = {
+                val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+                if (failed != null) FailureDialog.show(this, failed)
+            }
+            bottomMenu = sheet
+        }
+        val state = (application as DshApp).supervisor.state.value
+        menu.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
+        menu.show()
+    }
+
     private fun renderBottomToolbar() {
         val toolbar = bottomToolbar ?: return
         val active = islandDock == IslandDock.BOTTOM
         toolbar.setExpanded(!bottomToolbarCollapsed)
         toolbar.setShown(active && !bottomToolbarImeVisible)
-        if (active) toolbar.setDragRatio(CustomVisualPref.islandBottomAlongRatio(this))
+        if (active) toolbar.setPosition(CustomVisualPref.islandBottomAlongRatio(this), CustomVisualPref.islandBottomVerticalRatio(this))
         findViewById<View>(android.R.id.content)?.requestApplyInsets()
     }
 
@@ -2800,6 +2828,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
                 } else null
                 toolbar.setHorizontalInsets(sideInsets?.left ?: 0, sideInsets?.right ?: 0)
+                toolbar.setFloatingInsets(sideInsets?.left ?: 0, maxOf(statusTop, cutTop),
+                    sideInsets?.right ?: 0, if (immersive) navBottom else 0)
             }
             val bar = toolbar?.root
             if (bar != null) {
@@ -2810,7 +2840,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     bar.layoutParams = barLp
                 }
             }
-            bottomToolbarInset = if (barShown) bar?.height ?: 0 else 0
+            bottomToolbarInset = if (barShown && toolbar?.isExpanded == true) bar?.height ?: 0 else 0
             val viewportBottom = bottomPad + bottomToolbarInset
 
             // v1.4.63（宝宝反馈「网页感觉有点被压缩太狠了，还是改回全屏吧，
@@ -3054,6 +3084,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
         }
         applyIslandActivity(state)
+        bottomMenu?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
         if (sideHost?.visibility == View.VISIBLE) {
             sidePanel?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
         }
@@ -3120,6 +3151,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * WebView 历史短暂不同步时，宁可提示一次，也不能退到未知条目上。
      */
     override fun onBackPressed() {
+        if (bottomMenu?.isShowing == true) { bottomMenu?.dismiss(); return }
         if (runModeHost != null) { hideRunModeOverlay(); return }
         if (sideHost?.visibility == View.VISIBLE) { closeSidePanelNow(); return }
         // v1.6.15：先问页面「有没有东西可关」，再考虑历史，最后才退出。
@@ -3784,6 +3816,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     override fun onDestroy() {
+        bottomMenu?.dismiss()
+        bottomMenu = null
         // 注意：引擎由前台服务持有，Activity 销毁不影响后台任务。
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。

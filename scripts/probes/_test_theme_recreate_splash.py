@@ -43,7 +43,7 @@ checks = {
     'system and app status bars use theme colors':
         'isAppearanceLightStatusBars = lightSurface' in themed
         and 'IslandPalette.themed' in text
-        and '?attr/colorOnSurface' in main_layout
+        and '?attr/dshIslandText' in main_layout
         and 'w2.decorView.systemUiVisibility = w2.decorView.systemUiVisibility' in text,
 }
 for name, ok in checks.items():

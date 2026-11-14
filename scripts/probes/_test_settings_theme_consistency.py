@@ -91,7 +91,7 @@ for loc in ("values", "values-night"):
           str(sorted(declared - mapped_tokens)))
 themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
 check("[C3] 风格覆盖层不替换 Activity 主题",
-      "followsStyle && StylePref.isMaterial(this)" in themed
+      "followsStyle && appliedUiStyle == StylePref.Style.MATERIAL" in themed
       and "theme.applyStyle(styleOverlay, true)" in themed)
 
 # ---------- [D] Activity 不自己 setTheme ----------
