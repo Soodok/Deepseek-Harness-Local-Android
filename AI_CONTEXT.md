@@ -12827,3 +12827,31 @@ WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
 | `84887c0e` / `d67c0eef`（我的修复） | 1 | 1 | 我（rc 不变） |
 
 即：这两个红分别由 `8b7261bd` 与 `089e444d` 带进来，需要那两个会话自己补探针。
+
+---
+
+**补记十三（2026-11-14 中午）**：按需求微调封面（去掉重复的页眉提示、鲸鱼 56→92dp），并记录一次**误提交他人 WIP 的事故与补救**。
+
+### 1. 封面微调
+- 删掉布局里的 `welcomeEyebrow`（「DEEPSEEK HARNESS · FULL PORT」那行）与 `goTo()` 在封面写 `stepHint` 的分支 —— 它那句「约 30 秒建立环境；运行环境在后台解压」和胶囊说的是同一件事。其余页仍显示「第 n / 8 步」，显隐继续由 `syncCoverStatus()` 管。
+- 鲸鱼 `56dp → 92dp`，上边距 `6dp → 0dp`。
+- 提交：`70187f9b`（style）+ `fa5ea990`（补救，见下）。
+
+### 2. 事故：按路径提交把别人的在途改动带进了已推送的树
+- 现象：`70187f9b` 之后，远端 main 的 `activity_onboarding.xml` 引用了 53 行 `?attr/dshBg / dshSurface / dshAccent / dshTextPrimary …`，但**这些属性没有任何声明** —— `attrs_style.xml`（未跟踪）与 `themes.xml` / `values-night/themes.xml` 的对应改动都还在工作区，属另一条在途工作。
+- 后果：该快照单独检出后**资源编译直接失败**。在独立 worktree 检出 `70187f9b` 复跑 `:app:processDebugResources`：
+
+      ERROR: ...activity_onboarding.xml:22: AAPT: error: resource attr/dshBg (aka app.dsh.mobile:attr/dshBg) not found.
+      ERROR: ...activity_onboarding.xml:53: AAPT: error: resource attr/dshTextMuted ... not found.
+      ERROR: ...activity_onboarding.xml:94: AAPT: error: resource attr/dshStroke / dshAccent ... not found.
+      ERROR: ...activity_onboarding.xml:109/118: AAPT: error: resource attr/dshAccent / dshTextSecondary ... not found.
+
+- 根因：`git commit -m … -- <路径>` **取的是工作区内容，不是暂存区**。先用 `git update-index --cacheinfo` 精确写了 index，但提交时带了 `-- <路径>`，index 被工作区覆盖，别人的取色改写整块被带上去。
+- 补救：`fa5ea990` 只把该布局文件里的取色引用从 `?attr/dsh*` 改回 `@color/*`，保留鲸鱼与页眉两项；对方那份改写原样留在工作区（`git status` 仍是 53 行 `M`）。已 push（`21e4c31b..fa5ea990`，fast-forward）。
+- 验证：`fa5ea990` 的独立 worktree 跑 `:app:processDebugResources` → **BUILD SUCCESSFUL in 14s**；同一 worktree 检出 `70187f9b` 复跑 → 上面那串 AAPT 报错（反向证明断言不是空转）。验完 `git worktree remove --force`。
+
+### 3. 教训（下次务必照做）
+- **多人并行仓库里按 hunk 精确提交的唯一安全姿势**：先 `git update-index --cacheinfo` 写 index，然后**不带任何路径**执行 `git commit`；一写 `-- <路径>` 就用工作区覆盖 index。
+- 提交后立刻验：`git show --stat HEAD` 的文件数是否等于预期；对「已推送的树能否单独编译」存疑时，用 `git worktree add --detach` 检出该提交跑一次资源编译 —— 别只看工作区编译通过（工作区有别人的声明文件，会假绿）。
+- **不要 amend 已推送的提交**：一度 `git commit --amend` 想就地修，结果 amend 又带进另一条改动，只能 `git reset --mixed origin/main` 撤回，白折腾一轮。已推送一律补提交。
+- 提交信息含反引号/撇号时走 `git commit -F <文件>`，否则 shell 吃掉反引号内容。
