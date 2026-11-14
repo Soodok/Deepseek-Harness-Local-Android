@@ -3,5 +3,5 @@
      颜色随主题取 island_core（暗底亮核 / 亮底深核）。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <solid android:color="@color/island_core" />
+    <solid android:color="?attr/colorPrimary" />
 </shape>

@@ -9,13 +9,15 @@
     3. 步骤区与正文在同一个滚动容器里，避免嵌套滚动与「展开后卡片破洞」。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/splash"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/splash_bg"
+    android:background="?attr/colorSurface"
     android:clickable="true"
     android:focusable="true"
-    android:elevation="30dp">
+    android:elevation="30dp"
+    android:visibility="invisible">
 
     <ScrollView
         android:id="@+id/splashScroll"
@@ -45,11 +47,16 @@
                     android:layout_width="144dp"
                     android:layout_height="144dp">
 
-                    <app.dsh.mobile.ui.SplashRingView
+                    <com.google.android.material.progressindicator.CircularProgressIndicator
                         android:id="@+id/splashRing"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:importantForAccessibility="no" />
+                        android:indeterminate="true"
+                        android:max="10000"
+                        app:indicatorSize="144dp"
+                        app:trackThickness="4dp"
+                        app:trackColor="?attr/colorPrimaryContainer"
+                        android:contentDescription="@string/splash_starting" />
 
                     <ImageView
                         android:id="@+id/splashLogo"
@@ -58,7 +65,7 @@
                         android:layout_gravity="center"
                         android:src="@drawable/ic_launcher_foreground"
                         android:scaleType="fitCenter"
-                        android:tint="@color/splash_logo_tint"
+                        android:tint="?attr/colorOnSurface"
                         android:contentDescription="@string/app_name"
                         android:importantForAccessibility="no" />
                 </FrameLayout>
@@ -69,10 +76,9 @@
                     android:layout_marginTop="22dp"
                     android:gravity="center"
                     android:text="@string/app_name"
-                    android:textColor="@color/splash_text"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="26sp"
                     android:fontFamily="sans-serif-medium"
-                    android:letterSpacing="0.025"
                     android:includeFontPadding="false" />
 
                 <TextView
@@ -81,22 +87,27 @@
                     android:layout_marginTop="9dp"
                     android:gravity="center"
                     android:text="@string/splash_tagline"
-                    android:textColor="@color/splash_text_secondary"
+                    android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp"
                     android:lineSpacingExtra="2dp" />
 
-                <LinearLayout
+                <com.google.android.material.card.MaterialCardView
                     android:id="@+id/splashModeBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="20dp"
+                    app:cardBackgroundColor="?attr/colorSecondaryContainer"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp">
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingStart="12dp"
                     android:paddingEnd="14dp"
                     android:paddingTop="8dp"
-                    android:paddingBottom="8dp"
-                    android:background="@drawable/splash_mode_badge">
+                    android:paddingBottom="8dp">
 
                     <View
                         android:id="@+id/splashModeDot"
@@ -116,7 +127,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/splash_mode_detecting"
-                            android:textColor="@color/splash_text_secondary"
+                            android:textColor="?attr/colorOnSecondaryContainer"
                             android:textSize="12sp"
                             android:fontFamily="sans-serif-medium" />
 
@@ -126,11 +137,12 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="@string/splash_ui_mode_waiting"
-                            android:textColor="@color/splash_text_muted"
+                            android:textColor="?attr/colorOnSecondaryContainer"
                             android:textSize="10sp"
                             android:visibility="gone" />
                     </LinearLayout>
                 </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -144,7 +156,7 @@
                         android:layout_height="wrap_content"
                         android:minHeight="32dp"
                         android:text="@string/splash_preparing"
-                        android:textColor="@color/splash_text"
+                        android:textColor="?attr/colorOnSurface"
                         android:textSize="22sp"
                         android:fontFamily="sans-serif-medium"
                         android:lineSpacingExtra="3dp"
@@ -162,7 +174,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:textColor="@color/splash_text_secondary"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="12sp"
                             android:fontFamily="monospace" />
 
@@ -171,7 +183,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="12dp"
-                            android:textColor="@color/splash_accent"
+                            android:textColor="?attr/colorPrimary"
                             android:textSize="12sp"
                             android:fontFamily="monospace" />
                     </LinearLayout>
@@ -182,7 +194,7 @@
                         android:layout_height="wrap_content"
                         android:minHeight="40dp"
                         android:layout_marginTop="10dp"
-                        android:textColor="@color/splash_text_secondary"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:textSize="12sp"
                         android:lineSpacingExtra="4dp" />
 
@@ -190,10 +202,11 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginTop="14dp"
-                        android:background="@color/splash_rule" />
+                        android:background="?attr/colorOutlineVariant" />
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/splashToggle"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
@@ -202,9 +215,8 @@
                         android:paddingEnd="14dp"
                         android:gravity="center"
                         android:text="@string/splash_show_steps"
-                        android:textColor="@color/splash_accent"
+                        android:textColor="?attr/colorPrimary"
                         android:textSize="12sp"
-                        android:background="@drawable/splash_pill"
                         android:clickable="true"
                         android:focusable="true" />
 
@@ -222,7 +234,7 @@
                             android:layout_height="wrap_content"
                             android:paddingTop="4dp"
                             android:paddingBottom="16dp"
-                            android:textColor="@color/splash_text_secondary"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="11sp"
                             android:fontFamily="monospace"
                             android:lineSpacingExtra="5dp" />

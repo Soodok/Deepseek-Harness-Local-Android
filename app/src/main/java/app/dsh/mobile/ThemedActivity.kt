@@ -97,7 +97,6 @@ object ThemeManager {
     }
 
     fun applyBars(activity: Activity) {
-        val dark = isDark(activity)
         // 跟随主题的 colorSurface；动态取色启用时它就是壁纸派生色，
         // 写死 @color/bg 会让状态栏在切换主题瞬间闪回旧色。
         val tv = android.util.TypedValue()
@@ -111,16 +110,35 @@ object ThemeManager {
         }
         activity.window.statusBarColor = bg
         activity.window.navigationBarColor = bg
-        var flags = activity.window.decorView.systemUiVisibility
-        flags = if (dark) {
-            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv() and
-                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
-        } else {
-            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
-                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        }
-        activity.window.decorView.systemUiVisibility = flags
+        val lightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(bg) > 0.5
+        val controller = androidx.core.view.WindowInsetsControllerCompat(
+            activity.window, activity.window.decorView,
+        )
+        controller.isAppearanceLightStatusBars = lightSurface
+        controller.isAppearanceLightNavigationBars = lightSurface
     }
+}
+
+fun IslandPalette.themed(context: Context): IslandPalette.Colors {
+    fun role(attr: Int) = com.google.android.material.color.MaterialColors.getColor(context, attr, "IslandPalette")
+    val panel = role(com.google.android.material.R.attr.colorSurfaceContainerHigh)
+    val onSurface = role(com.google.android.material.R.attr.colorOnSurface)
+    val onVariant = role(com.google.android.material.R.attr.colorOnSurfaceVariant)
+    val primary = role(androidx.appcompat.R.attr.colorPrimary)
+    val tertiary = role(com.google.android.material.R.attr.colorTertiary)
+    return IslandPalette.Colors(
+        panel = panel,
+        handle = panel,
+        title = onSurface,
+        body = onSurface,
+        muted = onVariant,
+        accent = primary,
+        divider = role(com.google.android.material.R.attr.colorOutlineVariant),
+        dot = primary,
+        ok = tertiary,
+        okSoft = androidx.core.graphics.ColorUtils.setAlphaComponent(tertiary, 31),
+        warn = role(androidx.appcompat.R.attr.colorError),
+    )
 }
 
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */

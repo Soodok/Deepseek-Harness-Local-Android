@@ -44,7 +44,7 @@ class RunModeOverlay(private val act: Activity) {
      * 配色（v1.7.11）：与灵动岛共用 IslandPalette。
      * 之前这里全是硬编码暗色，浅色主题下弹出来是一块黑卡 —— 用户实测反馈。
      */
-    private val pal: IslandPalette.Colors by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }
+    private val pal: IslandPalette.Colors by lazy { IslandPalette.themed(act) }
 
     /** 用户最终选择的动作；null 表示取消。 */
     sealed class Pick {

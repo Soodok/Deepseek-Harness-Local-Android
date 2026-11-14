@@ -279,8 +279,11 @@ class MainActivity : ThemedActivity() {
 runCatching { (application as DshApp).supervisor.webUrl() }
                 .getOrNull()?.takeIf { it.isNotEmpty() }?.let { loadLocalUrl(it) }
         }
-        // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
-        statusBar.setOnClickListener { toggleToolbar() }
+        // Failed diagnostics remain accessible after the automatic dialog is dismissed.
+        statusBar.setOnClickListener {
+            val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+            if (failed != null) FailureDialog.show(this, failed) else toggleToolbar()
+        }
         // 把手：可拖到屏幕边缘任意位置（避让遮挡）；移动距离小于阈值视为点击唤回工具栏
         setupHandleBar()
 
@@ -403,7 +406,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     override fun onRetainNonConfigurationInstance(): Any? {
         val state = (application as DshApp).supervisor.state.value
         val snapshot = BootTrace.snapshot.value
-        return if (webPageReady && isUsableEngineState(state) && snapshot.stage == BootTrace.Stage.READY) {
+        return if (webPageReady && isUsableEngineState(state) && !snapshot.running) {
             RecreatedSplashState(state, snapshot)
         } else null
     }
@@ -1320,7 +1323,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
 
     /** 灵动岛配色（v1.7.11）：跟着 设置→外观 的明暗走，浅色主题下岛也变浅。 */
-    private fun islandPal(): IslandPalette.Colors = IslandPalette.of(ThemeManager.isDarkNow(this))
+    private fun islandPal(): IslandPalette.Colors = IslandPalette.themed(this)
 
     /** 贴边把手：贴边侧圆角 0、外凸侧 10dp，与设计稿一致。 */
     private fun sideHandleBackground(): android.graphics.drawable.GradientDrawable {
@@ -1901,10 +1904,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         splashDismissed = false
 
         val state = (application as DshApp).supervisor.state.value
-        // A new boot invalidates the retained READY snapshot even if the port or token is reused.
+        // Any new boot invalidates the retained trace, even if the port or token is reused.
         if (retained != null && isUsableEngineState(retained.engineState) &&
             isUsableEngineState(state) && sameEngineSession(retained.engineState, state) &&
-            retained.bootSnapshot.stage == BootTrace.Stage.READY &&
+            !retained.bootSnapshot.running &&
             BootTrace.snapshot.value === retained.bootSnapshot &&
             !RuntimeInstaller(this).needsRuntimeDownload()
         ) {
@@ -1946,12 +1949,27 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     state is EngineSupervisor.State.Installing ||
                     state is EngineSupervisor.State.Starting
             },
+            snapshotForDisplay = { snapshot -> splashSnapshotForDisplay(snapshot) },
             onWatchdog = { dismissSplash() },
             onHidden = {
                 splash = null
                 splashController = null
             },
         )
+    }
+
+    /** BootTrace records individual attempts; only a terminal supervisor failure is current. */
+    private fun splashSnapshotForDisplay(snapshot: BootTrace.Snapshot): BootTrace.Snapshot {
+        if (snapshot.stage != BootTrace.Stage.FAILED) return snapshot
+        return when ((application as DshApp).supervisor.state.value) {
+            is EngineSupervisor.State.Failed -> snapshot
+            is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode ->
+                BootTrace.Snapshot(stage = BootTrace.Stage.LOADING)
+            is EngineSupervisor.State.Installing -> BootTrace.Snapshot(stage = BootTrace.Stage.PREPARING)
+            is EngineSupervisor.State.Starting, is EngineSupervisor.State.Backoff ->
+                BootTrace.Snapshot(stage = BootTrace.Stage.STARTING)
+            else -> BootTrace.Snapshot(stage = BootTrace.Stage.PREPARING)
+        }
     }
 
     /** 更新遮罩上的阶段文案（兜底路径；正常渲染走 BootTrace）。 */
@@ -2105,11 +2123,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 }
                 @Suppress("DEPRECATION")
-                w.decorView.systemUiVisibility =
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                w.decorView.systemUiVisibility = w.decorView.systemUiVisibility
+                    .or(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                    .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                    .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                    .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
                 WindowInsetsControllerCompat(w, w.decorView)
                     .hide(WindowInsetsCompat.Type.statusBars())
                 // ⚠️ v1.4.51（用户报「有些系统不会自动隐藏状态栏，导致状态栏遮挡页面」）：
@@ -2204,11 +2222,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                             .hide(WindowInsetsCompat.Type.statusBars())
                     }
                     @Suppress("DEPRECATION")
-                    w2.decorView.systemUiVisibility =
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                    w2.decorView.systemUiVisibility = w2.decorView.systemUiVisibility
+                        .or(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
                     WindowInsetsControllerCompat(w2, w2.decorView)
                         .hide(WindowInsetsCompat.Type.statusBars())
                     // 系统重置后窗口可能又开始为状态栏预留空间 → 立刻重算岛位置
@@ -2691,6 +2709,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun render(state: EngineSupervisor.State) {
         lastRenderedState = state
+        if (!splashDismissed) splashController?.render(BootTrace.snapshot.value)
         if (recreateTransition &&
             (!isUsableEngineState(state) ||
                 recreateTransitionState?.let { !sameEngineSession(it, state) } != false)
@@ -2727,6 +2746,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
             is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode -> {
+                FailureDialog.resetAutoShowGuard()
                 // ⚠️ 这里**只能有一个** Healthy/SafeMode 分支。
                 // 2026-11-07 实测踩过：加降级提示时又写了一个同样的 when 条件，
                 // Kotlin 只走第一个匹配分支，第二段成了**永不执行的死代码** ——

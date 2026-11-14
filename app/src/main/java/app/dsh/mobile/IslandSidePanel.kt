@@ -46,7 +46,7 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     private lateinit var dot: View
 
     /** 当前主题下的配色（v1.7.11）：暗色沿用旧值，浅色是新补的一套。 */
-    private val pal: IslandPalette.Colors by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }
+    private val pal: IslandPalette.Colors by lazy { IslandPalette.themed(act) }
 
     var onCollapse: (() -> Unit)? = null
     /** 点「运行模式」：由宿主弹 RunModeDialog（需要 Activity 级 Dialog）。 */
