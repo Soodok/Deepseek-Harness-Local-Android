@@ -219,6 +219,86 @@ check("store：调 CLI 之前就主动归一，不等失败",
       _cli_body.index("healStoreDirSpelling(ctx)") < _cli_body.index("pb.start()"),
       "只在失败后修 = 用户每次装包都要多等一轮，且第一次必然看见报错")
 
+# ------------------------------------------------ ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY（v1.7.30）
+check("lock：有坏 lockfile 判据", "isBrokenLockfileError" in src)
+check("lock：判据认错误码与人话两种形态",
+      "ERR_PNPM_LOCKFILE_MISSING_DEPENDENC" in src and "Broken lockfile" in src,
+      "用户截图里错误码被弹窗宽度截过，只认错误码会漏判")
+_bke = re.search(r"private fun isBrokenLockfileError\(msg: String\): Boolean =([\s\S]*?)\n\n", src)
+check("lock：判据函数体取到了", _bke is not None)
+if _bke:
+    _bkb = _bke.group(1)
+    check("lock：判据体内真的认 \"Broken lockfile\" 这句人话",
+          '"Broken lockfile"' in _bkb,
+          "截图上错误码被弹窗截断过，只认错误码会漏判；但断言的必须是函数体，"
+          "整文件里注释也含这句话，拿全文判定会假绿")
+    check("lock：判据体内没有裸 \"lockfile\" 这种宽判据",
+          not re.search(r'contains\("lockfile"', _bkb),
+          "单看 lockfile 会把 ERR_PNPM_OUTDATED_LOCKFILE 等正常提示全判成坏文件")
+check("lock：自愈走 pnpm 官方的 --fix-lockfile",
+      "healBrokenLockfile" in src and '"--fix-lockfile"' in src,
+      "官方 help 原文就是 pnpm install --fix-lockfile；手工改 YAML 只能猜")
+_hbl = re.search(r"private fun healBrokenLockfile[\s\S]*?getOrDefault\(false\)", src)
+check("lock：自愈函数体取到了", _hbl is not None)
+if _hbl:
+    _hb = _hbl.group(0)
+    check("lock：只动 profiles/web 的 lockfile",
+          '"profiles/web"' in _hb and "pnpm-lock.yaml" in _hb,
+          "碰别的 profile 等于替用户改他没在用的环境")
+    check("lock：改之前先备份原始字节",
+          ".broken-" in _hb and "copyTo(" in _hb,
+          "--fix-lockfile 整份重写，没备份就没法回滚")
+    check("lock：用 node 跑 corepack 的 pnpm.js（与其它自愈同一条入口）",
+          "lib/node_modules/corepack/dist/pnpm.js" in _hb and "nodeBin(ctx)" in _hb,
+          "engine/bin/pnpm 只是 175B 的 sh 包装器，直连 js 才能控环境")
+    check("lock：失败时不谎报修复",
+          "p.exitValue() == 0" in _hb and "return@runCatching false" in _hb,
+          "修不好就要把 pnpm 原文抛给用户，而不是静默吞掉")
+    check("lock：跑之前清空环境后按 buildEnv 重建",
+          "environment().clear()" in _hb and "buildEnv(ctx" in _hb,
+          "继承 App 进程环境会带进评审版/调试注入的变量")
+check("lock：只在真失败时自愈并重试一次",
+      "isBrokenLockfileError(msg)" in _install_body.group(0) and
+      "--fix-lockfile ran, still failing" in _install_body.group(0))
+check("lock：自愈分支在 ignored-builds 之前",
+      _install_body.group(0).index("isBrokenLockfileError(msg)") <
+      _install_body.group(0).index("isIgnoredBuildsError(msg)"),
+      "坏 lockfile 时 pnpm 连解析都过不去，ignored builds 分支永远命中不了")
+
+# ------------------------------------------------ 按钮摘要（v1.7.31）
+# 2026-11-14 用户截图：按钮上只有一串 file:// 路径，真因不可见。
+_PSTORE = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile",
+                       "PluginStoreActivity.kt")
+_IES = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile",
+                    "engine", "InstallErrorSummary.kt")
+pstore = open(_PSTORE, encoding="utf-8").read() if os.path.exists(_PSTORE) else ""
+ies = open(_IES, encoding="utf-8").read() if os.path.exists(_IES) else ""
+check("摘要：逻辑已抽到 InstallErrorSummary（可被 JVM 单测喂真实原文）",
+      "object InstallErrorSummary" in ies,
+      "留在 Activity 私有方法里只能靠本探针看字符串，证明不了真实输出")
+check("摘要：pnpm 的 ERR_PNPM 错误码仍然优先",
+      'Regex("[A-Z][A-Z0-9_]{6,}")' in ies and "take(40)" in ies)
+check("摘要：先剔纯位置行（Node 的 ESM 栈头 / file:// 模块 URL）",
+      "stripLocationLines" in ies and 'Regex("^file://' in ies,
+      "判据必须是「整行就是一个 file:// URL」的正则匹配")
+check("摘要：过滤不是裸 contains(\"file://\")",
+      'contains("file://")' not in ies,
+      "真正的错误行里也会有 file://（如 Cannot find module 'file:///...'），"
+      "用 contains 会把它连同线索一起删掉")
+check("摘要：过滤带 Error/ERR_ 的行不剔（别把线索一起删掉）",
+      'contains("rror")' in ies and 'contains("ERR_")' in ies)
+check("摘要：全是位置行时回退原文，不留空",
+      "ifBlank { text }" in ies)
+check("摘要：Activity 里不再内联实现，只委托",
+      "InstallErrorSummary.summarize(msg)" in pstore,
+      "两份实现必然漂移，下一次又要靠截图才发现")
+check("摘要：失败出口不再用裸 take(28)",
+      "msg.take(28)" not in pstore,
+      "take(28) 会把 pnpm 的错误码整行切掉（v1.5.0-beta.6 已修过一处，别回退）")
+check("摘要：卸载失败的按钮也能看完整原文",
+      pstore.count("showInstallErrorDialog(") >= 3,
+      "安装 / 强制安装 / 卸载三条失败路径都要能长按取原文")
+
 # ------------------------------------------------ 回归：旧自愈不能丢
 check("keep：pnpm store 锁自愈仍在", "isPnpmStoreLockError" in src and "healPnpmStore" in src,
       "v1.4.18 的修复不能被这次改动挤掉")

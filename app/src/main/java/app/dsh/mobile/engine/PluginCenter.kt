@@ -322,6 +322,38 @@ object PluginCenter {
                     }
                 }
                 // ══════════════════════════════════════════════════════════
+                // v1.7.30（用户 2026-11-14 反馈：插件中心「安装失败，Broken lockfile」）
+                //
+                // 报错原文（pnpm 12.18.0 / 真机 PLZ110）：
+                //     Error: ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY
+                //       × adding a new package
+                //       ╰─▶ Broken lockfile: no entry for '<pkg>@<ver>' in pnpm-lock.yaml
+                //     help: To fix the lockfile, run 'pnpm install --fix-lockfile'.
+                //
+                // 成因不是「用户做了什么」，而是**这份 lockfile 的 importers 与
+                // packages/snapshots 两段自相矛盾**：importers 里记着某依赖的
+                // 普通版本号，而 packages/snapshots 里只有它的 `file:` 形态键。
+                // 老版本（v1.5.x）确实干过这件事 —— `normalizeDependencySpec` 事后
+                // 把 importers 的 `file:` 改回纯版本号，只改一段，另两段没动。
+                // 那版代码早已删除，但**设备上的坏 lockfile 会一直留着**，
+                // 于是之后每一次装插件都死在同一条错误上（用户看到的就是「又坏了」）。
+                //
+                // 与 storeDir 分叉的区别：那个是字符串拼写，改一行就好；这个是
+                // 整份派生结构不自洽，只能让 pnpm 自己重建 —— 官方给的解法就是
+                // `pnpm install --fix-lockfile`（真机实测：先复现、跑它、再装即成功）。
+                // 所以这里照做：**只让 pnpm 修 lockfile，不手工改它**。
+                // ══════════════════════════════════════════════════════════
+                if (!ok && isBrokenLockfileError(msg)) {
+                    val healed = healBrokenLockfile(ctx)
+                    Log.w(TAG, "install $pkg: broken lockfile; fix-lockfile=$healed; retrying once")
+                    if (healed) {
+                        val r6 = runDshPluginCli(ctx, "add", spec)
+                        ok = r6.first
+                        msg = if (ok) r6.second
+                        else "${r6.second} [pnpm install --fix-lockfile ran, still failing]"
+                    }
+                }
+                // ══════════════════════════════════════════════════════════
                 // v1.4.67（宝宝第 5 次反馈「还是下载失败，还是报错」，真机实测定位）
                 //
                 // 真机事实：pnpm 报 ERR_PNPM_IGNORED_BUILDS 时，**包其实已经装好了**
@@ -1671,6 +1703,119 @@ object PluginCenter {
         }
         changed
     }.getOrDefault(false)
+    /**
+     * 坏 lockfile 的判据（v1.7.30，用户 2026-11-14 反馈「插件中心又装不上」）。
+     *
+     * 真机原文（PLZ110 / pnpm 12.18.0）：
+     *     Error: ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY
+     *       × adding a new package
+     *       ╰─▶ Broken lockfile: no entry for '<pkg>@<ver>' in pnpm-lock.yaml
+     *     help: To fix the lockfile, run 'pnpm install --fix-lockfile'.
+     *
+     * 用「错误码前缀 + 人话」双签名，理由同 [isUnexpectedStoreError]：
+     * 错误码可能被 UI / 日志截断（用户截图里就断过），人话那句更稳；
+     * 而单看 "lockfile" 又会误伤 ERR_PNPM_OUTDATED_LOCKFILE 之外的一大票
+     * 正常提示，所以必须带 Broken 这个限定词。
+     */
+    private fun isBrokenLockfileError(msg: String): Boolean =
+        msg.contains("ERR_PNPM_LOCKFILE_MISSING_DEPENDENC", ignoreCase = true) ||
+            msg.contains("Broken lockfile", ignoreCase = true)
+
+    /**
+     * 修坏 lockfile（v1.7.30）：跑 pnpm 官方的 `install --fix-lockfile`。
+     *
+     * ## 为什么是「让 pnpm 自己修」而不是我们改文件
+     *
+     * 坏法不是某一行的笔误，而是**同一份 lockfile 的 importers 段与
+     * packages/snapshots 段对不上**：importers 里记着某依赖的纯版本号，
+     * packages/snapshots 里只有它的 `file:` 形态键（v1.5.x 的
+     * normalizeDependencySpec 只改了一段，代码删除后设备上的产物一直留着）。
+     * 这种派生结构上的不自洽，任何「按行正则修补」都只能猜，猜错的代价是
+     * 之后每次装插件都失败；pnpm 自己有权威解析器，官方解法就是这一句。
+     *
+     * 真机实测（2026-11-14）：复现报错 → 跑本函数（310ms，退出码 0）
+     * → importers 自动恢复成 `file:` 形态 → 再 add 同一包即成功。
+     *
+     * ## 安全性
+     *
+     * · 只动 `profiles/web/pnpm-lock.yaml`（连带 pnpm 自己的 node_modules 收敛），
+     *   不碰 .npmrc / pnpm-workspace.yaml / package.json；
+     * · 跑之前把原文件备份成 `pnpm-lock.yaml.broken-<ts>`，最坏情况能整份换回；
+     * · 只在**已经失败**且命中 [isBrokenLockfileError] 时触发，正常安装零开销。
+     *
+     * @return 真的修成功（exit 0）才返回 true —— 失败时静默返回 false，
+     *         由调用方把 pnpm 原文抛给用户，不谎报「已修复」
+     */
+    private fun healBrokenLockfile(ctx: Context): Boolean = runCatching {
+        val engine = EngineConfig.engineRoot(ctx)
+        val pnpmJs = File(engine, "lib/node_modules/corepack/dist/pnpm.js")
+        if (!pnpmJs.isFile) {
+            Log.w(TAG, "healBrokenLockfile: pnpm.js missing at " + pnpmJs.absolutePath)
+            return@runCatching false
+        }
+        val profile = File(EngineConfig.dshHome(ctx), "profiles/web")
+        val lock = File(profile, "pnpm-lock.yaml")
+        if (!profile.isDirectory || !lock.isFile) {
+            Log.w(TAG, "healBrokenLockfile: no lockfile at " + lock.absolutePath)
+            return@runCatching false
+        }
+        // 备份：--fix-lockfile 会整份重写，留一份原始字节才能回滚
+        val backup = File(profile, "pnpm-lock.yaml.broken-" + System.currentTimeMillis())
+        val backedUp = runCatching { lock.copyTo(backup, overwrite = false) }.isSuccess
+        if (!backedUp) Log.w(TAG, "healBrokenLockfile: backup failed; proceeding (pnpm may still fix)")
+
+        val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
+        val pb = ProcessBuilder(
+            buildList {
+                add(EngineConfig.nodeBin(ctx).absolutePath)
+                add(pnpmJs.absolutePath)
+                add("install")
+                add("--fix-lockfile")
+                add("--reporter=append-only")
+            },
+        )
+        pb.directory(profile)
+        pb.environment().clear()
+        env.forEach { kv ->
+            val i = kv.indexOf('=')
+            if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
+        }
+        // --fix-lockfile 不需要交互输入；合并 stderr 免掉「先读哪个流」的死锁
+        pb.redirectErrorStream(true)
+        val p = pb.start()
+        val buf = StringBuilder()
+        val pump = Thread {
+            runCatching {
+                p.inputStream.bufferedReader().use { r ->
+                    val b = CharArray(8192)
+                    var n = r.read(b)
+                    while (n > 0) {
+                        synchronized(buf) { buf.append(b, 0, n) }
+                        n = r.read(b)
+                    }
+                }
+            }
+        }.also { it.isDaemon = true; it.start() }
+        val finished = p.waitFor(120, TimeUnit.SECONDS)
+        if (!finished) {
+            runCatching { p.destroyForcibly() }
+            runCatching { p.inputStream.close() }
+            runCatching { pump.join(1000) }
+            Log.w(TAG, "healBrokenLockfile: pnpm install --fix-lockfile timed out (120s)")
+            return@runCatching false
+        }
+        runCatching { pump.join(2000) }
+        val out = synchronized(buf) { buf.toString() }.trim()
+        Log.i(
+            TAG,
+            "healBrokenLockfile: exit=" + p.exitValue() +
+                " backup=" + (if (backedUp) backup.name else "-") +
+                " out=" + out.takeLast(400),
+        )
+        if (p.exitValue() != 0) runCatching { backup.delete() }
+        p.exitValue() == 0
+    }.getOrDefault(false)
+
     /** [ERR_PNPM_UNEXPECTED_STORE] 的判据：错误码 + 人话双签名。 */
     private fun isUnexpectedStoreError(msg: String): Boolean =
         msg.contains("ERR_PNPM_UNEXPECTED_STORE", ignoreCase = true) ||

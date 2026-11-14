@@ -13,6 +13,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.InstallErrorSummary
 import app.dsh.mobile.engine.PluginCenter
 import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PluginMarket
@@ -1058,44 +1059,13 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     /**
-     * 把 pnpm / 引擎的失败原文压成按钮上那一小段（v1.5.0-beta.6）。
+     * 按钮上那一小段摘要 —— 实现见 [InstallErrorSummary]（v1.7.31）。
      *
-     * 旧实现是 `msg.take(28)`，而 pnpm 的输出是
-     *     Error: ERR_PNPM_XXX
-     *     （空行）
-     *       × adding a new package
-     *       ╰─▶ <真正原因>
-     * 前 28 字符恰好停在错误码与空行之间，**错误码本身被切掉**，按钮上只剩
-     * `Error: × adding a new packa` —— 所有失败长得一模一样，用户报给我们也
-     * 没有信息量（宝宝第 9 次反馈的现场）。
-     *
-     * 现在的取法，按判别性从高到低：
-     *   ① `ERR_PNPM_*` / `E*` 错误码（一行就能定位问题族）；
-     *   ② 上游 `dsh: ...` 诊断行；
-     *   ③ 最后一个不重复的 `╰─▶` 原因链节点；
-     *   ④ 退化到首行有效文本。
+     * 为什么搬走：这段逻辑决定「用户截图能不能提供线索」，必须能被 JVM 单测
+     * 直接喂真实 pnpm 原文验证。留在 Activity 私有方法里只能靠 py 探针看源码
+     * 字符串，证明不了「同一段原文进来，出来的是错误码还是那串 file:// 路径」。
      */
-    private fun summarizeInstallError(msg: String): String {
-        val text = msg.replace("\r\n", "\n").trim()
-        if (text.isEmpty()) return "unknown"
-        // ① 错误码：pnpm 的 ERR_PNPM_*、Node 的 ENOENT/ENOTFOUND 等
-        Regex("[A-Z][A-Z0-9_]{6,}").find(text)?.let { return it.value.take(40) }
-        // ② 上游给的诊断/拒绝行
-        text.lineSequence().firstOrNull { it.trimStart().startsWith("dsh:") }?.let {
-            return it.trim().take(60)
-        }
-        // ③ 原因链最后一节（「╰─▶」之后才是真正的根因）
-        val cause = text.lineSequence()
-            .map { it.substringAfter("▶", "").trim() }
-            .lastOrNull { it.isNotEmpty() && !it.startsWith("×") }
-        if (!cause.isNullOrEmpty()) return cause.take(60)
-        // ④ 首行有效文本（跳过 "Error:" / 空行 / "×" 开头这类无信息行）
-        return text.lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() && it != "Error:" && !it.startsWith("×") }
-            ?.take(60)
-            ?: text.take(60)
-    }
+    private fun summarizeInstallError(msg: String): String = InstallErrorSummary.summarize(msg)
 
     /**
      * 长按失败按钮 → 完整错误原文 + 一键复制（v1.5.0-beta.6）。
@@ -1163,10 +1133,16 @@ class PluginStoreActivity : ThemedActivity() {
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
                     reload(verbose = true)
                 } else {
-                    btn.text = getString(R.string.plugin_failed, msg.take(28))
+                    // v1.7.31：与首装失败用同一套摘要 —— 旧实现在这里还是裸
+                    // take(28)，会把错误码整行切掉，用户只看到半句英文。
+                    btn.text = getString(R.string.plugin_failed, summarizeInstallError(msg))
                     btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    btn.setOnLongClickListener {
+                        showInstallErrorDialog(pkg, msg)
+                        true
+                    }
                 }
             }
         }
@@ -1197,10 +1173,15 @@ class PluginStoreActivity : ThemedActivity() {
                     }
                     reload(verbose = true)
                 } else {
-                    btn.text = getString(R.string.plugin_failed, msg.take(28))
+                    // v1.7.31：同上，卸载失败也要给出可分辨的原因 + 完整原文入口
+                    btn.text = getString(R.string.plugin_failed, summarizeInstallError(msg))
                     btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    btn.setOnLongClickListener {
+                        showInstallErrorDialog(pkg, msg)
+                        true
+                    }
                 }
             }
         }
