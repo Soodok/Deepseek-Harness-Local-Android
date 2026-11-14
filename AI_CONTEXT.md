@@ -12517,3 +12517,70 @@ JVM `passed=2386 failed=0`；**128 个探针 0 失败**；i18n / ui-tokens / no-
   worktree 里做。
 - CI 结果未看（推送后未轮询 Actions）。
 - `runtime.zip` 仍未重建（Linux/Termux 闭包，本机无 WSL/docker），App 进程内 rc.3 整链未验。
+
+## 一百二十一、动态取色移植（PR #102 最小化）（2026-11-14，提交 40fca0df）
+
+**背景**：用户报「点动态取色屏幕疯狂闪烁」（社群同步反馈）。PR #102（xiaowu8848，
+head 988f1292）有完整修法，但整包合会碰 16 个冲突文件（含 3 个本仓不存在的状态栏
+Activity）。用户决定：**只移植动态取色，不做全量 MD3**（「全量移植 md3 还是有些问题的」）。
+
+### 根因：重建闭环
+```
+点开关 → checked=true → ThemeAccent.setMode(DYNAMIC) → recreate()
+  → onRestoreInstanceState 把 checked 还原成 true
+  → setOnCheckedChangeListener 又触发 → 又写偏好 → 又 recreate() → ∞
+```
+真机实测：旧包点一次开关后 `Displayed app.dsh.mobile` 会连续刷屏。
+
+### 三条修法（其余保持本仓现状）
+1. `app/src/main/res/layout/activity_theme.xml`：swDynamic 加
+   `android:saveEnabled="false"` —— 断掉状态还原那一路。
+2. `app/src/main/java/app/dsh/mobile/ThemeActivity.kt` 的 `setupDynamic()`：
+   空转保护 `val already = ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC;
+   if (already == checked) return@setOnCheckedChangeListener`。
+   原来的 `syncing` 锁只在 setupChips 期间有效，覆盖不到 recreate 之后（形同虚设）。
+3. `app/src/main/java/app/dsh/mobile/ThemedActivity.kt`：`applyBars()` 的
+   `getColor(R.color.bg)` 改成 `barBackground(activity)`；**仅 Mode.DYNAMIC 时**
+   resolve `com.google.android.material.R.attr.colorSurface`，其余回 `R.color.bg`。
+   **为什么不能一律用 colorSurface**：PRESET/CUSTOM 下它映射到 `@color/surface`
+   （卡片色，比页面底更白），拿它当系统栏会与页面底出现色带。
+
+### 没照搬 PR 的两处（会破坏本仓能力）
+- **保留 `ThemeAccent.Mode` 三值枚举**：PR 删成 `dynamicEnabled: Boolean`，
+  会波及 `Accent.kt:89/102/106/117` 与 `AccentTint.kt:103` 共 6 处调用。
+- **保留 `ThemedActivity.setTheme`**：PR 改成完全不调、交给 Manifest 的
+  `DynamicColors.applyToActivitiesIfAvailable`；本仓 18/25 个 Activity 靠
+  `usesSettingsBackground` 切 `Theme.Dsh.MD3`，删了这条分派就废了。
+
+### 新增探针 `scripts/probes/_test_theme_flicker.py`（11 条，已加 .gitignore 白名单）
+**★ 假绿教训**：第一版第 4 条写成 `"ThemeAccent.Mode.DYNAMIC" in bars`（只要求
+bars 段里**出现过**该常量），把守卫改成 `if (true) return ...` 时变异 #4 **假绿
+（EXIT=0）**。改成钉住守卫精确串 `if (!dynamic) return activity.getColor(R.color.bg)`
+后变异 #4 转红。四条变异 M1(saveEnabled→true) / M2(空转保护 if(false)) /
+M3(R.attr.colorSurface→0) / M4(守卫 if(true)) **全部 EXIT=1**，还原 EXIT=0。
+
+### 真机验证（OnePlus PLZ110 / Android 16 / SDK 36）
+- 装 `1.6.0-beta.11-themefix`（versionCode **394**，43,807,649 B），`dumpsys` 核
+  `lastUpdateTime=2026-11-14 09:45:38`。**必须 `install -r -d`**：并行会话把设备包
+  抬到 vc=389，`install -r` 会静默拒绝降级（输出被 tail 吞掉）。
+- DYNAMIC（偏好直接改 `shared_prefs/dsh_ui_prefs.xml` 的 `theme_accent_mode`，因为
+  ThemeActivity 是 `exported=false`，`am start -n` 起不来）：
+  系统栏采样 **#FAF8FF**（跟随壁纸浅紫），页面 #FFFFFF。
+- PRESET 对照：系统栏 **#F5F7FA**、页面 #EBF6FD（旧冷蓝灰）。
+- 启动日志 `Displayed app.dsh.mobile/.MainActivity for user 0: +410ms`，`recreate` 计数 0。
+
+### 顺带修复（重构时丢失的老约束）
+- `MainActivity.kt` 的 `renderIslandVisibility()` 补回 `handle.requestApplyInsets()`
+  —— 原来「灵动岛 GONE→VISIBLE 后补一次 insets 应用」在重构时丢了，
+  `_test_security_audit.py` 因此变红。
+- `scripts/probes/_test_island_side_panel.py` 两条断言按新实现改写：
+  `applyDock hides the top XML capsule` 改找 `renderIslandVisibility()` + 
+  `showOverlay = !side && !islandCollapsed`；`side handle uses IslandChrome geometry`
+  改找 `IslandChrome.collapsedRect(`。
+
+### 当前门禁状态
+- JVM **2402 passed / 0 failed**
+- py 探针 PASS=129 FAIL=1，唯一红项 `_test_onboarding_v2.py` 是**他人未提交 WIP**
+  （工作区版 OnboardingActivity.kt 删了 `findViewById(R.id.pagePriv)`，HEAD 版
+  `OnboardingActivity.kt:181` 有；HEAD 基线跑该探针 EXIT=0 全绿，已证非本会话引入）
+- i18n 0
