@@ -12709,13 +12709,13 @@ WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
 ### 踩坑与教训
 
 - **探针应答必须回显 question 段**：第一版只回 12 字节头（QR=1、RCODE=0），`nslookup` 报
-  `*** Can not find dsh-probe.invalid: Parse error` —— RFC 1035 要求 QDCOUNT 与实际携带的 question 段一致。
+  `*** Can't find dsh-probe.invalid: Parse error` —— RFC 1035 要求 QDCOUNT 与实际携带的 question 段一致。
   修法：`buildProbeReply()` 复制 `q[0 until qEnd+4]`（头 + 原样 QNAME/QTYPE/QCLASS）再改头。
 - **SIGSTOP 不能冻结单线程**：`kill -STOP <tid>` 会停整个进程组（实测三个 dns 线程全变 T），
   要复现「单循环死掉」只能用 `iptables DROP`。同理 `SIGCONT <pid>` 才能恢复。
 - **构建产物会被并行会话吃掉**：`app/build/intermediates/project_dex_archive/debug` 被清空但 Gradle 认为 up-to-date，
   打出的 APK 有 11 个 dex 却**不含 app.dsh.mobile.DshApp**，装上直接
-  `java.lang.ClassNotFoundException: Didn not find class app.dsh.mobile.DshApp`（FATAL EXCEPTION: main）。
+  `java.lang.ClassNotFoundException: Didn't find class "app.dsh.mobile.DshApp"`（FATAL EXCEPTION: main）。
   判别：`grep -a -c DshApp classes*.dex` 应为非 0。修法：删 `project_dex_archive/debug`、
   `dex_archive_input_jar_hashes/debug`、`desugar_graph/debug`、`dex_number_of_buckets_file/debug` 后重建。
 - **Kotlin 字符串转义**：`log("… \$fresh")` 在 Kotlin 里会输出字面量 `$fresh`（不需要反斜杠），
@@ -12728,6 +12728,12 @@ WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
 - 未验证「上游 DoH 真挂掉 + 高并发」组合下队列丢弃的实际观感（设计上丢弃会让部分查询无应答，客户端自行重试）。
 - 未做 8 小时以上的长跑（原故障是「跑几小时」出现，看门狗 20s 周期理论上限 40s 就能自愈，但未做长时观测）。
 
-### 改动文件（未提交）
+### 已提交
 
-`app/src/main/java/app/dsh/mobile/engine/LinuxDnsProxy.kt`（+397 −25）。仓内另有并行会话的 WIP，提交前需确认归属。
+| 提交 | 范围 |
+|---|---|
+| `0354793d` | `fix(ext)` 启动清理不再删掉正在解包的 `.tmp-install`（bun 主程序缺失的真实成因） |
+| `11680997` | `feat(ext)` 扩展中心新增 Bun 运行时（58 项，Linux 模式置灰） |
+| `089e444d` | `fix(linux)` DNS 代理跑久后静默失效 —— 有界转发池 + 看门狗自愈（`LinuxDnsProxy.kt` +397 −25） |
+
+三个提交在本地 `main` 上，尚未推送；`origin/main` 停在 `4bcc2102`。
