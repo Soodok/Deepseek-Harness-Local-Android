@@ -28,6 +28,9 @@ check("Preferences: developer mode defaults to off", '.getBoolean(KEY_ENABLED, f
 check("Settings: developer row follows persisted mode", "DeveloperModePrefs.isEnabled(this)" in settings)
 check("Settings: row is refreshed on resume", "refreshDeveloperOptionsEntry()" in settings.split("override fun onResume()", 1)[-1])
 check("Developer page: turning master switch off disables the mode", "DeveloperModePrefs.setEnabled(this, false)" in activity)
+check("Developer page: refuses launch while developer mode is disabled",
+      "if (!DeveloperModePrefs.isEnabled(this))" in activity and
+      "finish()" in activity.split("if (!DeveloperModePrefs.isEnabled(this))", 1)[-1].split("return", 1)[0])
 check("Developer page: does not bypass capability authorization", "CapabilityGate" in activity and "authorization" in activity)
 check("Manifest: developer page is not exported",
       'android:name=".DeveloperOptionsActivity"' in manifest and
@@ -35,6 +38,15 @@ check("Manifest: developer page is not exported",
 rows = [node for node in layout.iter() if node.get(android_id) == "@+id/rowDeveloperOptions"]
 check("Settings layout: developer row exists and starts hidden",
       len(rows) == 1 and rows[0].get("{http://schemas.android.com/apk/res/android}visibility") == "gone")
+about_rows = [node for node in layout.iter() if node.get(android_id) == "@+id/rowAbout"]
+check("Settings layout: developer row precedes About and uses middle segment styling",
+      len(rows) == 1 and len(about_rows) == 1 and
+      list(rows[0].getparent()).index(rows[0]) < list(about_rows[0].getparent()).index(about_rows[0])
+      if hasattr(rows[0], "getparent") else
+      len(rows) == 1 and len(about_rows) == 1 and
+      rows[0].get("{http://schemas.android.com/apk/res/android}background") == "@drawable/bg_md3_seg_mid" and
+      rows[0].get("{http://schemas.android.com/apk/res/android}clickable") == "true" and
+      rows[0].get("{http://schemas.android.com/apk/res/android}focusable") == "true")
 
 print()
 if failures:
