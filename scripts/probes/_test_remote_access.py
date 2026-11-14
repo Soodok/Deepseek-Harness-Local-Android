@@ -195,6 +195,32 @@ def main():
         "C6 setup.sh 会写 env 并拉门脚本",
         "setup.sh" in ras and "gates.tgz" in ras and "DSH_BRIDGE_TOKEN" in ras,
     )
+    check(
+        "C7 setup.sh 把请求里的 key 内联进去（不是留占位符）",
+        # ★ 真机实测缺陷：脚本只校验 ?key= 却不回填，env 里是字面量
+        # PASTE_YOUR_KEY_HERE，用户照着脚本头部注释敲 curl | sh 必然 403。
+        # 只断言 "key" 字样存在是假绿 —— 必须断言「同一个请求的 key 被传进 setupScript」。
+        re.search(r"setupScript\(presentedKey\(lines, query\)", ras) is not None
+        and "PASTE_YOUR_KEY_HERE" in ras,
+        "保留占位符是为了没带 key 时也能给出可读提示，但正常路径必须内联",
+    )
+    # ⚠️ 这段不能拿剥注释后的 ras 断言：文件前面有个 """ 多行脚本字面量，
+    # 简易剥离器在那里会把引号状态翻乱，之后的注释剥不掉（实测 ras 里仍留着
+    # 本段的 // 注释）。所以这里只在 gatesArchive 的代码切片上判，且自己按行
+    # 去掉 // 注释 —— 判据要盯「有没有那条排除判据」，不能把注释文字当证据。
+    _ga = ras_raw[ras_raw.find("private fun gatesArchive"):]
+    _ga = _ga[: _ga.find("val bos")]
+    _ga_code = "\n".join(re.sub(r"//.*$", "", ln) for ln in _ga.splitlines())
+    check(
+        "C8 门脚本包全量打包，不排除 _dsh_http.sh",
+        # 34 个门脚本都 . 引用这个库；排除它等于把整包打瘫。
+        # 旧写法 .filter { it != "_dsh_http.sh" || true } 是恒真空操作（|| true 让
+        # 条件永远成立），注释却写着「不排除」—— 代码与意图相反。
+        "_dsh_http.sh\" || true" not in _ga_code
+        and 'assets.list("gates")' in _ga_code
+        and "filter" not in _ga_code,
+        _ga_code.strip()[:120],
+    )
 
     # ---- D 段：App 接线 ----
     check(
@@ -241,7 +267,8 @@ def main():
     )
 
     # ---- E 段：五语文案 ----
-    langs = ["values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"]
+    # 六语全查：漏掉 ru 时那条语言缺文案也不会红（实测远程访问 6 个语言都有 19 条）。
+    langs = ["values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th", "values-ru"]
     need = [
         "setting_remote_access",
         "setting_remote_access_sub",

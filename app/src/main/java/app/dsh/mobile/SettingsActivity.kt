@@ -126,7 +126,7 @@ class SettingsActivity : ThemedActivity() {
         }
         // —— 远程访问手机能力（v1.7.1）——
         // 与上面 LAN Web 的区别：那个是「人在浏览器里操作手机界面」，
-        // 这个是「PC 上的脚本/AI 直接调用手机的 144 个设备端点」。
+        // 这个是「PC 上的脚本/AI 直接调用这台手机的设备端点（数量见 GET /dev/routes）。
         // 两者独立开关：有人只要远程看界面、不想要脚本权限。
         val swRemote = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swRemoteAccess)
         val remoteSub = findViewById<android.widget.TextView>(R.id.remoteAccessSub)
