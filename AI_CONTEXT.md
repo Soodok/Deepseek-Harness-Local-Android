@@ -13094,3 +13094,118 @@ clamp 出来的 —— 面板被 70% 屏高截断时两者**并不等价**，面
 `engine/PluginCenter.kt` 与 `scripts/probes/_test_plugin_install_errors.py` 是并行会话
 在途的 broken-lockfile 自愈改动（`isBrokenLockfileError` / `healBrokenLockfile`
 在仓内尚无定义），按归属避让，未纳入本次提交。
+
+---
+
+## 一百二十六 · 2026-11-14 插件安装失败两起反馈：坏 lockfile 自愈 + 失败按钮摘要
+
+### 两起反馈与归因
+
+用户（m09216）报两个插件装不上：
+
+**A. 插件中心 / dshmarket 1.73.19**（截图 m09212）
+弹窗标题「插件安装失败 / 安装命令失败，原因见安装详情」，正文
+`Error: ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY` +
+`Broken lockfile: no entry for '@x...' in pnpm-lock.yaml`，
+help 行 `pnpm install --fix-lockfile`。
+
+真机取证（PLZ110 / Android 16 / uid 10499，引擎 0.2.2-rc.1，pnpm 12.18.0）：
+失败前 profile `package.json` 的 deps = `@soodok/dsh-remote-hub: file:.../rh.tgz`
++ `@yolk_vat-y/dsh-project-memory: ^0.7.0`，lockfile importers 两者都是 `file:`
+形态（自洽）。
+
+**受控复现**：把 importers 的 remote-hub 改成 `specifier: 0.1.0 / version: 0.1.0`
+（packages/snapshots 仍是 `@soodok/dsh-remote-hub@file:...`）→ `pnpm add dshmarket`
+立刻报**与截图逐字同型**的 `ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY / Broken lockfile`。
+
+成因：v1.5.x 的 `normalizeDependencySpec` 曾把 importers 的 `file:` 改回纯版本号
+却没动 packages/snapshots。代码早已删除，**但设备上的坏 lockfile 会一直留着**，
+于是之后每次装插件都死在同一条错误上。
+
+修法已在真机验证：`pnpm install --fix-lockfile`（310ms，exit 0）后 importers
+自动恢复成 `file:`，再 `pnpm add dshmarket` 成功（`+ dshmarket 1.73.19`）。
+**不要手工改 lockfile** —— 那是 pnpm 的派生结构，猜错的代价是永久坏。
+
+**B. 官方插件页 / dsh-longterm-memory 0.1.4**（截图 m09214）
+按钮文字 `失败：file:///data/user/0/app.dsh.mobile/files/engine/lib/node_mod...`。
+
+- 0.1.4 与 0.1.8 在真机都能装成功（`plugin --profile web add dsh-longterm-memory`
+  → `+ dsh-longterm-memory 0.1.8`；`@0.1.4` → `+ dsh-longterm-memory 0.1.4`）。
+  deps 仅 `yaml ^2.8.0` + `zod ^4.4.3`。
+- 按钮文字是 `summarizeInstallError()` 的产物（当时在 `PluginStoreActivity.kt:1078`）。
+- **未取到用户当时那条错误原文，根因保留为「待原文」**。已核实但排除：
+  - `dsh.client.inject` 声明 `@deepseek-ai/dsh-client-ui-slots`，而引擎
+    `lib/node_modules/@deepseek-ai/` 下 331 个包里**没有** ui-slots
+    （只有 `dsh-client-locale` / `dsh-client-ui-layout`）。
+    但引擎内 73 个 package.json 也把 ui-slots 写进 inject，而 client-modules
+    的 `arriveGraphRow` 找不到行时只是 `continue`（不报错），
+    且插件 client bundle 实际只 `require("react")` —— **inject 是提示性的，
+    缺包不会失败**，故排除。
+  - 插件包内 `lib/client.js` 无任何 `dsh-client-ui-slots` / `dsh-client-locale`
+    的 import，全包只有 package.json 里那条声明。
+
+### 改动（提交 96825f0f，5 文件 / +444 −38）
+
+**1. `engine/PluginCenter.kt` +145** —— `healBrokenLockfile()` + `isBrokenLockfileError()`
+
+- 判据双签名：`ERR_PNPM_LOCKFILE_MISSING_DEPENDENC`（截断容错）+ `Broken lockfile`。
+- 只动 `profiles/web/pnpm-lock.yaml`；改前备份 `pnpm-lock.yaml.broken-<ts>`。
+- 走 `node lib/node_modules/corepack/dist/pnpm.js install --fix-lockfile`
+  （与 `probeIgnoredBuilds` / 其它自愈同一条入口，`engine/bin/pnpm` 只是 175B sh 包装器）。
+- `redirectErrorStream(true)` 避免「先读哪个流」的死锁；120s 超时强杀。
+- 失败时删备份并返回 false，**不谎报修复**。
+- 分支位置在 `isIgnoredBuildsError` **之前** —— 坏 lockfile 时 pnpm 连解析都过不去。
+
+**2. 新增 `engine/InstallErrorSummary.kt`（72 行）** —— 摘要逻辑从 Activity 抽出
+
+原实现第 ④ 步兜底取「首行有效文本」，正好吃中 Node 输出的模块 URL 行。
+现在先 `stripLocationLines()`：只剔「整行就是一个 file:// 路径且不含
+rror / ERR_」的行。判据刻意收紧 —— 真正的错误行里同样有 file://
+（`Cannot find module 'file:///...'`），用 contains 会把线索一起删掉。
+
+**3. `PluginStoreActivity.kt`** —— 委托 `InstallErrorSummary.summarize()`；
+清掉 `forceInstall` 与 `runUninstall` 两处残留的裸 `take(28)`；
+三处失败出口都加长按取完整原文。
+
+**4. 新增 `app/src/test/.../InstallErrorSummaryTest.kt`（128 行 / 10 条）**
+喂真实 Node / pnpm 原文，断言「出来的不是那串路径」。
+
+**5. `scripts/probes/_test_plugin_install_errors.py` +80**（50 → 73 项）
+
+### 验证（全部实跑）
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| JVM 单测 | `gradle -Ppackage=noruntime :app:testDebugUnitTest` | **29/29**，0 failures（InstallErrorSummaryTest 10 条） |
+| 插件探针 | `python scripts/probes/_test_plugin_install_errors.py` | **73 通过 / 0 失败** |
+| Kotlin 编译 | `gradle -Ppackage=noruntime compileDebugKotlin` | BUILD SUCCESSFUL |
+| 提交独立构建 | 在 git worktree 于 96825f0f 检出后重跑单测 | **29/29**，exit 0 |
+
+**变异反验 5 项全部变红，恢复后 md5 逐字节一致**：
+1. 不剔位置行 → `nodeEsmStackHeadIsNotUsedAsSummary` 红
+2. 判据放宽成 `s.contains("file://")` → `errorLineWithFileUrlNotDropped...` 红
+3. 去掉错误码优先 → `pnpmErrorCodeStillWins` 红
+4. 去掉 `dsh:` 分支 → `upstreamDshDiagnosticLineWinsOverCauseChain` 红
+5. `unknown` 兜底改空串 → `emptyOutputGivesUnknown` 红
+
+第 2 项第一版是**假绿**：单行输入下过滤结果为空 → `ifBlank` 回退原文 →
+断言照样通过。补了 `errorLineWithFileUrlNotDroppedEvenWhenOtherLinesRemain`
+（加一行普通文本、断回退不发生）后才能真正变红。**教训：用 ifBlank 兜底的
+函数，单行用例永远测不出过滤判据宽了。**
+
+设备状态：测试期我的 `pnpm add` 写进设备的 `dshmarket` / `dsh-longterm-memory`
+已全部撤销，`package.json` 恢复为 rh.tgz + project-memory 两项，bundles 恢复三项，
+lockfile 内两包出现次数 0，临时目录 `files/fp`、`files/lc` 已删，
+`pnpm-lock.yaml` importers 已核对回 `^0.7.0 / 0.7.0`。
+
+### 未完成（不谎报）
+
+- 官方插件页那条错误的**原始文本**仍未取到，根因待原文。
+  本次改动保证：下次再发生时，按钮上显示的是真因而非路径，长按可取全文。
+
+### 并行会话避让
+
+`app/src/main/java/app/dsh/mobile/LinuxActivity.kt`（framesrv 相关，当时 +24 −4，
+正在被另一会话反复改写，抓取瞬间处于**编译不过**状态，行号随时间漂移不可引用）、
+`engine/RootfsModes.kt`、`RootfsModesTest.kt` 属并行会话在途，本轮未纳入提交。
+本轮验证在 `git worktree` 于提交 96825f0f 独立检出后重跑，不依赖工作区状态。
