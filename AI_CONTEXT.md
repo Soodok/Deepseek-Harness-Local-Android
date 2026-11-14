@@ -12580,7 +12580,10 @@ M3(R.attr.colorSurface→0) / M4(守卫 if(true)) **全部 EXIT=1**，还原 EXI
 
 ### 当前门禁状态
 - JVM **2402 passed / 0 failed**
-- py 探针 PASS=129 FAIL=1，唯一红项 `_test_onboarding_v2.py` 是**他人未提交 WIP**
-  （工作区版 OnboardingActivity.kt 删了 `findViewById(R.id.pagePriv)`，HEAD 版
-  `OnboardingActivity.kt:181` 有；HEAD 基线跑该探针 EXIT=0 全绿，已证非本会话引入）
+- py 探针 PASS=128 FAIL=2，两个红项都是**他人未提交 WIP**，HEAD 基线跑均 EXIT=0 全绿：
+  · `_test_onboarding_v2.py`：工作区版 OnboardingActivity.kt 删了
+    `findViewById(R.id.pagePriv)`，HEAD 版 `OnboardingActivity.kt:181` 有。
+  · `_test_linux_apt_nonroot.py`（D3 start 幂等判据 / D4 acceptLoop 异常标记 socket 死亡）：
+    工作区版 LinuxDnsProxy.kt 在改看门狗（`PROBE_NAME = "dsh-probe.invalid"`、
+    `WATCHDOG_INTERVAL_MS = 20_000L`、`PROBE_TIMEOUT_MS = 3_000`），未提交。
 - i18n 0
