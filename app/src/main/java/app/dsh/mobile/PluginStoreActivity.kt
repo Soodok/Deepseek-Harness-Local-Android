@@ -8,8 +8,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -19,6 +17,8 @@ import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PluginMarket
 import app.dsh.mobile.engine.PluginMarket.Compat
 import app.dsh.mobile.engine.PluginMarket.Entry
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
 
 /**
  * 插件中心（v1.4.21 重写）。
@@ -58,8 +58,8 @@ class PluginStoreActivity : ThemedActivity() {
     private lateinit var container: LinearLayout
     private lateinit var listScroll: android.widget.ScrollView
     private lateinit var tvSubtitle: TextView
-    private lateinit var etSearch: EditText
-    private lateinit var btnClear: ImageView
+    private lateinit var etSearch: TextInputEditText
+    private lateinit var btnClear: MaterialButton
     private lateinit var btnTabMarket: TextView
     private lateinit var btnTabInstalled: TextView
     private lateinit var btnSort: TextView
@@ -109,7 +109,7 @@ class PluginStoreActivity : ThemedActivity() {
         btnTabInstalled = findViewById(R.id.btnTabInstalled)
         btnSort = findViewById(R.id.btnSort)
         btnCheckUpdates = findViewById(R.id.btnCheckUpdates)
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         btnSort.text = getString(sortMode.labelRes)
         categoryChips = findViewById(R.id.categoryChips)
@@ -316,7 +316,7 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     private fun loadMarket(force: Boolean) {
-        val query = etSearch.text.toString().trim()
+        val query = etSearch.text?.toString().orEmpty().trim()
         if (!force && query.isBlank() && marketEntries.isNotEmpty()) {
             render()
             return
@@ -371,7 +371,7 @@ class PluginStoreActivity : ThemedActivity() {
         btnTabMarket.setTypeface(null, if (market) Typeface.BOLD else Typeface.NORMAL)
         btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else dshColor(R.attr.dshTextMuted, R.color.text_muted))
         btnTabInstalled.setTypeface(null, if (!market) Typeface.BOLD else Typeface.NORMAL)
-        etSearch.visibility = if (market) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.searchRow).visibility = if (market) View.VISIBLE else View.GONE
         btnCheckUpdates.visibility = if (market) View.GONE else View.VISIBLE
         reload(verbose = true)
         findViewById<View>(R.id.listContainer).post { /* 列表从顶部开始 */ }
@@ -390,7 +390,7 @@ class PluginStoreActivity : ThemedActivity() {
         val byCategory = if (onMarket && selectedCategory.isNotBlank()) {
             source.filter { it.category == selectedCategory }
         } else source
-        val filtered = PluginMarket.filter(byCategory, etSearch.text.toString(), onlyInstalled = !onMarket)
+        val filtered = PluginMarket.filter(byCategory, etSearch.text?.toString().orEmpty(), onlyInstalled = !onMarket)
         val sorted = PluginMarket.sort(filtered, sortMode)
 
         tvSubtitle.text = when {
@@ -410,7 +410,7 @@ class PluginStoreActivity : ThemedActivity() {
                     when {
                         failed -> getString(R.string.plugin_search_fail)
                         !onMarket -> getString(R.string.plugin_none_installed)
-                        etSearch.text.isNotBlank() -> getString(R.string.plugin_search_none)
+                        !etSearch.text.isNullOrBlank() -> getString(R.string.plugin_search_none)
                         else -> getString(R.string.plugin_empty)
                     }
                 )
@@ -683,7 +683,7 @@ class PluginStoreActivity : ThemedActivity() {
         if (e.repo.isNotBlank()) body.append(getString(R.string.plugin_detail_repo))
             .append(": ").append(e.repo).append('\n')
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(e.name)
             .setMessage(body.toString().trim())
             .setPositiveButton(android.R.string.ok, null)
@@ -737,7 +737,7 @@ class PluginStoreActivity : ThemedActivity() {
     private fun showSortDialog() {
         val modes = PluginMarket.Sort.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.plugin_sort_title)
             .setSingleChoiceItems(labels, modes.indexOf(sortMode)) { d, which ->
                 sortMode = modes[which]
@@ -839,7 +839,7 @@ class PluginStoreActivity : ThemedActivity() {
         pkg: String, btn: TextView, basePkg: String, title: String, message: String,
     ) {
         if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton(R.string.plugin_install_anyway) { _, _ -> doInstall(pkg, btn, basePkg) }
@@ -979,7 +979,7 @@ class PluginStoreActivity : ThemedActivity() {
             .filter { it.isNotEmpty() }
         if (names.isEmpty()) return false
         btn.text = getString(R.string.plugin_build_approve_btn)
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_build_pending_title))
             .setMessage(
                 getString(
@@ -1076,7 +1076,7 @@ class PluginStoreActivity : ThemedActivity() {
      */
     private fun showInstallErrorDialog(pkg: String, msg: String) {
         val body = msg.trim().ifEmpty { "exit=unknown (pnpm printed nothing)" }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_error_title))
             .setMessage("$pkg\n\n$body\n\n" + getString(R.string.plugin_error_hint))
             .setPositiveButton(getString(R.string.report_copy)) { _, _ ->
@@ -1107,7 +1107,7 @@ class PluginStoreActivity : ThemedActivity() {
             PluginCenter.parseEngineRejection(this, pkg, msg)
         }.getOrNull() ?: return
         val version = rejection.version ?: return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_engine_old_title))
             .setMessage(rejection.userMessage(this))
             .setPositiveButton(getString(R.string.plugin_engine_old_force)) { _, _ ->
@@ -1149,7 +1149,7 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     private fun confirmUninstall(pkg: String, btn: TextView) {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_uninstall))
             .setMessage(pkg)
             .setPositiveButton(R.string.plugin_uninstall) { _, _ -> runUninstall(pkg, btn) }

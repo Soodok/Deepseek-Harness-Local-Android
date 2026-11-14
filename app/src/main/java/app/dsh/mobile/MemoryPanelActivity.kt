@@ -103,7 +103,8 @@ class MemoryPanelActivity : ThemedActivity() {
             adapter.rows.getOrNull(position)?.let { openDetail(it.id) }
         }
 
-        findViewById<View>(R.id.btnMemBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
 
         // 两个开关都走同一个端点：POST /memory/v2/config 支持只带其中一个字段，
         // 回包会把两个真实值都带上，所以拿它回写 Switch 比各自记账更不容易不一致。
@@ -155,7 +156,7 @@ class MemoryPanelActivity : ThemedActivity() {
 
     private fun applyStats(reply: MemoryBridge.Reply) {
         val o = reply.json
-        if (o == null) {
+        if (!reply.ok || o == null) {
             // 桥不可达：数值位统一给破折号（标签仍在，不然整块卡片像坏了）。
             txtTotal.text = NO_VALUE
             txtHitRate.text = NO_VALUE
@@ -187,7 +188,7 @@ class MemoryPanelActivity : ThemedActivity() {
 
     private fun applyList(reply: MemoryBridge.Reply) {
         val o = reply.json
-        if (o == null) {
+        if (!reply.ok || o == null) {
             adapter.rows = emptyList()
             empty.text = getString(R.string.mem_offline)
             empty.visibility = View.VISIBLE

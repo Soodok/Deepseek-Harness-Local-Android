@@ -966,6 +966,25 @@ object BehaviourTest {
         val left = IslandChrome.collapsedRect(IslandDock.LEFT, 1220, 2640, d3, 0.5f)
         check(left.x == 0, "left docked handle hugs the left edge")
 
+        val bottom = IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 0.5f)
+        check(bottom == IslandChrome.Metrics(544, 2562, 132, 78), "bottom handle is centered and horizontal: $bottom")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, -1f).x == 0,
+            "bottom ratio clamps below zero")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 2f).x == 1088,
+            "bottom ratio clamps above one")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 0f).x == 0 &&
+            IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 1f).x == 1088,
+            "bottom ratio reaches both horizontal edges")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 0.5f, safeBottomPx = 135).y == 2427,
+            "bottom inset moves the handle above the inset")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 20, 30, 1f, 1f, safeBottomPx = 100) ==
+            IslandChrome.Metrics(0, 0, 44, 26), "bottom position remains nonnegative in a small parent")
+        check(IslandChrome.collapsed(IslandDock.BOTTOM, 1220, 2640, d3, 100) == bottom,
+            "legacy collapsed API centers the bottom handle")
+        val smallPanel = IslandChrome.expanded(IslandDock.RIGHT, 120, 100, 1f, 200, 50)
+        check(smallPanel.w == 120 && smallPanel.h == 70,
+            "side menu fits a narrow, short window: $smallPanel")
+
         // 运行模式浮层也用这套色（v1.7.11 追加）：勾选绿与警示橙在两种底色上都要看得清
         check(d.ok == 0xFF22A06B.toInt(), "dark ok unchanged")
         check(d.warn == 0xFFB45309.toInt(), "dark warn unchanged")

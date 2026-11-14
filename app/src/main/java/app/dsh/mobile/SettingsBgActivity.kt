@@ -44,7 +44,8 @@ class SettingsBgActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings_bg)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
 
         imgPreview = findViewById(R.id.imgBgPreview)
         txtHint = findViewById(R.id.txtBgPickHint)

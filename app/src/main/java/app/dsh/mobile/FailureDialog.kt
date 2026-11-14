@@ -1,14 +1,18 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.util.Log
+import android.view.Gravity
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.EngineTriage
 import app.dsh.mobile.engine.RepairActions
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 引擎启动失败的诊断弹窗（v1.5.3）。
@@ -29,7 +33,7 @@ import app.dsh.mobile.engine.RepairActions
  *   所以主按钮是「知道了」，而修复动作是并列的中性按钮。
  * - **需要确认的动作走二级弹窗**：回滚配置/停用插件会改用户数据，
  *   直接一键执行太粗暴。
- * - **执行结果显示在同一个弹窗里**（重建弹窗），不是 Toast —— 用户需要看到
+ * - **执行结果显示在同一个弹窗里**，不是 Toast —— 用户需要看到
  *   `skipped` 的原因，Toast 一闪就没了。
  */
 object FailureDialog {
@@ -62,31 +66,35 @@ object FailureDialog {
         val diag = state.diagnosis
         if (diag == null) {
             // 没有诊断（旧状态/异常路径）时退回最简单的样子，但至少把原文给出来
-            AlertDialog.Builder(activity)
+            MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.failure_title)
                 .setMessage(state.reason)
                 .setPositiveButton(android.R.string.ok, null)
-                .create()
-                .apply {
-                    setOnShowListener { window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded) }
-                    show()
-                }
+                .show()
             return
         }
-        render(activity, state, null)
-    }
-
-    private fun render(
-        activity: Activity,
-        state: EngineSupervisor.State.Failed,
-        lastOutcome: RepairActions.Outcome?,
-    ) {
-        val diag = state.diagnosis ?: return
         val box = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             val pad = dp(activity, 16)
             setPadding(pad, dp(activity, 8), pad, dp(activity, 4))
         }
+        val dlg = MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.failure_title)
+            .setView(ScrollView(activity).apply { addView(box) })
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+        render(activity, state, box, null)
+        dlg.show()
+    }
+
+    private fun render(
+        activity: Activity,
+        state: EngineSupervisor.State.Failed,
+        box: LinearLayout,
+        lastOutcome: RepairActions.Outcome?,
+    ) {
+        val diag = state.diagnosis ?: return
+        box.removeAllViews()
 
         // ── 原因标题 ────────────────────────────────────────────────────
         box.addView(sectionTitle(activity, causeTitleRes(diag.cause)))
@@ -120,11 +128,12 @@ object FailureDialog {
                     )
             }
             val tv = note(activity, text)
-            tv.setTextColor(activity.getColor(
+            tv.setTextColor(MaterialColors.getColor(
+                tv,
                 when (lastOutcome.status) {
-                    RepairActions.Outcome.Status.DONE -> R.color.success
-                    RepairActions.Outcome.Status.SKIPPED -> R.color.warning
-                    RepairActions.Outcome.Status.FAILED -> R.color.danger
+                    RepairActions.Outcome.Status.DONE -> com.google.android.material.R.attr.colorOnSurface
+                    RepairActions.Outcome.Status.SKIPPED -> com.google.android.material.R.attr.colorOnSurfaceVariant
+                    RepairActions.Outcome.Status.FAILED -> androidx.appcompat.R.attr.colorError
                 },
             ))
             box.addView(tv)
@@ -139,17 +148,9 @@ object FailureDialog {
         } else {
             box.addView(sectionLabel(activity, activity.getString(R.string.failure_actions)))
             diag.fixes.forEach { fix ->
-                box.addView(actionRow(activity, state, fix, lastOutcome))
+                box.addView(actionRow(activity, state, box, fix))
             }
         }
-
-        val dlg = AlertDialog.Builder(activity)
-            .setTitle(R.string.failure_title)
-            .setView(ScrollView(activity).apply { addView(box) })
-            .setPositiveButton(android.R.string.ok, null)
-            .create()
-        dlg.setOnShowListener { dlg.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded) }
-        dlg.show()
     }
 
     /**
@@ -161,29 +162,31 @@ object FailureDialog {
     private fun actionRow(
         activity: Activity,
         state: EngineSupervisor.State.Failed,
+        box: LinearLayout,
         fix: EngineTriage.Fix,
-        lastOutcome: RepairActions.Outcome?,
-    ): TextView {
-        val tv = TextView(activity).apply {
-            text = activity.getString(fixTitleRes(fix.kind))
-            textSize = 15f
-            setTextColor(activity.dshColor(R.attr.dshAccent, R.color.accent))
-            val v = dp(activity, 10)
-            setPadding(0, v, 0, v)
-            isClickable = true
-            setOnClickListener { onAction(activity, state, fix) }
-        }
-        return tv
+    ): MaterialButton = MaterialButton(
+        activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+    ).apply {
+        text = activity.getString(fixTitleRes(fix.kind))
+        isAllCaps = false
+        gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        minimumHeight = dp(activity, 48)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        setOnClickListener { onAction(activity, state, box, fix) }
     }
 
     private fun onAction(
         activity: Activity,
         state: EngineSupervisor.State.Failed,
+        box: LinearLayout,
         fix: EngineTriage.Fix,
     ) {
         // 重装运行时走不了这里（要进度界面），直接给指引
         if (fix.kind == EngineTriage.Fix.Kind.REINSTALL_RUNTIME) {
-            AlertDialog.Builder(activity)
+            MaterialAlertDialogBuilder(activity)
                 .setTitle(fixTitleRes(fix.kind))
                 .setMessage(R.string.failure_reinstall_hint)
                 .setPositiveButton(android.R.string.ok, null)
@@ -200,14 +203,14 @@ object FailureDialog {
             return
         }
         if (!fix.needsConfirm) {
-            execute(activity, state, fix)
+            execute(activity, state, box, fix)
             return
         }
-        AlertDialog.Builder(activity)
+        MaterialAlertDialogBuilder(activity)
             .setTitle(fixTitleRes(fix.kind))
             .setMessage(R.string.failure_confirm_body)
             .setPositiveButton(R.string.failure_confirm_yes) { _, _ ->
-                execute(activity, state, fix)
+                execute(activity, state, box, fix)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -216,6 +219,7 @@ object FailureDialog {
     private fun execute(
         activity: Activity,
         state: EngineSupervisor.State.Failed,
+        box: LinearLayout,
         fix: EngineTriage.Fix,
     ) {
         val app = activity.applicationContext as DshApp
@@ -224,8 +228,8 @@ object FailureDialog {
             val outcome = RepairActions.run(activity, app.supervisor, fix)
             activity.runOnUiThread {
                 if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
-                // 重建弹窗把结果显示在同一处（而不是 Toast 一闪而过）
-                render(activity, state, outcome)
+                if (!box.isAttachedToWindow) return@runOnUiThread
+                render(activity, state, box, outcome)
             }
         }, "failure-repair").apply { isDaemon = true; start() }
     }
@@ -267,7 +271,7 @@ object FailureDialog {
             text = activity.getString(textRes)
             textSize = 16f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(activity.dshColor(R.attr.dshTextPrimary, R.color.text_primary))
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
             setPadding(0, dp(activity, 4), 0, dp(activity, 8))
         }
 
@@ -275,7 +279,7 @@ object FailureDialog {
         TextView(activity).apply {
             this.text = text
             textSize = 12f
-            setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
             setPadding(0, dp(activity, 12), 0, dp(activity, 4))
         }
 
@@ -283,7 +287,7 @@ object FailureDialog {
         TextView(activity).apply {
             this.text = text
             textSize = 13f
-            setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
             setPadding(0, dp(activity, 4), 0, dp(activity, 4))
         }
 
@@ -291,7 +295,7 @@ object FailureDialog {
         TextView(activity).apply {
             this.text = "\u2022 $text"
             textSize = 13f
-            setTextColor(activity.dshColor(R.attr.dshTextPrimary, R.color.text_primary))
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
             setPadding(dp(activity, 4), dp(activity, 2), 0, dp(activity, 2))
         }
 }

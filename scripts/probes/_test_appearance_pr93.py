@@ -72,8 +72,9 @@ check(
 # ── 5. 引导页的状态与监听（原有约束，防回退） ────────────────────────────
 ob = read(APP / "OnboardingActivity.kt")
 check(
-    "onboarding saves all six state keys",
-    all(k in ob for k in ("KEY_PAGE", "KEY_LANG", "KEY_ORIENTATION", "KEY_THEME", "KEY_ACCENT", "KEY_PRIV")),
+    "onboarding saves current wizard state and persists dynamic color separately",
+    all(k in ob for k in ("KEY_PAGE", "KEY_LANG", "KEY_ORIENTATION", "KEY_THEME", "KEY_PRIV"))
+    and "ThemeAccent.setSelected" in ob,
 )
 check(
     "onboarding pairs the Shizuku listener",

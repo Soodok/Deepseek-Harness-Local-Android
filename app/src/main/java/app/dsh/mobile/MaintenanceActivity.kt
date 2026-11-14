@@ -32,7 +32,7 @@ class MaintenanceActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_maintenance)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // —— 插件应急总开关（v1.4.27）：插件把 WebUI 弄坏但引擎还活着时的逃生门 ——
         findViewById<LinearLayout>(R.id.rowPluginKill).setOnClickListener {
@@ -142,7 +142,7 @@ class MaintenanceActivity : ThemedActivity() {
 
         // —— 重启引擎：有中断后果，先确认再动手（v1.4.45 起）——
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.restart_confirm_title))
                 .setMessage(getString(R.string.restart_confirm_body))
                 .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -150,7 +150,7 @@ class MaintenanceActivity : ThemedActivity() {
                     Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .showStyled()
+                .show()
         }
 
         // —— 深度清理 / 彻底重置（v1.4.56，用户反馈「体检修不好只能重装」）——
@@ -341,12 +341,12 @@ class MaintenanceActivity : ThemedActivity() {
                     HomeResetter.Mode.RESET ->
                         getString(R.string.reset_home_confirm_body, formatSize(willDelete))
                 }
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(titleId)
                     .setMessage(body)
                     .setNegativeButton(android.R.string.cancel, null)
                     .setPositiveButton(R.string.action_choose_backup) { _, _ -> pickBackupLocation(mode) }
-                    .showStyled()
+                    .show()
             }
         }.apply { isDaemon = true }.start()
     }
@@ -391,7 +391,7 @@ class MaintenanceActivity : ThemedActivity() {
             hint = getString(R.string.reset_type_hint)
             setSingleLine()
         }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.reset_final_title)
             .setMessage(getString(R.string.reset_final_body))
             .setView(input)
@@ -403,7 +403,7 @@ class MaintenanceActivity : ThemedActivity() {
                     Toast.makeText(this, getString(R.string.reset_wrong_word), Toast.LENGTH_SHORT).show()
                 }
             }
-            .showStyled()
+            .show()
     }
 
     /**
@@ -440,11 +440,11 @@ class MaintenanceActivity : ThemedActivity() {
             if (backupErr != null) {
                 runOnUiThread {
                     progress.dismiss()
-                    AlertDialog.Builder(this)
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.backup_failed_title)
                         .setMessage(getString(R.string.backup_failed_body, backupErr ?: ""))
                         .setPositiveButton(android.R.string.ok, null)
-                        .showStyled()
+                        .show()
                 }
                 return@Thread
             }
@@ -469,7 +469,7 @@ class MaintenanceActivity : ThemedActivity() {
 
             runOnUiThread {
                 progress.dismiss()
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(if (result.ok) R.string.clean_done_title else R.string.clean_partial_title)
                     .setMessage(cleanSummary(mode, result))
                     .setPositiveButton(R.string.action_restart_now) { _, _ ->
@@ -478,7 +478,7 @@ class MaintenanceActivity : ThemedActivity() {
                         finish()
                     }
                     .setNegativeButton(android.R.string.cancel, null)
-                    .showStyled()
+                    .show()
                 refreshHomeUsage()
             }
         }.start()
@@ -582,7 +582,7 @@ class MaintenanceActivity : ThemedActivity() {
             Toast.makeText(this, getString(R.string.plugin_kill_none), Toast.LENGTH_SHORT).show()
             return
         }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(
                 if (restore) R.string.plugin_kill_restore_title
                 else R.string.plugin_kill_disable_title,
@@ -597,7 +597,7 @@ class MaintenanceActivity : ThemedActivity() {
             )
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ -> applyKillSwitch(restore) }
-            .showStyled()
+            .show()
     }
 
     /** 包名列表：超过 8 个只列前 8 个 + 「等 N 个」，避免对话框撑满屏幕 */
@@ -631,11 +631,4 @@ class MaintenanceActivity : ThemedActivity() {
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
 }

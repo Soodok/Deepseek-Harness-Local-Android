@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">สีแบบไดนามิกของระบบ</string>
+    <string name="theme_palette_blue">น้ำเงิน</string>
+    <string name="theme_palette_teal">เขียวอมฟ้า</string>
+    <string name="theme_palette_violet">ม่วง</string>
+    <string name="theme_palette_amber">อำพัน</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (อุปกรณ์นี้ไม่รองรับ)</string>
     <string name="app_name">ดีเอสเอช ไทย</string>
     <string name="notif_channel_engine">เอนจินเอเจนต์</string>
     <string name="notif_channel_engine_desc">สถานะของเอนจินท้องถิ่น DeepSeek Harness</string>
@@ -1493,7 +1499,7 @@
     <!-- หน้าธีม (v1.5.x) -->
     <string name="theme_page_title">ธีม</string>
     <string name="theme_dynamic">สีแบบไดนามิก</string>
-    <string name="theme_dynamic_sub">ใช้สีจากวอลเปเปอร์ผ่านสีของระบบ</string>
+    <string name="theme_dynamic_sub">ใช้ชุดสีที่เลือกในการตั้งค่าวอลเปเปอร์และสไตล์ของ Android</string>
     <string name="theme_dynamic_unsupported">ต้องใช้ Android 12 ขึ้นไป</string>
     <string name="theme_presets">สีที่ตั้งไว้</string>
     <string name="theme_custom">สีกำหนดเอง</string>
@@ -1507,7 +1513,7 @@
     <string name="theme_current_dynamic">ปัจจุบัน: สีไดนามิกของระบบ</string>
     <string name="theme_color_dynamic">สีไดนามิกของระบบ</string>
 
-    <string name="theme_entry_sub">สีที่ตั้งไว้ สีกำหนดเอง และสีไดนามิก</string>
+    <string name="theme_entry_sub">รูปลักษณ์ ชุดสีที่ตั้งไว้ และสีแบบไดนามิกของระบบ</string>
     <string name="ext_cat_lang">รันไทม์ภาษา</string>
     <string name="ext_cat_build">เครื่องมือบิลด์</string>
     <string name="ext_cat_debug">การดีบัก</string>
@@ -1624,8 +1630,28 @@
     <string name="island_side_no_plugins">ยังไม่มีปลั๊กอินที่ติดตั้ง</string>
     <string name="island_side_plugin_count">ติดตั้งแล้ว %1$d</string>
     <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
+    <string name="setting_island_dock">แผงสถานะ</string>
+    <string name="setting_island_dock_sub">เลือกรูปแบบเกาะหรือแถบเครื่องมือและตำแหน่ง</string>
+    <string name="setting_island_dock_island">เกาะ</string>
+    <string name="setting_island_dock_toolbar">แถบเครื่องมือ</string>
+    <string name="setting_island_dock_position">ตำแหน่งเกาะ</string>
+    <string name="setting_island_dock_toolbar_description">แถบเครื่องมือจะแสดงที่ด้านล่างของหน้าจอ</string>
+    <string name="setting_island_dock_top">ด้านบน</string>
+    <string name="setting_island_dock_left">ด้านซ้าย</string>
+    <string name="setting_island_dock_right">ด้านขวา</string>
+    <string name="setting_island_dock_bottom">ด้านล่าง</string>
+    <string name="bottom_toolbar_expand">แสดงแถบเครื่องมือ</string>
+    <string name="bottom_toolbar_home">หน้าแรก</string>
+    <string name="bottom_toolbar_menu">เมนู</string>
     <string name="linux_err_selinux_drift">ป้ายกำกับไฟล์ SELinux ของสภาพแวดล้อม Linux เบี่ยงเบนแล้ว (%1$s) และอุปกรณ์นี้ไม่ได้ให้สิทธิ์แก่แอปในการซ่อมแซม คอนเทนเนอร์จึงอ่านไฟล์ของตัวเองไม่ได้ โปรดเปิด root (หรือ Shizuku) แล้วเปิดหน้านี้ใหม่ หรือลบและติดตั้งสภาพแวดล้อมใหม่</string>
 
+    <string name="theme_source">แหล่งสี</string>
+    <string name="theme_custom_sub">เลือกสีใดก็ได้ ระบบจะสร้างชุดสี MD3 จากสีนั้น</string>
+    <string name="theme_mode_section">รูปลักษณ์</string>
+    <string name="theme_color_section">สี</string>
+    <string name="theme_mode_light_sub">ใช้ชุดสีสว่างเสมอ</string>
+    <string name="theme_mode_dark_sub">ใช้ชุดสีมืดเสมอ</string>
+    <string name="theme_mode_system_sub">ตามการตั้งค่าโหมดมืดของระบบ</string>
     <string name="asr_mode_local">บนเครื่อง</string>
     <string name="asr_mode_api">API คลาวด์</string>
     <string name="asr_steps_title">ตั้งค่าการรู้จำบนเครื่อง (4 ขั้นตอน)</string>

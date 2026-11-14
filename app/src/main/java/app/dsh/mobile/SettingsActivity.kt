@@ -47,7 +47,7 @@ class SettingsActivity : ThemedActivity() {
 
     /** 上次应用的主题/强调色/布局快照：子页改动后回到本页检测重建（v1.4.56） */
     private var appliedTheme: ThemeMode = ThemeMode.DARK
-    private var appliedAccent: Int = 0
+    private var appliedPalette: String = ThemeAccent.BLUE
     private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -172,7 +172,7 @@ class SettingsActivity : ThemedActivity() {
                 remoteSubText()
                 return@setOnCheckedChangeListener
             }
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.setting_remote_access)
                 .setMessage(R.string.remote_access_consent)
                 .setNegativeButton(R.string.action_cancel) { _, _ ->
@@ -191,7 +191,7 @@ class SettingsActivity : ThemedActivity() {
         lanSubText()
         swLan.setOnCheckedChangeListener { _, checked ->
             if (checked) {
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.setting_lan_web)
                     .setMessage(R.string.lan_web_consent)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -233,12 +233,14 @@ class SettingsActivity : ThemedActivity() {
 
 
         // —— 顶部返回 ——
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        // 原生 MD3 顶栏：返回由 MaterialToolbar 的导航图标承担
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
 
         // —— 个性化入口（v1.4.56）：外观/扩展整组收进子页，主页只留入口 ——
         val savedLayout = SettingsLayoutMode.current(this)
         appliedTheme = ThemePref.get(this)
-        appliedAccent = Accent.current(this).argb
+        appliedPalette = ThemeAccent.selected(this)
         appliedLayout = savedLayout
         findViewById<LinearLayout>(R.id.rowAppearance).setOnClickListener {
             startActivity(Intent(this, AppearanceActivity::class.java))
@@ -366,7 +368,7 @@ class SettingsActivity : ThemedActivity() {
                 getString(R.string.lang_th),
                 getString(R.string.lang_ru),
             )
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.app_language))
                 .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
                     val code = langCodes[which]
@@ -382,7 +384,7 @@ class SettingsActivity : ThemedActivity() {
                     // 并自行重建，返回主界面时也是新语言。
                     recreate()
                 }
-                .showStyled()
+                .show()
         }
 
         // —— 其他：关于 ——
@@ -444,13 +446,14 @@ class SettingsActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) return
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
         refreshUpdateEntrySub()
         refreshA11ySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
-            appliedAccent != Accent.current(this).argb ||
+            appliedPalette != ThemeAccent.selected(this) ||
             appliedLayout != SettingsLayoutMode.current(this)
         ) {
             recreate()
@@ -465,7 +468,7 @@ class SettingsActivity : ThemedActivity() {
         findViewById<TextView>(R.id.subAppearanceEntry)?.text = getString(
             R.string.setting_appearance_sub,
             getString(ThemePref.get(this).labelRes),
-            getString(Accent.current(this).labelRes),
+            getString(ThemeAccent.labelRes(this)),
         )
     }
 
@@ -608,9 +611,7 @@ class SettingsActivity : ThemedActivity() {
             when (val child = column.getChildAt(i)) {
                 is TextView -> header = child
                 is LinearLayout -> {
-                    val rows = (0 until child.childCount).count {
-                        child.getChildAt(it) is LinearLayout
-                    }
+                    val rows = rowsOf(child).size
                     out += Section(header, child, rows.coerceAtLeast(1))
                     header = null
                 }
@@ -714,7 +715,7 @@ class SettingsActivity : ThemedActivity() {
             addView(tip)
         }
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.setting_runtime_proxy)
             .setView(box)
             .setPositiveButton(android.R.string.ok, null)
@@ -751,26 +752,8 @@ class SettingsActivity : ThemedActivity() {
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
-
-
-
     private companion object {
-        /**
-         * 双端同步入口是否显示（v1.6.0-beta.6 起为 `false`）。
-         *
-         * 关掉的原因不是功能坏了，而是**上手成本**：手机侧要点几下就通，电脑侧还得
-         * 去仓库里找出 `tools/peersync/pc-sync-server.mjs` 用 node 跑起来。在把它做成
-         * 「电脑端由 DSH 自己起服务」之前，先不把这条路暴露给普通用户。
-         * 改回 `true` 即恢复入口，PeerSyncActivity 与桥端点一直都在。
-         */
+        /** 上游暂时隐藏双端同步入口，功能实现仍然保留。 */
         const val PEERSYNC_UI_ENABLED = false
 
         /** 折叠模式展开/收起的过渡时长（毫秒） */
@@ -927,12 +910,25 @@ class SettingsActivity : ThemedActivity() {
                     (card.layoutParams as? LinearLayout.LayoutParams)?.let {
                         it.bottomMargin = 0; card.layoutParams = it
                     }
-                    // 分组卡片本身在网格里只是容器：撤掉描边与裁剪，格子自己带描边
-                    card.setBackgroundResource(0)
-                    card.clipToOutline = false
-                    card.setPadding(0, 0, 0, 0)
+                    // MaterialCardView 仍作为分组外壳，网格重排其内部的行容器；
+                    // 直接清空外层会把整张卡片当作一行，分隔线也会残留。
+                    val content = rowContainerOf(card)
                     val rows = rowsOf(card)
-                    card.removeAllViews()
+                    if (rows.isEmpty()) return@forEach
+                    val materialCard = content.parent as? com.google.android.material.card.MaterialCardView
+                    if (materialCard != null) {
+                        materialCard.setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        materialCard.foreground = null
+                        materialCard.strokeWidth = 0
+                        materialCard.cardElevation = 0f
+                        materialCard.radius = 0f
+                        materialCard.clipToOutline = false
+                    } else {
+                        card.setBackgroundResource(0)
+                        card.clipToOutline = false
+                    }
+                    content.setPadding(0, 0, 0, 0)
+                    content.removeAllViews()
                     rows.chunked(2).forEach { pair ->
                         val wrap = LinearLayout(this).apply {
                             orientation = LinearLayout.HORIZONTAL
@@ -955,7 +951,21 @@ class SettingsActivity : ThemedActivity() {
                                 if (idx == 0) marginEnd = gap
                             }
                             gridCell(row, rowHasControl)
-                            wrap.addView(row)
+                            val cell = com.google.android.material.card.MaterialCardView(this).apply {
+                                layoutParams = row.layoutParams
+                                setCardBackgroundColor(com.google.android.material.color.MaterialColors.getColor(
+                                    this, com.google.android.material.R.attr.colorSurfaceContainer,
+                                ))
+                                radius = resources.getDimension(R.dimen.md3_card_radius)
+                                cardElevation = 0f
+                                strokeWidth = 0
+                            }
+                            row.layoutParams = android.widget.FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                dp(if (rowHasControl) GRID_CELL_CONTROL_HEIGHT_DP else GRID_CELL_HEIGHT_DP),
+                            )
+                            cell.addView(row)
+                            wrap.addView(cell)
                         }
                         if (pair.size == 1) {
                             // 奇数行：补占位保持左对齐，避免最后一项被拉满整行
@@ -963,7 +973,7 @@ class SettingsActivity : ThemedActivity() {
                                 layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
                             })
                         }
-                        card.addView(wrap)
+                        content.addView(wrap)
                     }
                 }
             }
@@ -1063,9 +1073,21 @@ class SettingsActivity : ThemedActivity() {
         return out
     }
 
-    /** 卡片内的行容器（直接子 View 里可点击的 LinearLayout） */
-    private fun rowsOf(card: LinearLayout): List<LinearLayout> =
-        (0 until card.childCount).mapNotNull { card.getChildAt(it) as? LinearLayout }
+    /** 兼容「外层 LinearLayout → MaterialCardView → 行容器」及旧版直接行容器。 */
+    private fun rowContainerOf(card: LinearLayout): LinearLayout {
+        val materialCard = (0 until card.childCount)
+            .mapNotNull { card.getChildAt(it) as? com.google.android.material.card.MaterialCardView }
+            .firstOrNull() ?: return card
+        return (0 until materialCard.childCount)
+            .mapNotNull { materialCard.getChildAt(it) as? LinearLayout }
+            .firstOrNull() ?: card
+    }
+
+    /** 分隔线不是行；不向下递归，以免把行内标题容器误认为设置入口。 */
+    private fun rowsOf(card: LinearLayout): List<LinearLayout> {
+        val content = rowContainerOf(card)
+        return (0 until content.childCount).mapNotNull { content.getChildAt(it) as? LinearLayout }
+    }
 
     /**
      * 网格模式下隐藏「说明文字」（v1.4.23）。
@@ -1108,7 +1130,10 @@ class SettingsActivity : ThemedActivity() {
      * 残角形状。
      */
     private fun gridCell(row: LinearLayout, hasControl: Boolean = false) {
-        row.setBackgroundResource(R.drawable.bg_md3_grid_cell)
+        val selectable = android.util.TypedValue()
+        if (theme.resolveAttribute(android.R.attr.selectableItemBackground, selectable, true)) {
+            row.setBackgroundResource(selectable.resourceId)
+        }
         row.setPadding(dp(10), dp(10), dp(10), dp(10))
         // 格子高度：无控件 64dp（v1.6.2 从 88 收紧，一屏多两排）；带控件的格子
         // 必须更高，见 GRID_CELL_CONTROL_HEIGHT_DP 的说明。

@@ -1,19 +1,17 @@
 package app.dsh.mobile
 
-import android.app.Activity
 import android.content.Intent
-import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.CloudAsr
 import app.dsh.mobile.engine.EdgeTts
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 
 /**
  * 语音服务（v1.2.79）—— 识别 + 合成一页，入口在「扩展中心」。
@@ -29,15 +27,20 @@ import app.dsh.mobile.engine.EdgeTts
 class VoiceServiceActivity : ThemedActivity() {
 
     // 识别
-    private lateinit var asrEngineSpinner: Spinner
+    private lateinit var asrEngineSpinner: MaterialAutoCompleteTextView
     private lateinit var asrKey: EditText
     private lateinit var asrEndpoint: EditText
     private lateinit var asrModel: EditText
     // 合成
     private lateinit var ttsEnabled: RadioButton
     private lateinit var ttsDisabled: RadioButton
-    private lateinit var ttsVoiceSpinner: Spinner
-    private lateinit var ttsRateSpinner: Spinner
+    private lateinit var ttsVoiceSpinner: MaterialAutoCompleteTextView
+    private lateinit var ttsRateSpinner: MaterialAutoCompleteTextView
+
+    private var selectedEngineIndex = 0
+    private var selectedVoiceIndex = 0
+    private var selectedRateIndex = 0
+    private val rates = listOf("-20%", "-10%", "+0%", "+10%", "+20%", "+30%")
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -49,7 +52,7 @@ class VoiceServiceActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_voice_service)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         // 问号：说明为什么需要、可选哪些服务商
         findViewById<View>(R.id.btnAsrHelp).setOnClickListener { showAsrHelp() }
 
@@ -58,29 +61,23 @@ class VoiceServiceActivity : ThemedActivity() {
         val prefs = getSharedPreferences("dsh_voice_mode", MODE_PRIVATE)
         val localPanel = findViewById<LinearLayout>(R.id.localPanel)
         val apiPanel = findViewById<LinearLayout>(R.id.apiPanel)
-        val segLocal = findViewById<TextView>(R.id.segLocal)
-        val segApi = findViewById<TextView>(R.id.segApi)
+        val modeSwitch = findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.asrModeSwitch)
 
-        fun paint(seg: TextView, on: Boolean) {
-            seg.setBackgroundResource(if (on) R.drawable.bg_btn_accent else 0)
-            seg.setTextColor(getColor(if (on) R.color.on_accent else R.color.accent))
-        }
         fun render(local: Boolean) {
             localPanel.visibility = if (local) View.VISIBLE else View.GONE
             apiPanel.visibility = if (local) View.GONE else View.VISIBLE
-            paint(segLocal, local)
-            paint(segApi, !local)
         }
-        fun choose(local: Boolean) {
-            prefs.edit().putBoolean("local_first", local).apply()
-            render(local)
+        // 历史未设置用户沿用原有系统优先行为；仅用户主动选择时写入偏好。
+        val local = prefs.getBoolean("local_first", true)
+        modeSwitch.check(if (local) R.id.segLocal else R.id.segApi)
+        render(local)
+        modeSwitch.addOnButtonCheckedListener { _, checkedId, checked ->
+            if (checked) {
+                val selectedLocal = checkedId == R.id.segLocal
+                prefs.edit().putBoolean("local_first", selectedLocal).apply()
+                render(selectedLocal)
+            }
         }
-        val asrReady = runCatching {
-            packageManager.getPackageInfo("app.dsh.asr", 0) != null
-        }.getOrDefault(false)
-        choose(prefs.getBoolean("local_first", asrReady))
-        segLocal.setOnClickListener { choose(true) }
-        segApi.setOnClickListener { choose(false) }
 
         // 仓库入口：本地识别应用不在商店里，只能从 GitHub 下载
         findViewById<View>(R.id.btnAsrRepo).setOnClickListener {
@@ -103,8 +100,8 @@ class VoiceServiceActivity : ThemedActivity() {
 
         load()
 
-        findViewById<LinearLayout>(R.id.rowSave).setOnClickListener { save() }
-        findViewById<LinearLayout>(R.id.rowTestTts).setOnClickListener { testTts() }
+        findViewById<View>(R.id.rowSave).setOnClickListener { save() }
+        findViewById<View>(R.id.rowTestTts).setOnClickListener { testTts() }
     }
 
     /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
@@ -112,9 +109,36 @@ class VoiceServiceActivity : ThemedActivity() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
+        bindLocalAsrCard()
+        refreshAsrEngines(engineOptions.getOrNull(selectedEngineIndex)?.first)
     }
 
     private fun load() {
+        refreshAsrEngines(AsrManager.preferredComponent(this))
+
+        // 识别：地址/模型默认留空（用户自己填）
+        asrKey.setText(CloudAsr.apiKey(this))
+        asrEndpoint.setText(CloudAsr.endpoint(this))
+        asrModel.setText(CloudAsr.model(this))
+
+        // 不从本地化显示文字反推选项：重复翻译也保持与原 Spinner 相同的索引语义。
+        val labels = EdgeTts.VOICES.map { getString(it.second) }
+        ttsVoiceSpinner.setSimpleItems(labels.toTypedArray())
+        selectedVoiceIndex = EdgeTts.VOICES.indexOfFirst { it.first == EdgeTts.voice(this) }.coerceAtLeast(0)
+        ttsVoiceSpinner.setText(labels.getOrNull(selectedVoiceIndex).orEmpty(), false)
+        ttsVoiceSpinner.setOnItemClickListener { _, _, position, _ -> selectedVoiceIndex = position }
+
+        val rateLabels = rates.map { getString(R.string.voice_rate_label, it) }
+        ttsRateSpinner.setSimpleItems(rateLabels.toTypedArray())
+        selectedRateIndex = rates.indexOf(EdgeTts.rate(this)).coerceAtLeast(0)
+        ttsRateSpinner.setText(rateLabels[selectedRateIndex], false)
+        ttsRateSpinner.setOnItemClickListener { _, _, position, _ -> selectedRateIndex = position }
+
+        ttsEnabled.isChecked = EdgeTts.enabled(this)
+        ttsDisabled.isChecked = !EdgeTts.enabled(this)
+    }
+
+    private fun refreshAsrEngines(selected: String?) {
         // 识别引擎（v1.2.87）：系统默认 / 已安装的 DSH 插件
         // —— 很多 ROM 把系统「语音输入」设置页重定向了，用户没地方选，只能在这里选
         engineOptions = buildList {
@@ -126,36 +150,11 @@ class VoiceServiceActivity : ThemedActivity() {
                 )
             }
         }
-        asrEngineSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
-        asrEngineSpinner.adapter = darkAdapter(engineOptions.map { it.second })
-        val curEngine = AsrManager.preferredComponent(this)
-        asrEngineSpinner.setSelection(
-            engineOptions.indexOfFirst { it.first == curEngine }.coerceAtLeast(0)
-        )
-
-        // 识别：地址/模型默认留空（用户自己填）
-        asrKey.setText(CloudAsr.apiKey(this))
-        asrEndpoint.setText(CloudAsr.endpoint(this))
-        asrModel.setText(CloudAsr.model(this))
-
-        // 合成：音色下拉（选项来自 EdgeTts.VOICES，不让手填）
-        val labels = EdgeTts.VOICES.map { getString(it.second) }
-        // 弹框背景（正规 API）：圆角由它负责，条目只留水波纹
-        ttsVoiceSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
-        ttsVoiceSpinner.adapter = darkAdapter(labels)
-        val cur = EdgeTts.voice(this)
-        val idx = EdgeTts.VOICES.indexOfFirst { it.first == cur }.coerceAtLeast(0)
-        ttsVoiceSpinner.setSelection(idx)
-
-        // 语速下拉（固定几档，避免用户不知道填什么格式）
-        val rates = listOf("-20%", "-10%", "+0%", "+10%", "+20%", "+30%")
-        ttsRateSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
-        ttsRateSpinner.adapter = darkAdapter(rates.map { getString(R.string.voice_rate_label, it) })
-        val curRate = EdgeTts.rate(this)
-        ttsRateSpinner.setSelection(rates.indexOf(curRate).coerceAtLeast(0))
-
-        ttsEnabled.isChecked = EdgeTts.enabled(this)
-        ttsDisabled.isChecked = !EdgeTts.enabled(this)
+        val labels = engineOptions.map { it.second }
+        asrEngineSpinner.setSimpleItems(labels.toTypedArray())
+        selectedEngineIndex = engineOptions.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+        asrEngineSpinner.setText(labels[selectedEngineIndex], false)
+        asrEngineSpinner.setOnItemClickListener { _, _, position, _ -> selectedEngineIndex = position }
     }
 
     /** 识别引擎选项：组件 spec（null=系统默认）→ 显示名 */
@@ -164,7 +163,7 @@ class VoiceServiceActivity : ThemedActivity() {
     private fun save() {
         // 识别引擎
         AsrManager.setPreferredComponent(
-            this, engineOptions.getOrNull(asrEngineSpinner.selectedItemPosition)?.first
+            this, engineOptions.getOrNull(selectedEngineIndex)?.first
         )
         CloudAsr.save(
             this,
@@ -172,17 +171,16 @@ class VoiceServiceActivity : ThemedActivity() {
             asrModel.text?.toString().orEmpty(),
             asrKey.text?.toString().orEmpty(),
         )
-        val voice = EdgeTts.VOICES.getOrNull(ttsVoiceSpinner.selectedItemPosition)?.first
+        val voice = EdgeTts.VOICES.getOrNull(selectedVoiceIndex)?.first
             ?: EdgeTts.DEFAULT_VOICE
-        val rate = listOf("-20%", "-10%", "+0%", "+10%", "+20%", "+30%")
-            .getOrNull(ttsRateSpinner.selectedItemPosition) ?: "+0%"
+        val rate = rates.getOrNull(selectedRateIndex) ?: "+0%"
         EdgeTts.save(this, ttsEnabled.isChecked, voice, rate)
         toast(getString(R.string.cloud_asr_saved))
     }
 
     /** 问号说明：为什么要配、能选什么 */
     private fun showAsrHelp() {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.asr_help_title))
             // ⚠️ aapt 会把 XML 字符串里的换行压成空格（实测 setMessage 拿到的是一整行），
             // 所以正文拆成多个 string，这里用换行拼装 —— 段落结构才保得住。
@@ -245,7 +243,12 @@ class VoiceServiceActivity : ThemedActivity() {
                 else -> R.string.asr_local_state_missing
             }
         )
-        state.setTextColor(getColor(if (fullyReady) R.color.success else if (installed) R.color.warning else R.color.danger))
+        val stateColor = when {
+            fullyReady -> androidx.appcompat.R.attr.colorPrimary
+            installed -> com.google.android.material.R.attr.colorOnSurfaceVariant
+            else -> androidx.appcompat.R.attr.colorError
+        }
+        state.setTextColor(MaterialColors.getColor(state, stateColor))
         desc.setText(if (installed) R.string.asr_local_desc else R.string.asr_local_need_install)
 
         // 安装 / 更新：进识别应用页（那页有 GitHub Releases 下载与安装引导）
@@ -287,40 +290,6 @@ class VoiceServiceActivity : ThemedActivity() {
             runOnUiThread { toast(r) }
         }, "edge-tts-test").apply { isDaemon = true; start() }
     }
-
-    /**
-     * 暗色 Spinner 适配器。
-     *
-     * ⚠️ 为什么不用 `android:popupTheme`：实测在 Spinner 上不生效
-     * （弹出层仍是框架默认的白底灰字，主人反馈"还是原版样式"）。
-     * 可靠做法是在适配器里**直接给下拉条目设背景色与文字色** ——
-     * 下拉弹框的背景由条目自己铺满，所以设条目背景就等于设弹框背景。
-     */
-    private fun darkAdapter(items: List<String>): ArrayAdapter<String> =
-        object : ArrayAdapter<String>(this, R.layout.item_spinner_dark, items) {
-            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                val v = super.getView(position, convertView, parent)
-                (v as? TextView)?.apply {
-                    // 同样不设 setBackgroundColor（Spinner 收起态的背景由外层 bg_voice_input 提供）
-                    setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
-                }
-                return v
-            }
-
-            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                val v = super.getDropDownView(position, convertView, parent)
-                (v as? TextView)?.apply {
-                    // ⚠️ 不要用 setBackgroundColor：那会**冲掉 drawable 的圆角**，
-                    // 条目变成直角方块（主人反馈"边缘还是不圆润"）。
-                    // 背景交给 item_spinner_dark 的 drawable（含圆角 + 水波纹），这里只设文字色。
-                    setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
-                    setPadding(dp(16), dp(12), dp(16), dp(12))
-                }
-                return v
-            }
-        }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }

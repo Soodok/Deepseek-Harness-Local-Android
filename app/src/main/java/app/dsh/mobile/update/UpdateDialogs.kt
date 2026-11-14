@@ -76,7 +76,7 @@ object UpdateDialogs {
         showing = true
         val installed = AppUpdateChecker.installedRuntime(activity)?.version ?: "—"
         val remote = withRuntime.asset.runtimeVersion ?: "—"
-        AlertDialog.Builder(activity)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(activity.getString(R.string.app_update_choice_title, withRuntime.versionName))
             .setMessage(
                 activity.getString(
@@ -120,7 +120,7 @@ object UpdateDialogs {
 
     fun showMobileConfirm(activity: Activity, info: UpdateInfo) {
         showing = true
-        AlertDialog.Builder(activity)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(activity.getString(R.string.app_update_dlg_title, info.versionName))
             .setMessage(activity.getString(R.string.app_update_dlg_mobile, info.sizeMb))
             .setPositiveButton(R.string.app_update_dlg_download) { _, _ ->
@@ -151,7 +151,7 @@ object UpdateDialogs {
         } else {
             activity.getString(R.string.app_update_dlg_ready_text)
         }
-        AlertDialog.Builder(activity)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(activity.getString(R.string.app_update_dlg_ready_title, info.versionName))
             .setMessage(message)
             .setPositiveButton(R.string.app_update_dlg_install) { _, _ -> startInstall(activity) }
@@ -168,7 +168,7 @@ object UpdateDialogs {
     fun showNoSpace(activity: Activity, needMb: Long, freeMb: Long) {
         if (showing) return
         showing = true
-        AlertDialog.Builder(activity)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.app_update_dlg_nospace_title)
             .setMessage(activity.getString(R.string.app_update_dlg_nospace_text, needMb, freeMb))
             .setPositiveButton(R.string.app_update_dlg_ok, null)

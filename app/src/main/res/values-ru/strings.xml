@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">Динамические цвета системы</string>
+    <string name="theme_palette_blue">Синий</string>
+    <string name="theme_palette_teal">Бирюзовый</string>
+    <string name="theme_palette_violet">Фиолетовый</string>
+    <string name="theme_palette_amber">Янтарный</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (не поддерживается на этом устройстве)</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Движок агента</string>
     <string name="notif_channel_engine_desc">Состояние локального движка DeepSeek Harness</string>
@@ -1543,7 +1549,7 @@
     <!-- 主题与配色页（v1.5.x） -->
     <string name="theme_page_title">Тема</string>
     <string name="theme_dynamic">Динамический цвет</string>
-    <string name="theme_dynamic_sub">Подстраиваться под обои через системные цвета Android</string>
+    <string name="theme_dynamic_sub">Использовать схему из раздела Android «Обои и стиль»</string>
     <string name="theme_dynamic_unsupported">Нужен Android 12 или новее — на этом устройстве недоступно</string>
     <string name="theme_presets">Готовые цвета</string>
     <string name="theme_custom">Свой цвет</string>
@@ -1557,7 +1563,7 @@
     <string name="theme_current_dynamic">Сейчас: системный динамический цвет</string>
     <string name="theme_color_dynamic">Системный динамический цвет</string>
 
-    <string name="theme_entry_sub">Готовые цвета, свой цвет и динамическая окраска</string>
+    <string name="theme_entry_sub">Оформление, готовые палитры и динамические цвета системы</string>
     <string name="ext_cat_lang">Языковые среды</string>
     <string name="ext_cat_build">Сборка и инструменты</string>
     <string name="ext_cat_debug">Отладка</string>
@@ -1674,6 +1680,19 @@
     <string name="island_side_no_plugins">Плагины пока не установлены</string>
     <string name="island_side_plugin_count">установлено: %1$d</string>
     <string name="island_dock_switched">Док: %1$s</string>
+    <string name="setting_island_dock">Панель состояния</string>
+    <string name="setting_island_dock_sub">Выберите остров или панель инструментов и положение</string>
+    <string name="setting_island_dock_island">Остров</string>
+    <string name="setting_island_dock_toolbar">Панель инструментов</string>
+    <string name="setting_island_dock_position">Положение острова</string>
+    <string name="setting_island_dock_toolbar_description">Панель инструментов отображается внизу экрана.</string>
+    <string name="setting_island_dock_top">Сверху</string>
+    <string name="setting_island_dock_left">Слева</string>
+    <string name="setting_island_dock_right">Справа</string>
+    <string name="setting_island_dock_bottom">Снизу</string>
+    <string name="bottom_toolbar_expand">Показать панель инструментов</string>
+    <string name="bottom_toolbar_home">Главная</string>
+    <string name="bottom_toolbar_menu">Меню</string>
     <string name="linux_err_selinux_drift">У среды Linux съехали метки файлов SELinux (%1$s), а это устройство не даёт приложению привилегированного канала, чтобы их исправить, поэтому контейнер не может прочитать свои же файлы. Включите root (или Shizuku) и откройте эту страницу снова либо удалите и разверните среду заново.</string>
 
     <string name="asr_mode_local">На устройстве</string>
@@ -1926,6 +1945,13 @@
     <string name="peersync_saved">Сохранено</string>
     <string name="peersync_invalid_port">Порт должен быть 1–65535</string>
 
+    <string name="theme_color_section">Цвет</string>
+    <string name="theme_custom_sub">Выберите цвет для создания палитры Material 3</string>
+    <string name="theme_mode_dark_sub">Всегда использовать тёмную тему</string>
+    <string name="theme_mode_light_sub">Всегда использовать светлую тему</string>
+    <string name="theme_mode_section">Оформление</string>
+    <string name="theme_mode_system_sub">Следовать настройкам системы</string>
+    <string name="theme_source">Источник цвета</string>
     <string name="style_title">Стиль интерфейса</string>
     <string name="style_sub_material">Material 3 · тёплый серый с бирюзой</string>
     <string name="style_sub_classic">Классический · холодный сине-серый</string>

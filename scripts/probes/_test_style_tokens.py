@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
-"""界面风格令牌（v1.8.0）静态契约。
+"""界面风格令牌和动态配色的静态契约。
 
-背景：布局/drawable 里原先是 441 处 `@color/X` 静态引用 —— 资源解析期就定型，
-运行时换主题改不到它。所以「切风格」在旧实现里等于没切：Theme.Dsh 与
-Theme.Dsh.MD3 的语义色全映射到同一张旧色板，画出来一模一样。
-
-v1.8.0 把 403 处核心语义色升级成 `?attr/dshXxx`，两套主题各给一套值。
-本探针守住这条链路的四个断点：
-
-  T1 每个 dsh* 属性都在 Theme.Dsh 与 Theme.Dsh.MD3 里有定义（漏一个就掉色）
-  T2 两个主题的同名属性取值不同（相同就等于没分叉，正是旧实现的问题）
-  T3 values-night 也两套齐全（漏了夜间直接崩或落回默认灰）
-  T4 通知/浮层用的 drawable 必须还是静态 @color（它们在没有 Activity 主题的
-     Service 上下文里取图，?attr 会解析到 application theme 拿到错的色）
+经典和 Material 使用独立的令牌覆盖层，后者引用 Material 语义色，
+以便系统动态取色和预设色板都能生效。日夜模式分别检查完整性和分叉；
+通知与浮层资源仍须保持不依赖 Activity 主题的静态颜色。
 """
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RES = os.path.join(ROOT, "app", "src", "main", "res")
@@ -35,51 +27,61 @@ def read(p):
         return f.read()
 
 
-def style_items(path, style):
-    txt = read(path)
-    m = re.search(r'<style name="' + re.escape(style) + r'"[^>]*>(.*?)</style>', txt, re.S)
-    if not m:
-        return {}
-    body = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S)
-    return dict(re.findall(r'<item name="(dsh\w+)">([^<]+)</item>', body))
+def styles(path):
+    root = ET.parse(path).getroot()
+    return {
+        style.get("name"): {item.get("name"): (item.text or "").strip()
+                            for item in style.findall("item")}
+        for style in root.findall("style")
+    }
 
 
 light_path = os.path.join(RES, "values", "themes.xml")
 night_path = os.path.join(RES, "values-night", "themes.xml")
 attrs_path = os.path.join(RES, "values", "attrs_style.xml")
 
-declared = set(re.findall(r'<attr name="(dsh\w+)"', read(attrs_path)))
-light_classic = style_items(light_path, "Theme.Dsh")
-light_md3 = style_items(light_path, "Theme.Dsh.MD3")
-night_classic = style_items(night_path, "Theme.Dsh")
-night_md3 = style_items(night_path, "Theme.Dsh.MD3")
+declared = {attr.get("name") for attr in ET.parse(attrs_path).getroot().findall("attr")
+            if attr.get("name", "").startswith("dsh")}
+light_styles = styles(light_path)
+night_styles = styles(night_path)
+classic_name = "ThemeOverlay.Dsh.Style.Classic"
+material_name = "ThemeOverlay.Dsh.Style.Material"
 
-# ---- T1 两个主题都定义齐全 ----
+# values-night falls back to values for styles it does not override. A night
+# override replaces the whole style, so it must independently define all tokens.
 check("attrs_style.xml 声明了令牌", len(declared) >= 20, f"declared={len(declared)}")
-missing_l = sorted(declared - set(light_classic))
-missing_m = sorted(declared - set(light_md3))
-check("Theme.Dsh 定义了全部令牌", not missing_l, ",".join(missing_l))
-check("Theme.Dsh.MD3 定义了全部令牌", not missing_m, ",".join(missing_m))
-
-# ---- T2 两套取值必须真的不同 ----
-same = sorted(k for k in declared if k in light_classic and k in light_md3
-              and light_classic[k] == light_md3[k])
-# 少量令牌本来就该同值（功能色 danger/success/warning、ripple、overlay），显式白名单
 ALLOW_SAME = {"dshDanger", "dshSuccess", "dshWarning", "dshBtnRipple", "dshOverlay"}
-same = [k for k in same if k not in ALLOW_SAME]
-check("两套风格取值已分叉（不是同一张色板）", not same, "同值: " + ",".join(same))
+material_roles = {
+    "dshBg": "colorSurface", "dshSurface": "colorSurfaceContainer",
+    "dshSurfaceAlt": "colorSurfaceContainerLow", "dshSurfaceHigh": "colorSurfaceContainerHigh",
+    "dshDialogBg": "colorSurfaceContainerHigh", "dshTextPrimary": "colorOnSurface",
+    "dshTextSecondary": "colorOnSurfaceVariant", "dshTextMuted": "colorOnSurfaceVariant",
+    "dshAccent": "colorPrimary", "dshAccentSoft": "colorPrimaryContainer",
+    "dshOnAccent": "colorOnPrimary", "dshDivider": "colorOutlineVariant",
+    "dshStroke": "colorOutlineVariant", "dshDanger": "colorError",
+    "dshIconColor": "colorOnSurfaceVariant", "dshIslandText": "colorOnSurfaceVariant",
+    "dshIslandAccent": "colorPrimary",
+}
 
-# 关键令牌逐个确认指向不同色源
-for k in ("dshBg", "dshTextPrimary", "dshAccent", "dshSurfaceAlt"):
-    a = light_classic.get(k, "")
-    b = light_md3.get(k, "")
-    check(f"{k} 两套色源不同", a != b, f"{a} vs {b}")
+for mode, overrides in (("values", {}), ("values-night", night_styles)):
+    effective = dict(light_styles)
+    effective.update(overrides)
+    base = effective.get("Theme.Dsh", {})
+    classic = effective.get(classic_name, {})
+    material = effective.get(material_name, {})
+    for name, items in (("Theme.Dsh", base), (classic_name, classic), (material_name, material)):
+        missing = sorted(k for k in declared if not items.get(k))
+        check(f"{mode}: {name} 令牌齐全", not missing, ",".join(missing))
 
-# ---- T3 夜间两套齐全 ----
-check("夜間 Theme.Dsh 令牌齐全", not (declared - set(night_classic)),
-      ",".join(sorted(declared - set(night_classic))))
-check("夜間 Theme.Dsh.MD3 令牌齐全", not (declared - set(night_md3)),
-      ",".join(sorted(declared - set(night_md3))))
+    same = sorted(k for k in declared - ALLOW_SAME
+                  if classic.get(k) and classic.get(k) == material.get(k))
+    check(f"{mode}: 两套风格取值已分叉", not same, "同值: " + ",".join(same))
+    for k in ("dshBg", "dshTextPrimary", "dshAccent", "dshSurfaceAlt"):
+        a, b = classic.get(k, ""), material.get(k, "")
+        check(f"{mode}: {k} 两套色源不同", bool(a and b and a != b), f"{a} vs {b}")
+    wrong_roles = sorted(k for k, role in material_roles.items()
+                         if material.get(k) != "?attr/" + role)
+    check(f"{mode}: Material 令牌跟随动态语义色", not wrong_roles, ",".join(wrong_roles))
 
 # ---- T4 通知/浮层图标必须保持静态 ----
 MUST_STAY_STATIC = ["ic_download", "ic_health", "ic_pet"]
@@ -98,12 +100,49 @@ for name in ("splash_bg", "bg_dynamic_island_dot", "bg_overlay_panel", "bg_overl
     txt = read(p)
     check(f"{name} 不用 ?attr（Service 上下文取图）", "?attr/" not in txt)
 
-# ---- 主题分派跟随风格，而不是跟随 usesSettingsBackground ----
-themed = read(os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ThemedActivity.kt"))
-check("主题分派用 followsStyle + StylePref", 
-      "followsStyle && StylePref.isMaterial(this)" in themed)
+# ---- 风格选择和配色来源相互独立 ----
+java = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile")
+themed = read(os.path.join(java, "ThemedActivity.kt"))
+theme_activity = read(os.path.join(java, "ThemeActivity.kt"))
+accent = read(os.path.join(java, "ThemeAccent.kt"))
+dshapp = read(os.path.join(java, "DshApp.kt"))
+check("主题分派根据偏好快照应用对应覆盖层",
+      re.search(r'appliedUiStyle\s*=\s*StylePref\.style\(this\)\s*'
+                r'val\s+styleOverlay\s*=\s*if\s*\(followsStyle\s*&&\s*'
+                r'appliedUiStyle\s*==\s*StylePref\.Style\.MATERIAL\)\s*\{\s*'
+                r'R\.style\.ThemeOverlay_Dsh_Style_Material\s*\}\s*else\s*\{\s*'
+                r'R\.style\.ThemeOverlay_Dsh_Style_Classic\s*\}', themed) is not None
+      and 'theme.applyStyle(styleOverlay, true)' in themed)
 check("followsStyle 默认 true（全站跟随）",
       "protected open val followsStyle: Boolean get() = true" in themed)
+check("返回页面时仅风格变化且跟随风格的页面重建",
+      re.search(r'fun\s+styleNeedsRecreate\(\):\s*Boolean\s*=\s*'
+                r'followsStyle\s*&&\s*appliedUiStyle\s*!=\s*null\s*&&\s*'
+                r'appliedUiStyle\s*!=\s*StylePref\.style\(this\)', themed) is not None
+      and re.search(r'override\s+fun\s+onResume\(\)\s*\{\s*super\.onResume\(\)\s*'
+                    r'if\s*\(styleNeedsRecreate\(\)\)\s*\{\s*recreate\(\)\s*return\s*\}', themed) is not None)
+check("风格控件从偏好选中，变更后保存并重建",
+      'setupStyle()' in theme_activity
+      and 'val current = StylePref.style(this)' in theme_activity
+      and 'group.check(if (current == StylePref.Style.MATERIAL) R.id.btnStyleMaterial else R.id.btnStyleClassic)' in theme_activity
+      and 'group.addOnButtonCheckedListener' in theme_activity
+      and 'if (checkedId == R.id.btnStyleMaterial) StylePref.Style.MATERIAL else StylePref.Style.CLASSIC' in theme_activity
+      and re.search(r'if\s*\(wanted\s*!=\s*StylePref\.style\(this\)\)\s*\{\s*'
+                    r'StylePref\.setStyle\(this,\s*wanted\)\s*recreate\(\)', theme_activity) is not None)
+check("动态色由 Application 按偏好和设备支持应用",
+      'DynamicColors.applyToActivitiesIfAvailable(' in dshapp
+      and re.search(r'\.setPrecondition\s*\{\s*activity,\s*_\s*->\s*'
+                    r'ThemeAccent\.dynamicEnabled\(activity\)\s*\}', dshapp) is not None
+      and 'selected(ctx) == SYSTEM && dynamicSupported' in accent)
+check("预设色板在风格覆盖层后应用，动态色不被重置",
+      re.search(r'theme\.applyStyle\(styleOverlay,\s*true\)\s*'
+                r'val\s+paletteOverlay\s*=\s*ThemeAccent\.overlayRes\(this\)\s*'
+                r'if\s*\(paletteOverlay\s*!=\s*0\)\s*theme\.applyStyle\(paletteOverlay,\s*true\)', themed) is not None
+      and not re.search(r'(?m)^\s*setTheme\s*\(', themed)
+      and 'if (dynamicSupported) 0 else R.style.ThemeOverlay_Dsh_Palette_Blue' in accent)
+check("预设色板各自映射到对应覆盖层",
+      all(re.search(r'\b%s\s*->\s*R\.style\.ThemeOverlay_Dsh_Palette_%s\b' % pair, accent)
+          for pair in (("BLUE", "Blue"), ("TEAL", "Teal"), ("VIOLET", "Violet"), ("AMBER", "Amber"))))
 
 if FAILS:
     print(f"\nFAILED: {len(FAILS)} check(s)")

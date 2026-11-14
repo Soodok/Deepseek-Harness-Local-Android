@@ -97,156 +97,87 @@ object ThemeManager {
     }
 
     fun applyBars(activity: Activity) {
-        val dark = isDark(activity)
         val bg = barBackground(activity)
         activity.window.statusBarColor = bg
         activity.window.navigationBarColor = bg
-        var flags = activity.window.decorView.systemUiVisibility
-        flags = if (dark) {
-            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv() and
-                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
-        } else {
-            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
-                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        }
-        activity.window.decorView.systemUiVisibility = flags
+        val lightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(bg) > 0.5
+        val controller = androidx.core.view.WindowInsetsControllerCompat(
+            activity.window, activity.window.decorView,
+        )
+        controller.isAppearanceLightStatusBars = lightSurface
+        controller.isAppearanceLightNavigationBars = lightSurface
     }
 
-    /**
-     * 系统栏底色：优先跟随主题的 `colorSurface`，取不到时才回落到静态 `@color/bg`。
-     *
-     * 为什么必须这么改（移植 PR #102）：动态取色（Android 12+ Monet）会在运行时
-     * 用壁纸派生色覆盖 `colorSurface`/`colorPrimary`/`colorOnSurface`，而
-     * `@color/bg` 是资源解析期就定型的静态值 —— 用户打开「跟随壁纸」后，
-     * 页面底色变了、系统栏还是旧蓝灰，切页面的瞬间尤其明显（像闪一下旧色）。
-     *
-     * 不能反过来「一律读 colorSurface」：PRESET/CUSTOM 模式下我们刻意不注入
-     * Monet，此时 `colorSurface` 由 themes.xml 映射到 `@color/surface`（卡片色，
-     * 通常比页面底更白/更亮），拿它当系统栏会与页面底产生一条色差。
-     * 所以只在**动态取色真的生效**时才取主题色。
-     */
+    /** System and preset palettes both supply their own Material surface role. */
     private fun barBackground(activity: Activity): Int {
-        val dynamic = runCatching {
-            ThemeAccent.mode(activity) == ThemeAccent.Mode.DYNAMIC
-        }.getOrDefault(false)
-        if (!dynamic) return activity.dshColor(R.attr.dshBg, R.color.bg)
         val tv = android.util.TypedValue()
         val ok = activity.theme.resolveAttribute(
             com.google.android.material.R.attr.colorSurface, tv, true,
         )
-        if (!ok) return activity.dshColor(R.attr.dshBg, R.color.bg)
+        if (!ok) return activity.getColor(R.color.bg)
         return if (tv.resourceId != 0) {
-            runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.dshColor(R.attr.dshBg, R.color.bg))
+            runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.getColor(R.color.bg))
         } else {
             tv.data
         }
     }
 }
 
+fun IslandPalette.themed(context: Context): IslandPalette.Colors {
+    fun role(attr: Int) = com.google.android.material.color.MaterialColors.getColor(context, attr, "IslandPalette")
+    val panel = role(com.google.android.material.R.attr.colorSurfaceContainerHigh)
+    val onSurface = role(com.google.android.material.R.attr.colorOnSurface)
+    val onVariant = role(com.google.android.material.R.attr.colorOnSurfaceVariant)
+    val primary = role(androidx.appcompat.R.attr.colorPrimary)
+    val tertiary = role(com.google.android.material.R.attr.colorTertiary)
+    return IslandPalette.Colors(
+        panel = panel,
+        handle = panel,
+        title = onSurface,
+        body = onSurface,
+        muted = onVariant,
+        accent = primary,
+        divider = role(com.google.android.material.R.attr.colorOutlineVariant),
+        dot = primary,
+        ok = tertiary,
+        okSoft = androidx.core.graphics.ColorUtils.setAlphaComponent(tertiary, 31),
+        warn = role(androidx.appcompat.R.attr.colorError),
+        outline = if (ThemeManager.isDark(context)) 0 else role(com.google.android.material.R.attr.colorOutline),
+    )
+}
+
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */
 open class ThemedActivity : Activity() {
 
-    /**
-     * 统一 MD3 对话框入口，所有设置子页的选择/确认窗口共用同一套按钮涟漪和色彩。
-     *
-     * 返回的是 [TintedMaterialDialogBuilder]：它在 `show()` 时把当前强调色铺到
-     * 对话框自己的窗口上。对话框是**独立窗口**，不在 Activity 的视图树里，
-     * ThemedActivity 的 applyAccentTint 够不到（见 [AccentTint] 的类注释）。
-     */
+    private var appliedUiStyle: StylePref.Style? = null
+
+    /** 使用官方 Material 对话框主题和动态语义色，不覆盖其窗口背景。 */
+    protected fun styleNeedsRecreate(): Boolean =
+        followsStyle && appliedUiStyle != null && appliedUiStyle != StylePref.style(this)
+
     protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
-        TintedMaterialDialogBuilder(this)
-
-    /**
-     * MaterialAlertDialogBuilder 的子类，只为在 show 前给弹窗上强调色。
-     *
-     * 为什么用子类而不是要求每个调用点自己加 `setOnShowListener`：
-     * 全仓 `md3Dialog()` 有 11 处调用、散落在 6 个文件，逐处补既容易漏，
-     * 又会跟并行改动的会话冲突。这里改一处，所有调用点自动生效，
-     * 且返回类型仍是 MaterialAlertDialogBuilder，调用点无需任何改动。
-     */
-    class TintedMaterialDialogBuilder(private val host: Context) :
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(host) {
-
-        override fun show(): androidx.appcompat.app.AlertDialog {
-            val dialog = create()
-            dialog.setOnShowListener {
-                AccentTint.apply(dialog.window?.decorView)
-            }
-            dialog.show()
-            return dialog
-        }
-    }
-
-    protected fun com.google.android.material.dialog.MaterialAlertDialogBuilder.showMd3(): androidx.appcompat.app.AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-                AccentTint.apply(window?.decorView)
-            }
-        }.also { it.show() }
-
-    /**
-     * 把当前强调色铺到对话框上（v1.7.9）。
-     *
-     * 对话框是**独立窗口**，不在 Activity 的视图树里，[AccentTint.apply] 遍历
-     * Activity 内容时够不到它 —— 所以每个弹窗在 show 之后必须自己调一次。
-     * 统一走本方法或 [showMd3]，不要各自实现。
-     */
-    protected fun <T : android.app.Dialog> T.tintAccent(): T = apply {
-        setOnShowListener { AccentTint.apply(window?.decorView) }
-    }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(ThemeManager.wrap(newBase))
+        super.attachBaseContext(ThemeAccent.wrap(ThemeManager.wrap(newBase)))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 设置体系页面用 MD3 主题（Theme.Dsh.MD3），其余原样。
-        // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
-        // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
-        // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
-        //
-        // ★合并说明（2026-11-09）：feat/linux-workspace 上 3ab3b87d 曾把这里改成
-        //   全站统一 Theme.Dsh（当时用户要求「设置页退回旧样式」）。但 main 上
-        //   0b396402（11-08，PR #97）已把 MD3 界面整包合回并新增独立主题页，时间更晚，
-        //   因此以 main 的 MD3 分派为准。
-        //   注意 usesSettingsBackground 同时是「主题分派」与「设置页背景图」两个开关，
-        //   后者（applySettingsBackground）与本改动无关，不要因为主题选择变化就删掉。
-        // 必须在 setTheme 之前同步：AppCompat 的夜间模式决定了 Material 控件
-        // 在构造时会不会把我们这份 Resources 的 uiMode 改掉（见 syncAppCompatNight）。
+        // 保留上游 AppCompat 深浅色同步，避免弹窗把 Activity 的资源配置改回系统模式。
+        // 动态色已由 Application 的生命周期回调应用；风格覆盖层只设置 dsh 令牌。
         ThemeManager.syncAppCompatNight(this)
-        // ★ v1.8.0：主题分派改由「界面风格」决定，不再由 usesSettingsBackground 决定。
-        //
-        // 原来只有设置体系那 18 个页面套 MD3，其余页面永远 Theme.Dsh —— 而这两套
-        // 主题的语义色以前都映射到同一张旧色板，画出来一样，所以没人发现。
-        // v1.8.0 让 MD3 走真正的暖灰色板后，如果还按旧分派，就会出现
-        // 「设置页暖、主界面冷」的花脸。因此改成全站跟随风格，
-        // 只有显式声明 followsStyle = false 的页面（自绘深色的编辑器/工作台）
-        // 保持经典主题。
-        //
-        // ⚠️ usesSettingsBackground 仍然保留它原本的第二职责（设置页背景图，
-        //    见 applySettingsBackground），不要为了主题把那个开关也删了。
-        setTheme(if (followsStyle && StylePref.isMaterial(this)) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
-        // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
-        //
-        // ⚠️ 2026-11-10：PRESET / CUSTOM 不再走 DynamicColors。
-        // 原来三种模式都注入 Monet，PRESET/CUSTOM 还拿强调色当 seed 生成 content-based 色板，
-        // 后果是整个 MD3 语义色被运行时覆盖：
-        //   · colorSurface 被换成 Monet 中性色，与页面底几乎同色 → 分组卡片看起来"消失"，
-        //     行直接浮在背景上，分组边界没了；
-        //   · colorPrimary 被换成淡蓝近白 → 分组标题失去强调色；
-        //   · colorOnSurface 被换成近白 → 图标统一变白，原有的分类着色全丢。
-        // 也就是说 themes.xml 里「MD3 语义色回映射旧色板」对任何 ?attr/color* 控件都不生效。
-        // 只有用户真的选「跟随壁纸」时才该让 Monet 接管，其余情况必须让我们的色板说了算。
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-            ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC
-        ) {
-            runCatching {
-                com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
-            }
+        appliedUiStyle = StylePref.style(this)
+        val styleOverlay = if (followsStyle && appliedUiStyle == StylePref.Style.MATERIAL) {
+            R.style.ThemeOverlay_Dsh_Style_Material
+        } else {
+            R.style.ThemeOverlay_Dsh_Style_Classic
         }
+        theme.applyStyle(styleOverlay, true)
+        val paletteOverlay = ThemeAccent.overlayRes(this)
+        if (paletteOverlay != 0) theme.applyStyle(paletteOverlay, true)
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
+
 
     // ================= 设置页自定义背景图 =================
 
@@ -276,22 +207,26 @@ open class ThemedActivity : Activity() {
     override fun setContentView(layoutResID: Int) {
         super.setContentView(layoutResID)
         applySettingsBackground()
-        applyAccentTint()
+        if (!usesSettingsBackground) applyAccentTint()
     }
 
     override fun setContentView(view: View) {
         super.setContentView(view)
         applySettingsBackground()
-        applyAccentTint()
+        if (!usesSettingsBackground) applyAccentTint()
     }
 
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) {
+            recreate()
+            return
+        }
         // 从外观页选完图返回时立即生效，不需要用户手动刷新
         if (usesSettingsBackground) applySettingsBackground()
         // 强调色可能在别的页面被改过（主题页重建的只是它自己），
         // 回本页时重新铺一次；未改色时是幂等的空操作。
-        applyAccentTint()
+        if (!usesSettingsBackground) applyAccentTint()
     }
 
     /**

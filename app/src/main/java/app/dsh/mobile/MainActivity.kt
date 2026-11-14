@@ -165,6 +165,17 @@ class MainActivity : ThemedActivity() {
     /** 是否已经淡出（幂等） */
     private var splashDismissed = false
     private var splashMinMs = 700L
+    // Non-configuration retention is in-process only; saved instance state can survive process death.
+    private data class RecreatedSplashState(
+        val engineState: EngineSupervisor.State,
+        val bootSnapshot: BootTrace.Snapshot,
+    )
+    private var recreateTransitionState: EngineSupervisor.State? = null
+    private var recreateBootSnapshot: BootTrace.Snapshot? = null
+    private var recreateTransition = false
+    private var webPageReady = false
+    private var mainFrameFailed = false
+    private var currentMainUrl: String? = null
     /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
     private var appliedTheme: ThemeMode? = null
     /**
@@ -175,6 +186,7 @@ class MainActivity : ThemedActivity() {
      * 记一个快照，onResume 对不上就重建（与 SettingsActivity 的做法一致）。
      */
     private var appliedAccent: Int = 0
+    private var appliedPalette: String = ThemeAccent.BLUE
     /** 运行时下载面板（v1.6.18）。持有引用判重，同 gateDialog 范式。 */
     private var runtimeSetupDialog: AlertDialog? = null
     /** 预热历史条目是否已清理（幂等标记；clearHistory 只该做一次） */
@@ -189,6 +201,7 @@ class MainActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         appliedTheme = ThemePref.get(this)
         appliedAccent = Accent.current(this).argb
+        appliedPalette = ThemeAccent.selected(this)
         // 用户主动打开了 App → 清除「显式退出」标记，恢复正常保活行为。
         // 与 EngineService.exitCompletely() 的置位成对：退出后不复活，重开即恢复。
         runCatching { DshApp.setUserExitedExplicitly(this, false) }
@@ -199,11 +212,12 @@ class MainActivity : ThemedActivity() {
             return
         }
         setContentView(R.layout.activity_main)
+        bottomToolbarCollapsed = savedInstanceState?.getBoolean("bottom_toolbar_collapsed") ?: false
 
         // 记录本页生效的语言（onResume 里比对，设置页改过就重建本页）
         appliedLocale = LocaleHelper.get(this)
 
-        setupSplash()
+        setupSplash(lastNonConfigurationInstance as? RecreatedSplashState)
         statusBar = findViewById(R.id.statusBar)
         // 先赋值字段再配置：setupWebView 内部读取的是 this.webView，
         // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException。
@@ -266,8 +280,11 @@ class MainActivity : ThemedActivity() {
 runCatching { (application as DshApp).supervisor.webUrl() }
                 .getOrNull()?.takeIf { it.isNotEmpty() }?.let { loadLocalUrl(it) }
         }
-        // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
-        statusBar.setOnClickListener { toggleToolbar() }
+        // Failed diagnostics remain accessible after the automatic dialog is dismissed.
+        statusBar.setOnClickListener {
+            val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+            if (failed != null) FailureDialog.show(this, failed) else toggleToolbar()
+        }
         // 把手：可拖到屏幕边缘任意位置（避让遮挡）；移动距离小于阈值视为点击唤回工具栏
         setupHandleBar()
 
@@ -387,6 +404,35 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         setIntent(intent)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("bottom_toolbar_collapsed", bottomToolbarCollapsed)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onRetainNonConfigurationInstance(): Any? {
+        val state = (application as DshApp).supervisor.state.value
+        val snapshot = BootTrace.snapshot.value
+        return if (webPageReady && isUsableEngineState(state) && !snapshot.running) {
+            RecreatedSplashState(state, snapshot)
+        } else null
+    }
+
+    private fun isUsableEngineState(state: EngineSupervisor.State): Boolean =
+        when (state) {
+            is EngineSupervisor.State.Healthy -> !state.tokenUrl.isNullOrEmpty()
+            is EngineSupervisor.State.SafeMode -> !state.tokenUrl.isNullOrEmpty()
+            else -> false
+        }
+
+    private fun sameEngineSession(a: EngineSupervisor.State, b: EngineSupervisor.State): Boolean =
+        when {
+            a is EngineSupervisor.State.Healthy && b is EngineSupervisor.State.Healthy ->
+                a.port == b.port && a.tokenUrl == b.tokenUrl
+            a is EngineSupervisor.State.SafeMode && b is EngineSupervisor.State.SafeMode ->
+                a.port == b.port && a.tokenUrl == b.tokenUrl
+            else -> false
+        }
+
     /** 点「已下载完成」通知进来：直接提交安装（有权限/闸门检查，见 UpdateDialogs）。 */
     private fun handleOpenInstallIntent() {
         if (intent?.action == AppUpdateDownloadService.ACTION_OPEN_INSTALL) {
@@ -399,6 +445,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) return
         // NFC 读卡与屏幕录制都需要 Activity：把自身登记给两个 relay，
         // 让「贴标签」和「录屏授权」能真正接通（桥本身拿不到 Activity）。
         app.dsh.mobile.engine.cap.NfcForegroundRelay.attach(this)
@@ -412,12 +459,23 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 外侧圆角」这套几何的地方。
         // ⚠️ 原注释写「按新图片/形状/尺寸重绘」——v1.7.6 删掉外观里的圆点
         // 配置项后已不成立，那个入口也早已是空壳。
-        runCatching { applyDock() }
+        runCatching {
+            val storedDock = CustomVisualPref.islandDock(this)
+            if (storedDock != islandDock) {
+                islandDock = storedDock
+                sideHost?.visibility = View.GONE
+            }
+            applyDock()
+        }
         val currentTheme = ThemePref.get(this)
         val currentAccent = Accent.current(this).argb
-        if ((appliedTheme != null && appliedTheme != currentTheme) || appliedAccent != currentAccent) {
+        val currentPalette = ThemeAccent.selected(this)
+        if ((appliedTheme != null && appliedTheme != currentTheme) ||
+            appliedAccent != currentAccent || appliedPalette != currentPalette
+        ) {
             appliedTheme = currentTheme
             appliedAccent = currentAccent
+            appliedPalette = currentPalette
             recreate()
             return
         }
@@ -857,6 +915,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             "DshAndroidBack",
         )
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                if (view === webView) {
+                    webPageReady = false
+                    mainFrameFailed = false
+                    currentMainUrl = url
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?,
             ) {
@@ -864,7 +931,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 val url = request?.url?.toString() ?: "?"
                 val desc = error?.description?.toString() ?: "?"
                 val fatal = request?.isForMainFrame == true
+                if (view === webView && fatal) mainFrameFailed = true
                 logWebView("${if (fatal) "LOAD-FAIL" else "subresource"} $url — $desc")
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?, request: WebResourceRequest?, response: android.webkit.WebResourceResponse?,
+            ) {
+                super.onReceivedHttpError(view, request, response)
+                if (view === webView && request?.isForMainFrame == true) mainFrameFailed = true
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -982,6 +1057,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // v1.4.8：首屏 Paint 是用户体感的一部分 —— 引擎 healthy 到页面可用之间
                 // 还有加载 WebUI 与执行客户端插件的空档。补记进 boot.log 便于对比。
                 BootTrace.noteWebViewLoaded(this@MainActivity)
+                webPageReady = view === webView && url != null && url == currentMainUrl &&
+                    !mainFrameFailed
                 dismissSplash()
             }
 
@@ -1121,6 +1198,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     // 竖排面板 IslandSidePanel。两者互斥：切到侧边就把 XML 那套藏起来，切回顶部
     // 再按原样恢复，避免两套视图同时出现。
     private var islandDock: IslandDock = IslandDock.TOP
+    private var bottomToolbar: DshBottomToolbarController? = null
+    private var bottomMenu: DshBottomMenu? = null
+    private var bottomToolbarCollapsed = false
+    private var bottomToolbarInset = 0
+    private var bottomToolbarImeVisible = false
+    private var imeFreeWindowBottom = 0
 
     /**
      * 灵动岛是否处于「收起态」（只剩下把手的缩小状态）。
@@ -1143,12 +1226,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun setupIslandDock() {
         islandDock = CustomVisualPref.islandDock(this)
+        setupBottomToolbar()
         // 长按把手循环切换停靠边：顶部 → 左 → 右 → 顶部
         findViewById<View>(R.id.handleBar)?.setOnLongClickListener {
             val next = when (islandDock) {
                 IslandDock.TOP -> IslandDock.LEFT
                 IslandDock.LEFT -> IslandDock.RIGHT
-                IslandDock.RIGHT -> IslandDock.TOP
+                IslandDock.RIGHT -> IslandDock.BOTTOM
+                IslandDock.BOTTOM -> IslandDock.TOP
             }
             CustomVisualPref.setIslandDock(this, next)
             islandDock = next
@@ -1163,6 +1248,85 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         applyDock()
     }
 
+    private fun setupBottomToolbar() {
+        val parent = findViewById<View>(R.id.statusBarOverlay).parent as? android.widget.FrameLayout ?: return
+        val controller = DshBottomToolbarController(
+            layoutInflater, parent,
+            object : DshBottomToolbarController.Callbacks {
+                override fun onHome() {
+                    sideHost?.visibility = View.GONE
+                    hideRunModeOverlay()
+                    val url = (application as DshApp).supervisor.webUrl()
+                    if (url.isNotEmpty()) loadLocalUrl(url)
+                    else Toast.makeText(this@MainActivity, R.string.status_idle, Toast.LENGTH_SHORT).show()
+                }
+                override fun onMenu() { showBottomMenu() }
+                override fun onSettings() { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+                override fun onExpand() { bottomToolbarCollapsed = false; renderBottomToolbar() }
+                override fun onCollapse() { bottomToolbarCollapsed = true; renderBottomToolbar() }
+                override fun onDragRatio(ratio: Float) {
+                    CustomVisualPref.setIslandBottomAlongRatio(this@MainActivity, ratio)
+                }
+                override fun onPosition(xRatio: Float, yRatio: Float) {
+                    CustomVisualPref.setIslandBottomPosition(this@MainActivity, xRatio, yRatio)
+                }
+                override fun onMoveDock() {
+                    islandDock = IslandDock.TOP
+                    islandCollapsed = true
+                    CustomVisualPref.setIslandDock(this@MainActivity, islandDock)
+                    applyDock()
+                }
+            },
+            initialDragRatio = CustomVisualPref.islandBottomAlongRatio(this),
+            initiallyShown = false,
+        )
+        bottomToolbar = controller
+        val lp = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM,
+        )
+        val splashIndex = parent.indexOfChild(findViewById<View>(R.id.splash))
+        parent.addView(controller.root, splashIndex.coerceAtLeast(0), lp)
+        val floatingParams = android.widget.FrameLayout.LayoutParams(
+            dpV(48), dpV(48), android.view.Gravity.TOP or android.view.Gravity.LEFT,
+        )
+        parent.addView(controller.floatingView, parent.indexOfChild(findViewById<View>(R.id.splash)).coerceAtLeast(0), floatingParams)
+        controller.setPosition(CustomVisualPref.islandBottomAlongRatio(this), CustomVisualPref.islandBottomVerticalRatio(this))
+        controller.root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+                findViewById<View>(android.R.id.content)?.requestApplyInsets()
+            }
+        }
+    }
+
+    private fun showBottomMenu() {
+        val menu = bottomMenu ?: DshBottomMenu(this).also { sheet ->
+            sheet.onRunMode = { showRunModeOverlay() }
+            sheet.onRestart = {
+                urlLoaded = false
+                (application as DshApp).supervisor.restart()
+                Toast.makeText(this, R.string.engine_restarting, Toast.LENGTH_SHORT).show()
+            }
+            sheet.onStatus = {
+                val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+                if (failed != null) FailureDialog.show(this, failed)
+            }
+            bottomMenu = sheet
+        }
+        val state = (application as DshApp).supervisor.state.value
+        menu.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
+        menu.show()
+    }
+
+    private fun renderBottomToolbar() {
+        val toolbar = bottomToolbar ?: return
+        val active = islandDock == IslandDock.BOTTOM
+        toolbar.setExpanded(!bottomToolbarCollapsed)
+        toolbar.setShown(active && !bottomToolbarImeVisible)
+        if (active) toolbar.setPosition(CustomVisualPref.islandBottomAlongRatio(this), CustomVisualPref.islandBottomVerticalRatio(this))
+        findViewById<View>(android.R.id.content)?.requestApplyInsets()
+    }
+
     private fun applyDock() {
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup
         val overlay = findViewById<View>(R.id.statusBarOverlay)
@@ -1174,7 +1338,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val ph = container.height.takeIf { it > 0 } ?: dm.heightPixels
         val ratio = CustomVisualPref.islandAlongRatio(this)
 
-        if (islandDock == IslandDock.TOP) {
+        if (islandDock == IslandDock.TOP || islandDock == IslandDock.BOTTOM) {
             sideHost?.visibility = View.GONE
         } else {
             // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
@@ -1186,7 +1350,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
         }
         // 先把把手按当前停靠边摆好（尺寸/贴边/沿边位置都在 placeCollapsedHandle 里）
-        placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        if (islandDock != IslandDock.BOTTOM) placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        renderBottomToolbar()
         // ★ v1.7.13：可见性一律由 renderIslandVisibility() 按状态推导，
         // 不再在这里「TOP 就无条件 GONE」——
         // 旧代码在贴顶且已收起时把把手设成 GONE，而 statusBarRow 又是 GONE，
@@ -1215,19 +1380,19 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val overlay = findViewById<View>(R.id.statusBarOverlay) ?: return
         val row = findViewById<View>(R.id.statusBarRow) ?: return
         val handle = findViewById<View>(R.id.handleBar) ?: return
-        val side = islandDock != IslandDock.TOP
+        val side = islandDock == IslandDock.LEFT || islandDock == IslandDock.RIGHT
+        val bottom = islandDock == IslandDock.BOTTOM
         // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）
         val panelOpen = sideHost?.visibility == View.VISIBLE
-        val showOverlay = !side && !islandCollapsed
-        val showHandle = !panelOpen && (side || islandCollapsed)
+        val showOverlay = !side && !bottom && !islandCollapsed
+        val showHandle = !bottom && !panelOpen && (side || islandCollapsed)
         overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE
         row.visibility = if (showOverlay) View.VISIBLE else View.GONE
         handle.visibility = if (showHandle) View.VISIBLE else View.GONE
         // 收起态把手的透明度复位：动画收尾失败时它可能停在 0f（同样会「看不见」）
         if (showHandle && handle.alpha < 1f) handle.alpha = 1f
         if (showHandle) {
-            // ⚠️ GONE 期间设的 layoutParams 不参与布局，可见后必须重算一次 insets
-            // （否则贴顶把手不会重新对齐挖孔 —— v1.4.54 的老约束，重构时不能丢）
+            // GONE 期间布局不参与计算，显示后重新应用 insets。
             handle.requestApplyInsets()
             handle.post { applyHandleTouchTarget(handle, handle.width) }
         }
@@ -1294,6 +1459,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
             cornerRadii = when (dock) {
                 IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+                IslandDock.BOTTOM -> floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
                 IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
             }
@@ -1311,7 +1477,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private var islandSafeTopPx = 0
 
     /** 灵动岛配色（v1.7.11）：跟着 设置→外观 的明暗走，浅色主题下岛也变浅。 */
-    private fun islandPal(): IslandPalette.Colors = IslandPalette.of(ThemeManager.isDarkNow(this))
+    private fun islandPal(): IslandPalette.Colors = IslandPalette.themed(this)
 
     /** 贴边把手：贴边侧圆角 0、外凸侧 10dp，与设计稿一致。 */
     private fun sideHandleBackground(): android.graphics.drawable.GradientDrawable {
@@ -1359,6 +1525,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             (250 * resources.displayMetrics.density).toInt(),
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
+            topMargin = dpV(24)
+            bottomMargin = dpV(24)
             gravity = if (islandDock == IslandDock.RIGHT)
                 android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
             else android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
@@ -1401,18 +1569,23 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }.start()
             return
         }
-        val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
+        val menuDock = if (islandDock == IslandDock.BOTTOM) IslandDock.RIGHT else islandDock
+        val panel = sidePanel?.takeIf { sidePanelDock == menuDock } ?: IslandSidePanel(this, menuDock).also { sp ->
             sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
             // 先收起侧面板再开运行模式浮层：否则面板会从卡片左边露出一条，
             // 看起来像"两个浮层叠在一起"（真机截图一眼可见）。
             sp.onRunMode = { runOnUiThread { closeSidePanelNow(); showRunModeOverlay() } }
+            sp.onStatus = {
+                val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+                if (failed != null) FailureDialog.show(this, failed)
+            }
             sp.onRestart = {
                 urlLoaded = false
                 (application as DshApp).supervisor.restart()
                 Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
             }
             sidePanel = sp
-            sidePanelDock = islandDock
+            sidePanelDock = menuDock
         }
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup ?: return
         val host = existing ?: android.widget.FrameLayout(this).also { h ->
@@ -1437,30 +1610,28 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         host.addView(content, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
-            // 这里先只定「贴哪一边」，纵向位置要等 IslandChrome.expanded 算完再定
-            // （见下方 clp.topMargin）——之前用 CENTER_VERTICAL 是错的：
-            // 面板被 70% 屏高截断时 y 是 clamp 出来的，并不等于垂直居中，
-            // 面板会整体偏下、与算好的 m.y 错开（阴影一并错开）。
-            gravity = if (islandDock == IslandDock.LEFT)
+            gravity = if (menuDock == IslandDock.LEFT)
                 android.view.Gravity.START or android.view.Gravity.TOP
             else android.view.Gravity.END or android.view.Gravity.TOP
         })
         val dm = resources.displayMetrics
+        val hostWidth = container.width.takeIf { it > 0 } ?: dm.widthPixels
+        val hostHeight = container.height.takeIf { it > 0 } ?: dm.heightPixels
         // ⚠️ 面板高度必须按**内容**量出来再夹到 70% 屏高。
         // 之前传的是屏幕高度，被 clamp 成 70% 后 ScrollView 填满，
         // 结果面板下半截一大片空白（真机截图一眼可见）。
-        val wPx = (IslandChrome.PANEL_W_DP * dm.density).toInt()
+        val wPx = (IslandChrome.PANEL_W_DP * dm.density).toInt().coerceAtMost(hostWidth)
         content.measure(
             android.view.View.MeasureSpec.makeMeasureSpec(wPx, android.view.View.MeasureSpec.EXACTLY),
             android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
         )
         val m = IslandChrome.expanded(
-            dock = islandDock,
-            screenW = dm.widthPixels,
-            screenH = dm.heightPixels,
+            dock = menuDock,
+            screenW = hostWidth,
+            screenH = hostHeight,
             density = dm.density,
             contentH = content.measuredHeight,
-            yCenter = dm.heightPixels / 2,
+            yCenter = hostHeight / 2,
         )
         val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
         lp.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -1522,6 +1693,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 副标题留空：停靠方位是实现细节，不是用户关心的状态。
             detail = "",
             dotColor = islandPal().dot,
+            statusClickable = (application as DshApp).supervisor.state.value is EngineSupervisor.State.Failed,
         )
         // v1.7.13：面板展开时把手隐藏 —— 交给唯一渲染入口（它按状态推导）
         renderIslandVisibility()
@@ -1529,6 +1701,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun toggleToolbar() {
         // 贴长边时展开的是竖排面板（见 IslandSidePanel），与顶部横条是两套形态。
+        if (islandDock == IslandDock.BOTTOM) {
+            bottomToolbarCollapsed = !bottomToolbarCollapsed
+            renderBottomToolbar()
+            return
+        }
         if (islandDock != IslandDock.TOP) { hideRunModeOverlay(); toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
@@ -1694,7 +1871,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val dLeft = cx
         val dRight = pw - cx
         val dTop = cy
+        val dBottom = parent.height - cy
         val next = when {
+            dBottom <= dTop && dBottom <= dLeft && dBottom <= dRight -> IslandDock.BOTTOM
             dTop <= dLeft && dTop <= dRight -> IslandDock.TOP
             dLeft <= dRight -> IslandDock.LEFT
             else -> IslandDock.RIGHT
@@ -1705,13 +1884,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val d = resources.displayMetrics.density
         val safe = IslandChrome.EDGE_SAFE_DP * d
         val ratio = when (next) {
-            IslandDock.TOP -> (cx / pw.toFloat()).coerceIn(0f, 1f)
+            IslandDock.TOP, IslandDock.BOTTOM -> (cx / pw.toFloat()).coerceIn(0f, 1f)
             else -> {
                 val usable = (parent.height - v.height - safe).coerceAtLeast(1f)
                 ((cy - safe) / usable).coerceIn(0f, 1f)
             }
         }
-        CustomVisualPref.setIslandAlongRatio(this, ratio)
+        if (next == IslandDock.BOTTOM) CustomVisualPref.setIslandBottomAlongRatio(this, ratio)
+        else CustomVisualPref.setIslandAlongRatio(this, ratio)
         islandDock = next
         CustomVisualPref.setIslandDock(this, next)
         // 先把拖拽位移收回，再由 applyDock 按新停靠边重新摆位
@@ -1737,6 +1917,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        imeFreeWindowBottom = 0
         // ⚠️ v1.5.1：自由窗口/分屏的**尺寸变化也走这里**（configChanges 含 screenSize），
         // 而且拖动时每变一像素来一次。旧实现无条件 reload() → 拖动过程中连续整页重载
         // （卡顿、闪白、反复重走启动遮罩）。
@@ -1757,6 +1938,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        imeFreeWindowBottom = 0
         scheduleViewportReapply("multiwindow=$isInMultiWindowMode")
     }
 
@@ -1953,19 +2135,40 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 「看门狗触发」两个回调接上。旧实现在本类里堆了 15 个 splash 字段 +
      * 三套渲染路径，改一处要对照三处。
      */
-    private fun setupSplash() {
+    private fun setupSplash(retained: RecreatedSplashState? = null) {
         splashController?.dispose()
 
         val root = findViewById<android.view.View>(R.id.splash) ?: return
         splash = root
         splashDismissed = false
 
+        val state = (application as DshApp).supervisor.state.value
+        // Any new boot invalidates the retained trace, even if the port or token is reused.
+        if (retained != null && isUsableEngineState(retained.engineState) &&
+            isUsableEngineState(state) && sameEngineSession(retained.engineState, state) &&
+            !retained.bootSnapshot.running &&
+            BootTrace.snapshot.value === retained.bootSnapshot &&
+            !RuntimeInstaller(this).needsRuntimeDownload()
+        ) {
+            // Keep blocking the new WebView until its own page-ready callback, without
+            // replaying the engine startup UI for an already completed boot.
+            recreateTransitionState = state
+            recreateBootSnapshot = retained.bootSnapshot
+            recreateTransition = true
+            root.findViewById<View>(R.id.splashScroll).visibility = View.INVISIBLE
+        } else {
+            recreateTransitionState = null
+            recreateBootSnapshot = null
+            recreateTransition = false
+            root.findViewById<View>(R.id.splashScroll).visibility = View.VISIBLE
+        }
+
         // 仅 debug 包：允许用 `am start ... --el splash_min_ms 20000` 拉长遮罩
         // 停留时间，方便验证展开步骤后的布局。release 包这段不生效。
         val debuggable =
             (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val override = if (debuggable) intent?.getLongExtra("splash_min_ms", 0L) ?: 0L else 0L
-        splashMinMs = override.takeIf { it > 0L } ?: 700L
+        splashMinMs = if (recreateTransition) 0L else override.takeIf { it > 0L } ?: 700L
 
         splashController = app.dsh.mobile.ui.SplashController(
             activity = this,
@@ -1985,12 +2188,27 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     state is EngineSupervisor.State.Installing ||
                     state is EngineSupervisor.State.Starting
             },
+            snapshotForDisplay = { snapshot -> splashSnapshotForDisplay(snapshot) },
             onWatchdog = { dismissSplash() },
             onHidden = {
                 splash = null
                 splashController = null
             },
         )
+    }
+
+    /** BootTrace records individual attempts; only a terminal supervisor failure is current. */
+    private fun splashSnapshotForDisplay(snapshot: BootTrace.Snapshot): BootTrace.Snapshot {
+        if (snapshot.stage != BootTrace.Stage.FAILED) return snapshot
+        return when ((application as DshApp).supervisor.state.value) {
+            is EngineSupervisor.State.Failed -> snapshot
+            is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode ->
+                BootTrace.Snapshot(stage = BootTrace.Stage.LOADING)
+            is EngineSupervisor.State.Installing -> BootTrace.Snapshot(stage = BootTrace.Stage.PREPARING)
+            is EngineSupervisor.State.Starting, is EngineSupervisor.State.Backoff ->
+                BootTrace.Snapshot(stage = BootTrace.Stage.STARTING)
+            else -> BootTrace.Snapshot(stage = BootTrace.Stage.PREPARING)
+        }
     }
 
     /** 更新遮罩上的阶段文案（兜底路径；正常渲染走 BootTrace）。 */
@@ -2000,7 +2218,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     /** 把 BootTrace 快照交给控制器渲染；遮罩已收时是空操作。 */
     private fun renderSplashTrace(snap: BootTrace.Snapshot) {
+        if (recreateTransition && snap !== recreateBootSnapshot) restoreStartupSplash()
         if (!splashDismissed) splashController?.render(snap)
+    }
+
+    private fun restoreStartupSplash() {
+        if (!recreateTransition || splashDismissed) return
+        recreateTransition = false
+        recreateTransitionState = null
+        recreateBootSnapshot = null
+        splashController?.dispose()
+        setupSplash()
     }
 
     /**
@@ -2014,6 +2242,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     private fun dismissSplash() {
         if (splashDismissed) return
+        if (recreateTransition) {
+            val state = (application as DshApp).supervisor.state.value
+            val previous = recreateTransitionState
+            if (previous == null || !isUsableEngineState(state) ||
+                !sameEngineSession(previous, state) || BootTrace.snapshot.value !== recreateBootSnapshot
+            ) {
+                restoreStartupSplash()
+                if (state is EngineSupervisor.State.Idle || state is EngineSupervisor.State.Installing ||
+                    state is EngineSupervisor.State.Starting || isUsableEngineState(state)
+                ) return
+            }
+        }
         splashDismissed = true
         splashController?.dismiss()
     }
@@ -2122,11 +2362,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 }
                 @Suppress("DEPRECATION")
-                w.decorView.systemUiVisibility =
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                w.decorView.systemUiVisibility = w.decorView.systemUiVisibility
+                    .or(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                    .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                    .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                    .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
                 WindowInsetsControllerCompat(w, w.decorView)
                     .hide(WindowInsetsCompat.Type.statusBars())
                 // ⚠️ v1.4.51（用户报「有些系统不会自动隐藏状态栏，导致状态栏遮挡页面」）：
@@ -2221,11 +2461,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                             .hide(WindowInsetsCompat.Type.statusBars())
                     }
                     @Suppress("DEPRECATION")
-                    w2.decorView.systemUiVisibility =
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                    w2.decorView.systemUiVisibility = w2.decorView.systemUiVisibility
+                        .or(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
                     WindowInsetsControllerCompat(w2, w2.decorView)
                         .hide(WindowInsetsCompat.Type.statusBars())
                     // 系统重置后窗口可能又开始为状态栏预留空间 → 立刻重算岛位置
@@ -2573,14 +2813,31 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
             } else {
                 @Suppress("DEPRECATION")
-                if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
+                if (insets.systemWindowInsetBottom >= (96 * d).toInt()) insets.systemWindowInsetBottom else 0
             }
             val visibleRect = android.graphics.Rect()
-            root.getWindowVisibleDisplayFrame(visibleRect)
-            val imeFromFrame = (root.height - visibleRect.bottom).let {
-                if (it >= (96 * d).toInt()) it else 0
-            }
-            val imeBottom = maxOf(imeFromInsets, imeFromFrame)
+            val location = IntArray(2)
+            val content = findViewById<View>(R.id.webView).parent as? View ?: root
+            content.getWindowVisibleDisplayFrame(visibleRect)
+            content.getLocationOnScreen(location)
+            val overlap = if (!visibleRect.isEmpty && content.height > 0) {
+                (location[1] + content.height - visibleRect.bottom).coerceIn(0, content.height)
+            } else 0
+            val imeFromFrame = if (overlap >= (96 * d).toInt()) overlap else 0
+            val imeReported = if (Build.VERSION.SDK_INT >= 30) {
+                insets.isVisible(android.view.WindowInsets.Type.ime())
+            } else imeFromInsets > 0
+            val imeVisible = imeReported || imeFromFrame > 0
+            val contentBottom = location[1] + content.height
+            if (!imeVisible && content.height > 0) imeFreeWindowBottom = contentBottom
+            val resizeConsumed = (imeFreeWindowBottom - contentBottom).coerceAtLeast(0)
+            val remainingIme = if (imeFreeWindowBottom > 0) {
+                (imeFromInsets - resizeConsumed).coerceAtLeast(0)
+            } else imeFromInsets
+            val imeBottom = if (islandDock != IslandDock.BOTTOM || immersive) {
+                maxOf(imeFromInsets, imeFromFrame)
+            } else maxOf(remainingIme, imeFromFrame).coerceAtMost(content.height.coerceAtLeast(0))
+            val imeAffectsViewport = imeVisible || imeBottom > 0
             val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(
                     android.view.WindowInsets.Type.navigationBars()
@@ -2604,13 +2861,38 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //     直接顶到键盘上方）；
             //   · 键盘收起 → 让位 navBottom **仅在全屏时**需要（窗口铺到屏幕最底，
             //     手势条会压住内容）；非全屏时系统已让开，留 0。
-            val bottomPad = if (imeBottom > 0) {
+            val bottomPad = if (imeAffectsViewport) {
                 imeBottom
             } else if (immersive) {
                 navBottom
             } else {
                 0
             }
+            val toolbar = bottomToolbar
+            if (bottomToolbarImeVisible != imeVisible) {
+                bottomToolbarImeVisible = imeVisible
+                renderBottomToolbar()
+            }
+            val barShown = islandDock == IslandDock.BOTTOM && !imeVisible && toolbar != null
+            if (toolbar != null) {
+                val sideInsets = if (immersive && Build.VERSION.SDK_INT >= 30) {
+                    insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                } else null
+                toolbar.setHorizontalInsets(sideInsets?.left ?: 0, sideInsets?.right ?: 0)
+                toolbar.setFloatingInsets(sideInsets?.left ?: 0, maxOf(statusTop, cutTop),
+                    sideInsets?.right ?: 0, if (immersive) navBottom else 0)
+            }
+            val bar = toolbar?.root
+            if (bar != null) {
+                val barLp = bar.layoutParams as? android.widget.FrameLayout.LayoutParams
+                val barBottom = if (immersive) navBottom else 0
+                if (barLp != null && barLp.bottomMargin != barBottom) {
+                    barLp.bottomMargin = barBottom
+                    bar.layoutParams = barLp
+                }
+            }
+            bottomToolbarInset = if (barShown && toolbar?.isExpanded == true) bar?.height ?: 0 else 0
+            val viewportBottom = bottomPad + bottomToolbarInset
 
             // v1.4.63（宝宝反馈「网页感觉有点被压缩太狠了，还是改回全屏吧，
             // 到时候被遮挡就收起灵动岛即可」）：
@@ -2644,10 +2926,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
             val wlp = webView.layoutParams
             if (wlp is android.view.ViewGroup.MarginLayoutParams) {
-                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != bottomPad
+                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != viewportBottom
                 if (dirty) {
                     wlp.topMargin = 0
-                    wlp.bottomMargin = bottomPad
+                    wlp.bottomMargin = viewportBottom
                     webView.layoutParams = wlp
                 }
             }
@@ -2727,6 +3009,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun render(state: EngineSupervisor.State) {
         lastRenderedState = state
+        if (!splashDismissed) splashController?.render(BootTrace.snapshot.value)
+        if (recreateTransition &&
+            (!isUsableEngineState(state) ||
+                recreateTransitionState?.let { !sameEngineSession(it, state) } != false)
+        ) {
+            restoreStartupSplash()
+        }
         // ⚠️ v1.2.187（用户反馈「状态栏退出不彻底，后台仍以 380MB 运行、耗电」）：
         // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
         // 的渲染进程继续占着 ~380MB。收到**显式退出**信号就结束任务栈：
@@ -2757,6 +3046,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
             is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode -> {
+                FailureDialog.resetAutoShowGuard()
                 // ⚠️ 这里**只能有一个** Healthy/SafeMode 分支。
                 // 2026-11-07 实测踩过：加降级提示时又写了一个同样的 when 条件，
                 // Kotlin 只走第一个匹配分支，第二段成了**永不执行的死代码** ——
@@ -2845,6 +3135,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
         }
         applyIslandActivity(state)
+        bottomMenu?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
+        if (sideHost?.visibility == View.VISIBLE) {
+            sidePanel?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
+        }
     }
 
     /**
@@ -2908,6 +3202,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * WebView 历史短暂不同步时，宁可提示一次，也不能退到未知条目上。
      */
     override fun onBackPressed() {
+        if (bottomMenu?.isShowing == true) { bottomMenu?.dismiss(); return }
+        if (runModeHost != null) { hideRunModeOverlay(); return }
+        if (sideHost?.visibility == View.VISIBLE) { closeSidePanelNow(); return }
         // v1.6.15：先问页面「有没有东西可关」，再考虑历史，最后才退出。
         //
         // 顺序为什么是这样：WebUI 是单页应用，切页面不写浏览器历史（实测
@@ -3570,6 +3867,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     override fun onDestroy() {
+        bottomMenu?.dismiss()
+        bottomMenu = null
         // 注意：引擎由前台服务持有，Activity 销毁不影响后台任务。
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。
@@ -3694,16 +3993,24 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 引擎与会话完全不受影响（它们不在渲染进程里）。
      */
     private fun recoverWebView() {
+        webPageReady = false
+        currentMainUrl = null
         runCatching {
             stopHangWatchdog()
             val parent = webView.parent as? android.view.ViewGroup
             val oldUrl = runCatching { webView.url }.getOrNull()
+            val index = parent?.indexOfChild(webView) ?: -1
+            val params = webView.layoutParams
             parent?.removeView(webView)
             runCatching { webView.destroy() }
             val fresh = WebView(this)
             fresh.id = R.id.webView
-            parent?.addView(fresh, android.view.ViewGroup.LayoutParams(-1, -1))
+            parent?.addView(fresh, index.coerceAtLeast(0), params)
             webView = fresh
+            webView.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+                if (right - left != oldRight - oldLeft) scheduleViewportReapply("layout ${right - left}px")
+            }
+            findViewById<View>(android.R.id.content)?.requestApplyInsets()
             // 新渲染层还没有页面上报：先回到「不认识」状态，让 onBackPressed
             // 走原逻辑，避免拿旧 WebView 的条目判断去退新页面。
             backMobile = false

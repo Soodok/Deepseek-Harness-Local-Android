@@ -108,7 +108,7 @@ ok("<shape" in s, "用单层 <shape>")
 ok("<layer-list" not in s, "没有 layer-list —— 多层就是为了叠高光/描边")
 items = re.findall(r"<item[ >]", s)
 ok(len(items) == 0, f"没有 <item> 层（实得 {len(items)}）")
-ok("@color/island_bg" in s, "胶囊本体引用了 island_bg 底色")
+ok("?attr/colorSurfaceContainerHigh" in s, "胶囊本体使用 Material 容器语义色")
 ok(re.search(r'android:radius="22dp"', s) is not None, "保持 22dp 圆角")
 
 print("\n[B] ★边缘悬浮效果必须彻底消失（2026-11-09 用户要求）")

@@ -1,14 +1,15 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.text.InputType
-import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import app.dsh.mobile.engine.PeerSync
 import app.dsh.mobile.engine.PeerSyncPrefs
 
@@ -42,7 +43,7 @@ class PeerSyncActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_peersync)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<MaterialToolbar>(R.id.btnBack).setNavigationOnClickListener { finish() }
 
         findViewById<LinearLayout>(R.id.rowHost).setOnClickListener {
             editText(
@@ -234,20 +235,29 @@ class PeerSyncActivity : ThemedActivity() {
     // ── 小工具 ────────────────────────────────────────────────
 
     private fun editText(value: String, hint: String, numeric: Boolean, onOk: (String) -> Unit) {
-        val input = EditText(this).apply {
+        val input = TextInputEditText(this).apply {
             setText(value)
-            this.hint = hint
             inputType = if (numeric) InputType.TYPE_CLASS_NUMBER
             else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSelection(text.length)
+            setSelection(text?.length ?: 0)
+        }
+        val field = TextInputLayout(this).apply {
+            this.hint = hint
+            addView(input, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
         }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val pad = (20 * resources.displayMetrics.density).toInt()
             setPadding(pad, pad / 3, pad, 0)
-            addView(input)
+            addView(field, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(hint)
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ -> onOk(input.text.toString().trim()) }
@@ -256,7 +266,7 @@ class PeerSyncActivity : ThemedActivity() {
     }
 
     private fun choice(title: String, labels: Array<String>, checked: Int, onPick: (Int) -> Unit) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(title)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 d.dismiss()

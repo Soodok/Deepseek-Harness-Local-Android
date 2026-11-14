@@ -100,9 +100,6 @@ object AccentTint {
     fun effectiveAccent(context: Context): Int {
         val dark = ThemeManager.isDark(context)
         val static = if (dark) DARK_ACCENT else LIGHT_ACCENT
-        val pristine = ThemeAccent.mode(context) == ThemeAccent.Mode.PRESET &&
-            Accent.currentPreset(context) == Accent.SKY
-        if (pristine) return static
         val raw = runCatching { Accent.current(context).argb }.getOrDefault(static)
         return ensureContrast(raw, if (dark) DARK_BG else LIGHT_BG)
     }

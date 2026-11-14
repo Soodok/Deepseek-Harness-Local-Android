@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 首次启动引导（v1.7.0 重做）：七步向导，手机与平板两种形态
+<!-- 首次启动引导：九页向导，手机与平板两种形态
 
      ## 形态分派
        · < 600dp（手机竖屏）：单列 + 顶部「≡ 全部步骤」抽屉；
@@ -12,14 +12,14 @@
        方向、明暗这些选项的后果是**布局形态**，不是文字。用 LayoutPreviewView
        自绘一块屏幕（圆角底 + 标题条 + 占位线），切形态只改一个布尔值。
 
-     ## 完成页保持原样
-       用户明确要求保留（v1.5.x 的光晕 + 白鲸 + 呼吸循环），这里不动。 -->
+     完成页展示运行环境状态和当前选择。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/onboardingRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?attr/dshBg">
+    android:background="?attr/colorSurface">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -41,7 +41,7 @@
             android:paddingBottom="16dp"
             android:visibility="gone">
 
-            <TextView
+            <com.google.android.material.textview.MaterialTextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingStart="10dp"
@@ -82,22 +82,15 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <!-- 进度条 / 运行环境胶囊共用这一格（weight=1）。
-                         封面页进度条是 INVISIBLE、页眉提示也不显示，横向空间正好空着，
-                         胶囊放这里就和进度条同高，不再从 pageHost 里多占约 40dp，
-                         欢迎页正文才有机会在一屏内放完。
-                         用 FrameLayout 叠放而不是并列两个子项：胶囊最长的一条文案
-                         （精简包的「Lite package · download the runtime after setup」）
-                         直接 wrap_content 会把右侧「全部步骤」挤出屏幕；放进这个限宽
-                         格子里才拿得到 AT_MOST 约束，再由单行省略兜底。 -->
+                    <!-- 进度与欢迎页运行状态共享这一格。 -->
                     <FrameLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1">
 
-                        <ProgressBar
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
                             android:id="@+id/stepProgress"
-                            style="?android:attr/progressBarStyleHorizontal"
+                            style="@style/Widget.Material3.LinearProgressIndicator"
                             android:layout_width="match_parent"
                             android:layout_height="5dp"
                             android:layout_gravity="center_vertical"
@@ -143,23 +136,19 @@
                         </LinearLayout>
                     </FrameLayout>
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSteps"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:background="@drawable/bg_ob_pill"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:minHeight="30dp"
-                        android:gravity="center"
-                        android:paddingHorizontal="12dp"
+                        android:layout_marginStart="8dp"
+                        android:minWidth="0dp"
                         android:text="@string/ob_wizard_steps_open"
                         android:textColor="?attr/dshAccent"
                         android:textSize="11sp" />
                 </LinearLayout>
 
-                <TextView
+                <com.google.android.material.textview.MaterialTextView
                     android:id="@+id/txtStepHint"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -169,7 +158,7 @@
 
             </LinearLayout>
 
-            <!-- ===== 内容区：七页叠放，只显示当前页 ===== -->
+            <!-- ===== 内容区：九页叠放，只显示当前页 ===== -->
             <FrameLayout
                 android:id="@+id/pageHost"
                 android:layout_width="match_parent"
@@ -265,7 +254,7 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_language_title"
@@ -273,7 +262,7 @@
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
@@ -308,7 +297,7 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_orientation_title"
@@ -316,7 +305,7 @@
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
@@ -340,7 +329,7 @@
                                 android:layout_gravity="center" />
                         </FrameLayout>
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:id="@+id/orientPreviewLabel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -356,14 +345,23 @@
                             android:layout_marginTop="16dp"
                             android:orientation="vertical" />
 
-                        <LinearLayout
+                        <com.google.android.material.card.MaterialCardView
                             android:id="@+id/orientHint"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="14dp"
-                            android:background="@drawable/bg_card"
-                            android:orientation="vertical"
-                            android:padding="14dp" />
+                            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                            app:cardCornerRadius="@dimen/md3_card_radius"
+                            app:cardElevation="0dp"
+                            app:strokeColor="?attr/colorOutlineVariant"
+                            app:strokeWidth="1dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:id="@+id/orientHintContent"
+                                android:orientation="vertical"
+                                android:padding="14dp" />
+                        </com.google.android.material.card.MaterialCardView>
                     </LinearLayout>
                 </ScrollView>
 
@@ -385,7 +383,7 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_theme_title"
@@ -393,7 +391,7 @@
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
@@ -428,7 +426,7 @@
                                         android:layout_gravity="center" />
                                 </FrameLayout>
 
-                                <TextView
+                                <com.google.android.material.textview.MaterialTextView
                                     android:id="@+id/themePreviewLabel"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
@@ -459,7 +457,7 @@
                                         android:layout_gravity="center" />
                                 </FrameLayout>
 
-                                <TextView
+                                <com.google.android.material.textview.MaterialTextView
                                     android:id="@+id/themePreviewLabel2"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
@@ -479,7 +477,7 @@
                     </LinearLayout>
                 </ScrollView>
 
-                <!-- 4. 配色方案（带实时预览） -->
+                <!-- 4. 系统动态取色与预设配色 -->
                 <ScrollView
                     android:id="@+id/pageAccent"
                     android:layout_width="match_parent"
@@ -550,7 +548,7 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_screen_title"
@@ -558,7 +556,7 @@
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
@@ -566,7 +564,7 @@
                             android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
@@ -583,7 +581,7 @@
                             android:layout_marginTop="8dp"
                             android:orientation="vertical" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
@@ -600,7 +598,7 @@
                             android:layout_marginTop="8dp"
                             android:orientation="vertical" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
@@ -637,7 +635,7 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_mode_title"
@@ -645,7 +643,7 @@
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
@@ -663,23 +661,30 @@
 
                         <!-- 前置条件：只有选中 Shizuku / Root 时才转成警示色，
                              普通模式下是中性说明（否则正常用户会以为自己配错了） -->
-                        <LinearLayout
+                        <com.google.android.material.card.MaterialCardView
                             android:id="@+id/modePrereqCard"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:background="@drawable/bg_card"
-                            android:orientation="vertical"
-                            android:padding="14dp">
+                            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                            app:cardCornerRadius="@dimen/md3_card_radius"
+                            app:cardElevation="0dp"
+                            app:strokeColor="?attr/colorOutlineVariant"
+                            app:strokeWidth="1dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="14dp">
 
-                            <TextView
+                            <com.google.android.material.textview.MaterialTextView
                                 android:id="@+id/capRoot"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
 
-                            <TextView
+                            <com.google.android.material.textview.MaterialTextView
                                 android:id="@+id/capShizuku"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
@@ -695,9 +700,10 @@
                                 android:lineSpacingExtra="3dp"
                                 android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
-                        </LinearLayout>
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
@@ -995,26 +1001,25 @@
                     android:paddingTop="8dp"
                     android:paddingBottom="24dp">
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnBack"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="50dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginEnd="10dp"
-                        android:background="@drawable/bg_btn_outline_ripple"
                         android:minWidth="0dp"
-                        android:paddingHorizontal="18dp"
                         android:text="@string/ob_wizard_back"
                         android:textAllCaps="false"
                         android:textColor="?attr/dshTextPrimary"
                         android:textSize="15sp"
                         android:visibility="gone" />
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnNext"
+                        style="@style/Widget.Material3.Button"
                         android:layout_width="0dp"
-                        android:layout_height="50dp"
+                        android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:background="@drawable/bg_btn_accent_ripple"
                         android:text="@string/ob_wizard_next"
                         android:textAllCaps="false"
                         android:textColor="?attr/dshOnAccent"

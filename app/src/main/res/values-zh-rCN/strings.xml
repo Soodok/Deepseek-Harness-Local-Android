@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">系统动态配色</string>
+    <string name="theme_palette_blue">蓝色</string>
+    <string name="theme_palette_teal">青绿色</string>
+    <string name="theme_palette_violet">紫色</string>
+    <string name="theme_palette_amber">琥珀色</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s（此设备不支持）</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agent 引擎</string>
     <string name="notif_channel_engine_desc">DeepSeek Harness 本地引擎运行状态</string>
@@ -1542,7 +1548,7 @@
     <!-- 主题与配色页（v1.5.x） -->
     <string name="theme_page_title">主题</string>
     <string name="theme_dynamic">动态取色</string>
-    <string name="theme_dynamic_sub">跟随壁纸，从系统颜色里取色</string>
+    <string name="theme_dynamic_sub">使用 Android「壁纸与样式」中选择的颜色方案</string>
     <string name="theme_dynamic_unsupported">需要 Android 12 及以上，本机不支持</string>
     <string name="theme_presets">预设配色</string>
     <string name="theme_custom">自定义颜色</string>
@@ -1556,7 +1562,7 @@
     <string name="theme_current_dynamic">当前：系统动态取色</string>
     <string name="theme_color_dynamic">系统动态取色</string>
 
-    <string name="theme_entry_sub">预设配色、自定义颜色与动态取色</string>
+    <string name="theme_entry_sub">明暗模式、预设配色和系统动态取色</string>
     <string name="ext_cat_lang">语言运行时</string>
     <string name="ext_cat_build">编译构建</string>
     <string name="ext_cat_debug">调试分析</string>
@@ -1677,8 +1683,28 @@
     <string name="island_side_no_plugins">还没有安装插件</string>
     <string name="island_side_plugin_count">已装 %1$d 个</string>
     <string name="island_dock_switched">停靠位置：%1$s</string>
+    <string name="setting_island_dock">状态悬浮窗</string>
+    <string name="setting_island_dock_sub">选择灵动岛或工具栏及其位置</string>
+    <string name="setting_island_dock_island">灵动岛</string>
+    <string name="setting_island_dock_toolbar">工具栏</string>
+    <string name="setting_island_dock_position">灵动岛位置</string>
+    <string name="setting_island_dock_toolbar_description">工具栏显示在屏幕底部。</string>
+    <string name="setting_island_dock_top">顶部</string>
+    <string name="setting_island_dock_left">左侧</string>
+    <string name="setting_island_dock_right">右侧</string>
+    <string name="setting_island_dock_bottom">底部</string>
+    <string name="bottom_toolbar_expand">展开工具栏</string>
+    <string name="bottom_toolbar_home">主页</string>
+    <string name="bottom_toolbar_menu">菜单</string>
     <string name="linux_err_selinux_drift">Linux 环境的 SELinux 文件标签已漂移（%1$s），而这台设备没有给 App 可用的特权通道去修复，容器因此读不到自己的文件。请开启 root（或 Shizuku）后重新进入本页，或删除并重新部署环境。</string>
 
+    <string name="theme_source">颜色来源</string>
+    <string name="theme_custom_sub">任选一个颜色，自动推导出整套 MD3 配色</string>
+    <string name="theme_mode_section">外观</string>
+    <string name="theme_color_section">颜色</string>
+    <string name="theme_mode_light_sub">始终使用浅色配色</string>
+    <string name="theme_mode_dark_sub">始终使用深色配色</string>
+    <string name="theme_mode_system_sub">跟随系统深色模式设置</string>
     <string name="asr_mode_local">本地语音识别</string>
     <string name="asr_mode_api">API（云端）</string>
     <string name="asr_steps_title">本地语音识别：四步配好</string>

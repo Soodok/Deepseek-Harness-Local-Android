@@ -26,8 +26,8 @@
         android:layout_gravity="top"
         android:layout_marginTop="40dp"
         android:indeterminate="true"
-        android:progressTint="?attr/dshAccent"
-        android:progressBackgroundTint="?attr/dshStroke"
+        android:progressTint="?attr/colorPrimary"
+        android:progressBackgroundTint="?attr/colorPrimaryContainer"
         android:elevation="4dp"
         android:visibility="gone" />
 
@@ -101,7 +101,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_back"
-            android:tint="@color/island_success"
+            android:tint="?attr/colorTertiary"
             android:visibility="gone"
             android:contentDescription="@string/btn_back"
             android:background="@drawable/bg_island_btn" />

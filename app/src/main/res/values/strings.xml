@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">System dynamic color</string>
+    <string name="theme_palette_blue">Blue</string>
+    <string name="theme_palette_teal">Teal</string>
+    <string name="theme_palette_violet">Violet</string>
+    <string name="theme_palette_amber">Amber</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (not supported on this device)</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agent Engine</string>
     <string name="notif_channel_engine_desc">Status of the DeepSeek Harness local engine</string>
@@ -1543,7 +1549,7 @@
     <!-- 主题与配色页（v1.5.x） -->
     <string name="theme_page_title">Theme</string>
     <string name="theme_dynamic">Dynamic colour</string>
-    <string name="theme_dynamic_sub">Match the wallpaper via Android system colours</string>
+    <string name="theme_dynamic_sub">Use the colour scheme selected in Android Wallpaper &amp; style</string>
     <string name="theme_dynamic_unsupported">Needs Android 12 or newer — unavailable on this device</string>
     <string name="theme_presets">Preset colours</string>
     <string name="theme_custom">Custom colour</string>
@@ -1557,7 +1563,7 @@
     <string name="theme_current_dynamic">Current: system dynamic colour</string>
     <string name="theme_color_dynamic">System dynamic colour</string>
 
-    <string name="theme_entry_sub">Preset colours, custom colour and dynamic colouring</string>
+    <string name="theme_entry_sub">Appearance, preset palettes and system dynamic colour</string>
     <string name="ext_cat_lang">Language runtimes</string>
     <string name="ext_cat_build">Build &amp; tooling</string>
     <string name="ext_cat_debug">Debugging</string>
@@ -1674,8 +1680,28 @@
     <string name="island_side_no_plugins">No plugins installed yet</string>
     <string name="island_side_plugin_count">%1$d installed</string>
     <string name="island_dock_switched">Dock: %1$s</string>
+    <string name="setting_island_dock">Status dock</string>
+    <string name="setting_island_dock_sub">Choose island or toolbar and position</string>
+    <string name="setting_island_dock_island">Island</string>
+    <string name="setting_island_dock_toolbar">Toolbar</string>
+    <string name="setting_island_dock_position">Island position</string>
+    <string name="setting_island_dock_toolbar_description">The toolbar appears at the bottom of the screen.</string>
+    <string name="setting_island_dock_top">Top</string>
+    <string name="setting_island_dock_left">Left</string>
+    <string name="setting_island_dock_right">Right</string>
+    <string name="setting_island_dock_bottom">Bottom</string>
+    <string name="bottom_toolbar_expand">Show toolbar</string>
+    <string name="bottom_toolbar_home">Home</string>
+    <string name="bottom_toolbar_menu">Menu</string>
     <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
 
+    <string name="theme_source">Colour source</string>
+    <string name="theme_custom_sub">Pick any colour, MD3 palette is derived from it</string>
+    <string name="theme_mode_section">Appearance</string>
+    <string name="theme_color_section">Colour</string>
+    <string name="theme_mode_light_sub">Always use the light palette</string>
+    <string name="theme_mode_dark_sub">Always use the dark palette</string>
+    <string name="theme_mode_system_sub">Follow the system dark mode setting</string>
     <string name="asr_mode_local">On-device</string>
     <string name="asr_mode_api">Cloud API</string>
     <string name="asr_steps_title">Set up on-device recognition (4 steps)</string>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""引导页 v2（七步 + 双形态）回归门禁。
+"""引导页 v2（欢迎页 + 八步、双形态）回归门禁。
 
 ## 这份探针守什么
 
@@ -7,7 +7,7 @@
 再往前丢过 Root 二次确认。所以这里不测「页面长什么样」，
 只测**改了会静默坏掉的行为**：
 
-1. 七步顺序与页面 View 一一对应（少一个就会漏页且不报错）；
+1. 九页顺序与步骤定义一一对应，欢迎页不计入八步；
 2. 平板/手机双形态的判据在（>=600dp 走侧栏，否则走胶囊 + 抽屉）；
 3. 配色真的重涂到按钮与进度条（v1.5.x 的真 bug：只改卡片文字）；
 4. 方向页有真机预览控件且真的联动（不是一张静态图）；
@@ -75,16 +75,42 @@ def fn_body(src, signature):
 act = read(ACT)
 layout = read(LAYOUT)
 
-print("\n=== 1. 七步结构 ===")
-# 页面 View 必须与 steps 数量一致，否则 progress.max 与翻页边界会错位
-page_ids = re.findall(r'findViewById\(R\.id\.(page[A-Z]\w+)\)', act)
-check("seven pages are bound", len(page_ids) == 7, "found: %r" % (page_ids,))
-for pid in ("pageLanguage", "pageOrientation", "pageTheme", "pageAccent", "pageScreen", "pagePriv", "pageDone"):
+print("\n=== 1. 欢迎页 + 八步结构 ===")
+# 页面与步骤顺序必须一致；欢迎页显示为封面，不计入进度与步数。
+expected_pages = ("pageWelcome", "pageLanguage", "pageOrientation", "pageTheme", "pageAccent",
+                  "pageScreen", "pageMode", "pageCaps", "pageDone")
+expected_steps = ("ob_wizard_welcome_cover_label", "ob_wizard_language_title",
+                  "ob_wizard_orientation_title", "ob_wizard_theme_title", "theme_color_section",
+                  "ob_wizard_screen_title", "ob_wizard_mode_title", "ob_wizard_caps_title",
+                  "ob_wizard_done_title")
+page_block = re.search(r'pages\s*=\s*listOf\((.*?)\n\s*\)', act, re.S)
+page_ids = re.findall(r'findViewById\(R\.id\.(page[A-Z]\w+)\)', page_block.group(1)) if page_block else []
+step_block = re.search(r'private val steps\s*=\s*listOf\((.*?)\n\s*\)', act, re.S)
+step_ids = re.findall(r'Step\(R\.string\.(\w+)\)', step_block.group(1)) if step_block else []
+check("nine pages are bound in order", tuple(page_ids) == expected_pages, "found: %r" % (page_ids,))
+check("cover and eight steps are declared in order", tuple(step_ids) == expected_steps,
+      "found: %r" % (step_ids,))
+for pid in expected_pages:
     check("layout declares %s" % pid, '@+id/%s"' % pid in layout)
-    check("activity binds %s" % pid, 'R.id.%s' % pid in act)
-check("progress max derives from pages.size", "progress.max = pages.size" in act)
-check("seven steps declared", act.count("Step(R.string.") == 7,
-      "got %d" % act.count("Step(R.string."))
+check("progress max excludes the cover", "progress.max = steps.size - 1" in act)
+go_to = fn_body(act, "private fun goTo(")
+check("progress and step hint exclude the cover",
+      "val stepNo = index" in go_to and "val stepCount = steps.size - 1" in go_to
+      and "progress.progress = stepNo" in go_to
+      and "ob_wizard_step_fmt, stepNo, stepCount" in go_to)
+stepper = fn_body(act, "private fun refreshStepper()")
+check("step markers leave the cover unnumbered and count from one",
+      'index == 0 -> "\\u00b7"' in stepper and "else -> index.toString()" in stepper)
+
+# 拆页后模式选择与能力开关必须各在自己的页面，不能只保留两个空壳。
+mode_page = re.search(r'<ScrollView\s+android:id="@\+id/pageMode"(.*?)</ScrollView>', layout, re.S)
+caps_page = re.search(r'<ScrollView\s+android:id="@\+id/pageCaps"(.*?)</ScrollView>', layout, re.S)
+check("mode page owns privilege choices and prerequisites",
+      bool(mode_page) and all('@+id/%s"' % name in mode_page.group(1)
+                              for name in ("privContainer", "capRoot", "capShizuku")))
+check("capabilities page owns groups and recommended preset",
+      bool(caps_page) and all('@+id/%s"' % name in caps_page.group(1)
+                              for name in ("capGroups", "capPanels", "btnCapRecommend")))
 
 print("\n=== 2. 双形态（平板侧栏 / 手机抽屉）===")
 check("wide threshold constant exists", "WIDE_DP = 600" in act)
@@ -93,19 +119,26 @@ check("side rail is shown on wide screens", "sideRail.visibility = if (wide) Vie
 check("steps pill is hidden on wide screens", "btnSteps.visibility = if (wide) View.GONE" in act)
 check("config change re-evaluates form factor", "override fun onConfigurationChanged" in act)
 check("rail and drawer share one step builder", "railItems.add(stepRow(" in act and "drawerItems.add(stepRow(" in act)
-check("step rows are clickable (jumpable)", "row.setOnClickListener" in act)
-for vid in ("sideRail", "railSteps", "stepsDrawer", "drawerSteps", "drawerScrim", "drawerPanel", "btnSteps"):
+check("step rows are clickable (jumpable)",
+      "setOnClickListener" in fn_body(act, "private fun stepRow("))
+for vid in ("sideRail", "railSteps", "btnSteps"):
     check("layout declares %s" % vid, '@+id/%s"' % vid in layout)
+check("mobile steps use Material bottom sheet", "BottomSheetDialog(this)" in act)
 
-print("\n=== 3. 配色真的重涂按钮与进度条（v1.5.x 真 bug 回归）===")
-check("accent preview block exists", "private fun updateAccentPreview()" in act)
-check("progress bar is retinted from the live accent",
-      "progress.progressTintList = ColorStateList.valueOf(accent)" in act)
-check("primary button is retinted from the live accent",
-      "btnNext.background?.mutate()?.setTint(accent)" in act)
-check("accent change repaints immediately",
-      "Accent.set(this, acc)" in act and "updateAccentPreview()" in act)
-check("layout declares the accent preview card", '@+id/accentPreview"' in layout)
+print("\n=== 3. Material 配色方案 ===")
+dynamic = fn_body(act, "private fun buildDynamicColorOption(")
+check("palette step is built", "buildDynamicColorOption()" in act and bool(dynamic))
+check("shared selector is used", "ThemePaletteSelector(" in dynamic)
+check("palette selector is attached", "addView(selector)" in dynamic)
+check("palette reads shared preference", "ThemeAccent.selected(this)" in dynamic)
+check("palette choice persists and recreates", "ThemeAccent.setSelected(this, id)" in dynamic and "recreate()" in dynamic)
+check("device support reaches selector", "ThemeAccent.dynamicSupported" in dynamic)
+check("old accent enum is not offered", "Accent.entries" not in act and "Accent.set(this" not in act)
+accent_preview = fn_body(act, "private fun updateAccentPreview(")
+check("palette preview is refreshed", "updateAccentPreview()" in dynamic)
+check("palette repaints progress and next button",
+      "progress.progressTintList = ColorStateList.valueOf(accent)" in accent_preview
+      and "btnNext.backgroundTintList = ColorStateList.valueOf(accent)" in accent_preview)
 
 print("\n=== 4. 方向页真机预览 ===")
 check("preview view is a real custom view", os.path.exists(PREVIEW))
@@ -199,10 +232,15 @@ check("button bar lives inside the content column",
       "outside it the bar spans the whole screen and ignores the side rail")
 
 print("\n=== 8. 既有行为不退化 ===")
-check("back key still commits from the first page",
-      "override fun onBackPressed()" in act and "commit()" in act)
-check("back key closes the drawer first", "stepsDrawer.visibility == View.VISIBLE" in act)
-check("root double warning preserved", "warnRoot { warnRootAgain { commit() } }" in act)
+back_pressed = fn_body(act, "override fun onBackPressed()")
+finish = fn_body(act, "private fun finishOnboarding()")
+check("back key still completes onboarding from the first page",
+      "if (page > 0)" in back_pressed and "goTo(page - 1)" in back_pressed
+      and "finishOnboarding()" in back_pressed and "commitNow()" in finish)
+check("back key closes the drawer first",
+      "stepsDrawer?.isShowing == true" in back_pressed and "openStepsDrawer(false)" in back_pressed)
+check("root double warning preserved",
+      bool(re.search(r'warnRoot\s*\{\s*warnRootAgain\s*\{[^}]*commitNow\(\)', finish, re.S)))
 check("root warning text preserved", "ob_priv_root_paths_warn" in act)
 check("root probe stays off the main thread",
       'Thread({' in act and '"probe-root"' in act)
@@ -212,8 +250,9 @@ check("shizuku listener is paired",
 # 的说明，用 in 判会把这个说明本身当成违规。
 check("orientation is not applied to the dying window",
       "setRequestedOrientation(" not in act and "requestedOrientation =" not in act)
-check("six original state keys still saved",
-      all(k in act for k in ("KEY_PAGE", "KEY_LANG", "KEY_ORIENTATION", "KEY_THEME", "KEY_ACCENT", "KEY_PRIV")))
+check("wizard state survives recreation",
+      all(k in act for k in ("KEY_PAGE", "KEY_LANG", "KEY_ORIENTATION", "KEY_THEME", "KEY_PRIV"))
+      and "override fun onSaveInstanceState" in act)
 
 print("\n=== 9. 动效存在且不阻塞 ===")
 check("page transition animates", "private fun animateStep(" in act)
@@ -239,10 +278,11 @@ check("breath loop pauses while the activity is stopped",
       and "glowBreath?.resume()" in fn_body(act, "override fun onStart()"))
 check("breath loop honours the system 'remove animations' switch",
       "areAnimatorsEnabled()" in breath)
-check("selected cards get a stroke, not just alpha",
-      "setStroke(" in act,
-      "v1.5.x only changed alpha 0.62 -> 1.0, which is invisible on dark backgrounds")
-check("drawer slides in", "translationY(0f)" in act)
+check("selected cards expose radio state",
+      "MaterialRadioButton" in act and "isChecked = active" in act
+      and "info.isChecked = host.isSelected" in act,
+      "selection must be visible and exposed to accessibility services")
+check("drawer uses the Material bottom sheet", "BottomSheetDialog(this)" in act)
 
 print("\n=== 10. 实机截图抓出的四处视觉缺陷（2026-11-11）===")
 # (a) 光晕半径：gradientRadius 不带单位时按 px 解析。density 2.75 的机器上 "100"
@@ -263,9 +303,8 @@ if m_radius and m_box:
         m_radius.group(1), unit or "", m_box.group(1))
 check("done glow radius has a unit and fills its box", radius_ok, radius_detail)
 # 呼吸放大到 1.12 倍会超出 200dp 的 FrameLayout；父级裁剪会把光晕切出方边。
-m_done = re.search(r'<LinearLayout\s+android:id="@\+id/pageDone"[^>]*>', layout)
-check("done page does not clip the breathing glow",
-      bool(m_done) and 'android:clipChildren="false"' in m_done.group(0))
+m_done = re.search(r'<FrameLayout\b[^>]*android:clipChildren="false"[^>]*>\s*<View\s+android:id="@\+id/doneGlow"', layout, re.S)
+check("done page does not clip the breathing glow", bool(m_done))
 
 # (b) 能力开关行：文字列紧贴开关，长副标题会一直顶到开关边上。
 cap_row = fn_body(act, "private fun capRow(")
@@ -278,7 +317,7 @@ check("capability text keeps a gap before the switch",
 scrolls = re.findall(r'<ScrollView\b[^>]*>', layout)
 faded = [s for s in scrolls if 'android:requiresFadingEdge="vertical"' in s
          and 'android:fadingEdgeLength="' in s]
-check("six scrolling pages exist", len(scrolls) == 6, "found %d" % len(scrolls))
+check("nine scrolling pages exist", len(scrolls) == 9, "found %d" % len(scrolls))
 check("every scrolling page fades at its edges",
       len(scrolls) > 0 and len(faded) == len(scrolls),
       "%d/%d ScrollViews fade" % (len(faded), len(scrolls)))

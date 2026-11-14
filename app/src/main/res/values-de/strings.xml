@@ -2,6 +2,12 @@
 <!-- v1.2.120：Deutsch (de) — vollständige Übersetzung, behält alle Keys +
      Platzhalter/Zwischenräume des Default (values/) bei. -->
 <resources>
+    <string name="theme_palette_dynamic">Dynamische Systemfarben</string>
+    <string name="theme_palette_blue">Blau</string>
+    <string name="theme_palette_teal">Blaugrün</string>
+    <string name="theme_palette_violet">Violett</string>
+    <string name="theme_palette_amber">Bernstein</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (auf diesem Gerät nicht unterstützt)</string>
 
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agenten-Engine</string>
@@ -1549,7 +1555,7 @@
     <!-- Theme page (v1.5.x) -->
     <string name="theme_page_title">Design</string>
     <string name="theme_dynamic">Dynamische Farbe</string>
-    <string name="theme_dynamic_sub">Farben aus dem Hintergrundbild (Android-Systemfarben)</string>
+    <string name="theme_dynamic_sub">Im Android-Menü „Hintergrund &amp; Stil“ ausgewähltes Farbschema verwenden</string>
     <string name="theme_dynamic_unsupported">Erfordert Android 12 oder neuer</string>
     <string name="theme_presets">Voreinstellungen</string>
     <string name="theme_custom">Eigene Farbe</string>
@@ -1563,7 +1569,7 @@
     <string name="theme_current_dynamic">Aktuell: dynamische Systemfarbe</string>
     <string name="theme_color_dynamic">Dynamische Systemfarbe</string>
 
-    <string name="theme_entry_sub">Voreinstellungen, eigene Farben und dynamische Farben</string>
+    <string name="theme_entry_sub">Darstellung, Farbpaletten und dynamische Systemfarben</string>
     <string name="ext_cat_lang">Sprachlaufzeiten</string>
     <string name="ext_cat_build">Build-Werkzeuge</string>
     <string name="ext_cat_debug">Debugging</string>
@@ -1680,8 +1686,28 @@
     <string name="island_side_no_plugins">Noch keine Plugins installiert</string>
     <string name="island_side_plugin_count">%1$d installiert</string>
     <string name="island_dock_switched">Andocken: %1$s</string>
+    <string name="setting_island_dock">Status-Dock</string>
+    <string name="setting_island_dock_sub">Insel oder Symbolleiste und Position wählen</string>
+    <string name="setting_island_dock_island">Insel</string>
+    <string name="setting_island_dock_toolbar">Symbolleiste</string>
+    <string name="setting_island_dock_position">Position der Insel</string>
+    <string name="setting_island_dock_toolbar_description">Die Symbolleiste wird unten auf dem Bildschirm angezeigt.</string>
+    <string name="setting_island_dock_top">Oben</string>
+    <string name="setting_island_dock_left">Links</string>
+    <string name="setting_island_dock_right">Rechts</string>
+    <string name="setting_island_dock_bottom">Unten</string>
+    <string name="bottom_toolbar_expand">Symbolleiste anzeigen</string>
+    <string name="bottom_toolbar_home">Startseite</string>
+    <string name="bottom_toolbar_menu">Menü</string>
     <string name="linux_err_selinux_drift">Die SELinux-Dateilabels der Linux-Umgebung sind abgedriftet (%1$s), und dieses Gerät gibt der App keinen privilegierten Kanal zur Reparatur. Der Container kann seine eigenen Dateien daher nicht lesen. Root (oder Shizuku) aktivieren und diese Seite erneut öffnen oder die Umgebung löschen und neu bereitstellen.</string>
 
+    <string name="theme_source">Farbquelle</string>
+    <string name="theme_custom_sub">Beliebige Farbe wählen, daraus wird die MD3-Palette abgeleitet</string>
+    <string name="theme_mode_section">Erscheinungsbild</string>
+    <string name="theme_color_section">Farbe</string>
+    <string name="theme_mode_light_sub">Immer helle Palette verwenden</string>
+    <string name="theme_mode_dark_sub">Immer dunkle Palette verwenden</string>
+    <string name="theme_mode_system_sub">Systemeinstellung für Dunkelmodus folgen</string>
     <string name="asr_mode_local">Auf dem Gerät</string>
     <string name="asr_mode_api">Cloud-API</string>
     <string name="asr_steps_title">Lokale Erkennung einrichten (4 Schritte)</string>

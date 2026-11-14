@@ -12,6 +12,9 @@ import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.ListView
 import android.widget.TextView
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.textfield.TextInputEditText
 import android.widget.Toast
 import app.dsh.mobile.engine.PermGrant
 import org.json.JSONObject
@@ -40,8 +43,8 @@ class PermissionListActivity : ThemedActivity() {
 
 
     private lateinit var list: ListView
-    private lateinit var search: EditText
-    private lateinit var tabs: TextView
+    private lateinit var search: TextInputEditText
+    private lateinit var filterGroup: MaterialButtonToggleGroup
     private lateinit var summary: TextView
     private lateinit var empty: TextView
 
@@ -59,14 +62,23 @@ class PermissionListActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_permission_list)
 
+        findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         list = findViewById(R.id.listPerms)
         search = findViewById(R.id.editPermSearch)
-        tabs = findViewById(R.id.txtPermTabs)
+        filterGroup = findViewById(R.id.permFilterGroup)
         summary = findViewById(R.id.txtPermSummary)
         empty = findViewById(R.id.txtPermEmpty)
 
-        findViewById<View>(R.id.btnPermBack).setOnClickListener { finish() }
-        findViewById<View>(R.id.txtPermTabs).setOnClickListener { cycleFilter() }
+        filterGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            filter = when (checkedId) {
+                R.id.filterGranted -> 1
+                R.id.filterMissing -> 2
+                else -> 0
+            }
+            applyFilter()
+        }
+        filterGroup.check(R.id.filterAll)
 
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
@@ -85,11 +97,6 @@ class PermissionListActivity : ThemedActivity() {
         }
 
         reload()
-    }
-
-    private fun cycleFilter() {
-        filter = (filter + 1) % 3
-        applyFilter()
     }
 
     private fun reload() {
@@ -111,13 +118,12 @@ class PermissionListActivity : ThemedActivity() {
 
         val granted = all.count { it.granted }
         summary.text = getString(R.string.perm_list_summary, granted, all.size - granted)
-        tabs.text = getString(
-            when (filter) {
-                1 -> R.string.perm_list_tab_granted
-                2 -> R.string.perm_list_tab_missing
-                else -> R.string.perm_list_tab_all
-            },
-        )
+        val selectedFilter = when (filter) {
+            1 -> R.id.filterGranted
+            2 -> R.id.filterMissing
+            else -> R.id.filterAll
+        }
+        if (filterGroup.checkedButtonId != selectedFilter) filterGroup.check(selectedFilter)
         empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         (list.adapter as? BaseAdapter)?.notifyDataSetChanged()
     }
@@ -149,7 +155,7 @@ class PermissionListActivity : ThemedActivity() {
     }
 
     private fun confirmRevoke(row: Row) {
-        android.app.AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.perm_list_revoke_title)
             .setMessage(getString(R.string.perm_list_revoke_msg, row.short))
             .setPositiveButton(R.string.perm_list_revoke) { _, _ -> revokeOne(row) }
@@ -189,9 +195,15 @@ class PermissionListActivity : ThemedActivity() {
             v.findViewById<TextView>(R.id.permFull).text = row.group
             val st = v.findViewById<TextView>(R.id.permState)
             st.text = getString(if (row.granted) R.string.perm_list_granted else R.string.perm_list_missing)
-            st.setTextColor(
-                getColor(if (row.granted) R.color.success else R.color.text_secondary),
-            )
+            val colorAttr = if (row.granted) {
+                androidx.appcompat.R.attr.colorPrimary
+            } else {
+                androidx.appcompat.R.attr.colorError
+            }
+            val colorValue = android.util.TypedValue()
+            if (theme.resolveAttribute(colorAttr, colorValue, true)) {
+                st.setTextColor(if (colorValue.resourceId != 0) getColor(colorValue.resourceId) else colorValue.data)
+            }
             return v
         }
     }

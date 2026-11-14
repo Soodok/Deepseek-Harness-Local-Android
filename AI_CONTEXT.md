@@ -12585,7 +12585,7 @@ M3(R.attr.colorSurface→0) / M4(守卫 if(true)) **全部 EXIT=1**，还原 EXI
   —— 原来「灵动岛 GONE→VISIBLE 后补一次 insets 应用」在重构时丢了，
   `_test_security_audit.py` 因此变红。
 - `scripts/probes/_test_island_side_panel.py` 两条断言按新实现改写：
-  `applyDock hides the top XML capsule` 改找 `renderIslandVisibility()` + 
+  `applyDock hides the top XML capsule` 改找 `renderIslandVisibility()` +
   `showOverlay = !side && !islandCollapsed`；`side handle uses IslandChrome geometry`
   改找 `IslandChrome.collapsedRect(`。
 

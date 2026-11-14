@@ -79,43 +79,28 @@ enum class Accent(
             return fromId(prefs.getString(KEY, null))
         }
 
-        /** 当前**实际生效**的强调色：预设 / 自定义 / 系统动态色三者之一。 */
+        /** 旧控件兼容：动态取色启用时读取当前 Activity 的主题主色。 */
         fun current(ctx: Context): AccentColor = resolve(ctx)
 
         fun set(ctx: Context, accent: Accent) {
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString(KEY, accent.id).apply()
-            // 选预设色 = 明确退出自定义/动态模式
-            ThemeAccent.setMode(ctx, ThemeAccent.Mode.PRESET)
         }
 
-        /**
-         * 解析当前强调色。
-         *
-         * 动态模式从当前主题的 `colorPrimary` 取（Material Components 的
-         * DynamicColors 已经把 Monet 色写进主题），取不到时回落预设色，
-         * 保证任何情况下都有可见颜色而不是透明。
-         */
+        /** 旧业务控件跟随主题主色；不支持动态色时保留原预设回退。 */
         internal fun resolve(ctx: Context): AccentColor {
             val preset = currentPreset(ctx)
-            return when (ThemeAccent.mode(ctx)) {
-                ThemeAccent.Mode.CUSTOM -> {
-                    val argb = ThemeAccent.customColor(ctx)
-                    AccentColor(argb, preset.labelRes, custom = true)
-                }
-                ThemeAccent.Mode.DYNAMIC -> {
-                    val fallback = preset.argb
-                    val primary = runCatching {
-                        com.google.android.material.color.MaterialColors.getColor(
-                            ctx,
-                            com.google.android.material.R.attr.colorPrimary,
-                            fallback,
-                        )
-                    }.getOrDefault(fallback)
-                    AccentColor(primary, R.string.theme_color_dynamic, dynamic = true)
-                }
-                ThemeAccent.Mode.PRESET -> preset.toColor()
+            val colorContext = if (ctx is android.app.Activity || ctx is android.view.ContextThemeWrapper) ctx else {
+                val configured = ThemeAccent.wrap(ThemeManager.wrap(ctx))
+                if (ThemeAccent.dynamicEnabled(ctx)) {
+                    com.google.android.material.color.DynamicColors.wrapContextIfAvailable(configured)
+                } else configured
             }
+            val primary = com.google.android.material.color.MaterialColors.getColor(
+                colorContext, androidx.appcompat.R.attr.colorPrimary, preset.argb,
+            )
+            val dynamic = ThemeAccent.dynamicEnabled(ctx)
+            return AccentColor(primary, ThemeAccent.labelRes(ctx), dynamic = dynamic)
         }
     }
 }
