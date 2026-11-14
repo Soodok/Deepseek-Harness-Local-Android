@@ -14,10 +14,12 @@ class ToolRunCard extends StatefulWidget {
     required this.tool,
     this.showDivider = false,
     this.showPlan = true,
+    this.compact = false,
   });
   final ToolRun tool;
   final bool showDivider;
   final bool showPlan;
+  final bool compact;
   @override
   State<ToolRunCard> createState() => _ToolRunCardState();
 }
@@ -35,7 +37,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ToolProcessCard(tool: tool),
+          ToolProcessCard(tool: tool, compact: widget.compact),
           if (content.resources.isNotEmpty ||
               (widget.showPlan && content.steps.isNotEmpty))
             ToolContentView(
@@ -59,7 +61,9 @@ class _ToolRunCardState extends State<ToolRunCard> {
       child: ExpansionTile(
         key: ValueKey('tool-card-${tool.id}'),
         onExpansionChanged: (value) => setState(() => _expanded = value),
-        tilePadding: const EdgeInsets.fromLTRB(10, 0, 6, 0),
+        tilePadding: widget.compact
+            ? const EdgeInsets.only(right: 4)
+            : const EdgeInsets.fromLTRB(10, 0, 6, 0),
         childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
         leading: running
             ? SizedBox(
@@ -71,22 +75,39 @@ class _ToolRunCardState extends State<ToolRunCard> {
                 ),
               )
             : Icon(_icon(tool.status), size: 15, color: color),
-        title: Text(
-          tool.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: DshPalette.ink,
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-          ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                tool.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: DshPalette.inkSoft,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            if (widget.compact &&
+                (tool.status == ToolStatus.failed ||
+                    tool.status == ToolStatus.cancelled)) ...[
+              const SizedBox(width: 8),
+              Text(
+                _statusLabel(tool.status),
+                style: TextStyle(color: color, fontSize: 12.5),
+              ),
+            ],
+          ],
         ),
-        subtitle: Text(
-          _meta(tool),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: DshPalette.inkSoft, fontSize: 12),
-        ),
+        subtitle: widget.compact
+            ? null
+            : Text(
+                _meta(tool),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: DshPalette.inkSoft, fontSize: 12),
+              ),
         children: !_expanded
             ? const []
             : [

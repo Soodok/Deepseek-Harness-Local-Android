@@ -1,0 +1,87 @@
+{
+  "version": "1.6.0-beta.22",
+  "versionCode": 397,
+  "baseCommit": "3f605591846e089a331b2eb300d8e876cd6de885",
+  "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+  "source": "Actual Flutter Web with fixture data; no Android or online engine acceptance",
+  "screenshots": [
+    {
+      "file": "execution-collapsed-432.png",
+      "sha256": "2065ad7007380d040c942e4c67adcb926cc44532a9314ec7308662b250bf4ba0",
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "execution-expanded-432.png",
+      "sha256": "4dd73a59d50f5aba417a82d6cd4c606a5f9a8cfa4e504d8162384fa9c4918b10",
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--execution",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "execution-command-432.png",
+      "sha256": "984670529f60573493ef3e1979eb416f6dc5d8336c9918f85496dcb259fc3478",
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--execution",
+        "--trace-command",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "execution-main-360.png",
+      "sha256": "2ea011ca2d2b662d0c53b32600fd3e950369ace1149aa4a7fae70339d9cd3190",
+      "width": 360,
+      "height": 960,
+      "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+      "args": [
+        "--width=360",
+        "--draft"
+      ]
+    },
+    {
+      "file": "execution-main-390.png",
+      "sha256": "11cf8f96c8e22f290bdcb3552626165dc969b2a23ed54cba631f75503e2fdc16",
+      "width": 390,
+      "height": 960,
+      "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+      "args": [
+        "--width=390",
+        "--draft"
+      ]
+    },
+    {
+      "file": "execution-main-600.png",
+      "sha256": "14f5178cccda38a588e1bb1fe5331ff176f36275c8c986995274ba110e5e084f",
+      "width": 600,
+      "height": 960,
+      "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+      "args": [
+        "--width=600",
+        "--draft"
+      ]
+    }
+  ]
+}

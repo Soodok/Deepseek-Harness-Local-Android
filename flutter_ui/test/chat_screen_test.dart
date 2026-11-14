@@ -36,9 +36,14 @@ void main() {
     await tester.pump();
     await tester.ensureVisible(find.byKey(const ValueKey('approval-approve')));
     expect(find.text('允许继续读取吗？'), findsOneWidget);
+    final trace = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key as ValueKey<String>).value.startsWith('execution-toggle-'),
+    );
     await tester.scrollUntilVisible(
-      find.text('读取项目状态'),
-      160,
+      trace,
+      120,
       scrollable: find
           .descendant(
             of: find.byKey(const ValueKey('conversation-list')),
@@ -46,6 +51,8 @@ void main() {
           )
           .first,
     );
+    await tester.tap(trace);
+    await tester.pump();
     expect(find.text('读取项目状态'), findsOneWidget);
     expect(find.byKey(const ValueKey('approval-approve')), findsOneWidget);
 
@@ -189,6 +196,23 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('approval-stop')));
     await tester.pump();
 
+    final trace = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key as ValueKey<String>).value.startsWith('execution-toggle-'),
+    );
+    await tester.scrollUntilVisible(
+      trace,
+      120,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('conversation-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.tap(trace);
+    await tester.pump();
     expect(find.text('已停止'), findsOneWidget);
     expect(find.byKey(const ValueKey('approval-card')), findsNothing);
     controller.dispose();

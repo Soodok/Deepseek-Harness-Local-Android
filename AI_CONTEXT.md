@@ -1,5 +1,13 @@
 # DSH Android · 交接文档
 
+## 顶栏与执行过程修正（2026-11-14，已验证并归档）
+
+- 本轮只在 E:/tmp/wt-flutter-native-chat 修改UI与相关测试，基线3f605591846e089a331b2eb300d8e876cd6de885；未扩展协议或Android排障。
+- 运行环境以自身内容宽度贴悬浮栏右侧，子代理紧邻其左侧，图标改为forum_outlined；600宽测试曾量出右侧106.3px留白，修正后满足5~14px边距。360/390/432仍通过。
+- 连续工具按所属消息汇成一行摘要，默认收起；展开为细竖线下的紧凑工具/思考记录。完整命令、差异、复制与历史计划入口保留，失败/取消在摘要可见；记录仍由主ListView.builder按需构建。
+- 本轮217项测试通过（84s），analyze No issues found（65s），最终检查job bash-d4980edca74e4380退出0。旧生命周期断言通过实际滚动、摘要展开后验证，未删减停止/历史内容断言。
+- beta.22/code397 Web构建job bash-bfb322d063e24305退出0（103.3s）；6张同bundle实际截图及CDP旁证已归档docs/reports/assets/2026-11-14-execution-disclosure，含收起/展开/命令详情及360/390/600主界面，432过程视口亦通过。bundle SHA256 bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187；验证报告docs/reports/2026-11-14-execution-disclosure-validation.md。Android/在线引擎的既有未验收边界不变。
+
 ## 输入坞、子会话与执行过程迭代（2026-11-14 20:37，已验证并归档）
 
 - 隔离目录 E:/tmp/wt-flutter-native-chat，分支 feat/flutter-native-chat，基线 68057f08b03ce3b53a0f7ac834de9c2b12913cbf；主仓库未写入。

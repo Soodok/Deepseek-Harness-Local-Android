@@ -27,9 +27,10 @@ const _codeStyle = TextStyle(
 /// Compact presentation of explicit reasoning, command results and code edits.
 /// Tool status and the command's exit code are independent observations.
 class ToolProcessCard extends StatefulWidget {
-  const ToolProcessCard({super.key, required this.tool});
+  const ToolProcessCard({super.key, required this.tool, this.compact = false});
 
   final ToolRun tool;
+  final bool compact;
 
   @override
   State<ToolProcessCard> createState() => _ToolProcessCardState();
@@ -70,51 +71,52 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  tool.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: DshPalette.ink,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
+        if (!widget.compact)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    tool.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: DshPalette.ink,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              if (running) ...[
-                _RunningMark(color: statusColor),
-                const SizedBox(width: 6),
-              ],
-              AnimatedSwitcher(
-                duration: _motionFor(context),
-                child: Text(
-                  statusLabel,
-                  key: ValueKey(tool.status),
-                  style: TextStyle(color: statusColor, fontSize: 12.5),
-                ),
-              ),
-              if (tool.elapsedMs != null) ...[
-                const SizedBox(width: 8),
-                Text(
-                  (tool.elapsedMs!.clamp(0, 1 << 53) / 1000).toStringAsFixed(
-                        1,
-                      ) +
-                      ' 秒',
-                  style: const TextStyle(
-                    color: DshPalette.inkFaint,
-                    fontSize: 12.5,
+                const SizedBox(width: 10),
+                if (running) ...[
+                  _RunningMark(color: statusColor),
+                  const SizedBox(width: 6),
+                ],
+                AnimatedSwitcher(
+                  duration: _motionFor(context),
+                  child: Text(
+                    statusLabel,
+                    key: ValueKey(tool.status),
+                    style: TextStyle(color: statusColor, fontSize: 12.5),
                   ),
                 ),
+                if (tool.elapsedMs != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    (tool.elapsedMs!.clamp(0, 1 << 53) / 1000).toStringAsFixed(
+                          1,
+                        ) +
+                        ' 秒',
+                    style: const TextStyle(
+                      color: DshPalette.inkFaint,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
         if (content != null && content.reasoning.isNotEmpty)
           _ProcessSection(
             key: ValueKey('thought-' + tool.id),

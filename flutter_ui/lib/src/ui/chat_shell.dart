@@ -190,13 +190,15 @@ class _TopBar extends StatelessWidget {
                     onPressed: () =>
                         showSubagentPanel(context, controller: controller),
                     icon: const Icon(
-                      Icons.account_tree_outlined,
+                      Icons.forum_outlined,
                       size: 21,
                       color: DshPalette.ice,
                     ),
                   ),
-                  Flexible(
-                    flex: 2,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width * .48,
+                    ),
                     child: Tooltip(
                       message: controller.transport.isFixture
                           ? 'fixture 模式'
@@ -233,6 +235,8 @@ class _TopBar extends StatelessWidget {
                                   children: [
                                     Text(
                                       host.runtimeLabel,
+                                      textWidthBasis:
+                                          TextWidthBasis.longestLine,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(

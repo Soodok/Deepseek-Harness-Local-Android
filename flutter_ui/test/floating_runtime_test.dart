@@ -55,7 +55,7 @@ void main() {
       '未知环境',
     );
   });
-  for (final width in [360.0, 390.0, 432.0]) {
+  for (final width in [360.0, 390.0, 432.0, 600.0]) {
     testWidgets(
       'joined floating header and composer spacing ' + width.toString(),
       (tester) async {
@@ -71,6 +71,24 @@ void main() {
           ),
         );
         await tester.pump();
+        final header = tester.getRect(
+          find.byKey(const ValueKey('floating-header')),
+        );
+        final runtime = tester.getRect(
+          find.byKey(const ValueKey('runtime-selector')),
+        );
+        final agents = tester.getRect(
+          find.byKey(const ValueKey('subagent-selector')),
+        );
+        expect(header.right - runtime.right, inInclusiveRange(5, 14));
+        final chevron = tester.getRect(
+          find.descendant(
+            of: find.byKey(const ValueKey('runtime-selector')),
+            matching: find.byIcon(Icons.expand_more_rounded),
+          ),
+        );
+        expect(header.right - chevron.right, inInclusiveRange(12, 28));
+        expect(runtime.left - agents.right, inInclusiveRange(0, 8));
         final attach = tester.getRect(
           find.byKey(const ValueKey('composer-attach')),
         );

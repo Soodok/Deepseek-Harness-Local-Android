@@ -5,15 +5,27 @@ import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'tool_run_card.dart';
+import 'execution_group.dart';
 
-class MessageList extends StatelessWidget {
+class MessageList extends StatefulWidget {
   const MessageList({super.key, required this.controller});
 
   final ChatController controller;
+  @override
+  State<MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<MessageList> {
+  final Set<String> _expanded = {};
+  @override
+  void didUpdateWidget(covariant MessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) _expanded.clear();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final state = controller.state;
+    final state = widget.controller.state;
     final width = MediaQuery.sizeOf(context).width;
     final gutter = ChatLayout.gutter(width);
     final children = <Widget>[];
@@ -53,18 +65,47 @@ class MessageList extends StatelessWidget {
     }
     Widget toolRow(ToolRun tool) => Padding(
       key: ValueKey('row-tool-' + tool.id),
-      padding: const EdgeInsets.only(top: 4, bottom: 4),
-      child: ToolRunCard(tool: tool, showPlan: tool.id != activePlanId),
+      padding: const EdgeInsets.only(left: 8),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: DshPalette.line)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: ToolRunCard(
+            tool: tool,
+            showPlan: tool.id != activePlanId,
+            compact: true,
+          ),
+        ),
+      ),
     );
+    void addGroup(String id, List<ToolRun> tools) {
+      if (tools.isEmpty) return;
+      children.add(
+        ExecutionGroupHeader(
+          key: ValueKey('execution-group-' + id),
+          groupId: id,
+          tools: tools,
+          expanded: _expanded.contains(id),
+          onToggle: () => setState(() {
+            if (!_expanded.remove(id)) _expanded.add(id);
+          }),
+        ),
+      );
+      if (_expanded.contains(id)) children.addAll(tools.map(toolRow));
+    }
+
     for (final message in messages) {
       children.add(
         _MessageBlock(key: ValueKey('message-' + message.id), message: message),
       );
-      children.addAll(
-        (byMessage[message.id] ?? const <ToolRun>[]).map(toolRow),
+      addGroup(
+        'message-' + message.id,
+        byMessage[message.id] ?? const <ToolRun>[],
       );
     }
-    children.addAll(unbound.map(toolRow));
+    if (unbound.isNotEmpty) addGroup('unbound-' + unbound.first.id, unbound);
 
     if (state.needsResync) {
       children.add(

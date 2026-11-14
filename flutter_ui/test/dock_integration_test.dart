@@ -51,6 +51,11 @@ void main() {
     await tester.pumpAndSettle();
     c.publish([old, historyPlan('new-plan', 'NEW-TAIL')]);
     await tester.pumpAndSettle();
+    final trace = find.byKey(
+      const ValueKey('execution-toggle-unbound-old-plan'),
+    );
+    await tester.tap(trace);
+    await tester.pumpAndSettle();
     final oldCard = find.byKey(const ValueKey('tool-card-old-plan'));
     expect(oldCard, findsOneWidget);
     await tester.ensureVisible(oldCard);

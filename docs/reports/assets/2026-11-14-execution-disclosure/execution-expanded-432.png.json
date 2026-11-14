@@ -1,0 +1,27 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 432,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 432,
+    "bodyWidth": 432
+  },
+  "url": "http://127.0.0.1:65239/",
+  "output": "E:\\tmp\\native-chat-web-preview\\execution-expanded-432.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data",
+  "bundleSha256": "bc03b760f4e496753de6ceec904d62f91f9bd65d9ceb4a4b8419b300b72d3187",
+  "args": [
+    "--width=432",
+    "--showcase",
+    "--settled",
+    "--collapse-question",
+    "--execution",
+    "--semantics"
+  ],
+  "capturedAt": "2026-11-14T13:11:35.509Z"
+}
