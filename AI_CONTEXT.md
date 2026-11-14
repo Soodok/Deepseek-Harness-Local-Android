@@ -8,7 +8,13 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-14 · `main` HEAD `6781e9b5` · 本轮新增「MD3 全量适配」（见一百二十四节）。
+**最后更新**：2026-11-14 · `main` HEAD `fc0c62fe` · 本轮新增「灵动岛展开两次修复 + 面板边缘投影」（见一百二十五节）。
+本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
+两轮「窄→宽」，根因是 `toggleToolbar()` 先 `renderIslandVisibility()` 再在 120ms 后压小重撑，
+两段动画叠加；把起点 scale/alpha 挪到渲染前、删掉 handle 空转动画即修。② 用户要求侧边面板
+「加边缘阴影、不描边」，新增 `IslandPanelShadowView`（setShadowLayer + 软件层，硬件画布会
+静默丢掉模糊只剩硬边＝描边）。同轮修掉 `toggleSidePanel()` 用 CENTER_VERTICAL 与 clamp 后的
+y 不等价导致的面板错位。两条新探针 + 6 条变异全红，隔离树全量重编 BUILD SUCCESSFUL。详见「一百二十五」。
 本轮：**MD3 全量适配** —— 用户要的是「补上原作者没适配到的页面」，查下来真问题是
 **两套主题画出来一模一样**（Theme.Dsh 与 Theme.Dsh.MD3 唯一差异是一个 colorOnSurfaceInverse，
 21 个 md3_* 色全被回映射到旧冷蓝灰）。落地三层：21 个 `dsh*` 主题令牌、385 处静态色改 `?attr`、
@@ -12983,3 +12989,108 @@ T3 夜间两套齐全 / T4 通知与浮层图标不得含 ?attr / 主题分派�
 `git update-index --add --cacheinfo`，其中 OnboardingActivity.kt / activity_onboarding.xml /
 六个 strings.xml **用手工合成的版本**（`git show HEAD:<path>` 的内容 + 只加我的颜色替换与 5 条字符串），
 避开他人删 `pagePriv` 的在途改动。提交后主 index 同步回 HEAD，工作区 `git status` 干净。
+
+## 一百二十五、灵动岛「展开两次」的真因 + 侧边面板边缘投影（2026-11-14，提交 `fc0c62fe`）
+
+### ① 收起态展开「连续展开两次」——不是代码冲突，是顺序错
+
+用户描述「点主界面上方灵动岛把手，岛会连着撑开两次」，怀疑代码冲突。录屏逐帧量测
+（1216×2640，取 y=259 行的胶囊左右边界，最终态 47..1168 宽 1121）确认是**两轮「窄→宽」**：
+
+| 帧 | 宽度 | 说明 |
+|---|---|---|
+| f001-003 | 237~244 | 收起态把手（26dp） |
+| f004-013 | 1119~1121 | **第一轮已满宽** |
+| f014-015 | — | 整条消失（全白） |
+| f016 | 87 | 被压到很小 |
+| f017 → f021 | 969 → 1101 | 第二轮开始撑开 |
+| f024-026 | 1129~1131 | **比最终态还宽 —— Overshoot 过冲** |
+| f030 之后 | 1121 | 稳定 |
+
+根因在 `MainActivity.kt` 的 `toggleToolbar()` 展开分支，顺序是：
+
+```kotlin
+islandCollapsed = false
+renderIslandVisibility()        // ← 同一帧把 row 设 VISIBLE，
+                                //   此刻 scale/alpha 还是收起收尾复位的 (1f,1f,1f)
+handle.animate()....setDuration(120L).withEndAction {
+    row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f   // ← 120ms 后才压小
+    renderIslandVisibility()
+    row.post { row.animate()...OvershootInterpolator(0.9f).start() }  // ← 第二次撑开
+}
+```
+
+第一帧整条岛就满宽亮相，120ms 后被硬压成 0.7×0.4 / alpha=0，再撑开到过冲 —— 两段
+独立动画叠加，用户看到的就是「展开两次」。
+
+**修法**（保持 v1.7.13「先改状态、再渲染，动画只做观感」的契约）：把起点属性挪到
+渲染之前，并删掉 handle 的 120ms 淡出动画 —— 展开态 handle 恒 GONE，对 GONE 的 View
+animate 只是空转，却把撑开整整推迟了两轮视觉。pivotX 仍在 `post` 里取
+（GONE→VISIBLE 同帧 `row.width` 还是 0），并补了屏宽兜底，与收起分支同一套兜底逻辑。
+
+### ② 侧边面板边缘投影（用户要求「加一层边缘阴影，不描边」）
+
+- 新增 `IslandPanelShadowView.kt`（87 行）：`Paint.setShadowLayer(blur, 0, dy, color)`
+  + 手工 `Path.addRoundRect`（贴屏幕一侧直角、外凸一侧 22dp 圆角）。
+  **强制 `LAYER_TYPE_SOFTWARE`** —— 硬件画布会静默忽略 setShadowLayer 的模糊，
+  只剩一个硬边矩形，那正好是用户不要的「描边」形态，而且不会报错。同
+  `pet/PetBubbleDrawable.kt` 的成因。
+- `IslandPalette.Colors` 新增 `panelShadow: Int = 0`（0 = 不投）：
+  DARK `0x7A000000`（48% 黑；深色面板本身纯黑，24% 几乎看不出）、
+  LIGHT `0x38000000`（22% 黑；浅色面板 #F7F9FC 压纯白只差 3%，再深就像描了一圈粗边）。
+- 接线：加到 `host` 索引 0（垫在 scrim 与面板之下），尺寸 `m.w + extra` × `m.h + extra*2`，
+  `extra = blur + dy + 2dp`（预留边必须 ≥ 模糊半径，否则外沿被 View 边界切出平口）。
+  贴屏幕那一侧 inset 取 0，不画 —— 那里本来就出屏，部分机型还会沿边缘露半像素暗线。
+
+### 同轮修掉的既有布局 bug
+
+`toggleSidePanel()` 给 content 用 `gravity = START/END or CENTER_VERTICAL`，但
+`IslandChrome.expanded()` 的 y 是 `(yCenter - h/2).coerceIn(safe, screenH - h - safe)`
+clamp 出来的 —— 面板被 70% 屏高截断时两者**并不等价**，面板整体偏移、阴影随之错开。
+改为 `TOP|START` / `TOP|END` + `clp.topMargin = m.y` 精确落位。
+
+### 探针与变异反验
+
+新增两条，均已加入 `.gitignore` 白名单：
+
+| 探针 | 断言数 | 锁住什么 |
+|---|---|---|
+| `scripts/probes/_test_island_expand_once.py` | 18 | 起点属性必须早于 `renderIslandVisibility()`；不得用 handle 动画做时序门；整段只渲染一次、只 animate 一次 |
+| `scripts/probes/_test_island_panel_shadow.py` | 22 | 三个色值、软件层、贴边侧不投、索引 0、margin 精确落位、TOP 对齐 |
+
+**两条探针都必须先剥注释再断言**（`strip_comments()`）：这段代码的注释里就写着
+`renderIslandVisibility()` / `setShadowLayer` / `CENTER_VERTICAL`，不剥会把注释当实现，
+位置比较和计数全错 —— `_test_island_expand_once.py` 初版因此假红 8 项。
+分支切片也不能用 `main.find('islandCollapsed = false')`（会命中字段声明），
+要用 `'if (!islandCollapsed) {'` → `'} else {'` → `'\n    }\n'`。
+
+6 条变异全部转红，改完逐文件按字节还原（**RESTORE BYTES IDENTICAL: True**）：
+
+| 变异 | 结果 |
+|---|---|
+| M1 去掉 `LAYER_TYPE_SOFTWARE` | EXIT=1 |
+| M2 面板改回 `CENTER_VERTICAL` | EXIT=1 |
+| M3 深色 panelShadow 降到 24% 黑 | EXIT=1 |
+| M4 `row.alpha` 起点改回 1f（复现原 bug） | EXIT=1 |
+| M5 删掉 `row.scaleX = 0.7f` | EXIT=1 |
+| M6 阴影不加索引 0（浮到面板之上） | EXIT=1 |
+
+### 验证
+
+- 隔离 worktree `/e/tmp/wt-island`（`git worktree add --detach` 从 `c39f5c23` 起），
+  只放本次三个源文件：`compileReleaseKotlin --rerun-tasks` 强制全量重编
+  **BUILD SUCCESSFUL in 1m 46s**；`assembleRelease --offline` BUILD SUCCESSFUL，
+  产物 **43,968,608 B**，核 APK 内 11 个 dex 确实含 `IslandPanelShadowView`
+- 相关探针全绿：`_test_island_side_panel` EXIT=0、`_test_island_expand_once` EXIT=0、
+  `_test_island_panel_shadow` EXIT=0、`_test_glass_effects` checks=32 failed=0、
+  `_test_style_tokens` EXIT=0
+- 真机（OnePlus PLZ110 / Android 16 / 1.6.0-beta.11 · 387）：
+  展开只撑开一次；侧边面板贴右、内容完整不偏移；像素扫描确认面板左边缘
+  x=238→242 有 228,228,228 → 247,249,252 的渐变，顶部 y=498→504 同样有过渡
+
+### 提交
+
+`fc0c62fe`（6 文件 / +456 −27）。范围限定为本轮产物；
+`engine/PluginCenter.kt` 与 `scripts/probes/_test_plugin_install_errors.py` 是并行会话
+在途的 broken-lockfile 自愈改动（`isBrokenLockfileError` / `healBrokenLockfile`
+在仓内尚无定义），按归属避让，未纳入本次提交。
