@@ -40,6 +40,75 @@
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dsh.MaterialAlertDialog</item>
+        <item name="dshBg">?attr/colorSurface</item>
+        <item name="dshSurface">?attr/colorSurfaceContainer</item>
+        <item name="dshSurfaceAlt">?attr/colorSurfaceContainerLow</item>
+        <item name="dshSurfaceHigh">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshDialogBg">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshTextPrimary">?attr/colorOnSurface</item>
+        <item name="dshTextSecondary">?attr/colorOnSurfaceVariant</item>
+        <item name="dshTextMuted">?attr/colorOnSurfaceVariant</item>
+        <item name="dshAccent">?attr/colorPrimary</item>
+        <item name="dshAccentSoft">?attr/colorPrimaryContainer</item>
+        <item name="dshOnAccent">?attr/colorOnPrimary</item>
+        <item name="dshDivider">?attr/colorOutlineVariant</item>
+        <item name="dshStroke">?attr/colorOutlineVariant</item>
+        <item name="dshDanger">?attr/colorError</item>
+        <item name="dshSuccess">@color/success</item>
+        <item name="dshWarning">@color/warning</item>
+        <item name="dshIconColor">?attr/colorOnSurfaceVariant</item>
+        <item name="dshBtnRipple">@color/btn_ripple</item>
+        <item name="dshOverlay">@color/overlay</item>
+        <item name="dshIslandText">?attr/colorOnSurfaceVariant</item>
+        <item name="dshIslandAccent">?attr/colorPrimary</item>
+    </style>
+
+    <style name="ThemeOverlay.Dsh.Style.Classic" parent="ThemeOverlay.Material3">
+        <item name="dshBg">@color/bg</item>
+        <item name="dshSurface">@color/surface</item>
+        <item name="dshSurfaceAlt">@color/surface_alt</item>
+        <item name="dshSurfaceHigh">@color/surface_high</item>
+        <item name="dshDialogBg">@color/dialog_bg</item>
+        <item name="dshTextPrimary">@color/text_primary</item>
+        <item name="dshTextSecondary">@color/text_secondary</item>
+        <item name="dshTextMuted">@color/text_muted</item>
+        <item name="dshAccent">@color/accent</item>
+        <item name="dshAccentSoft">@color/accent_soft</item>
+        <item name="dshOnAccent">@color/on_accent</item>
+        <item name="dshDivider">@color/divider</item>
+        <item name="dshStroke">@color/stroke</item>
+        <item name="dshDanger">@color/danger</item>
+        <item name="dshSuccess">@color/success</item>
+        <item name="dshWarning">@color/warning</item>
+        <item name="dshIconColor">@color/icon_color</item>
+        <item name="dshBtnRipple">@color/btn_ripple</item>
+        <item name="dshOverlay">@color/overlay</item>
+        <item name="dshIslandText">@color/island_text</item>
+        <item name="dshIslandAccent">@color/island_accent</item>
+    </style>
+
+    <style name="ThemeOverlay.Dsh.Style.Material" parent="ThemeOverlay.Material3">
+        <item name="dshBg">?attr/colorSurface</item>
+        <item name="dshSurface">?attr/colorSurfaceContainer</item>
+        <item name="dshSurfaceAlt">?attr/colorSurfaceContainerLow</item>
+        <item name="dshSurfaceHigh">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshDialogBg">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshTextPrimary">?attr/colorOnSurface</item>
+        <item name="dshTextSecondary">?attr/colorOnSurfaceVariant</item>
+        <item name="dshTextMuted">?attr/colorOnSurfaceVariant</item>
+        <item name="dshAccent">?attr/colorPrimary</item>
+        <item name="dshAccentSoft">?attr/colorPrimaryContainer</item>
+        <item name="dshOnAccent">?attr/colorOnPrimary</item>
+        <item name="dshDivider">?attr/colorOutlineVariant</item>
+        <item name="dshStroke">?attr/colorOutlineVariant</item>
+        <item name="dshDanger">?attr/colorError</item>
+        <item name="dshSuccess">@color/success</item>
+        <item name="dshWarning">@color/warning</item>
+        <item name="dshIconColor">?attr/colorOnSurfaceVariant</item>
+        <item name="dshBtnRipple">@color/btn_ripple</item>
+        <item name="dshOverlay">@color/overlay</item>
+        <item name="dshIslandText">?attr/colorOnSurfaceVariant</item>
+        <item name="dshIslandAccent">?attr/colorPrimary</item>
     </style>
 
     <style name="Theme.Dsh.Spinner" parent="Theme.Material3.DayNight.NoActionBar">

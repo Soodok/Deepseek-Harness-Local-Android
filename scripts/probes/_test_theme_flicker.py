@@ -51,6 +51,10 @@ check("restoring selection does not invoke callback",
       re.search(r'fun setSelectedId\(selectedId: String\)\s*\{\s*'
                 r'currentId\s*=\s*normalizedId\(selectedId\)\s*updateChecked\(\)\s*\}', selector) is not None)
 
+check("unchanged style does not recreate",
+      re.search(r'if\s*\(wanted\s*!=\s*StylePref\.style\(this\)\)\s*\{\s*'
+                r'StylePref\.setStyle\(this,\s*wanted\)\s*recreate\(\)', theme) is not None)
+
 # DynamicColors is installed once at application level and must not be reset by the activity.
 code_lines = [line.split("//")[0] for line in themed.splitlines()]
 check("activity does not call setTheme", not any('setTheme(' in line for line in code_lines))

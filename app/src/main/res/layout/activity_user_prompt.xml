@@ -15,7 +15,15 @@
         app:navigationIconTint="?attr/colorOnSurface"
         app:title="@string/setting_user_prompt"
         app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
-        app:titleTextColor="?attr/colorOnSurface" />
+        app:titleTextColor="?attr/colorOnSurface">
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSave"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:text="@string/user_prompt_save" />
+    </com.google.android.material.appbar.MaterialToolbar>
 
     <TextView
         android:layout_width="match_parent"
@@ -57,6 +65,6 @@
         android:paddingHorizontal="16dp"
         android:paddingTop="10dp"
         android:paddingBottom="16dp"
-        android:textColor="@color/text_muted"
+        android:textColor="?attr/dshTextMuted"
         android:textSize="12sp" />
 </LinearLayout>

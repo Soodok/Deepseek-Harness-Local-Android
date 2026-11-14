@@ -563,12 +563,12 @@ class MaintenanceActivity : ThemedActivity() {
             } else {
                 getString(R.string.setting_plugin_kill_restore_sub, st.disabled.size)
             }
-            sub.setTextColor(getColor(R.color.warning))
+            sub.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
             btn.text = getString(R.string.action_restore)
         } else {
             title.text = getString(R.string.setting_plugin_kill)
             sub.text = getString(R.string.setting_plugin_kill_sub, st.thirdParty.size)
-            sub.setTextColor(getColor(R.color.text_secondary))
+            sub.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             btn.text = getString(R.string.action_disable)
         }
     }

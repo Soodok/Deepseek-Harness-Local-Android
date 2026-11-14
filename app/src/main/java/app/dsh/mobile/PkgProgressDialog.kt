@@ -63,7 +63,7 @@ object PkgProgressDialog {
 
         val logView = TextView(activity).apply {
             textSize = 11.5f
-            setTextColor(activity.getColor(R.color.text_secondary))
+            setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             typeface = android.graphics.Typeface.MONOSPACE
             // 等宽字体 + 可选中：用户想复制某一段报错时顺手就能选。
             setTextIsSelectable(true)
@@ -98,7 +98,7 @@ object PkgProgressDialog {
                 TextView(activity).apply {
                     text = subtitle
                     textSize = 12.5f
-                    setTextColor(activity.getColor(R.color.text_secondary))
+                    setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 },
             )
             addView(spinner, LinearLayout.LayoutParams(

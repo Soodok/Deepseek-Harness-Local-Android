@@ -88,6 +88,29 @@ object JobsCap {
     private val running = ConcurrentHashMap<String, AtomicBoolean>()
     private val rnd = SecureRandom()
 
+    /**
+     * 解析 query string 成 Map。
+     *
+     * ## 为什么不用正则直接抠字段
+     *
+     * 我第一版写的是 `Regex("[?&]id=(...)")`，而 [AgentBridge] 传给 Route 的
+     * query **不含前导 `?`**（`rawPath.substringAfter('?', "")`）—— 于是
+     * `?a=1` 这种只有一个参数、或 **第一个** 参数的场景全部匹配不到。
+     * 真机实测症状：`GET /dev/jobs/log?id=job-xxx` 返回
+     * `{"ok":false,"error":"missing id"}`，看着像 id 传错，实际是解析器漏了首个参数。
+     *
+     * 改成按 `&` 切再按首个 `=` 分，与全仓其它端点同一套语义，不依赖参数位置。
+     */
+    private fun parseQuery(query: String?): Map<String, String> =
+        (query ?: "")
+            .split("&")
+            .filter { it.contains("=") }
+            .associate {
+                val i = it.indexOf('=')
+                java.net.URLDecoder.decode(it.substring(0, i), "UTF-8") to
+                    java.net.URLDecoder.decode(it.substring(i + 1), "UTF-8")
+            }
+
     private fun nowIso(): String =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US).format(Date())
 
@@ -161,7 +184,7 @@ object JobsCap {
             ?: return 400 to err("missing cmd", "e.g. {\"cmd\":\"make -j2\"}")
         val timeout = obj.optLong("timeout_ms", JOB_TIMEOUT_DEFAULT_MS)
             .coerceIn(1_000L, JOB_TIMEOUT_MAX_MS)
-        val workdir = obj.optString("workdir").ifBlank { null }
+        val requestedWorkdir = obj.optString("workdir").ifBlank { null }
         val label = obj.optString("label").ifBlank { "job" }.take(60)
 
         val env = LinuxEnvironmentManager.get(ctx)
@@ -179,11 +202,36 @@ object JobsCap {
 
         val id = newId()
         val dir = jobDir(ctx, id).apply { mkdirs() }
+        // ★ 默认把 cwd 设成「该任务自己的目录（容器视角）」。
+        //
+        // 不设的话容器 cwd 是 `/`，而 rootfs 是只读挂载 —— 任务里任何相对路径写入
+        // 都会 `Read-only file system`。真机第一次提交就撞上了：
+        //   `/usr/bin/mkdir: cannot create directory 'out': Read-only file system`
+        // 而 `artifact` 端点取的是**宿主**的 job 目录，所以 cwd 必须是这两个路径的
+        // 同一个落点（`/data/data/<pkg>/files/jobs/<id>` 在容器里可写，已实测
+        // mkdir + echo + cat 全通，uid 10499 与宿主 App 同一 uid）。
+        // ★ cwd 用 `cd` 前缀实现，不用 LinuxContainerRunner 的 workdir 参数。
+        //
+        // `LinuxContainerRunner` 的 `workdir` 语义是 **rootfs 内相对路径**
+        // （`LinuxContainerRunner.kt:256`：`File(env.rootfsDir(), workdir.trimStart('/'))`
+        // 只有宿主上该目录真实存在才会 `pb.directory(...)`），传
+        // `/data/data/<pkg>/files/jobs/<id>` 会被拼成
+        // `<rootfs>/data/data/<pkg>/files/jobs/<id>` —— 那必然不存在，
+        // 于是**静默不切目录**，cwd 仍是 `/`（rootfs 只读挂载）。
+        // 真机症状：`/bin/sh: 1: cannot create r.txt: Read-only file system`，
+        // 而任务状态还是 `failed exit_code=1`，看着像命令写错了。
+        //
+        // 这个目录在容器视角**确实可写**（实测 uid 10499 mkdir/echo/cat 全通），
+        // 所以用 shell 自己 `cd` 进去最直接，也不依赖 runner 的路径假设。
+        val containerJobDir = "/data/data/" + ctx.packageName + "/files/jobs/" + id
+        val userWorkdir = requestedWorkdir
+        val effectiveCmd = if (userWorkdir != null) cmd else "cd " + containerJobDir + " && " + cmd
         val meta = JSONObject()
             .put("id", id)
             .put("label", label)
             .put("cmd", cmd)
-            .put("workdir", workdir ?: "")
+            .put("workdir", userWorkdir ?: containerJobDir)
+            .put("container_dir", containerJobDir)
             .put("timeout_ms", timeout)
             .put("state", "queued")
             .put("created_at", nowIso())
@@ -198,13 +246,22 @@ object JobsCap {
         CapabilityGate.audit(ctx, "dev.jobs.submit:" + label + ":" + cmd.take(100))
 
         pool.execute {
-            runJob(ctx, id, cmd, workdir, timeout, cancelled)
+            // 用户显式给了 workdir 才交给 runner（它按 rootfs 语义解析）；
+            // 否则 cmd 已自带 `cd`，这里传 null
+            runJob(ctx, id, effectiveCmd, userWorkdir, timeout, cancelled)
         }
 
         return 202 to JSONObject()
             .put("ok", true)
             .put("id", id)
             .put("state", "queued")
+            .put("workdir", userWorkdir ?: containerJobDir)
+            .put(
+                "hint",
+                "relative paths land in workdir (this job's own dir, fetchable via " +
+                    "/dev/jobs/artifact); write elsewhere with an absolute path " +
+                    "(/ws etc. must be bind-mounted first)",
+            )
             .put("poll", "GET /dev/jobs/get?id=" + id)
             .put("log", "GET /dev/jobs/log?id=" + id)
             .toString()
@@ -313,8 +370,7 @@ object JobsCap {
 
     fun list(ctx: Context, query: String?): Pair<Int, String> {
         if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
-        val limit = Regex("[?&]limit=(\\d+)").find(query ?: "")
-            .let { it?.groupValues?.get(1)?.toIntOrNull() } ?: 20
+        val limit = parseQuery(query)["limit"]?.toIntOrNull() ?: 20
         val n = limit.coerceIn(1, MAX_KEPT)
 
         val dirs = jobsRoot(ctx).listFiles { f -> f.isDirectory }
@@ -337,8 +393,8 @@ object JobsCap {
     /** 单个任务详情。`id` 必填。 */
     fun get(ctx: Context, query: String?): Pair<Int, String> {
         if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
-        val id = Regex("[?&]id=([A-Za-z0-9._-]+)").find(query ?: "")
-            ?.groupValues?.get(1) ?: return 400 to err("missing id")
+        val id = parseQuery(query)["id"]?.takeIf { it.isNotBlank() }
+            ?: return 400 to err("missing id")
         val dir = jobDir(ctx, id)
         val m = readMeta(dir) ?: return 404 to err("job not found")
         return 200 to summary(m).toString()
@@ -352,12 +408,11 @@ object JobsCap {
      */
     fun log(ctx: Context, query: String?): Pair<Int, String> {
         if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
-        val q = query ?: ""
-        val id = Regex("[?&]id=([A-Za-z0-9._-]+)").find(q)?.groupValues?.get(1)
+        val qm = parseQuery(query)
+        val id = qm["id"]?.takeIf { it.isNotBlank() }
             ?: return 400 to err("missing id")
-        val which = Regex("[?&]stream=(stdout|stderr)").find(q)?.groupValues?.get(1) ?: "stdout"
-        val lines = (Regex("[?&]lines=(\\d+)").find(q)?.groupValues?.get(1)?.toIntOrNull() ?: 200)
-            .coerceIn(1, 2000)
+        val which = if (qm["stream"] == "stderr") "stderr" else "stdout"
+        val lines = (qm["lines"]?.toIntOrNull() ?: 200).coerceIn(1, 2000)
 
         val dir = jobDir(ctx, id)
         if (!dir.isDirectory) return 404 to err("job not found")
@@ -445,11 +500,10 @@ object JobsCap {
      */
     fun artifact(ctx: Context, query: String?): Pair<Int, String> {
         if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
-        val q = query ?: ""
-        val id = Regex("[?&]id=([A-Za-z0-9._-]+)").find(q)?.groupValues?.get(1)
+        val qm = parseQuery(query)
+        val id = qm["id"]?.takeIf { it.isNotBlank() }
             ?: return 400 to err("missing id")
-        val rel = Regex("[?&]path=([^&]+)").find(q)?.groupValues?.get(1)
-            ?.let { java.net.URLDecoder.decode(it, "UTF-8") }?.ifBlank { null }
+        val rel = qm["path"]?.ifBlank { null }
             ?: return 400 to err("missing path", "path is relative to the job directory")
         val dir = jobDir(ctx, id)
         if (!dir.isDirectory) return 404 to err("job not found")
@@ -487,6 +541,7 @@ object JobsCap {
         .put("id", m.optString("id"))
         .put("label", m.optString("label"))
         .put("cmd", m.optString("cmd"))
+        .put("workdir", m.optString("workdir"))
         .put("state", m.optString("state"))
         .put("exit_code", m.optInt("exit_code", Int.MIN_VALUE))
         .put("duration_ms", m.optLong("duration_ms", 0L))

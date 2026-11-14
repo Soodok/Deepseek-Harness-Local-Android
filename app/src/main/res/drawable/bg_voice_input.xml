@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 语音面板内的可编辑文本域：浅色内嵌表面，与卡片形成层次 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/surface_alt" />
+    <solid android:color="?attr/dshSurfaceAlt" />
     <corners android:radius="16dp" />
 </shape>

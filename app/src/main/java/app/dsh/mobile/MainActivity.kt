@@ -445,6 +445,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) return
         // NFC 读卡与屏幕录制都需要 Activity：把自身登记给两个 relay，
         // 让「贴标签」和「录屏授权」能真正接通（桥本身拿不到 Activity）。
         app.dsh.mobile.engine.cap.NfcForegroundRelay.attach(this)

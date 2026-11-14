@@ -235,6 +235,12 @@ object LinuxExtensionBridge {
         // 也不需要 root：Termux 模式正常装，Linux 模式由本表说明不可用。
         "cloudflared" to
             "cloudflared is not packaged by Alpine; install it in the Termux store (no Linux mode needed)",
+        // v1.6.x：bun 与 cloudflared 同类 —— Termux 有（termux-main 1.4.4-3），
+        // Alpine 的 v3.22 main 5666 + community 20500 个包里**一个都没有**
+        // （对着 APKINDEX 逐个核过，不是猜的）。它是纯用户态 JS 运行时，
+        // 不建虚拟网卡、不需要 root，所以 Termux 模式正常装，Linux 模式置灰。
+        "bun" to
+            "bun is not packaged by Alpine; install it in the Termux store (no Linux mode needed)",
     )
 
     /**
@@ -272,6 +278,11 @@ object LinuxExtensionBridge {
             "cloudflared is not packaged by Ubuntu 24.04; use the Termux store or the .deb from Cloudflare",
         "tailscale" to
             "tailscale is not in the Ubuntu 24.04 archive; add Tailscale's own apt repository",
+        // v1.6.x：bun 在 noble 的 69678 个包名里确实没有（对着
+        // scripts/probes/data/aptindex-names.txt.gz 核过；索引里有 bundler /
+        // bundlewrap，但那是 Ruby 的，不是 bun 运行时）。
+        "bun" to
+            "bun is not packaged by Ubuntu 24.04; use the Termux store or the upstream installer",
     )
 
     /**
@@ -293,6 +304,9 @@ object LinuxExtensionBridge {
         // 用户会在 Linux 模式下看到一个「可安装」的条目，点下去才发现空列表。
         "net-cloudflared" to
             "cloudflared is not packaged by Alpine (Termux mode only)",
+        // v1.6.x：bun 条目只装一个包，那个包 Alpine 没有 —— 单包全缺等于整条不可装。
+        // 不整条置灰的话，Linux 模式下会看到一个「可安装」条目，点下去才拿到空列表。
+        "bun" to "bun is not packaged by Alpine (Termux mode only)",
     )
 
     /**
@@ -312,6 +326,8 @@ object LinuxExtensionBridge {
         // 同理：shell-prompt 只有 starship、uv 只有 uv，两个包 noble 都没有。
         "shell-prompt" to "starship is not packaged by Ubuntu 24.04",
         "uv" to "uv is not packaged by Ubuntu 24.04; use pipx (python3-pip) instead",
+        // v1.6.x：同理，单包条目里那个包 noble 没有。
+        "bun" to "bun is not packaged by Ubuntu 24.04 (Termux mode only)",
     )
 
     private val ALPINE_MAP = DistroMap(ALPINE_NAMES, ALPINE_UNAVAILABLE, ALPINE_ITEM_UNAVAILABLE)

@@ -144,6 +144,7 @@ class AppearanceActivity : ThemedActivity() {
     /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) return
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
         // 从外观子页返回：主题/布局变化时重建，动态色角色由 Application 生命周期回调重新套用。

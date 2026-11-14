@@ -8,7 +8,12 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-12 13:35 · `main` HEAD `f18b56e9` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+**最后更新**：2026-11-14 · `main` HEAD `6781e9b5` · 本轮新增「MD3 全量适配」（见一百二十四节）。
+本轮：**MD3 全量适配** —— 用户要的是「补上原作者没适配到的页面」，查下来真问题是
+**两套主题画出来一模一样**（Theme.Dsh 与 Theme.Dsh.MD3 唯一差异是一个 colorOnSurfaceInverse，
+21 个 md3_* 色全被回映射到旧冷蓝灰）。落地三层：21 个 `dsh*` 主题令牌、385 处静态色改 `?attr`、
+`StylePref` 风格开关。21 条探针 + 4 条变异全红。真机 1.6.0-beta.11-md3 装成，启动正常。
+**逐页视觉对比截图未完成**（设备被占用 + 两个 Activity exported=false），如实记为未验证。详见「一百二十四」。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
@@ -12587,3 +12592,394 @@ M3(R.attr.colorSurface→0) / M4(守卫 if(true)) **全部 EXIT=1**，还原 EXI
     工作区版 LinuxDnsProxy.kt 在改看门狗（`PROBE_NAME = "dsh-probe.invalid"`、
     `WATCHDOG_INTERVAL_MS = 20_000L`、`PROBE_TIMEOUT_MS = 3_000`），未提交。
 - i18n 0
+
+**补记十二（2026-11-14 上午）**：补做补记十一未覆盖的两项 —— **触控目标**与 **TalkBack 播报**。两项都先发现问题、再修、再用真机可复现的证据收尾。
+
+### 1. 触控目标：`btnSteps` 只有 30.2dp
+
+实测（uiautomator bounds × density 440/160）：封面页仅两个可点目标 ——
+- `btnSteps`（顶栏「All steps」）**65.5 × 30.2 dp** ← 低于 Android 48dp 最小触控尺寸
+- `btnNext` 344.7 × 50.2 dp ✅
+
+修法：**只把热区扩到 48dp，视觉不动**（顶栏高度是稀缺资源，把胶囊撑到 48dp 会压掉 pageHost 一行）。新增 `OnboardingActivity.expandTouchTarget(target, host, minDp)`，用 `View.touchDelegate`。
+
+**第一版是错的**，两轮实测才定下来：
+- 版本 A：`parent` 直接取 `target.parent`（LinearLayout 内层），并把 rect 按「以 target 为原点」写。结果**整块失效**，`y=120/132/…/230` 全部点不开抽屉。
+- 根因：`TouchDelegate` 的 rect 用的是**代理视图自己的坐标系**，但事件是由 `host` 派发的；host 没覆盖那块区域，点在 host 之外根本进不来。内层 LinearLayout 只包着进度条与胶囊，不会收到胶囊外侧的触摸。
+- 版本 B（现行）：`host = topBlock`（覆盖整条顶栏），rect 用 `getLocationInWindow` 求 target 相对 host 的偏移再扩。
+
+**修复后实测**（`docs/ui-preview/probes/hotzone.sh`，逐点重启 App 避免抽屉状态污染，用 CTA 像素判断抽屉是否打开）：
+```
+y=100 -> closed   y=120 -> open   y=132 -> open   y=145 -> open
+y=175 -> open     y=210 -> open   y=218 -> open   y=230 -> open   y=250 -> closed
+```
+视觉边界 `[834,132][1014,215]`：向上扩到 120（12px 外）、向下扩到 230（15px 外）都可点，250 恢复不响应 —— 热区确实被扩到约 48dp 见方，且没有无限外扩。
+
+### 2. TalkBack：先发现「读两遍」，再发现「念太多次」
+
+**问题一（重复朗读）**：给容器 `welcomePill` 加 `contentDescription` 后，dump 里出现**两个**节点：容器 desc = 「Lite package · download the runtime after setup」+ 内层 `txtWelcomePill` text = 同一句。ViewGroup 一旦有 content-description 会把子视图合并成一个节点，叠在一起就会读两遍。
+修法：**朗读源只留一处** —— 内层 `txtWelcomePill` 的 text + `accessibilityLiveRegion = POLITE`；容器不再设 contentDescription；转圈 `pbWelcomePill` 加 `importantForAccessibility="no"`（它是装饰，不该单独入焦点、也不该念「进度条」）。修后 dump 里 pill 相关节点 = **1 个**（`txtWelcomePill`, text=`Preparing the runtime… 16%`）。
+
+**问题二（播报淹没）**：只靠 liveRegion 时，进度每变 1% 都可能触发一次播报 —— 60 秒解压能念上百次。改为**档位播报**：只在 25/50/75/100（含终态）`announceForAccessibility` 一次，`announcedMilestone` 去重。
+
+**实测对比**（logcat 里 TalkBack 的 `USAGE_ASSISTANCE_ACCESSIBILITY` 语音请求）：
+- 只有 liveRegion：55 秒内 **1 次**（liveRegion 本身在 `TextWatcher` 上不一定被每次都采纳，不可控）
+- 加档位 `announceForAccessibility`：55 秒内 **6 次**，时间戳 `02:08:45 / 48:49 / 49:10 / 49:23 / 49:31 / 49:37`，最后一次落在解压完成、`pill` 变为 `Runtime is ready` 之后 —— 与「25/50/75/100 + 首帧 + 终态」的预期一致。
+
+### 3. arm64 完整包也编过了
+
+`-Pabi=arm64-v8a -Ppackage=full -PruntimeZip=_runtime_bak/rt-arm64-20261112.zip` → BUILD SUCCESSFUL 9s，APK **177,101,538 B**，包内 `assets/runtime.zip` 存在、`lib/arm64-v8a/` 5 个 so、`lib/x86_64/` **0 个**（ABI 没有串台）。日志 `runtime: embedded rt-arm64-20261112.zip (130 MB)`。
+
+### 4. 已确认无法在模拟器完成的项
+- **Root 双确认弹窗路径**：模拟器 `userdebug` 可 `adb root`，但 `su` 只有 `/system/xbin/su`（toybox，`-c` 语法报 `su: invalid uid/gid '-c'`），且 **app uid 读不到它**（`run-as app.dsh.mobile` → `sh: /system/xbin/su: inaccessible or not found`）。所以 `Privilege.probe()` 在 App 进程里必然返回 `hasRoot=false`，`selectedPriv` 永远回落到 NORMAL。这条只能在有真 su 的设备上验 —— 已列为未覆盖。
+- **TalkBack 实际听到的内容**：只验证到「发出了几次语音请求」与「节点结构正确」，无法验证音质/语速/实际念的句子（模拟器无声卡回环）。
+- **能力页 chip 横向滚动的 TalkBack 焦点顺序**：未逐项走查。
+
+### 5. 顺带记录的两个构建坑
+- `processDebugResources` 报 `Unable to delete file … R.jar` / `Unable to delete directory app/build/tmp/kotlin-classes/debug`：多会话并行构建抢锁。处置：`gradle.bat --stop` + 删 `intermediates/compile_and_runtime_not_namespaced_r_class_jar`，重试即过（不必 `clean`，全量 clean 反而要重解压 174MB runtime）。
+- **每轮必须复核 `assets/runtime.zip` 是否在最终 APK 里**：本轮曾出现 `app-debug.apk` 只有 20.6MB 的中间产物，若拿它验「完整包」会得到完全错误的结论。
+
+**本轮验证产物**：`docs/ui-preview/shots/onboarding-impl/cover-preparing.png`（10:14 版，含 16dp 转圈 + `Preparing the runtime… 6%`）与 `cover-ready.png`（`Runtime is ready`，转圈已隐藏）；两个可复跑的探针脚本已归档到 `docs/ui-preview/probes/`：`hotzone.sh`（热区逐点扫描）与 `px.py`（按 CTA 像素判定抽屉开合），两者都依赖 `emulator-5556` 与 `PATH` 里的 adb。
+
+---
+
+## 一百一十三、Linux 容器 DNS 代理「跑久了哑掉」：根因与自愈（2026-11-14）
+
+### 现象（真机 PLZ110 / Android 16 / arm64）
+
+容器里 `apk update` / `apk add` / `wget` 全部报
+```
+WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
+         temporary error (try again later)
+```
+而 `am force-stop` + 重启 App 立刻恢复。`files/engine/dns.log` 里只有 listening/start 记录，
+`udp got` 计数停在启动期的 50~64 条不再增长；`netstat -lun` 显示 `::ffff:127.0.0.1:15353` 仍在 LISTEN，
+**Recv-Q 堆到 2048**。
+
+### 根因（两条，第一条是主因）
+
+**① 每条 UDP 查询新建一个线程 → 线程爆炸 → 静默杀死收包循环。**
+
+`LinuxDnsProxy.udpLoop` 原实现在 receive 之后直接 `thread(isDaemon = true) { forward(...) }`。
+上游 DoH 不通时 `forward()` 要串行走两个端点、每端点 connect/read 各 4s，单条最长 8s。
+`apk update` 一次就发几十条并发查询，几轮下来线程能堆到几百 → `thread { }` 抛 OutOfMemoryError。
+当时 `try` 只包住 `receive`，异常从 while 里逃出去，收包线程就此消失，而：
+- socket 仍开着 → netstat 看着还在 LISTEN
+- Recv-Q 一路涨（实测 2048）
+- dns.log 再无新行（日志写在 receive 之后）
+- `socketsAlive` 仍是 true → `currentPort()` 继续把 15353 交给容器
+
+**② 探针缺失导致的判据假绿。** `socketsAlive` 只在 receive/accept 抛异常时清掉，
+「线程没了但没走异常路径」这种情况它完全看不见，`start()` 的幂等短路因此永远成立。
+
+### 修法（`app/src/main/java/app/dsh/mobile/engine/LinuxDnsProxy.kt`，+397 −25）
+
+1. **有界转发池** `forwardPool`：`ThreadPoolExecutor(8, 8, 60s, ArrayBlockingQueue<Runnable>(32), DiscardPolicy)`，
+   线程名 `dns-fwd`，`allowCoreThreadTimeOut(true)`。队列满即丢弃（阻塞会让 receive 停摆，症状不变）。
+   submit 本身也包 `runCatching`，提交失败不再逃出 while。
+2. **catch 改 Throwable**：`acceptLoop` / `udpLoop` 的 catch 从 `Exception` 改成 `Throwable`，
+   Error 也走「清标志 + 记日志」而不是静默消失。
+3. **看门狗自检** `dns-watchdog` 线程：每 `WATCHDOG_INTERVAL_MS=20_000` 向自己的端口发一个
+   `PROBE_NAME = "dsh-probe.invalid"` 查询，`PROBE_TIMEOUT_MS=3000`；连续 `PROBE_FAILS_TO_REBIND=2`
+   次失败即判定死亡 → `stop()` → **就地 `start()` 自愈重绑**（不是只丢弃等外部调用）。
+   探针在 `udpLoop` 内被认出后**本地直接回空应答**，不转发、不计入 udp got 统计，与上游可达性完全解耦
+   （否则断网会被误判成代理死了）。
+4. **`loopAlive` 事实判据**：`currentPort()` 从 `running && socketsAlive` 改为 `running && socketsAlive && loopAlive`。
+5. **代际保护** `generation: AtomicInteger`：每次 start() +1，循环只在「自己仍是当前代」时才允许改 `socketsAlive`。
+   踩坑实录：stop()→start() 是两步，旧线程还阻塞在 receive，stop 关 socket 后它抛异常，
+   而此时 `running` 已被新 start 置回 true → 旧线程把**刚建好的新代理**判成死的
+   （端口在听、日志刚写 listening，currentPort 却返回 0）。
+6. **端口不漂移**：`PREFERRED_PORT=15353` 绑定失败时重试 5 次（每次 150ms，带 `reuseAddress`），
+   而不是直接落到候选 53/随机端口 —— env `DSH_DNS_PORT` 与 rootfs `resolv.conf` 都按固定端口写死，漂移等于静默毁约。
+   实测踩到过：自愈瞬间 15353 报 `EADDRINUSE`，旧代码于是绑到 53。
+
+### 验收（真机 PLZ110 / Android 16 / arm64 / 192.168.101.21:9000，versionCode 387）
+
+构建：`gradle.bat -p . -Ppackage=noruntime -Pabi=arm64-v8a assembleDebug --offline`
+签名：release key（CN=DSH Mobile，SHA-256 d28ca4f5…92c8），`apksigner sign --ks-key-alias dsh`
+
+| 用例 | 手段 | 结果 |
+|---|---|---|
+| 探针快路径 | 容器内 `nslookup dsh-probe.invalid` | NOERROR 空应答，无 Parse error，udp got 不增长 ✅ |
+| 线程有界 | 容器内并发 200 条真实查询 | `dns-fwd` 恒定 8，总线程峰值 101（基线 90，无爆炸）✅ |
+| 真实下载 | `apk add --no-progress sl` | `(1/1) Installing sl`，`/usr/bin/sl` 67320 B 落地 ✅ |
+| 故障注入 | `iptables -I INPUT -p udp --dport 15353 -j DROP` | 查询立即超时（socket 仍在 LISTEN）✅ 复现原始故障态 |
+| 看门狗判定 | 同上 | 20s 后 `probe failed (1/2)`，40s 后 `(2/2)` → `rebinding listener now` ✅ |
+| 自愈重绑 | 同上 | `listening 127.0.0.1:15353` + `watchdog: rebind OK on port 15353` ✅ |
+| 端口不漂移 | 同上 | 移除 DROP 后 `netstat` 仍是 15353，无 `:53` ✅ |
+| 恢复后可解析 | 同上 | `nslookup mirrors.aliyun.com` 返回 CNAME ✅，`apk add` 再次成功 ✅ |
+| 代际日志 | 同上 | `udp loop exited (gen=1 current, ...)` + `udp loop started on 15353 (gen=2)` 可区分新旧 ✅ |
+| 门禁 | `check-i18n.py` / `check-ui-tokens.py` | exit 0 / exit 0 ✅ |
+
+### 踩坑与教训
+
+- **探针应答必须回显 question 段**：第一版只回 12 字节头（QR=1、RCODE=0），`nslookup` 报
+  `*** Can't find dsh-probe.invalid: Parse error` —— RFC 1035 要求 QDCOUNT 与实际携带的 question 段一致。
+  修法：`buildProbeReply()` 复制 `q[0 until qEnd+4]`（头 + 原样 QNAME/QTYPE/QCLASS）再改头。
+- **SIGSTOP 不能冻结单线程**：`kill -STOP <tid>` 会停整个进程组（实测三个 dns 线程全变 T），
+  要复现「单循环死掉」只能用 `iptables DROP`。同理 `SIGCONT <pid>` 才能恢复。
+- **构建产物会被并行会话吃掉**：`app/build/intermediates/project_dex_archive/debug` 被清空但 Gradle 认为 up-to-date，
+  打出的 APK 有 11 个 dex 却**不含 app.dsh.mobile.DshApp**，装上直接
+  `java.lang.ClassNotFoundException: Didn't find class "app.dsh.mobile.DshApp"`（FATAL EXCEPTION: main）。
+  判别：`grep -a -c DshApp classes*.dex` 应为非 0。修法：删 `project_dex_archive/debug`、
+  `dex_archive_input_jar_hashes/debug`、`desugar_graph/debug`、`dex_number_of_buckets_file/debug` 后重建。
+- **Kotlin 字符串转义**：`log("… \$fresh")` 在 Kotlin 里会输出字面量 `$fresh`（不需要反斜杠），
+  实测日志出现 `start() returned $fresh`，排查时容易误以为变量没求值。
+- 设备 adb 会周期性掉线，需 `adb connect 192.168.101.21:9000`；`pidof` 在安装后被清空是正常（装包会杀进程）。
+
+### 未覆盖
+
+- 未在低端机型 / Android 8~10 上验（`ThreadPoolExecutor` 与 `reuseAddress` 行为一致，但未实测）。
+- 未验证「上游 DoH 真挂掉 + 高并发」组合下队列丢弃的实际观感（设计上丢弃会让部分查询无应答，客户端自行重试）。
+- 未做 8 小时以上的长跑（原故障是「跑几小时」出现，看门狗 20s 周期理论上限 40s 就能自愈，但未做长时观测）。
+
+### 已提交
+
+| 提交 | 范围 |
+|---|---|
+| `0354793d` | `fix(ext)` 启动清理不再删掉正在解包的 `.tmp-install`（bun 主程序缺失的真实成因） |
+| `11680997` | `feat(ext)` 扩展中心新增 Bun 运行时（58 项，Linux 模式置灰） |
+| `089e444d` | `fix(linux)` DNS 代理跑久后静默失效 —— 有界转发池 + 看门狗自愈（`LinuxDnsProxy.kt` +397 −25） |
+
+三个提交在本地 `main` 上，尚未推送；`origin/main` 停在 `4bcc2102`。
+
+## 一百二十二、任务化执行 `/dev/jobs`（2026-11-14，提交 `4bcc2102` / `84887c0e` / `d67c0eef`）
+
+### 起因与形态
+`/dev/linux/exec` 的硬上限是 120 秒且要返全量 stdout/stderr —— 编译这种跑几分钟、
+输出几百 KB 的活走不通。这一层补上「提交 → 轮询 → 取产物」，让手机当离机编译机。
+
+六个端点（`app/src/main/java/app/dsh/mobile/engine/cap/JobsCap.kt`，518 行，均受 `cap.linux` 门控）：
+
+| 端点 | 语义 |
+|---|---|
+| `POST /dev/jobs` | 提交，**202** 立即返回 jobId |
+| `GET /dev/jobs` | 最近任务（默认 20，`limit` 夹 1..50） |
+| `GET /dev/jobs/get?id=` | 单条详情 |
+| `GET /dev/jobs/log?id=&stream=&lines=` | 日志尾部（stdout/stderr 分开，默认 200 行） |
+| `POST /dev/jobs/cancel` | 协作式取消 |
+| `GET /dev/jobs/artifact?id=&path=` | 取产物（base64 + sha256） |
+
+目录布局 `filesDir/jobs/<id>/`：`meta.json`（原子写 tmp→rename）、`stdout.log`、`stderr.log`、`result.json`。
+放 `filesDir` 不放 `dsh-home`：后者会被用户 LAN/备份外置，混进几百个编译日志不好清理。
+
+### 五个设计取舍（都写进代码注释）
+1. **固定 2 线程池**（`WORKERS = 2`）而非每任务一线程 —— Android 12+ phantom process killer
+   在进程数超约 32 时杀 rootfs；2 线程让「排队」可见（`state=queued`），而不是让用户看到一堆 running。
+2. **任务体 `catch (t: Throwable)`** —— 任何异常都要落终态。任务永远停在 running 是最糟的失败模式：
+   调用方一直轮询，看不出它已经死了。
+3. **日志单流 8 MiB 截断**（`MAX_LOG_BYTES`）—— 一条 `yes` 不该有写满磁盘的权力（磁盘满会让整个 App 一起坏）。
+4. **产物上限 8 MiB** 而非 64 —— bridge 响应只能是字符串（`Route.handle` 返回 `Pair<Int, String>`），
+   base64 膨胀 33%。更大的产物走 `/dev/open-file` 或 peersync。
+5. **`prune` 只删已终态任务** —— 删掉还在跑的会让 `finish()` 写进重建的空目录，
+   变成一个占着 worker 的幽灵任务（列表里没有它，但 worker 被吃掉）。
+
+### ★ 真机两轮才定位的两个缺陷（这是本节最该读的部分）
+
+**缺陷 1：query 解析漏掉第一个参数。**
+第一版用 `Regex("[?&]id=...")` 抠字段，而 `AgentBridge` 传给 `Route` 的 query
+**不含前导 `?`**（`rawPath.substringAfter('?', "")`）—— 于是第一个参数永远匹配不到。
+真机症状：`GET /dev/jobs/log?id=job-xxx` 返回 `{"ok":false,"error":"missing id"}`，
+**看着像 id 传错，实际是解析器漏了首个参数**。
+修法：加 `parseQuery()` 按 `&` 切再按首个 `=` 分，与全仓其它端点同一套语义。
+
+**缺陷 2：默认工作目录（最隐蔽的一个）。**
+- 第一轮：不设 cwd → 容器 cwd 是只读的 `/` → `mkdir: cannot create directory 'out': Read-only file system`
+- 第二轮：把**宿主**的 `/data/data/<pkg>/files/jobs/<id>` 传给
+  `LinuxContainerRunner.run(workdir=...)` → 该参数按 **rootfs 相对路径** 解析
+  （`File(rootfsDir(), workdir.trimStart('/'))`，只有拼出来的宿主目录真实存在才
+  `pb.directory(...)`）→ 那目录必然不存在 → **静默不切目录**，cwd 还是 `/`，
+  症状与第一轮完全相同，但原因完全不同。
+- 第三轮（现在）：cmd 前缀 `cd <容器绝对路径> &&`。该路径在容器视角确实可写
+  （实测 uid 10499 `mkdir`/`echo`/`cat` 全通，与宿主 App 同一 uid），且不依赖 runner 的路径假设。
+
+### 真机验收（OnePlus PLZ110 / Android 16 / arm64，v1.6.0-beta.11）
+- `pwd` → `/data/data/app.dsh.mobile/files/jobs/job-20261114-114354-…`，`state=success exit_code=0`
+- 产物：`GET /dev/jobs/artifact?...&path=r.txt` → 12 字节、`sha256 2751a3a2…` 本地实算一致
+- 并发：同时提 4 个 6 秒任务 → `running=2 queued=1`（`workers=2` 上限生效）
+- 取消：命令 `exit 0` 但终态 `cancelled`（不因成功而洗白）
+- 超时：`timeout_ms=1000` 跑 `sleep 5` → `state=timeout duration=1012ms`
+- 边界：缺 `cmd` → 400；不存在 id → 404；`path=../../../../etc/hosts` → 400 `path escapes the job directory`
+- 门脚本 `dev-jobs`（5907 字节）已部署到 `engine/bin/` 并真跑通
+
+### 配套与门禁
+- `app/src/main/assets/gates/dev-jobs`：`list`/`show`/`log`/`err`/`submit`/`cancel`/`get` 子命令；
+  `get` 用 python 解码 base64 + 校验 sha256（shell 拼不可靠）；命令用 python 拼 JSON（引号/反斜杠/中文手拼必坏）。
+- `EndpointCatalog.kt` 新增「任务化执行」组 6 条（entries 167 → 173）。
+- `EngineConfig.kt` 三处列表登记 `dev-jobs`（漏一处就不部署）。
+- `scripts/probes/_test_linux_jobs.py` **60 条**（A 门禁 / B 路由 / C 目录 / D 门脚本 / E 配额 /
+  F 终态完整性 / G 安全 / H query 解析 / I 默认 cwd）；
+  `scripts/probes/_rv_linux_jobs.py` **10 条变异全红**（不入库，`.gitignore:74` 惯例）。
+- 门禁：`check-i18n` All passed；`compileDebugKotlin` BUILD SUCCESSFUL。
+
+### ⚠️ 踩过的两个自身操作事故（写下来防再犯）
+1. **变异脚本用空文件覆盖了源码**：`tempfile.mkstemp()[1]` 只创建空文件、不复制内容，
+   我漏了 `shutil.copy2(path, bak)`，还原时把 `EngineConfig.kt` 清成 0 行
+   （`git diff` 显示 2494 deletions），只能 `git checkout` 救回。
+   现在脚本**开跑前对全部目标文件做快照目录**，收尾无条件还原并校验没有一个文件被清空。
+2. **Kotlin 字面量写中文触发 i18n 门禁**：submit 的 `hint` 写了中文 →
+   `check-i18n.py` 的 D 段报 `CJK in Kotlin string literal`。改英文。
+
+### 门禁红的归属（重要，别误记成自己弄红的）
+`_test_onboarding_v2.py` 与 `_test_linux_apt_nonroot.py` 当前是红的，**不是我引入的**。
+在干净 worktree 上逐提交二分：
+
+| 提交 | apt_nonroot | onboarding_v2 | 作者归属 |
+|---|---|---|---|
+| `4bcc2102`（我的 jobs） | 0 | 0 | 我 |
+| `8b7261bd` feat(onboarding) 九页向导 | 0 | **1** | 并发会话 |
+| `089e444d` fix(linux) DNS 看门狗 | **1** | 1 | 并发会话 |
+| `84887c0e` / `d67c0eef`（我的修复） | 1 | 1 | 我（rc 不变） |
+
+即：这两个红分别由 `8b7261bd` 与 `089e444d` 带进来，需要那两个会话自己补探针。
+
+---
+
+**补记十三（2026-11-14 中午）**：按需求微调封面（去掉重复的页眉提示、鲸鱼 56→92dp），并记录一次**误提交他人 WIP 的事故与补救**。
+
+### 1. 封面微调
+- 删掉布局里的 `welcomeEyebrow`（「DEEPSEEK HARNESS · FULL PORT」那行）与 `goTo()` 在封面写 `stepHint` 的分支 —— 它那句「约 30 秒建立环境；运行环境在后台解压」和胶囊说的是同一件事。其余页仍显示「第 n / 8 步」，显隐继续由 `syncCoverStatus()` 管。
+- 鲸鱼 `56dp → 92dp`，上边距 `6dp → 0dp`。
+- 提交：`70187f9b`（style）+ `fa5ea990`（补救，见下）。
+
+### 2. 事故：按路径提交把别人的在途改动带进了已推送的树
+- 现象：`70187f9b` 之后，远端 main 的 `activity_onboarding.xml` 引用了 53 行 `?attr/dshBg / dshSurface / dshAccent / dshTextPrimary …`，但**这些属性没有任何声明** —— `attrs_style.xml`（未跟踪）与 `themes.xml` / `values-night/themes.xml` 的对应改动都还在工作区，属另一条在途工作。
+- 后果：该快照单独检出后**资源编译直接失败**。在独立 worktree 检出 `70187f9b` 复跑 `:app:processDebugResources`：
+
+      ERROR: ...activity_onboarding.xml:22: AAPT: error: resource attr/dshBg (aka app.dsh.mobile:attr/dshBg) not found.
+      ERROR: ...activity_onboarding.xml:53: AAPT: error: resource attr/dshTextMuted ... not found.
+      ERROR: ...activity_onboarding.xml:94: AAPT: error: resource attr/dshStroke / dshAccent ... not found.
+      ERROR: ...activity_onboarding.xml:109/118: AAPT: error: resource attr/dshAccent / dshTextSecondary ... not found.
+
+- 根因：`git commit -m … -- <路径>` **取的是工作区内容，不是暂存区**。先用 `git update-index --cacheinfo` 精确写了 index，但提交时带了 `-- <路径>`，index 被工作区覆盖，别人的取色改写整块被带上去。
+- 补救：`fa5ea990` 只把该布局文件里的取色引用从 `?attr/dsh*` 改回 `@color/*`，保留鲸鱼与页眉两项；对方那份改写原样留在工作区（`git status` 仍是 53 行 `M`）。已 push（`21e4c31b..fa5ea990`，fast-forward）。
+- 验证：`fa5ea990` 的独立 worktree 跑 `:app:processDebugResources` → **BUILD SUCCESSFUL in 14s**；同一 worktree 检出 `70187f9b` 复跑 → 上面那串 AAPT 报错（反向证明断言不是空转）。验完 `git worktree remove --force`。
+
+### 3. 教训（下次务必照做）
+- **多人并行仓库里按 hunk 精确提交的唯一安全姿势**：先 `git update-index --cacheinfo` 写 index，然后**不带任何路径**执行 `git commit`；一写 `-- <路径>` 就用工作区覆盖 index。
+- 提交后立刻验：`git show --stat HEAD` 的文件数是否等于预期；对「已推送的树能否单独编译」存疑时，用 `git worktree add --detach` 检出该提交跑一次资源编译 —— 别只看工作区编译通过（工作区有别人的声明文件，会假绿）。
+- **不要 amend 已推送的提交**：一度 `git commit --amend` 想就地修，结果 amend 又带进另一条改动，只能 `git reset --mixed origin/main` 撤回，白折腾一轮。已推送一律补提交。
+- 提交信息含反引号/撇号时走 `git commit -F <文件>`，否则 shell 吃掉反引号内容。
+
+
+## 一百二十四、MD3 全量适配：两套主题画出来一模一样（2026-11-14，提交 `6781e9b5`）
+
+### 起因与真问题（与"补几页样式"的预期完全不同）
+
+用户原话：「MD3 样式，根据现在也全量适配，原作者已经适配了大多数设置选项了，我们搞一个页面样式和适配一下他们没适配到的地方就行」。
+
+逐项比对 `app/src/main/res/values/themes.xml` 的 Theme.Dsh（28 item）与 Theme.Dsh.MD3（27 item）：
+
+    Theme.Dsh 多一个 colorOnSurfaceInverse，其余同名 item 取值全部相同。
+
+即作者（PR #97）把 21 个 md3_* 色全回映射到旧冷蓝灰，**切风格切了等于没切**。所以「补没适配的页面」是伪命题 —— 真正要修的是两套主题没有分叉。
+
+色温差实测：页面底 #F5F7FA（R−B=−5）vs md3_bg #F7F6F5（R−B=+2），相差 7 个色阶；
+accent #0284C7（R−B=−197）vs md3_primary #1B6C8C（R−B=−113）。
+
+### 根因：`@color` 是资源解析期定型的
+
+   位置             @color  ?attr
+   layout 29 文件     267     639
+   drawable 137 文件  174      13
+   合计               441     652
+
+核心语义色占 403 处（91.4%）：icon_color 101、accent 70、island_text 35、stroke 32、surface 30、
+text_secondary 30、text_muted 25、text_primary 22、bg 14、divider 8。剩下 38 处是功能专属色
+（splash_* 15、island_* 8、ext_chip_* 4 等），本就不该跟随风格。
+代码侧 `getColor(R.color.*)` 另有 173 处，写死 0xFF 常量 88 处 / 22 文件。
+
+### 三层改动
+
+**第 0 层 · 风格令牌**（新增 `app/src/main/res/values/attrs_style.xml`，21 个属性）
+dshBg / dshSurface / dshSurfaceAlt / dshSurfaceHigh / dshDialogBg / dshTextPrimary /
+dshTextSecondary / dshTextMuted / dshAccent / dshAccentSoft / dshOnAccent / dshDivider /
+dshStroke / dshDanger / dshSuccess / dshWarning / dshIconColor / dshBtnRipple / dshOverlay /
+dshIslandText / dshIslandAccent。**前缀 dsh 必须有**，否则与 Material 的 colorXxx 撞名。
+`values/themes.xml` 与 `values-night/themes.xml` 各注入两套：Theme.Dsh → 旧色（一像素不改），
+Theme.Dsh.MD3 → md3_*。MD3 主题的 Material 语义色也分叉了 20 项
+（colorPrimary→md3_primary、colorSurface→md3_surface、colorOnSurface→md3_on_surface 等）。
+
+**第 1 层 · 静态色 → 主题属性**：142 个文件、385 处（drawable 136 / layout 249）。
+显式排除（一旦 attr 化就会拿错误上下文的值）：
+- `ic_download` / `ic_health` / `ic_pet` —— 通知栏 `setSmallIcon` 在 Service 上下文取图
+- `splash_*` 全部 —— 启动闪屏
+- `bg_dynamic_island_dot` / `bg_overlay_*` / `ic_island_*` —— WindowManager 浮层
+
+代码侧 99 处 / 12 文件 `getColor(R.color.x)` → `dshColor(R.attr.dshX, R.color.x)`；LinuxActivity 排除。
+
+**第 2 层 · 风格开关**（新增 `app/src/main/java/app/dsh/mobile/StylePref.kt`）
+`enum Style { CLASSIC, MATERIAL }`、`DEFAULT = MATERIAL`、`StylePref.color(ctx, attr, fallback)`
+（resolveAttribute 失败或 resourceId==0 回退 fallback，**绝不返回透明** —— 那会让文字消失），
+文件末尾 `fun Context.dshColor(attr, fallback)` 供原地替换。
+`ThemedActivity` 分派从 `usesSettingsBackground` 改为 `followsStyle && StylePref.isMaterial(this)`，
+让全站跟随（否则「设置页暖、主界面冷」）；`protected open val followsStyle = true`，
+LinuxActivity 覆盖为 false（整屏自绘深色工作台，80 处 addView / 29 处 getColor）。
+`ThemeActivity` 加「界面风格」卡片 + 带空转保护的按钮组（值没变不 recreate）。
+6 语言各加 5 条字符串。
+
+### 探针 `scripts/probes/_test_style_tokens.py`（21 条）
+
+T1 两套主题令牌齐全 / T2 取值必须真分叉（ALLOW_SAME = dshDanger·dshSuccess·dshWarning·dshBtnRipple·dshOverlay，本就同值）/
+T3 夜间两套齐全 / T4 通知与浮层图标不得含 ?attr / 主题分派用 followsStyle + StylePref。
+
+四条变异在隔离树逐条跑，**全部 EXIT=1**，改完逐文件核字节还原：
+
+| 变异 | 结果 |
+|---|---|
+| M1 删掉 MD3 的 dshBg | EXIT=1 |
+| M2 MD3 的 dshAccent 改成 @color/accent（与经典同源） | EXIT=1 |
+| M3 通知图标 ic_download 塞 ?attr | EXIT=1 |
+| M4 分派退回 usesSettingsBackground | EXIT=1 |
+
+**变异教训**：M2 第一版用正则 `(<item name="dshAccent">)...` 配 `find("Theme.Dsh.MD3")` 定位，
+命中的是注释里那处 `Theme.Dsh.MD3`（第 54 行），改到的是 Theme.Dsh 段 → **EXIT=0 假绿**。
+改成按行号精确改第 182 行（`@color/md3_primary`）才转红。
+
+### 顺带修的 4 条过期断言（判据宽于被测对象）
+
+- `_test_settings_theme_consistency.py` [A2]：原来靠 `onCreate` 后 1200 字符内出现过 `setTheme(`，
+  被 v1.8.0 加的注释挤破（实测 1263 字符）误红；且把 setTheme 挪到 super.onCreate 之后照样绿。
+  改成取 onCreate 函数体，断言 `setTheme 索引 < super.onCreate 索引`。
+- `_test_theme_menu.py`：「plugin name 不写死白」原找 `getColor(R.color.text_primary)`，改走令牌后失效。
+- `_test_plugin_engine_compat.py`：同理，钉住 warning 语义而非字面写法。
+- `_test_theme_flicker.py` 第 10 条：守卫形式随 dshColor 变化，改成正则钉控制流。
+
+### 验证
+
+- `:app:mergeReleaseResources` EXIT=0（先单独验资源；?attr 能否写在 vector 的 fillColor 与
+  shape 的 solid 里，用临时探针 zz_spike_vector.xml / zz_spike_shape.xml 试过，验完删除）
+- `:app:compileReleaseKotlin`、`:app:assembleRelease` 均 BUILD SUCCESSFUL
+- 隔离树 `/e/tmp/wt-md3chk`（`git worktree add --detach` 从 HEAD 起，非复用旧树）构建
+  **43,906,889 B**，装真机 OnePlus PLZ110 / Android 16：
+  `versionCode=395 versionName=1.6.0-beta.11-md3 lastUpdateTime=2026-11-14 12:56:31`，启动正常
+- JVM **2402 passed / 0 failed**；`check-i18n.py` 全过
+- py 探针 **PASS=130 FAIL=2**：`_test_onboarding_v2.py`（8/109 失败，"six scrolling pages exist → found 9"）
+  与 `_test_linux_apt_nonroot.py`（42 checks / 3 failed）。**在 `3eb72fdb` 基线的独立 worktree
+  `/e/tmp/wt-prev3` 复跑同样红**（OB_EXIT=1 / APT_EXIT=1），证明与本提交无关
+- 提交树里 `?attr/dsh*` 共 22 个唯一名（21 个属性 + 注释里的占位 `dshXxx`），
+  与 attrs_style.xml 的 21 条声明对齐，无未声明引用
+- **未完成：逐页两套风格的视觉对比截图**。用户当时在用抖音，坐标点击落空；
+  SettingsActivity / ThemeActivity 均 exported=false，`am start -n` 起不来，只能从侧边栏进
+
+### ★ 事故：第一次提交把 CRLF 写进了 173 个文件
+
+- 现象：`da4281fe`（已从分支摘下、未推送）的 stat 是 173 files / 33064 insertions / 32334 deletions，
+  看着像"内容重写"。核 `.gitattributes`（`* text=auto eol=lf`）与 `core.autocrlf=input` 都正常。
+- 根因：提交时用 `git hash-object -w --stdin` 灌内容，**没有带 `--path`**，于是 gitattributes 的
+  clean filter（eol=lf）没生效，存在 Windows 上带 CRLF 的工作区字节被原样写进 blob。
+  实测 `git cat-file blob HEAD:.../bg_card.xml` 有 13 个 CRLF，HEAD~1 是 0 个。
+- 修法：`git hash-object -w --path <路径> --stdin` 让 clean filter 生效；重建 173 个文件的新树，
+  核「新树含 CRLF 的文件数 = 0」后 `git commit-tree` 重造提交（父仍是 `3eb72fdb`），
+  `git update-ref` 替换。修完 stat 变 **173 files / 1259 insertions / 529 deletions** —— 这才是真实改动规模。
+- 反向验证：`git diff --ignore-cr-at-eol da4281fe 6781e9b5` **输出为空**，证明两次提交内容完全一致，
+  只差行尾。
+- 附带教训：`echo '"\r\n" in b'` 这类在 Windows 上写 Python 会把 `\r` 解析成真回车，
+  判断 CRLF 必须用字节面量 `b"\r\n"`，否则自检本身假绿。
+
+### 提交
+
+`6781e9b5`（173 文件）。手术式提交：`GIT_INDEX_FILE` 独立索引 + `git read-tree HEAD` +
+`git update-index --add --cacheinfo`，其中 OnboardingActivity.kt / activity_onboarding.xml /
+六个 strings.xml **用手工合成的版本**（`git show HEAD:<path>` 的内容 + 只加我的颜色替换与 5 条字符串），
+避开他人删 `pagePriv` 的在途改动。提交后主 index 同步回 HEAD，工作区 `git status` 干净。

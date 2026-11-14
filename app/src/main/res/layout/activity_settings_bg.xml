@@ -438,7 +438,7 @@
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:src="@drawable/ic_chevron"
-                        android:tint="@color/island_text" />
+                        android:tint="?attr/dshIslandText" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </app.dsh.mobile.MaxWidthLinearLayout>

@@ -119,13 +119,13 @@ object ReportDialog {
             textCol.addView(TextView(activity).apply {
                 text = item.title
                 textSize = 14f
-                setTextColor(activity.getColor(R.color.text_primary))
+                setTextColor(activity.dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             })
             if (item.detail.isNotBlank()) {
                 textCol.addView(TextView(activity).apply {
                     text = item.detail
                     textSize = 12f
-                    setTextColor(activity.getColor(R.color.text_secondary))
+                    setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 })
             }
             row.addView(
@@ -141,7 +141,7 @@ object ReportDialog {
             ) {
                 list.addView(TextView(activity).apply {
                     setBackgroundResource(R.drawable.bg_status_chip)
-                    backgroundTintList = ColorStateList.valueOf(activity.getColor(R.color.divider))
+                    backgroundTintList = ColorStateList.valueOf(activity.dshColor(R.attr.dshDivider, R.color.divider))
                     setPadding(0, 0, 0, 0)
                 }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
             }

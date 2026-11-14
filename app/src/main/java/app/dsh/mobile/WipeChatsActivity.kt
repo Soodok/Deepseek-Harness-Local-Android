@@ -163,7 +163,7 @@ class WipeChatsActivity : ThemedActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             (1 * resources.displayMetrics.density).toInt(),
         )
-        setBackgroundColor(getColor(R.color.bg))
+        setBackgroundColor(dshColor(R.attr.dshBg, R.color.bg))
     }
 
     private fun buildRow(item: ChatWiper.Item): android.view.View {
@@ -195,7 +195,7 @@ class WipeChatsActivity : ThemedActivity() {
         }
         val title = TextView(this).apply {
             text = item.title
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             textSize = 14f
             isSingleLine = true
             ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
@@ -210,7 +210,7 @@ class WipeChatsActivity : ThemedActivity() {
         if (item.file == null) bits += getString(R.string.wipe_chats_tag_missing)
         val sub = TextView(this).apply {
             text = bits.joinToString(" · ")
-            setTextColor(getColor(R.color.text_muted))
+            setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
             textSize = 11f
             isSingleLine = true
             ellipsize = android.text.TextUtils.TruncateAt.END

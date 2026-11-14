@@ -149,6 +149,7 @@
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="@dimen/md3_button_height"
+            android:textColor="?attr/colorError"
             android:text="@string/mem_btn_delete" />
         </LinearLayout>
     </HorizontalScrollView>

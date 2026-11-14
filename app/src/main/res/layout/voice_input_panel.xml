@@ -44,7 +44,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textSize="12sp"
-            android:textColor="@color/text_muted"
+            android:textColor="?attr/dshTextMuted"
             android:maxLines="1"
             android:ellipsize="end"
             android:text="@string/overlay_speak_now" />
@@ -59,7 +59,7 @@
             android:paddingTop="4dp"
             android:paddingBottom="4dp"
             android:textSize="13sp"
-            android:textColor="@color/text_muted"
+            android:textColor="?attr/dshTextMuted"
             android:text="@string/voice_close" />
     </LinearLayout>
 
@@ -73,8 +73,8 @@
         android:maxLines="4"
         android:inputType="textMultiLine|textCapSentences"
         android:textSize="15sp"
-        android:textColor="@color/text_primary"
-        android:textColorHint="@color/divider"
+        android:textColor="?attr/dshTextPrimary"
+        android:textColorHint="?attr/dshDivider"
         android:hint="@string/voice_hint_placeholder"
         android:background="@drawable/bg_voice_input"
         android:padding="10dp"
@@ -97,7 +97,7 @@
             android:paddingTop="9dp"
             android:paddingBottom="9dp"
             android:textSize="13sp"
-            android:textColor="@color/accent"
+            android:textColor="?attr/dshAccent"
             android:text="@string/voice_retry"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
 
@@ -116,7 +116,7 @@
             android:paddingBottom="9dp"
             android:textSize="13sp"
             android:textStyle="bold"
-            android:textColor="@color/on_accent"
+            android:textColor="?attr/dshOnAccent"
             android:text="@string/voice_send"
             android:background="@drawable/bg_btn_accent" />
     </LinearLayout>

@@ -333,12 +333,34 @@ class ExtensionManager(private val ctx: Context) {
 
     init {
         // 启动清理：上次会话中断遗留的 .tmp-install（ANR/崩溃时发布中断的孤儿目录，
-        // 实测 ffmpeg 遗留 136MB）。安装按扩展分锁，进程启动时刻
-        // 无并发安装，此时清理安全。
-        runCatching {
-            extRoot.listFiles()
-                ?.filter { it.isDirectory && it.name.endsWith(".tmp-install") }
-                ?.forEach { it.deleteRecursively() }
+        // 实测 ffmpeg 遗留 136MB）。
+        //
+        // ⚠️ 这里只能清「真正的孤儿」：ExtensionManager **不是单例**，除 DshApp 的
+        // lazy 单例之外，AgentBridge.extList/extCheck、SettingsActivity.refreshExtEntry、
+        // EngineSupervisor 迁移都会各自 new 一个；而安装协议本身要求 UI 与 AI 反复
+        // 轮询 /ext/list 等 state=green —— 于是安装过程中必然有新实例被构造出来。
+        // 旧实现「无条件删光 extRoot 下所有 *.tmp-install」会把**正在解包**的临时
+        // 目录整棵删掉。
+        //
+        // 实测后果（bun，负载 88MB）：解包中原目录被清空后，后续写盘重新建出半套
+        // 负载，最终报「none of the executables declared by Bun (bun, bunx) were
+        // installed (dir has 242 file(s))」—— 用户看到的是主程序缺失，与真实原因
+        // （临时目录被并发清理）完全对不上。设备上造一个属主正确的
+        // bun.tmp-install 再打开设置页即可稳定复现删除（属主为 root 时删不掉，
+        // runCatching 会静默吞掉失败，看起来像「没这个 bug」）。
+        //
+        // 两道保护：① 进程内只清一次（清理本来只为「上次会话遗留」而设）；
+        //          ② 跳过 installing 集合里正在安装的 id（同进程跨实例兜底）。
+        if (startupCleanupDone.compareAndSet(false, true)) {
+            runCatching {
+                extRoot.listFiles()
+                    ?.filter { it.isDirectory && it.name.endsWith(".tmp-install") }
+                    ?.filterNot { installing.contains(it.name.removeSuffix(".tmp-install")) }
+                    ?.forEach {
+                        Log.i(TAG, "startup cleanup: removing orphan ${it.name}")
+                        it.deleteRecursively()
+                    }
+            }
         }
         // 历史扩展补链迁移（v1.2.32）：旧版本（≤v1.2.30）安装的扩展没有 sh/env
         // 解释器补链（v1.2.31 新增），对已装扩展补齐 —— 否则 166 个 shebang 脚本
@@ -1889,6 +1911,17 @@ class ExtensionManager(private val ctx: Context) {
          * 必须共享同一份状态，否则 UI 看不见 AI 触发的安装、且会双装冲突。
          */
         private val installing = Collections.synchronizedSet(mutableSetOf<String>())
+
+        /**
+         * 「上次会话遗留」清理只跑一次。
+         *
+         * ExtensionManager 不是单例（DshApp 的 lazy 单例之外，AgentBridge.extList /
+         * extCheck、SettingsActivity、EngineSupervisor 迁移都会 new），而安装协议
+         * 要求反复轮询 /ext/list —— init 里的清理会在安装过程中被反复触发，
+         * 无条件删 *.tmp-install 就会删掉正在解包的目录（bun 88MB 主程序缺失的
+         * 真实成因，见 init 注释）。
+         */
+        private val startupCleanupDone = java.util.concurrent.atomic.AtomicBoolean(false)
 
         /** 激活/停用/卸载后待重启标记：引擎手动重启并 healthy 后由 Supervisor 清除 */
         private val pendingRestart = Collections.synchronizedSet(mutableSetOf<String>())

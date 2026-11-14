@@ -113,12 +113,28 @@ if m_hook:
           "AgentModel.select() 会 append 整条 model/selection，"
           "缺 provider/model 会把会话路线写坏（当前匹配：%s）"
           % (m_sel.group(0)[:80] if m_sel else "未匹配"))
-    check("B8 fast 关闭时撤回 off",
-          re.search(r'cur\.reasoningEffort\s*===\s*"off"', body) is not None,
-          "不撤回的话会话会一直停在 off，用户后续任务都没思考了")
-    check("B9 撤回只撤 off（不动别的档位）",
-          re.search(r'cur\.reasoningEffort\s*!==\s*"off"', body) is not None
-          or 'reasoningEffort === "off"' in body)
+    # ★ B8/B9 在 2026-11-14 反转（真机事故，本插件第三处崩溃点）：
+    # 原来断言「fast 关闭时必须撤回 off」，撤回写法是 `select({provider, model})`
+    # —— 不带 effort 等于回到适配器默认（high = thinking 开启）。而 off 期间写进
+    # 会话的 assistant 消息没有 thinking 块，API 要求 thinking 模式下历史必须
+    # 回传 thinking，补不回来 → 整轮 400：
+    #   The `content[].thinking` in the thinking mode must be passed back to the API.
+    # 触发几乎必然（标记文件 30 分钟 TTL 到期是自动的）。
+    # 正确做法：只停止强制 off，绝不主动恢复思考 —— 新会话天然从默认档位开始。
+    m_revert = re.search(
+        r"model\.select\(\s*\{\s*provider:\s*cur\.provider,\s*model:\s*cur\.model\s*\}\s*\)", body)
+    check("B8 fast 关闭时不撤回 off（撤回会让下一轮 400）",
+          m_revert is None,
+          "不带 effort 的 select 就是「恢复默认档位」。实测后果：整轮 "
+          "The `content[].thinking` ... must be passed back to the API —— "
+          "历史里 off 期间的消息没有 thinking 块，补不回来。命中：%s"
+          % (m_revert.group(0) if m_revert else "无（正确）"))
+    check("B9 仍识别「本会话已由本插件写 off」这一状态",
+          "offAppliedByUs" in body,
+          "只有本插件自己写过的 off 才需要提示；别处来的 off 与本插件无关")
+    check("B9b 有「本会话不能再恢复思考」的一次性警告",
+          "warnNoRevertOnce" in body and "warnNoRevert" in src,
+          "用户手动调回 high 会撞同一个 400，必须让他在日志里看到原因")
     check("B10 select 失败不抛出（一次写失败不该让整轮崩）",
           "model.select failed" in body)
     check("B11 缺 agent.model 时退回 legacyHook",

@@ -2,10 +2,10 @@
 <!-- 引导页小胶囊按钮（v1.7.0）：淡强调色底 + 全圆角，用于「全部步骤」「推荐配置」。
      颜色在代码里按当前强调色重涂（Accent.current），XML 只给中性兜底。 -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="@color/btn_ripple">
+    android:color="?attr/dshBtnRipple">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/accent_soft" />
+            <solid android:color="?attr/dshAccentSoft" />
             <corners android:radius="999dp" />
         </shape>
     </item>

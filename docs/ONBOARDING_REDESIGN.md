@@ -1,10 +1,10 @@
 # 新手引导重设计（v2）· 设计说明与实现映射
 
-- 日期：2026-11-12
-- 状态：**设计稿完成，未落 Android**（HTML 原型可交互，32 张截图已出）
+- 日期：2026-11-12 起稿，2026-11-13 按两轮只读复审修订
+- 状态：**设计稿完成，未落 Android**（HTML 原型可交互，**43 张截图**全部通过断言）
 - 原型：`docs/ui-preview/2026-11-12-onboarding-redesign.html`
-- 截图：`docs/ui-preview/shots/onboarding-redesign/`（手机深/浅各 9 页、平板 9 页、运行环境四态、画廊）
-- 截图脚本：`docs/ui-preview/shoot-onboarding.mjs`（CDP，390×844 / 820×900，dsf=2）
+- 截图：`docs/ui-preview/shots/onboarding-redesign/`（9 页 × 深/浅 × 手机；9 页 × 平板；9 页 × 320×640；运行环境四态；844×390 横屏；9 页画廊；桌面编辑态）
+- 截图脚本：`docs/ui-preview/shoot-onboarding.mjs`（Chrome CDP 精确设视口，不用 --window-size；dsf=2 出 @2x 图）。逐图断言：目标页编号、页内关键文案、DOM 尺寸=请求尺寸、PNG 实际像素=CSS 尺寸×DPR、画廊 9 卡且每卡恰好显示 1 页。可传文件名片段只跑子集：`node docs/ui-preview/shoot-onboarding.mjs p7`。
 
 ## 1. 现状与问题（有截图依据）
 
@@ -45,10 +45,10 @@
 | 4 | 强调色 | `pageAccent` | 6 色，按钮/选中/进度联动 | 选圆点 | 是 |
 | 5 | 屏幕 | `pageScreen` | 页面缩放、设置页布局、沉浸状态栏 | 滑杆/分段/开关 | 是 |
 | 6 | 模式 | `pageMode`（新，自 `pagePriv` 拆出） | 普通 / Shizuku / Root | 选卡 + 前置条件提示 | 否（默认普通） |
-| 7 | 能力 | `pageCaps`（新，自 `pagePriv` 拆出） | 通知/读屏/剪贴板/麦克风 + 更多折叠 | 开关 + 推荐预设 | 是 |
-| 8 | 完成 | `pageDone` | 运行状态 + 选择回顾 + 首次对话 | 开始第一次对话 | — |
+| 7 | 能力 | `pageCaps`（新，自 `pagePriv` 拆出） | 6 域 17 项能力，按域横向切换 | 分组 chip + 开关 | 是 |
+| 8 | 完成 | `pageDone` | 运行状态 + 选择回顾 + 再配模型 | 按状态换 CTA（见 §5.8） | — |
 
-步骤计数只算 8 步（欢迎页不计），与现有 `ob_wizard_step_fmt` 的 `index+1 / pages.size` 语义一致；落地时把 `welcome` 从计数中排除。
+步骤计数只算 8 步（欢迎页不计）。现有 `ob_wizard_step_fmt` 与代码里三处下标计算（`:279` / `:291` / `:343-344`）都按 `index+1 / pages.size`，直接加页会整体偏一页；落地时把「页面描述」收敛成单一列表，每项带 `countsAsStep`。
 
 ## 4. 设计令牌
 
@@ -60,22 +60,59 @@
 | `--surface` / `--surface2` | `#121d2a` / `#0d1722` | 卡片 / 次级卡 |
 | `--line` | `#223243` | 1dp 描边 |
 | `--ink` / `--ink2` | `#e9f0f8` / `#93a6b8` | 主文字 / 次文字 |
-| `--accent` | `#4fa8e0`（天蓝） | 主操作、选中、进度 |
+| `--accent` | `#4fa8e0`（天蓝，仅用于描边/底纹/进度） | 视觉强调 |
+| `--accent-fill` | `#4fa8e0` | 实心按钮、开关轨道、选中圆 |
+| `--accent-text` | `#6ebbee`（对 `#121d2a` 实测 **8.10:1**） | 正文/图标/文字按钮 |
 | `--ok` / `--warn` / `--danger` | `#34d399` / `#fbbf24` / `#fb7185` | 就绪 / 等待 / 失败·高风险 |
 | `--glow` | `rgba(79,168,224,.22)` | 完成页光晕 |
 
-浅色（`data-theme=light`）：`--bg #f3f7fb`、`--bg2 #e7eff8`、`--surface #ffffff`、`--line #dbe5f0`、`--ink #0f172a`、`--ink2 #5a6b80`、`--accent #0284c7`、`--ok #0f9d6b`、`--warn #b45309`、`--danger #c2410c`。
+浅色（`data-theme=light`）：`--bg #f3f7fb`、`--bg2 #e7eff8`、`--surface #ffffff`、`--line #dbe5f0`、`--ink #0f172a`、`--ink2 #5a6b80`、`--ok #0f9d6b`、`--warn #b45309`、`--danger #c2410c`；
+强调色分三个角色，因为原 `#0284c7` 作为文字对白只有 **4.10:1**、对底色 `#f3f7fb` 只有 **3.80:1**，达不到 4.5:1：
+`--accent-fill #0274a8`（白字 **5.16:1**）、`--accent-text #0b6a9c`（对白 **5.91:1** / 对底 **5.49:1**）、`--accent #0284c7`（仅描边底纹）。
 
-强调色 6 色（深/浅）：天蓝 `#4fa8e0/#0284c7`、靛蓝 `#7f95ff/#4f6ef7`、青绿 `#3fc4b2/#0f9d8a`、紫罗兰 `#a982ff/#7c3aed`、琥珀 `#f5b454/#d97706`、玫红 `#fb7f9b/#e11d48`。对应现有 `Accent` 枚举顺序，落地时以 `colors.xml`/UI token 为准。
+强调色 6 组（键 = 色环取值 / fill / text，深色只列色环与文字色），全部对白/对底实算 ≥4.5:1：
+
+| 名称 | 浅 fill（白字） | 浅 text（对白/对底） | 深 fill（深字） | 深 text |
+| --- | --- | --- | --- | --- |
+| 天蓝 | `#0274a8` 5.16 | `#0b6a9c` 5.91 / 5.49 | `#4fa8e0` 7.15 | `#4fa8e0` 6.49 |
+| 靛蓝 | `#3d5be0` 5.57 | `#3352d8` 6.29 | `#7f95ff` 6.82 | `#7f95ff` 6.19 |
+| 青绿 | `#0a6a5e` 5.23 | `#0a6a5e` 6.49 | `#3fc4b2` 8.70 | `#3fc4b2` 7.90 |
+| 紫罗兰 | `#7c3aed` 5.70 | `#7c3aed` 5.70 | `#a982ff` 6.54 | `#a982ff` 5.93 |
+| 琥珀 | `#b45309` 5.02 | `#8a3e06` 7.57（12% 底纹 6.41） | `#f0a24b` 8.90 | `#f0a24b` 7.20 |
+| 玫红 | `#be123c` 6.29 | `#be123c` 6.29 | `#f2637f` 6.13 | `#f2637f` 5.56 |
+
+括号内为对比度实测值（白字=填充色上的文字；对白/对底=作为正文分别对 `#ffffff` 与 `#f3f7fb`）。色相保留原 6 色观感，只压暗以达标。
+
+**注意底纹**：分组 chip 选中态、徽章、推荐按钮的底色是强调色 9–14% 叠在 `--surface` 上，文字与这种底纹的对比度会进一步下降（浅色琥珀在 12% 底纹上仅 4.25:1，已据此把浅琥珀正文压到 `#8a3e06`，实测 6.41:1）。落地时每个带底纹的组件都要按「实际合成底色」重算，不能只核对文字对纯白。
 
 排版：标题 26sp/700，正文 13sp/1.6，卡片标题 13.5sp/600，辅助 11.5sp，标签 10sp；卡片圆角 16dp，按钮/胶囊 99dp；页内左右边距 26dp，卡片内 14dp，块间距 14dp；底部操作条高约 78dp。
 
 ## 5. 逐页规格
 
+> 方向 / 外观 / 强调色 / 屏幕四页视作**可选**：眉标标「可选，之后可改」，主按钮写「保留当前设置并继续」，避免用户以为每一页都必须研究一遍。
+
 ### 5.0 欢迎
-- 结构：62dp 白鲸（官方 `ic_launcher_foreground` path）→ `DSH MOBILE` 眉标 → 两行主标题「手机里，住着一个会写代码的助手」→ 副文案「原生引擎 2.3 秒启动。终端、编译环境、手机操控，都在这块屏幕里。」→ 三行能力卡（原生引擎 / 真编译环境 / 手机操控）→ 底部运行环境胶囊 → 主按钮「开始设置 · 约 30 秒」。
-- 运行胶囊：`ready` 显示「运行环境已在后台准备 · 已就绪」；`preparing` 显示百分比；`failed/lite` 显示对应提示。
+- 结构：56dp 白鲸（官方 `ic_launcher_foreground` path）→ 眉标 `DEEPSEEK HARNESS · 完整移植` → 两行主标题「完整的 DeepSeek Harness / 住进了你的手机」→ 副文案「克隆仓库、编译项目、运行测试、提交代码，也能读屏、点按、输入。引擎与工具在手机本地执行。」→ 五行能力卡 → 首屏前提一行「运行环境随安装包自带；模型与 API Key 进入后单独配置」→ 运行环境胶囊 → 主按钮「开始设置 · 约 30 秒」。
+- 五行能力卡（标题 / 副行）：
+  1. 同源引擎 / 沿用桌面端 DSH 的引擎、工具与插件机制
+  2. 电脑级工作流 / 原生 Node.js 与真实终端，命令在手机执行
+  3. 自研 Linux 容器 / Alpine 用户态，按需安装 Linux 软件与编译工具链
+  4. 手机操控 / 读屏、点按、输入，随时可停
+  5. 与电脑协同 / 配对后，电脑可调用这台手机的读屏、相机、容器等能力
+- 定位主张：**完整移植**（不是遥控器、不是网页套壳）+ **真在手机上完成电脑级工作流**。所有描述必须能在仓库里找到对应实现（引擎同源、`dsh-linux-runtime` Alpine rootfs、`RemoteAccessSheet.kt` 局域网能力桥、无障碍操控），不得写未落地的能力。
+- 运行胶囊：16dp 转圈 + 文案，挂在 **顶栏 topBlock**（不是欢迎页正文）。`preparing` 显示「Preparing the runtime… 63%」且转圈；`ready/failed/lite` 是终态，隐藏转圈只留文案。
+  实现要点（三条都是实测踩出来的）：
+  1. **位置**：不能放欢迎页正文底部。欢迎页内容总高超过 `pageHost` 视口（实测裁切边界 1988px），放底部时 uiautomator 与截图里整块消失，后台解压等于没有反馈 —— 用户看到的只有「约 30 秒」静态眉标。
+  2. **互斥**：胶囊在顶栏时它与 `txtStepHint` 抢同一行语义。完整包用胶囊（有真实百分比），`syncCoverStatus()` 把眉标收起来；`lite` 包也只用胶囊（正文是「精简包 · 进入后再下载运行环境」），不用眉标 —— 眉标那句「环境在后台解压」对精简包是假的。
+  3. **终态**：`pct == 100` 也必须算终态。解压回调会先报满再落 READY，若按 `PREPARING` 走就会拍出「正在解压… 100%」还带转圈，看着像卡在最后一格。
 - 顶部只有「全部步骤」胶囊，不显示进度条（第 0 页）。
+
+### 5.0.1 可访问性与触控（2026-11-14 补）
+
+- **朗读源只留一处**：进度文案写在内层 `txtWelcomePill` 的 text 上并设 `accessibilityLiveRegion = POLITE`；**不要**再给容器 `welcomePill` 加 `contentDescription`。ViewGroup 带 content-desc 会合并子视图成一个节点，容器 desc 与子 TextView 文本叠一起，TalkBack 会把同一句读两遍（实测 dump 出现两个节点）。
+- **转圈是装饰**：`pbWelcomePill` 设 `importantForAccessibility="no"`，不进焦点、不念「进度条」。
+- **按档位播报，不按百分比播报**：解压 60 秒里每 1% 都念会把听觉反馈淹掉。只在 25/50/75/100（含终态）调 `announceForAccessibility` 一次，`announcedMilestone` 去重。实测 55 秒 6 次语音请求，最后一次落在 `Runtime is ready` 之后。
+- **触控目标**：顶栏「All steps」胶囊只有 **65.5 × 30.2 dp**，低于 48dp。视觉不动，用 `expandTouchTarget(target, host, minDp)` 扩热区；`host` 必须是**覆盖扩展区的父容器**（现行 `topBlock`），且 rect 用 `getLocationInWindow` 求相对 host 的偏移。以 target.parent 为 host 且按原点写 rect 的做法实测**完全不生效**（点在 host 之外进不来）。实测热区从视觉 `[834,132][1014,215]` 扩到 y≈120–230 可点、250 不响应。
 
 ### 5.1 语言
 - 6 行卡：图标改用语言字形（文 / A / D / P / ก / Я），标题=本地名，副标题=英文名；选中行加 accent 描边与右侧勾。
@@ -105,17 +142,27 @@
 - 说明：「模式随时可改；Root 需要两次确认，并会在关于页显示当前模式。」
 
 ### 5.7 能力
-- 顶部推荐条：「推荐配置 通知 + 读屏 + 剪贴板 · 默认已勾选」，点击可一键套用。
-- 四个主开关（默认开前三个）：通知、读屏与点按、剪贴板、麦克风。
-- 「更多能力（6 项，可稍后开启）」折叠：定位、相机、短信（只读、逐条确认）、传感器…。
-- 说明：「以后可在「设置 → 权限与能力」逐项修改；敏感能力默认每次询问。」
+- **横向分组选择器**（取代原来的「推荐配置」大卡）：可横向滑动的分组 chip，**两行**（上行短名、下行「已允许 n/m」），`min-width 104dp / min-height 56dp`（窄屏 86dp/48dp），选中项 accent 描边 + accent 文字。短名用四字：设备环境 / 通知媒体 / 设备控制 / 个人数据 / 录屏感知 / 应用容器（全名在权限中心，两处语义对应但不必逐字相同）。分组与 `OnboardingActivity.kt:1362-1426` 的 `CAP_GROUPS` 一一对应：
+  `设备与环境`(3) / `通知与媒体`(3) / `设备控制`(4) / `个人数据`(2) / `录屏与感知`(3) / `应用与容器`(2)，共 17 项。命名按实际内容校正（原「通知与消息」含媒体、原「屏幕与输入」无输入项、原「网络与系统」只有应用管理与 Linux），落地时须与权限中心的域名同步，不能两套。
+- 下方只渲染当前分组的能力行（`.gpanel`，单选显示），单屏最多 4 行，页面高度不再随能力总数增长。
+- 分组下方是 52dp 次级按钮「开启推荐的 6 项 / 只新增允许，不重置你已选的」（对应 `RECOMMENDED_CAPS`，`:1352-1359` = STATUS / SENSOR / CLIPBOARD / CONTROL / SCHED / NOTIFY）。
+  **注意：这 6 项不是「低风险只读」**（含剪贴板写入、CONTROL、SCHED、通知发送），文案不得再这么写。
+- 说明：「敏感能力需单独开启；录屏、安装等个别操作还要系统确认。」
+  （依据 `SensitiveAccess.kt:13-20`：开关是一次性信任，通知是事后告警，**不是**每次请求批准；仅录屏等单独按次确认。）
+- 计数语义是「已允许 n/m」，不是「可用 n/m」——`CapabilityGate.kt:271-273` 要求 enabled && permissionAvailable 才算可用。
+- 可发现性：右侧 **独立 24dp** 渐隐箭头（不覆盖 chip 文字，滚到末端自动隐藏，平板上隐藏）+ 「第 n / 6 组」文字；选中后 chip 自动滚入可视区。
+- 平板（≥600dp）：chip 换行排列（`flex-wrap:wrap`），不横向滚动。
+- 落地要点：`buildCapabilitySwitches()`（`:956-987`）改为「先建 6 个分组容器 → 只显示选中组」；`refreshCapCounters()`（`:1032-1044`）目前遍历 `capabilityContainer` 直系子项并用「语言字符串 tag」匹配组标题，加分组长后**必然失效**，须改为按组对象记账；chip 的 n/m 实时更新；选中组要跨 `recreate()` 保存（`:1127-1137` 尚无此键）。
 
 ### 5.8 完成
-- 上半：光晕 + 白鲸（呼吸动画）+ 标题四态 + 副标题。
-- 运行状态卡四态（见 §6）。
-- 选择回顾 chips：语言 / 主题 / 强调色 / 模式 / 缩放。
-- 「接下来」三行：配置模型与 API Key（网页设置 → 模型）/ 试试终端（node -v）/ 连接远程主机（可选）。
-- 主按钮「开始第一次对话」，次按钮「上一步」；本页隐藏顶部进度与「全部步骤」。
+- 上半：120dp 光晕（原 180 会压过正文）+ 60dp 白鲸 + 呼吸动画 + 标题四态 + 副标题。标题与状态卡**不重复**同一句话，标题讲整体（准备就绪 / 正在准备 / 还差一步），状态卡讲运行环境。
+- 运行状态卡四态（见 §6），是唯一权威状态来源。
+- 选择回顾 chips：语言 / 主题 / 强调色 / 模式 / 缩放（五枚，靠状态函数生成，不写死）。
+- 下一步只留一条：**还需配置模型与 API Key**（进入后「设置 → 模型」）。终端自检、连接远程主机移到应用内指引，不占首启末页。
+- 主按钮按状态换文案（不写死「开始第一次对话」，此时还没配模型）：
+  `ready`→「进入应用，继续配置模型」；`preparing`→「先进去，后台继续」；`failed`→「进入维护里重试」；`lite`→「进入应用 · 需要时下载」。
+- 次按钮在完成页改为「先浏览应用」；本页隐藏顶部进度与「全部步骤」。页面整体必须可滚动（内容比旧版多）。
+- **落地注意**：主按钮要真的落到模型设置页才算「直达」；现状 `OnboardingActivity.kt:1295` 只是普通启动 MainActivity，所以本轮文案用「进入应用，继续配置模型」而不是「配置模型」，避免承诺做不到的跳转。
 
 ## 6. 运行环境四态（完成页 & 欢迎页胶囊共用）
 
@@ -123,7 +170,7 @@
 | --- | --- | --- | --- | --- |
 | `preparing` | 完整包首次解压中 | 正在解压运行环境… 63% | 进度会在后台继续，完成后自动就绪 | 进度条 + 百分比 |
 | `ready` | `ensureInstalled()` 完成 | 运行环境已就绪 | 引擎启动只需约 2 秒 | 绿点 |
-| `failed` | 解压/校验失败 | 运行环境准备未完成 | 进入后可在「维护」里重试，或重新安装 | 红点 |
+| `failed` | 解压/校验失败 | 运行环境准备未完成 | 进入后可在「维护」里重试；已选设置会保留 | 红点 |
 | `lite` | noruntime 包 | 精简包：尚未安装运行环境 | 点击开始后选择是否下载（约 130 MB） | 黄点 |
 
 实测基线（emulator-5556，x86_64 完整包）：解压约 87 秒，`files/engine` 611 MB，线程 `onboarding-runtime-prefetch`。文案中的「约 30 秒」指设置流程本身，不含首次解压；欢迎页胶囊在 `preparing` 时必须显示真实百分比，避免预期落差。
@@ -139,11 +186,13 @@
 ## 8. 文案与本地化
 
 - 复用现有 87 个 `ob_*` 键；新增建议：
-  - `ob_welcome_title` / `ob_welcome_lede` / `ob_welcome_feat_engine` / `ob_welcome_feat_toolchain` / `ob_welcome_feat_screen` / `ob_welcome_cta`
-  - `ob_wizard_mode_title` / `ob_wizard_mode_desc` / `ob_wizard_caps_title` / `ob_wizard_caps_desc`
-  - `ob_caps_recommend_line` / `ob_caps_more` / `ob_caps_more_hint`
-  - `ob_done_next_title` / `ob_done_next_model` / `ob_done_next_terminal` / `ob_done_next_remote`
-  - `ob_done_summary_fmt`
+  - 欢迎页：`ob_welcome_eyebrow` / `ob_welcome_title` / `ob_welcome_lede` / `ob_welcome_cta`
+  - 欢迎页五行：`ob_welcome_f1`…`ob_welcome_f5` + `ob_welcome_f1_sub`…`ob_welcome_f5_sub`
+  - 拆页：`ob_wizard_mode_title` / `ob_wizard_mode_desc` / `ob_wizard_caps_title` / `ob_wizard_caps_desc`
+  - 能力页：`ob_caps_group_count_fmt`（"%1$d / %2$d"）/ `ob_caps_pos_fmt`（"第 %1$d / %2$d 组"）/ `ob_caps_allow_fmt`（"已允许 %1$d / %2$d 项"）/ `ob_caps_recommend`（"开启推荐的 6 项"）/ `ob_caps_recommend_sub`（"只新增允许，不重置你已选的"）
+  - 完成页：`ob_done_need_model` / `ob_done_need_model_sub` / `ob_done_summary_fmt`
+  - 完成页 CTA 四态：`ob_done_cta_ready` / `ob_done_cta_preparing` / `ob_done_cta_failed` / `ob_done_cta_lite`
+  - 完成页标题四态：`ob_done_head_ready` / `ob_done_head_preparing` / `ob_done_head_failed` / `ob_done_head_lite`
 - 新增键须同时在 `values`、`values-de`、`values-zh-rCN`、`values-pt-rBR`、`values-th`、`values-ru` 六套落地，过 `check-i18n`（当前 1652 键 × 6 全绿）。
 - 文案规范：按钮用动词短语；风险提示用「后果 + 操作边界」两句；数字与路径不写死，走资源。
 
@@ -151,42 +200,115 @@
 
 | 设计 | 现有实现 | 改动 |
 | --- | --- | --- |
-| 欢迎页 | 无 | 新增 `pageWelcome` 布局与 `OnboardingActivity` 第 0 页；复用 `RuntimeInstaller` 预取状态显示胶囊 |
-| 语言/方向/外观/强调色/屏幕 | `pageLanguage`…`pageScreen` | 按 §5 调整样式与文案；语言图标改字形 |
+| 欢迎页 | 无 | 新增 `pageWelcome` 布局与 `OnboardingActivity` 第 0 页；五行能力卡用现有 `ic_*` 图标；复用 `RuntimeInstaller` 预取状态显示胶囊 |
+| 语言/方向/外观/强调色/屏幕 | `pageLanguage`…`pageScreen` | 按 §5 调整样式与文案；语言图标改字形；**屏幕缩放档位三处不一致**（设计 60–130%、原型 80–120%、现实现 `:1343` 75/90/100/110）须先定语义再翻 6 语言 |
 | 模式页 | `pagePriv`（模式+能力同页） | 拆为 `pageMode`；复用 `capRoot`/`capShizuku` 检测与二次确认 |
-| 能力页 | `pagePriv` 下半 | 新增 `pageCaps`；复用 `capabilityContainer`、`btnCapRecommend` |
-| 完成页 | `pageDone` + `txtDoneRuntime`/`pbDoneRuntime` | 四态渲染已有预取回调，补回顾 chips 与「接下来」；标题按状态切换 |
-| 步骤数 | `steps` 7 项（`:59-67`） | 8 步（不含欢迎）；`pages` 9 项（`:175-183`） |
+| 能力页 | `pagePriv` 下半；`refreshCapCounters()` 靠「组标题 tag = 语言字符串」遍历直系子项 | 新增 `pageCaps`；改按组对象记账（分组容器后原实现必失效）；推荐按钮改为 52dp 次级按钮并改文案 |
+| 完成页 | `pageDone` + `txtDoneRuntime`/`pbDoneRuntime`，根容器是不可滚动 `LinearLayout`（`activity_onboarding.xml:620-691`），标题/副标题无 id（`:651-667`） | 补回顾 chips + 单条「还需配置模型」；给标题/副标题加 id 以支持四态；整页改可滚动 |
+| 步骤数 | `steps` 7 项（`:59-67`）、`pages` 7 项（`:175-183`） | **不要只改 max**：`stepRow` 跳转（`:279`）、`refreshStepper`（`:291`）、`goTo`（`:343-344` 用 `index+1/pages.size`）三处各自算下标，8/9 两套会整体偏一页。改为单一「页面描述」列表，每项含 `countsAsStep`，欢迎项无编号 |
 | 平板 | `sideRail` 已有 | 补 9 项与当前/已完成样式；内容区 620dp 居中 |
-| 进度 | `progress.max = pages.size`（`:184`） | 用 `page / 8` 计算，欢迎页隐藏 |
+| 进度 | `progress.max = pages.size`（`:184`） | 用「已计步页数 / 8」计算，欢迎页隐藏顶部进度 |
 
 新增控件建议 id：`pageWelcome`、`pageMode`、`pageCaps`、`welcomeRuntimePill`、`capsRecommendRow`、`doneSummary`、`doneNextList`。
 
 ## 10. 验收清单
 
-1. 完整包冷启：欢迎页出现 ≤1s，胶囊显示真实解压百分比，87 秒内变为「已就绪」。
+**功能与状态**
+1. 完整包冷启：欢迎页出现 ≤1s，胶囊显示真实解压百分比；「已就绪」只在 `ensureInstalled()` 返回成功后出现（`RuntimeInstaller.kt:921-928` 解压后还有恢复执行位/校验，不能见到 100% 就判就绪）。
 2. noruntime 包：胶囊显示「精简包：尚未安装运行环境」，进主界面弹下载确认。
-3. 解压失败（断流/坏包）：完成页显示失败态，可进入并在「维护」重试。
-4. 9 页均可通过手机抽屉与平板侧轨直接跳转；返回键逐页回退，首页返回直接退出。
-5. 语言切换即时生效且不重建 Activity；6 语言无截断（de/ru 最长词）。
-6. 深浅两主题下所有文字对比度 ≥4.5:1；强调色 6 色选中态可见。
-7. 平板 820×900：内容区居中、无横向溢出；手机 390×844：无纵向溢出（完成页除外可滚动）。
-8. `check-i18n`、`check-ui-tokens` 全绿；新增键 6 语言齐全。
-9. TalkBack：每个卡片/开关有 contentDescription，焦点顺序=视觉顺序；触控目标 ≥48dp。
-10. 完成页「开始第一次对话」直达主界面且不重复弹引导（`Privilege.KEY_ONBOARDED` / `isOnboarded()`，见 `engine/Privilege.kt:37,68` 与 `MainActivity.kt:196`）。
+3. 解压失败：完成页显示失败态 + 可恢复的下一步（进入后在维护重试），不得把可恢复故障导向重装。
+4. 四态文案/标题/CTA 一一对应，欢迎页胶囊与完成页状态卡来自同一个状态对象，不允许 12% / 63% 两套假数据。
+5. 语言切换会 recreate；预取线程不得因 recreate 重置为 0%（新 Activity 应接着现有任务，`onCreate` 每建一次就新起线程是现缺陷）。
+
+**导航与计数**
+6. 单一步骤描述列表：欢迎不计步、其余 1–8；手机抽屉、平板侧轨、页内眉标、进度条四处编号一致，逐个跳转核对页标题。
+7. 9 页均可直接跳转；返回键逐页回退，首页返回直接退出。
+8. **Root 双确认不可绕过**：选 Root 后不论经「下一步」、页内跳转还是系统 Back 进入主界面，都必须走同一个完成出口并弹两次确认（现状见 §11）。
+
+**视觉与可访问性**
+9. 深浅两主题文字对比度 ≥4.5:1（本稿按实测值给色，见 §4）；强调色 6 色选中态可见。
+10. 能力页分组可发现：窄屏至少露出下一组一角或箭头，并显示「第 n / 6 组」；chip 触控 ≥48dp。
+11. 平板 820×900 内容区居中无横向溢出；手机 390×844 无纵向溢出（完成页可滚动）；320×640 与 844×390 横屏不破版。
+12. TalkBack：卡片/开关有 contentDescription，焦点顺序=视觉顺序，四态标题切换会被朗读。
+
+**门禁与文案**
+13. `check-i18n`、`check-ui-tokens` 全绿；新增键 6 语言齐全，占位符数量与顺序一一对应。
+14. 文案与能力语义一致：不得把 `RECOMMENDED_CAPS` 的 6 项写成「低风险只读」，不得写「敏感能力默认每次询问」。
+15. 截图证据门：`shoot-onboarding.mjs` 已改为逐图断言（目标页编号、页内关键文案、设备尺寸、画廊卡片数），43 张全部通过；新增页/新增态必须同步断言，不接受「图已生成」当通过。
 
 ## 11. 风险与待定
 
 - 欢迎页加入后首启步数从 7 变 8，老用户不受影响（`isOnboarded()` 为 true 时 `MainActivity.kt:196` 直接跳过引导）。
 - 「约 30 秒」是设置流程估算，首次解压 87 秒；文案需与胶囊状态配合，避免被理解为总时长。
-- 能力页「更多能力」的 6 项需与 `CapabilityRegistry` 实际能力对齐后再定文案，当前原型是占位（定位/相机/短信/传感器）。
+- 能力页分组与 17 项能力已按 `CAP_GROUPS`（`OnboardingActivity.kt:1362-1426`）对齐；副标题沿用 `setting_cap_*_sub`，落地时不要另写一份文案。
+- 横向 chip 在窄屏（320dp）可能溢出，落地时用 `HorizontalScrollView` 并保证首尾 padding 与页面一致。
 - 完成页标题四态会改变 `doneTitle` 文本，需同步无障碍朗读。
 - 平板侧轨在横屏小高度（如 600dp）可能溢出，落地时改为可滚动。
+- **P0 既有缺陷（与拆页耦合）**：Root 双确认只挂在 `finishOnboarding()` 一条路径（`OnboardingActivity.kt:1236-1240`），而 `goTo` 会写盘、系统 Back 在 `:1164-1173` 直接 `commit()` 并在 `:1280-1282` 置 ROOT + markOnboarded。静态可达：有 su 的设备选 Root → 返回首页 → 按系统 Back，即可绕过双确认。新增欢迎页与任意跳页会扩大这条路径，落 v2 前必须先统一完成入口（单一 commit 出口 + 双确认在其内部）。未真机复现，标注为静态分析结论。
+
+## 12. 两轮只读复审记录（2026-11-13）
+
+复审方：`expert-gpt` 子代理，只读、不改文件、不跑 Android 构建。两轮意见已逐条验真后处理。
+
+### 已按复审修正
+
+| # | 复审意见（要点） | 处理 |
+| --- | --- | --- |
+| 1 | 欢迎页副文案与第 2 行重复四件事 | 副文案改为「能做到什么」，第 2 行改「原生 Node.js 与真实终端，命令在手机执行」 |
+| 2 | 「不是精简版」「原样跑」是绝对说法 | 改「沿用桌面端 DSH 的引擎、工具与插件机制」「按需安装 Linux 软件与编译工具链」 |
+| 3 | 协同能力未说配对前提 | 加「配对后，电脑可调用…」 |
+| 4 | 首屏应声明模型需另配 | 加一行「运行环境随安装包自带；模型与 API Key 进入后单独配置」 |
+| 5 | 能力组名与真实内容不符 | 改 通知与媒体 / 录屏与感知 / 应用与容器，并统一为四字短名 |
+| 6 | 能力副标题有不实（WiFi/蓝牙/定时/媒体等） | 全部按 `values-zh-rCN/strings.xml` 的 `setting_cap_*_sub` 重写 |
+| 7 | chip 只有 n/m、44dp 触控不足 | 改两行「名称 + 已允许 n/m」，56dp（窄屏 48dp），min-width 104dp |
+| 8 | 箭头盖住 chip 文字、末端不隐藏 | 改独立 24dp 渐隐层，无溢出/到末端/平板时隐藏 |
+| 9 | 「低风险只读」「默认每次询问」错误 | 改「只新增允许，不重置你已选的」+「敏感能力需单独开启；录屏、安装等个别操作还要系统确认」，并列明推荐的 6 项 |
+| 10 | 浅琥珀在 12% 底纹上仅 4.25:1 | 浅琥珀正文压到 `#8a3e06`（对白 7.57、12% 底纹 6.41），§4 补「底纹按合成底色重算」 |
+| 11 | 设计表个别色值与对比度写错 | 天蓝深色正文改回实际使用值 `#4fa8e0`（6.49），青绿 fill 改 6.49，表与代码一致 |
+| 12 | ready 副标题仍写「开始第一次对话」 | 改「设置已保存，配置模型后即可开始对话」；CTA 改「进入应用，继续配置模型」 |
+| 13 | 完成页「或重新安装」把可恢复故障导向重装 | 改「进入后可在维护里重试；已选设置会保留」 |
+| 14 | lite 态标题写「准备就绪」但环境没装 | 改「界面设置已完成」，下载信息只留一次 |
+| 15 | 四页可选项逼用户逐页研究 | 眉标标「可选，之后可改」，主按钮写「保留当前设置并继续」 |
+| 16 | 普通模式却黄色告警 su/Shizuku | 告警降级为中性说明，选中 Root/Shizuku 才转黄并按选择换文案 |
+| 17 | 窄屏媒体查询被同优先级规则覆盖 | 窄屏规则移到样式末尾并提升优先级，320 实拍复查 |
+| 18 | 横屏底部操作条压住内容 | 加 `@media (max-height:480px)` 底部留白 72dp 并收紧字号 |
+| 19 | 截图脚本只看 DOM 尺寸，未校验 PNG 像素 | 增加 PNG IHDR 校验（= CSS 尺寸 × DPR），修掉 320 曾拍成 642×1280 |
+| 20 | 画廊断言因 `page==null` 不可达 | 断言移出 `page!=null` 分支，独立校验 9 卡、每卡恰好 1 页 |
+| 21 | 原型交互缺失（推荐/开关/计数不联动） | 分组切换、开关、推荐、计数、「第 n/6 组」全部接上事件 |
+
+### 未采纳 / 待决策（需宝宝拍板）
+
+| 项 | 复审建议 | 当前状态与理由 |
+| --- | --- | --- |
+| A | 9 页合并为 7 页（外观+强调色、方向+屏幕合一） | **未采纳**：拆分本身就是为了缩短单页高度、保持「一页一个决定」；若真机计时显示首启过长再合并 |
+| B | 主按钮直接跳模型设置页 | **暂缓**：`OnboardingActivity.kt:1295` 只启动 MainActivity，没有直达模型页的路由；先写「进入应用，继续配置模型」，落地时补路由再改词 |
+| C | ready 未配模型时以「配置模型」为主按钮 | **部分采纳**：主按钮已改「进入应用，继续配置模型」，次按钮「先浏览应用」 |
+| D | 欢迎页再加第 6 行（MCP / 工具链） | **未采纳**：5 行已占满首屏（320 下需滚动），MCP 作技术佐证放「同源引擎」副行即可 |
+| E | 失败态给真正的重试按钮 | **待落地**：需 Android 侧接「维护 → 重试」，超出设计稿范围，已列 §9 |
+
+### 复审覆盖边界
+
+复审为静态分析：读文件、读截图、按 PNG 头与图内取色计算对比度；**未做 Android 构建、未做 TalkBack/触控实测、未做真机首聊路径与首启耗时验证**。因此本稿「已改」只代表设计与原型层面到位，不代表 Android 侧已实现或已验收。
 
 ## 附：截图索引
+
+**设计原型（`docs/ui-preview/shots/onboarding-redesign/`，43 张，由 `shoot-onboarding.mjs` 逐图断言生成）**
 
 - 手机深色：`p0-welcome-dark.png` … `p8-done-dark.png`
 - 手机浅色：`p0-welcome-light.png` … `p8-done-light.png`
 - 平板：`p0-welcome-tablet.png` … `p8-done-tablet.png`
+- 窄屏 320×640：`p0-welcome-small.png` … `p8-done-small.png`
+
+**Android 实机（`docs/ui-preview/shots/onboarding-impl/`，emulator-5556 API 34 x86_64）**
+
+- `cover-preparing.png`：完整包首屏，胶囊「Preparing the runtime… 6%」+ 16dp 转圈
+- `cover-ready.png`：解压完成，转圈消失只留「Runtime is ready」
+- `cover-lite.png`：noruntime 包，胶囊显示下载提示且压成单行
+- `cover-small-640.png`：640×1280 窄屏，胶囊居中不折行
+- `cover-tablet.png`：1230×1710 @density 213，胶囊居中于内容列
+- `cover-landscape.png`：2280×1080 横屏
+- `done-ready.png`：完成页（All set + 状态卡 + 五枚回顾 chip + 双按钮）
+- 横屏 844×390：`p7-caps-landscape.png`
+- 桌面编辑态：`editor-dark.png`（1440×1000，含设计说明面板）
 - 运行四态：`state-preparing.png` / `state-ready.png` / `state-failed.png` / `state-lite.png`
 - 画廊：`gallery-phone-dark.png`

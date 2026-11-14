@@ -71,6 +71,15 @@ import java.io.File
  */
 class LinuxActivity : ThemedActivity() {
 
+    /**
+     * 整屏自绘的 Linux 工作台不跟随界面风格。
+     *
+     * 它的底色、分组卡、状态点全是代码里算出来的（80 处 addView、29 处 getColor），
+     * 配色按「深色工作台」设计 —— 套 Material 3 暖灰会让自绘部分与
+     * `?attr/dshXxx` 部分互相打架。等它的自绘层也改成令牌驱动后再纳入。
+     */
+    override val followsStyle: Boolean get() = false
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var env: LinuxEnvironmentManager
     private lateinit var runner: LinuxContainerRunner

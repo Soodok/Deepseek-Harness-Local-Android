@@ -39,5 +39,26 @@
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dsh.MaterialAlertDialog</item>
+        <item name="dshBg">?attr/colorSurface</item>
+        <item name="dshSurface">?attr/colorSurfaceContainer</item>
+        <item name="dshSurfaceAlt">?attr/colorSurfaceContainerLow</item>
+        <item name="dshSurfaceHigh">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshDialogBg">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshTextPrimary">?attr/colorOnSurface</item>
+        <item name="dshTextSecondary">?attr/colorOnSurfaceVariant</item>
+        <item name="dshTextMuted">?attr/colorOnSurfaceVariant</item>
+        <item name="dshAccent">?attr/colorPrimary</item>
+        <item name="dshAccentSoft">?attr/colorPrimaryContainer</item>
+        <item name="dshOnAccent">?attr/colorOnPrimary</item>
+        <item name="dshDivider">?attr/colorOutlineVariant</item>
+        <item name="dshStroke">?attr/colorOutlineVariant</item>
+        <item name="dshDanger">?attr/colorError</item>
+        <item name="dshSuccess">@color/success</item>
+        <item name="dshWarning">@color/warning</item>
+        <item name="dshIconColor">?attr/colorOnSurfaceVariant</item>
+        <item name="dshBtnRipple">@color/btn_ripple</item>
+        <item name="dshOverlay">@color/overlay</item>
+        <item name="dshIslandText">?attr/colorOnSurfaceVariant</item>
+        <item name="dshIslandAccent">?attr/colorPrimary</item>
     </style>
 </resources>

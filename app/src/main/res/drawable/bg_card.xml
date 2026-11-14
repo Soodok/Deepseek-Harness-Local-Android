@@ -5,9 +5,9 @@
      旧版是 surface 实心 + 1dp 描边 + 18dp，边界清楚。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/surface" />
+    <solid android:color="?attr/dshSurface" />
     <stroke
         android:width="1dp"
-        android:color="@color/stroke" />
+        android:color="?attr/dshStroke" />
     <corners android:radius="18dp" />
 </shape>

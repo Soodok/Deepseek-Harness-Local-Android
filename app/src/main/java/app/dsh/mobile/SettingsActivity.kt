@@ -446,6 +446,7 @@ class SettingsActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) return
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
         refreshUpdateEntrySub()
@@ -703,7 +704,7 @@ class SettingsActivity : ThemedActivity() {
                 RuntimeDownloadConfig.DEFAULT_PROXY,
             )
             textSize = 12f
-            setTextColor(getColor(R.color.text_secondary))
+            setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             setPadding(0, dp(8), 0, 0)
             setLineSpacing(dp(2).toFloat(), 1f)
         }

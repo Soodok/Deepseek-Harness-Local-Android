@@ -211,10 +211,7 @@
     <string name="plugin_engine_old_title">ปลั๊กอินต้องการเอนจินใหม่กว่า</string>
     <string name="plugin_engine_old_force">บังคับติดตั้งเวอร์ชันนี้</string>
     <string name="plugin_build_pending_title">สคริปต์บิลด์ต้องได้รับการอนุมัติ</string>
-    <string name="plugin_build_pending_body">แพ็กเกจเหล่านี้ต้องการรันสคริปต์ติดตั้ง:
-%s
-
-สคริปต์ติดตั้งจะรันโค้ดแบบไม่มีข้อจำกัด</string>
+    <string name="plugin_build_pending_body">แพ็กเกจเหล่านี้ต้องการรันสคริปต์ติดตั้ง:\n%s\n\nสคริปต์ติดตั้งจะรันโค้ดแบบไม่มีข้อจำกัด</string>
     <string name="plugin_build_approve">อนุมัติและลองใหม่</string>
     <string name="plugin_build_approve_btn">อนุมัติการบิลด์</string>
     <string name="plugin_build_approve_failed">ไม่สามารถเขียนการอนุมัติบิลด์ได้</string>
@@ -347,11 +344,7 @@
     <string name="ext_unknown_error">ข้อผิดพลาดที่ไม่รู้จัก</string>
     <string name="app_language">ภาษาของแอป</string>
     <string name="webview_gate_title">WebView ต้องการการอัปเดต</string>
-    <string name="webview_gate_body">กลไกของเบราว์เซอร์บนอุปกรณ์นี้ (Chrome %1$s) เก่าเกินไปสำหรับแอปนี้: อินเทอร์เฟซ AI ต้องใช้ Chrome %2$d+ และนี่เป็นข้อกำหนดระดับไวยากรณ์ที่โพลีฟิลทดแทนไม่ได้ หน้าจะแสดงผลเป็นหน้าว่าง
-
-โปรดอัปเดต Android System WebView จากร้านค้าแอปแล้วเปิดแอปนี้อีกครั้ง
-
-ยังมีอีกสองทาง: เปิดอินเทอร์เฟซในเบราว์เซอร์ปกติ (ใช้งานได้ เพราะการแสดงผลทำที่กลไก เบราว์เซอร์เพียงแสดงหน้าจอ) หรือเลือกดำเนินการต่อหากต้องการลอง</string>
+    <string name="webview_gate_body">กลไกของเบราว์เซอร์บนอุปกรณ์นี้ (Chrome %1$s) เก่าเกินไปสำหรับแอปนี้: อินเทอร์เฟซ AI ต้องใช้ Chrome %2$d+ และนี่เป็นข้อกำหนดระดับไวยากรณ์ที่โพลีฟิลทดแทนไม่ได้ หน้าจะแสดงผลเป็นหน้าว่าง\n\nโปรดอัปเดต Android System WebView จากร้านค้าแอปแล้วเปิดแอปนี้อีกครั้ง\n\nยังมีอีกสองทาง: เปิดอินเทอร์เฟซในเบราว์เซอร์ปกติ (ใช้งานได้ เพราะการแสดงผลทำที่กลไก เบราว์เซอร์เพียงแสดงหน้าจอ) หรือเลือกดำเนินการต่อหากต้องการลอง</string>
     <string name="webview_gate_update">วิธีการอัพเดต</string>
     <string name="webview_gate_continue">ดำเนินการต่อต่อไป</string>
     <string name="webview_gate_open_browser">เปิดในเบราว์เซอร์</string>
@@ -876,9 +869,7 @@
     <string name="pet_lines_cat_ws_error">สถานะงาน · ผิดพลาด</string>
     <string name="about_runtime">รันไทม์</string>
     <string name="runtime_setup_title">ต้องติดตั้งรันไทม์ก่อนดำเนินการต่อ</string>
-    <string name="runtime_setup_message">แพ็กเกจนี้ไม่มี Node.js รันไทม์ หากไม่มีเอนจินจะเริ่มไม่ได้
-
-ดาวน์โหลด %1$s ทันที (แนะนำ Wi-Fi) ขั้นตอนนี้จำเป็นและข้ามไม่ได้ การอัปเดตครั้งต่อไปจะไม่ดาวน์โหลดซ้ำ</string>
+    <string name="runtime_setup_message">แพ็กเกจนี้ไม่มี Node.js รันไทม์ หากไม่มีเอนจินจะเริ่มไม่ได้\n\nดาวน์โหลด %1$s ทันที (แนะนำ Wi-Fi) ขั้นตอนนี้จำเป็นและข้ามไม่ได้ การอัปเดตครั้งต่อไปจะไม่ดาวน์โหลดซ้ำ</string>
     <string name="runtime_setup_download">ดาวน์โหลดและเริ่ม</string>
     <string name="runtime_setup_full">ใช้แพ็กเกจเต็มแทน</string>
     <string name="about_runtime_idle">ตรวจสอบการอัปเดตรันไทม์</string>
@@ -1058,18 +1049,8 @@
     <string name="action_reset">รีเซ็ต</string>
     <string name="action_choose_backup">เลือกไฟล์สำรอง</string>
     <string name="action_restart_now">รีสตาร์ทตอนนี้</string>
-    <string name="deep_clean_confirm_body">นี่จะลบ %1$s ของแคชและเศษปลั๊กอิน; จะสร้างใหม่ในครั้งถัดไปที่เริ่มต้น
-
-เก็บไว้: ข้อมูลรับรอง API, เซสชัน, พื้นที่ทำงาน, การตั้งค่าปลั๊กอิน, กุญแจ SSH</string>
-    <string name="reset_home_confirm_body">นี่จะลบทุกอย่างใน dsh-home (%1$s):
-
-- ข้อมูลรับรอง API (คุณจะต้องลงชื่อเข้าใช้ใหม่)
-- เซสชันและพื้นที่ทำงานทั้งหมด
-- การตั้งค่าปลั๊กอิน
-- กุญแจ SSH
-
-แอปและรันไทม์เอนจินจะถูกเก็บไว้ จึงไม่ต้องดาวน์โหลดใหม่
-จะเขียนสำรองข้อมูลก่อน</string>
+    <string name="deep_clean_confirm_body">นี่จะลบ %1$s ของแคชและเศษปลั๊กอิน; จะสร้างใหม่ในครั้งถัดไปที่เริ่มต้น\n\nเก็บไว้: ข้อมูลรับรอง API, เซสชัน, พื้นที่ทำงาน, การตั้งค่าปลั๊กอิน, กุญแจ SSH</string>
+    <string name="reset_home_confirm_body">นี่จะลบทุกอย่างใน dsh-home (%1$s):\n\n- ข้อมูลรับรอง API (คุณจะต้องลงชื่อเข้าใช้ใหม่)\n- เซสชันและพื้นที่ทำงานทั้งหมด\n- การตั้งค่าปลั๊กอิน\n- กุญแจ SSH\n\nแอปและรันไทม์เอนจินจะถูกเก็บไว้ จึงไม่ต้องดาวน์โหลดใหม่\nจะเขียนสำรองข้อมูลก่อน</string>
     <string name="reset_final_title">รีเซ็ตเสร็จสิ้น</string>
     <string name="reset_final_body">หน้าแรกถูกรีเซ็ตแล้ว เอนจินจะรีสตาร์ทเพื่อโหลดค่าเริ่มต้น</string>
     <string name="reset_type_hint">พิมพ์ "ยืนยัน" เพื่อดำเนินการต่อ</string>
@@ -1078,11 +1059,7 @@
     <string name="backup_progress">กำลังสำรองข้อมูล: %1$s เขียนแล้ว</string>
     <string name="backup_unavailable">ไม่สามารถเปิดตำแหน่งบันทึกได้: %1$s</string>
     <string name="backup_failed_title">สำรองข้อมูลล้มเหลว</string>
-    <string name="backup_failed_body">ไม่มีอะไรถูกลบเลย
-
-%1$s
-
-ใช้โฟลเดอร์ในเครื่อง (ไม่ใช่ผู้ให้บริการคลาวด์) แล้วลองใหม่</string>
+    <string name="backup_failed_body">ไม่มีอะไรถูกลบเลย\n\n%1$s\n\nใช้โฟลเดอร์ในเครื่อง (ไม่ใช่ผู้ให้บริการคลาวด์) แล้วลองใหม่</string>
     <string name="clean_running">กำลังทำความสะอาด…</string>
     <string name="clean_done_title">ทำความสะอาดเสร็จสิ้น</string>
     <string name="clean_partial_title">ทำความสะอาดบางส่วน</string>
@@ -1193,9 +1170,7 @@
     <string name="perm_list_granted_one">ให้สิทธิ์แล้ว</string>
     <string name="perm_list_grant_failed">ยังไม่ได้ — ระบบปฏิเสธ</string>
     <string name="perm_list_revoke_title">เพิกถอนสิทธิ์</string>
-    <string name="perm_list_revoke_msg">เพิกถอน %1$s?
-
-ระบบจะรีสตาร์ทแอปเพื่อโหลดตารางกลุ่มใหม่ — เป็นเรื่องปกติ ไม่ใช่การแครช</string>
+    <string name="perm_list_revoke_msg">เพิกถอน %1$s?\n\nระบบจะรีสตาร์ทแอปเพื่อโหลดตารางกลุ่มใหม่ — เป็นเรื่องปกติ ไม่ใช่การแครช</string>
     <string name="perm_list_revoke">เพิกถอน</string>
     <string name="perm_list_revoked">เพิกถอนแล้ว</string>
     <string name="perm_list_no_channel">ไม่มีช่องทางสิทธิ์พิเศษ — เชื่อม Shizuku หรือให้ root ก่อน</string>
@@ -1228,14 +1203,13 @@
     <string name="ob_wizard_accent_title">สีเน้น</string>
     <string name="ob_wizard_accent_desc">ใช้กับปุ่ม ไฮไลต์ และข้อความสถานะ</string>
     <string name="ob_wizard_priv_title">โหมดการทำงาน</string>
-    <string name="ob_wizard_priv_desc">กำหนดสิ่งที่ AI เข้าถึงได้ แนะนำโหมดปกติ</string>
     <string name="ob_wizard_done_title">พร้อมแล้ว</string>
     <string name="ob_wizard_done_desc">บันทึกตัวเลือกของคุณแล้ว แตะด้านล่างเพื่อเริ่ม</string>
     <string name="ob_rt_preparing">กำลังแตกไฟล์สภาพแวดล้อมการรัน…</string>
     <string name="ob_rt_pct">กำลังแตกไฟล์สภาพแวดล้อมการรัน… %1$d%%</string>
     <string name="ob_rt_ready">สภาพแวดล้อมการรันพร้อมแล้ว</string>
     <string name="ob_rt_failed">การเตรียมสภาพแวดล้อมไม่เสร็จสิ้น — ลองใหม่ได้ที่ «การบำรุงรักษา» หลังเข้าแอป</string>
-    <string name="ob_rt_download">แพ็กเกจแบบเบา: เลือกดาวน์โหลดสภาพแวดล้อมหลังแนะนำการใช้งาน</string>
+    <string name="ob_rt_download">แพ็กเกจแบบเบา · ดาวน์โหลดสภาพแวดล้อมหลังแนะนำการใช้งาน</string>
     <string name="ob_wizard_back">ย้อนกลับ</string>
     <string name="ob_wizard_next">ถัดไป</string>
     <string name="ob_wizard_start">เริ่มใช้งาน</string>
@@ -1273,6 +1247,67 @@
     <string name="ob_wizard_cap_desc">เลือกขอบเขตที่ AI เข้าถึงได้ เปลี่ยนภายหลังได้ที่ ตั้งค่า → สิทธิ์</string>
     <string name="ob_wizard_cap_recommend">แนะนำ</string>
     <string name="ob_wizard_cap_recommended">เปิดสิทธิ์อ่านที่มีความเสี่ยงต่ำแล้ว</string>
+    <string name="ob_wizard_welcome_eyebrow">DEEPSEEK HARNESS · พอร์ตเต็มรูปแบบ</string>
+    <string name="ob_wizard_welcome_title">DeepSeek Harness ฉบับเต็ม\nอยู่ในมือถือของคุณแล้ว</string>
+    <string name="ob_wizard_welcome_lede">โคลนรีโป สร้างโปรเจกต์ รันเทสต์ คอมมิตโค้ด และอ่านหน้าจอ แตะ พิมพ์ได้ เอนจินและเครื่องมือทำงานบนมือถือ</string>
+    <string name="ob_wizard_welcome_prereq">รันไทม์มาพร้อมแพ็กเกจ ส่วนโมเดลและ API key ตั้งค่าภายในแอป</string>
+    <string name="ob_wizard_welcome_cover_label">ยินดีต้อนรับ</string>
+    <string name="ob_wizard_mode_title">โหมดการทำงาน</string>
+    <string name="ob_wizard_welcome_step_hint">ตั้งค่าประมาณ 30 วินาที รันไทม์แตกไฟล์เบื้องหลัง</string>
+    <string name="ob_wizard_next_keep">คงค่าเดิมแล้วไปต่อ</string>
+    <string name="ob_done_summary_scale">สเกล %1$d%%</string>
+    <string name="ob_wizard_welcome_start">เริ่มตั้งค่า · ราว 30 วินาที</string>
+    <string name="ob_wizard_welcome_f1">เอนจินเดียวกัน</string>
+    <string name="ob_wizard_welcome_f1_sub">เอนจิน เครื่องมือ และกลไกปลั๊กอินของ DSH เดสก์ท็อป</string>
+    <string name="ob_wizard_welcome_f2">เวิร์กโฟลว์ระดับคอมพิวเตอร์</string>
+    <string name="ob_wizard_welcome_f2_sub">Node.js แท้และเทอร์มินัลจริง คำสั่งรันบนมือถือ</string>
+    <string name="ob_wizard_welcome_f3">คอนเทนเนอร์ลินุกซ์ของเราเอง</string>
+    <string name="ob_wizard_welcome_f3_sub">ยูสเซอร์แลนด์ Alpine ติดตั้งซอฟต์แวร์ลินุกซ์และทูลเชนเมื่อต้องใช้</string>
+    <string name="ob_wizard_welcome_f4">ควบคุมมือถือ</string>
+    <string name="ob_wizard_welcome_f4_sub">อ่านหน้าจอ แตะ พิมพ์ หยุดได้ทุกเมื่อ</string>
+    <string name="ob_wizard_welcome_f5">ทำงานร่วมกับคอมพิวเตอร์</string>
+    <string name="ob_wizard_welcome_f5_sub">เมื่อจับคู่แล้ว คอมพิวเตอร์ใช้หน้าจอ กล้อง และคอนเทนเนอร์ของมือถือนี้ได้</string>
+    <string name="ob_wizard_mode_desc">AI เข้าถึงระบบได้ลึกแค่ไหน โหมดปกติเหมาะกับคนส่วนใหญ่</string>
+    <string name="ob_wizard_mode_footnote">เปลี่ยนโหมดได้ทุกเมื่อ Root ต้องยืนยันสองครั้ง และแสดงโหมดปัจจุบันในหน้าข้อมูลแอป</string>
+    <string name="ob_mode_note_normal">โหมดปกติไม่ต้องเตรียมอะไร Root และ Shizuku เป็นตัวเลือกขั้นสูง เปิดภายหลังได้ในการตั้งค่า</string>
+    <string name="ob_mode_note_shizuku_absent">Shizuku ไม่ได้ทำงาน เริ่มบริการก่อน โหมดปกติไม่ได้รับผลกระทบ</string>
+    <string name="ob_mode_note_shizuku_present">Shizuku ยังไม่ได้อนุญาต อนุญาตในกล่องของ Shizuku โหมดปกติยังใช้ได้โดยไม่ต้องมี</string>
+    <string name="ob_mode_note_root_absent">ไม่พบ su จึงใช้ Root ไม่ได้ เปิดภายหลังได้ในการตั้งค่า</string>
+    <string name="ob_mode_note_root_present">พบ su: ใช้ Root ได้ ทั้งเอนจินจะเริ่มแบบ root และอ่าน/เขียนไฟล์ได้ทั้งหมด</string>
+    <string name="ob_wizard_caps_title">สิ่งที่ AI เข้าถึงได้</string>
+    <string name="ob_wizard_caps_desc">เปิดเท่าที่คุณอนุญาต ปิดหมดก็ยังคุยได้ แค่ไม่เห็นและแตะไม่ได้</string>
+    <string name="ob_caps_pos_fmt">กลุ่ม %1$d จาก %2$d</string>
+    <string name="ob_caps_total_fmt">อนุญาต %1$d จาก %2$d รายการ</string>
+    <string name="ob_caps_chip_fmt">%1$d/%2$d</string>
+    <string name="ob_caps_recommend">เปิด 6 รายการที่แนะนำ</string>
+    <string name="ob_caps_recommend_hint">แนะนำ: สถานะเครื่อง เซนเซอร์ คลิปบอร์ด ควบคุมเครื่อง แจ้งเตือน และส่งการแจ้งเตือน เพิ่มสิทธิ์เท่านั้น ไม่รีเซ็ตที่คุณเลือก</string>
+    <string name="ob_caps_note">ความสามารถอ่อนไหวต้องเปิดแยก การบันทึกหน้าจอและการติดตั้งยังต้องยืนยันกับระบบทุกครั้ง แก้ภายหลังได้ที่การตั้งค่า → สิทธิ์</string>
+    <string name="ob_caps_recommended_toast">เปิด 6 รายการที่แนะนำแล้ว ตัวเลือกอื่นยังคงอยู่</string>
+    <string name="ob_caps_domain_env">เครื่องและสภาพแวดล้อม</string>
+    <string name="ob_caps_domain_notify">แจ้งเตือนและสื่อ</string>
+    <string name="ob_caps_domain_control">ควบคุมเครื่อง</string>
+    <string name="ob_caps_domain_personal">ข้อมูลส่วนตัว</string>
+    <string name="ob_caps_domain_input">บันทึกและตรวจจับ</string>
+    <string name="ob_caps_domain_system">แอปและคอนเทนเนอร์</string>
+    <string name="ob_done_head_ready">พร้อมแล้ว</string>
+    <string name="ob_done_head_preparing">กำลังเตรียม</string>
+    <string name="ob_done_head_failed">เหลืออีกขั้น</string>
+    <string name="ob_done_head_lite">ตั้งค่าเสร็จแล้ว</string>
+    <string name="ob_done_sub_ready">บันทึกแล้ว เพิ่มโมเดลและ API key แล้วจึงเริ่มคุยได้</string>
+    <string name="ob_done_sub_preparing">ระหว่างนี้ดูเนื้อหาไปก่อนได้ เสร็จแล้วจะพร้อมเอง</string>
+    <string name="ob_done_sub_failed">เข้าไปได้และลองใหม่ที่ส่วนบำรุงรักษา ตัวเลือกที่เลือกไว้ยังอยู่</string>
+    <string name="ob_done_sub_lite">ตั้งค่าหน้าจอเสร็จแล้ว แพ็กเกจแบบเบาไม่มีเอนจินจนกว่าจะดาวน์โหลด</string>
+    <string name="ob_done_rt_sub_preparing">ความคืบหน้าดำเนินต่อเบื้องหลัง</string>
+    <string name="ob_done_rt_sub_ready">เอนจินเริ่มทำงานราว 2 วินาที</string>
+    <string name="ob_done_rt_sub_failed">เข้าแล้วลองใหม่ได้ที่ส่วนบำรุงรักษา</string>
+    <string name="ob_done_rt_sub_lite">เข้าแล้วเลือกว่าจะดาวน์โหลด (ราว 130 MB)</string>
+    <string name="ob_done_next_title">อีกอย่าง: โมเดลและ API key</string>
+    <string name="ob_done_next_sub">ในแอป ไปที่การตั้งค่า → โมเดล กรอกแล้วจึงเริ่มคุยได้</string>
+    <string name="ob_done_cta_ready">เข้าแอป ตั้งค่าต่อ</string>
+    <string name="ob_done_cta_preparing">เข้าไปก่อน เตรียมต่อเบื้องหลัง</string>
+    <string name="ob_done_cta_failed">เข้าแล้วลองใหม่ในส่วนบำรุงรักษา</string>
+    <string name="ob_done_cta_lite">เข้าแอป · ดาวน์โหลดภายหลัง</string>
+    <string name="ob_done_browse">ดูก่อน</string>
     <string name="sensitive_kind_calendar">ปฏิทิน</string>
     <string name="sensitive_kind_contacts">รายชื่อ</string>
     <string name="sensitive_kind_sms">ข้อความ SMS</string>
@@ -1288,8 +1323,7 @@
     <string name="sensitive_audit_title">AI อ่าน%1$sของคุณ</string>
     <string name="sensitive_audit_detail">%1$d %2$s</string>
     <string name="sensitive_audit_detail_plain">เมื่อสักครู่</string>
-    <string name="sensitive_audit_body">%1$s
-หากไม่ต้องการ ให้ปิดสวิตช์%2$sในศูนย์สิทธิ์</string>
+    <string name="sensitive_audit_body">%1$s\nหากไม่ต้องการ ให้ปิดสวิตช์%2$sในศูนย์สิทธิ์</string>
     <string name="personal_cap_disabled_hint">เปิดรายการนี้ในศูนย์สิทธิ์ → ความสามารถอุปกรณ์ของ AI สวิตช์ข้อมูลส่วนบุคคลทั้งสี่แยกอนุญาตกัน</string>
     <string name="setting_bg_control_alpha">ความทึบของการ์ด</string>
     <string name="setting_bg_control_alpha_sub">ความทึบของการ์ดที่วางทับภาพพื้นหลัง</string>
@@ -1365,28 +1399,18 @@
     <string name="ext_linux_installing">กำลังติดตั้ง %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">กำลังติดตั้ง %1$d แพ็กเกจ…</string>
         <string name="ext_linux_check_none">ยังไม่ได้ติดตั้งส่วนขยายใด ๆ ในคอนเทนเนอร์นี้</string>
-    <string name="ext_linux_check_summary">ติดตั้งแล้ว %1$d รายการในคอนเทนเนอร์: พร้อมใช้ %2$d, ไม่สมบูรณ์ %3$d
-
-%4$s</string>
+    <string name="ext_linux_check_summary">ติดตั้งแล้ว %1$d รายการในคอนเทนเนอร์: พร้อมใช้ %2$d, ไม่สมบูรณ์ %3$d\n\n%4$s</string>
     <string name="ext_linux_repair_none">ไม่มีแพ็กเกจที่ติดตั้งไม่สมบูรณ์ ✓</string>
-    <string name="ext_linux_partial_note">แพ็กเกจเหล่านี้ไม่มีในคอนเทนเนอร์นี้: %1$s
-
-ติดตั้งส่วนที่เหลือต่อหรือไม่</string>
+    <string name="ext_linux_partial_note">แพ็กเกจเหล่านี้ไม่มีในคอนเทนเนอร์นี้: %1$s\n\nติดตั้งส่วนที่เหลือต่อหรือไม่</string>
     <string name="ext_linux_partial_tag">ขาด %1$s</string>
 
     <string name="ext_linux_install_done">ติดตั้ง %1$s แล้ว</string>
     <string name="ext_linux_removing">กำลังถอนการติดตั้ง %1$s…</string>
-    <string name="ext_linux_uninstall_msg">ลบแพ็กเกจเหล่านี้ออกจากคอนเทนเนอร์หรือไม่?
-
-%1$s</string>
-    <string name="ext_linux_reinstall_msg">ติดตั้ง %1$s ใหม่หรือไม่?
-
-แพ็กเกจ: %2$s</string>
+    <string name="ext_linux_uninstall_msg">ลบแพ็กเกจเหล่านี้ออกจากคอนเทนเนอร์หรือไม่?\n\n%1$s</string>
+    <string name="ext_linux_reinstall_msg">ติดตั้ง %1$s ใหม่หรือไม่?\n\nแพ็กเกจ: %2$s</string>
 
     <string name="degraded_title">เอนจินทำงานอยู่ แต่ขาดความสามารถบางอย่าง</string>
-    <string name="degraded_body">มี %1$d ความสามารถที่ใช้ไม่ได้ เพราะปลั๊กอินโหลดไม่สำเร็จ:
-
-%2$s</string>
+    <string name="degraded_body">มี %1$d ความสามารถที่ใช้ไม่ได้ เพราะปลั๊กอินโหลดไม่สำเร็จ:\n\n%2$s</string>
     <string name="degraded_open_maintenance">เปิดหน้าบำรุงรักษา</string>
     <string name="status_degraded">เอนจินลดประสิทธิภาพ · ขาด %1$d รายการ</string>
 
@@ -1450,12 +1474,7 @@
     <string name="ext_linux_action_remove">ลบออก</string>
     <string name="ext_linux_action_unavailable">ไม่มี</string>
     <string name="ext_version_default">เวอร์ชันเริ่มต้น</string>
-    <string name="ext_version_switch_msg">คอนเทนเนอร์เก็บส่วนขยายนี้ได้ทีละเวอร์ชันเท่านั้น
-
-ติดตั้งอยู่: %2$s
-คุณเลือก: %1$s
-
-ลบเวอร์ชันที่ติดตั้งอยู่ก่อน แล้วค่อยเปลี่ยนมาใช้เวอร์ชันนี้หรือไม่</string>
+    <string name="ext_version_switch_msg">คอนเทนเนอร์เก็บส่วนขยายนี้ได้ทีละเวอร์ชันเท่านั้น\n\nติดตั้งอยู่: %2$s\nคุณเลือก: %1$s\n\nลบเวอร์ชันที่ติดตั้งอยู่ก่อน แล้วค่อยเปลี่ยนมาใช้เวอร์ชันนี้หรือไม่</string>
     <string name="ext_version_switch_go">ลบ %1$s</string>
 
     <string name="ext_linux_install_failed">ติดตั้งล้มเหลว: %1$s</string>
@@ -1650,9 +1669,7 @@
     <string name="asr_local_need_install">กรุณาติดตั้งตัวรู้จำก่อน</string>
     <string name="setting_linux_ssh">สภาพแวดล้อม SSH</string>
     <string name="setting_linux_ssh_sub">ให้ PC เชื่อมต่อเข้าคอนเทนเนอร์ Linux ด้วย SSH มาตรฐาน</string>
-    <string name="linux_ssh_consent">การเปิดจะเปิดพอร์ต 2222 และรันเซิร์ฟเวอร์ SSH ในแอป ผู้ที่อยู่ใน Wi-Fi เดียวกันและรู้รหัสผ่านจะสามารถรันคำสั่งในคอนเทนเนอร์ Linux ได้
-
-เปิดเฉพาะเครือข่ายที่เชื่อถือได้ และปิดเมื่อใช้เสร็จ</string>
+    <string name="linux_ssh_consent">การเปิดจะเปิดพอร์ต 2222 และรันเซิร์ฟเวอร์ SSH ในแอป ผู้ที่อยู่ใน Wi-Fi เดียวกันและรู้รหัสผ่านจะสามารถรันคำสั่งในคอนเทนเนอร์ Linux ได้\n\nเปิดเฉพาะเครือข่ายที่เชื่อถือได้ และปิดเมื่อใช้เสร็จ</string>
     <string name="linux_ssh_need_password">ตั้งรหัสผ่านก่อน พอร์ตจะไม่เปิดหากยังไม่มี</string>
     <string name="linux_ssh_set_password">ตั้งรหัสผ่าน</string>
     <string name="linux_ssh_save">บันทึก</string>
@@ -1739,11 +1756,7 @@
     <string name="a11y_voice_sub">เรียกจากไมโครโฟนบนหน้าต่างลอย รองรับการรู้จำของระบบหรือคลาวด์</string>
     <string name="a11y_row_safety">ขอบเขตความปลอดภัย</string>
     <string name="a11y_safety_sub">หน้าของระบบอ่านอย่างเดียว เลขบัตรถูกปิดบัง การแตะที่เสี่ยงจะถามก่อน</string>
-    <string name="a11y_safety_body">หน้าสิทธิและความปลอดภัยของระบบอ่านอย่างเดียว: อ่านได้ แต่จะไม่แตะเลย
-
-เลขบัตรประชาชนและบัตรเครดิตจะถูกปิดบังก่อนส่งไปยังโมเดล
-
-แถวที่มีส่ง / ชำระ / ลบ / อนุญาต จะถูกทำเครื่องหมาย และการแตะอัตโนมัติจะข้ามไปเสมอ</string>
+    <string name="a11y_safety_body">หน้าสิทธิและความปลอดภัยของระบบอ่านอย่างเดียว: อ่านได้ แต่จะไม่แตะเลย\n\nเลขบัตรประชาชนและบัตรเครดิตจะถูกปิดบังก่อนส่งไปยังโมเดล\n\nแถวที่มีส่ง / ชำระ / ลบ / อนุญาต จะถูกทำเครื่องหมาย และการแตะอัตโนมัติจะข้ามไปเสมอ</string>
     <string name="a11y_need_service">ต้องเปิดบริการการช่วยการเข้าถึงก่อน</string>
     <string name="tts_test_sub">แตะเพื่อฟังตัวอย่าง หากไม่มีเอนจินจะแสดงสาเหตุที่นี่</string>
     <string name="tts_test_sample">ระบบสังเคราะห์เสียงพร้อมใช้งาน</string>
@@ -1885,4 +1898,9 @@
     <string name="peersync_saved">บันทึกแล้ว</string>
     <string name="peersync_invalid_port">พอร์ตต้องอยู่ระหว่าง 1–65535</string>
 
+    <string name="style_title">สไตล์อินเทอร์เฟซ</string>
+    <string name="style_sub_material">Material 3 · เทาอุ่นคู่สีเขียวน้ำเงิน</string>
+    <string name="style_sub_classic">คลาสสิก · เทาฟ้าโทนเย็น</string>
+    <string name="style_classic">คลาสสิก</string>
+    <string name="style_material">Material 3</string>
 </resources>

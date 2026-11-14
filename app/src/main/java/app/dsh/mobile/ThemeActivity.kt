@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.TextView
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.radiobutton.MaterialRadioButton
 
@@ -31,6 +33,7 @@ class ThemeActivity : ThemedActivity() {
 
         findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
+        setupStyle()
         paletteSelector = ThemePaletteSelector(
             this, ThemeAccent.selected(this), ThemeAccent.dynamicSupported,
         ) { id ->
@@ -47,6 +50,26 @@ class ThemeActivity : ThemedActivity() {
         super.onResume()
         OrientationPrefs.applyToSettingsPage(this)
         refresh()
+    }
+
+    private fun setupStyle() {
+        val group = findViewById<MaterialButtonToggleGroup>(R.id.groupStyle)
+        val sub = findViewById<TextView>(R.id.subStyle)
+        fun describe(style: StylePref.Style) = getString(
+            if (style == StylePref.Style.MATERIAL) R.string.style_sub_material else R.string.style_sub_classic,
+        )
+        val current = StylePref.style(this)
+        group.check(if (current == StylePref.Style.MATERIAL) R.id.btnStyleMaterial else R.id.btnStyleClassic)
+        sub.text = describe(current)
+        group.addOnButtonCheckedListener { _, checkedId, checked ->
+            if (checked) {
+                val wanted = if (checkedId == R.id.btnStyleMaterial) StylePref.Style.MATERIAL else StylePref.Style.CLASSIC
+                if (wanted != StylePref.style(this)) {
+                    StylePref.setStyle(this, wanted)
+                    recreate()
+                }
+            }
+        }
     }
 
     // ---------------------------------------------------------------- 外观模式

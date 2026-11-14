@@ -32,7 +32,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/peersync_host" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtHost" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/peersync_not_set" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="2" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
 
                 <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content" />
@@ -42,7 +42,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/peersync_port" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtPort" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/peersync_port_default" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
 
                 <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content" />
@@ -52,7 +52,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/peersync_password" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtPassword" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/peersync_not_set" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="2" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -66,7 +66,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/peersync_direction" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtDirection" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/peersync_direction_both" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
                 <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content" />
                 <LinearLayout android:id="@+id/rowConflict" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground" android:clickable="true" android:focusable="true">
@@ -75,7 +75,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/peersync_conflict" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtConflict" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/peersync_conflict_backup_newer" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

@@ -209,15 +209,9 @@
     <string name="plugin_failed">Falha: %1$s</string>
     <string name="plugin_checking">Verificando…</string>
     <string name="plugin_native_title">Este plugin requer código nativo</string>
-    <string name="plugin_native_body">Ele declara etapas de compilação ou módulos nativos:
-
-%1$s
-
-No Android, em geral não é possível compilá-los (os cabeçalhos do conjunto de ferramentas não estão nos caminhos esperados), então o plugin pode ser instalado, mas não funcionar. Instalar mesmo assim?</string>
+    <string name="plugin_native_body">Ele declara etapas de compilação ou módulos nativos:\n\n%1$s\n\nNo Android, em geral não é possível compilá-los (os cabeçalhos do conjunto de ferramentas não estão nos caminhos esperados), então o plugin pode ser instalado, mas não funcionar. Instalar mesmo assim?</string>
     <string name="plugin_check_unknown_title">Não foi possível verificar este plugin</string>
-    <string name="plugin_check_unknown_body">A consulta ao registro falhou (%1$s), então a compatibilidade é desconhecida. Se ele precisar de módulos nativos, talvez não funcione no Android.
-
-Instalar mesmo assim?</string>
+    <string name="plugin_check_unknown_body">A consulta ao registro falhou (%1$s), então a compatibilidade é desconhecida. Se ele precisar de módulos nativos, talvez não funcione no Android.\n\nInstalar mesmo assim?</string>
     <string name="plugin_install_anyway">Instalar mesmo assim</string>
     <string name="download_started">Download iniciado: %1$s</string>
     <string name="download_failed">Falha no download: %1$s</string>
@@ -261,23 +255,15 @@ Instalar mesmo assim?</string>
     <string name="ext_tool_repair">Reparar</string>
     <string name="ext_check_title">Verificação da integridade das extensões</string>
     <string name="ext_check_all_ok">%1$d extensão(ões) instalada(s), todas íntegras ✓</string>
-    <string name="ext_check_summary">%1$d instaladas: %2$d íntegras, %3$d com falha
-
-%4$s</string>
+    <string name="ext_check_summary">%1$d instaladas: %2$d íntegras, %3$d com falha\n\n%4$s</string>
     <string name="ext_check_none">Nenhuma extensão instalada ainda</string>
     <string name="ext_install_all_title">Instalar todas as extensões</string>
-    <string name="ext_install_all_msg">Isso baixa e instala %1$d extensão(ões) que ainda não estão instaladas (incluindo todas as dependências; o tamanho total varia conforme a extensão).
-
-A instalação ocorre em segundo plano — você pode sair desta página. As novas extensões serão incluídas no PATH após reiniciar o motor.</string>
+    <string name="ext_install_all_msg">Isso baixa e instala %1$d extensão(ões) que ainda não estão instaladas (incluindo todas as dependências; o tamanho total varia conforme a extensão).\n\nA instalação ocorre em segundo plano — você pode sair desta página. As novas extensões serão incluídas no PATH após reiniciar o motor.</string>
     <string name="ext_install_all_go">Começar instalação</string>
     <string name="ext_install_all_none">Nada para instalar — tudo já está instalado</string>
     <string name="ext_install_all_started">%1$d extensão(ões) adicionada(s) à fila; baixando em segundo plano</string>
     <string name="ext_repair_title">Reparar extensões com falha</string>
-    <string name="ext_repair_msg">%1$d extensão(ões) com falha encontrada(s):
-
-%2$s
-
-Elas serão baixadas e instaladas novamente (incluindo todas as dependências). Se aparecer um erro de \"permissão residual\", conceda su uma vez e tente novamente.</string>
+    <string name="ext_repair_msg">%1$d extensão(ões) com falha encontrada(s):\n\n%2$s\n\nElas serão baixadas e instaladas novamente (incluindo todas as dependências). Se aparecer um erro de \"permissão residual\", conceda su uma vez e tente novamente.</string>
     <string name="ext_repair_go">Reparar</string>
     <string name="ext_repair_none">Nenhuma extensão com falha detectada ✓</string>
     <string name="ext_repair_started">Reparo de %1$d extensão(ões) adicionado à fila</string>
@@ -325,11 +311,7 @@ Elas serão baixadas e instaladas novamente (incluindo todas as dependências). 
     <string name="ext_unknown_error">Erro desconhecido</string>
     <string name="app_language">Idioma do app</string>
     <string name="webview_gate_title">O WebView precisa ser atualizado</string>
-    <string name="webview_gate_body">O mecanismo de navegador deste dispositivo (Chrome %1$s) é antigo demais para este app: a interface de IA requer o Chrome %2$d+, e esse é um requisito de nível de sintaxe que nenhum polyfill consegue cobrir. A página ficaria em branco.
-
-Atualize o Android System WebView pela loja de aplicativos e abra este app novamente.
-
-Mais duas opções: abrir a interface no navegador comum (funciona, a renderização é feita pelo motor e o navegador serve apenas de tela) ou continuar mesmo assim, se quiser tentar.</string>
+    <string name="webview_gate_body">O mecanismo de navegador deste dispositivo (Chrome %1$s) é antigo demais para este app: a interface de IA requer o Chrome %2$d+, e esse é um requisito de nível de sintaxe que nenhum polyfill consegue cobrir. A página ficaria em branco.\n\nAtualize o Android System WebView pela loja de aplicativos e abra este app novamente.\n\nMais duas opções: abrir a interface no navegador comum (funciona, a renderização é feita pelo motor e o navegador serve apenas de tela) ou continuar mesmo assim, se quiser tentar.</string>
     <string name="webview_gate_update">Como atualizar</string>
     <string name="webview_gate_continue">Continuar mesmo assim</string>
     <string name="webview_gate_open_browser">Abrir no navegador</string>
@@ -452,12 +434,9 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="asr_help_body_2">O Android só oferece reconhecimento de fala quando há um reconhecedor instalado no dispositivo. Muitos celulares (especialmente com ROMs chinesas) vêm sem um, então a entrada de voz simplesmente não funciona.</string>
     <string name="asr_help_body_3">Duas maneiras de resolver:</string>
     <string name="asr_help_body_4">A) Instale um app de reconhecimento local — ele se registra como um serviço de reconhecimento do sistema, e este app o usa automaticamente. Não é necessário preencher nada aqui. Recomendados (todos verificados quanto à declaração de android.speech.RecognitionService):</string>
-    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard
-    F-Droid, ativo. Importe vosk-model-cn-0.22 (~1.3GB) para um chinês muito melhor.</string>
-    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME
-    F-Droid, ativo. Whisper multilíngue (~435MB), bom para chinês.</string>
-    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus
-    Versão ONNX mais rápida, atualizada com mais frequência.</string>
+    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard\nF-Droid, ativo. Importe vosk-model-cn-0.22 (~1.3GB) para um chinês muito melhor.</string>
+    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME\nF-Droid, ativo. Whisper multilíngue (~435MB), bom para chinês.</string>
+    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus\nVersão ONNX mais rápida, atualizada com mais frequência.</string>
     <string name="asr_help_body_8">Depois, selecione-o em Configurações &gt; Sistema &gt; Idiomas &amp; entrada &gt; Entrada de voz.</string>
     <string name="asr_help_body_9">B) Use um serviço de ASR na nuvem — cole abaixo o endpoint de transcrição compatível com OpenAI, o nome do modelo e a chave de API. Provedores com planos gratuitos: SiliconFlow (siliconflow.cn), Groq (groq.com), Alibaba DashScope, Zhipu BigModel, Volcengine Ark ou seu próprio servidor (whisper.cpp).</string>
     <string name="asr_help_body_10">Deixe os campos vazios para usar somente o reconhecedor do sistema.</string>
@@ -759,9 +738,7 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="pet_error_no_permission">Falta a permissão de sobreposição</string>
     <string name="about_runtime">Ambiente de execução</string>
     <string name="runtime_setup_title">Runtime necessária para continuar</string>
-    <string name="runtime_setup_message">Esta versão não inclui o runtime do Node.js; sem ele o motor não inicia.
-
-Baixe %1$s agora (recomendado Wi-Fi). Esta etapa é obrigatória e não pode ser ignorada. Atualizações futuras não baixam de novo.</string>
+    <string name="runtime_setup_message">Esta versão não inclui o runtime do Node.js; sem ele o motor não inicia.\n\nBaixe %1$s agora (recomendado Wi-Fi). Esta etapa é obrigatória e não pode ser ignorada. Atualizações futuras não baixam de novo.</string>
     <string name="runtime_setup_download">Baixar e iniciar</string>
     <string name="runtime_setup_full">Usar o pacote completo</string>
     <string name="about_runtime_idle">Verificar atualizações do ambiente de execução</string>
@@ -799,10 +776,7 @@ Baixe %1$s agora (recomendado Wi-Fi). Esta etapa é obrigatória e não pode ser
     <string name="plugin_engine_old_title">O plugin precisa de um motor mais recente</string>
     <string name="plugin_engine_old_force">Forçar instalação desta versão</string>
     <string name="plugin_build_pending_title">Scripts de build precisam de aprovação</string>
-    <string name="plugin_build_pending_body">Estes pacotes querem executar scripts de instalação:
-%s
-
-Scripts de instalação executam código arbitrário do pacote. Aprove apenas se confiar neste plugin.</string>
+    <string name="plugin_build_pending_body">Estes pacotes querem executar scripts de instalação:\n%s\n\nScripts de instalação executam código arbitrário do pacote. Aprove apenas se confiar neste plugin.</string>
     <string name="plugin_build_approve">Aprovar e tentar de novo</string>
     <string name="plugin_build_approve_btn">Aprovar builds</string>
     <string name="plugin_build_approve_failed">Não foi possível gravar a aprovação</string>
@@ -1207,9 +1181,7 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="perm_list_granted_one">Concedida.</string>
     <string name="perm_list_grant_failed">Continua em falta — o sistema recusa.</string>
     <string name="perm_list_revoke_title">Revogar permissão</string>
-    <string name="perm_list_revoke_msg">Revogar %1$s?
-
-A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos — é normal, não é uma falha.</string>
+    <string name="perm_list_revoke_msg">Revogar %1$s?\n\nA aplicação será reiniciada pelo sistema para recarregar a tabela de grupos — é normal, não é uma falha.</string>
     <string name="perm_list_revoke">Revogar</string>
     <string name="perm_list_revoked">Revogada.</string>
     <string name="perm_list_no_channel">Sem canal privilegiado — ligue o Shizuku ou conceda root primeiro.</string>
@@ -1242,14 +1214,13 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="ob_wizard_accent_title">Cor de destaque</string>
     <string name="ob_wizard_accent_desc">Usada em botões, destaques e textos de status.</string>
     <string name="ob_wizard_priv_title">Modo de execução</string>
-    <string name="ob_wizard_priv_desc">Define o que o agente pode acessar. O normal é recomendado.</string>
     <string name="ob_wizard_done_title">Tudo pronto</string>
     <string name="ob_wizard_done_desc">Suas escolhas foram salvas. Toque abaixo para começar.</string>
     <string name="ob_rt_preparing">Preparando o ambiente de execução…</string>
     <string name="ob_rt_pct">Preparando o ambiente de execução… %1$d%%</string>
     <string name="ob_rt_ready">Ambiente de execução pronto</string>
     <string name="ob_rt_failed">A preparação do ambiente não foi concluída — tente novamente em “Manutenção” após entrar</string>
-    <string name="ob_rt_download">Pacote leve: escolha se deseja baixar o ambiente após a introdução</string>
+    <string name="ob_rt_download">Pacote leve · baixe o ambiente após a introdução</string>
     <string name="ob_wizard_back">Voltar</string>
     <string name="ob_wizard_next">Avançar</string>
     <string name="ob_wizard_start">Começar</string>
@@ -1287,6 +1258,67 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="ob_wizard_cap_desc">Escolha o que a IA pode acessar. Pode mudar depois em Ajustes → Permissões.</string>
     <string name="ob_wizard_cap_recommend">Recomendado</string>
     <string name="ob_wizard_cap_recommended">Permissões de leitura de baixo risco ativadas</string>
+    <string name="ob_wizard_welcome_eyebrow">DEEPSEEK HARNESS · PORTE COMPLETA</string>
+    <string name="ob_wizard_welcome_title">O DeepSeek Harness completo\nmorou no seu celular</string>
+    <string name="ob_wizard_welcome_lede">Clonar repositórios, compilar projetos, rodar testes, commitar código — e ler a tela, tocar, digitar. O motor e as ferramentas rodam no celular.</string>
+    <string name="ob_wizard_welcome_prereq">O runtime vem no pacote; o modelo e a API key você configura dentro do app.</string>
+    <string name="ob_wizard_welcome_cover_label">Boas-vindas</string>
+    <string name="ob_wizard_mode_title">Modo de execução</string>
+    <string name="ob_wizard_welcome_step_hint">Cerca de 30 s para configurar; o runtime extrai em segundo plano</string>
+    <string name="ob_wizard_next_keep">Manter e continuar</string>
+    <string name="ob_done_summary_scale">Escala %1$d%%</string>
+    <string name="ob_wizard_welcome_start">Começar · cerca de 30 s</string>
+    <string name="ob_wizard_welcome_f1">Mesmo motor</string>
+    <string name="ob_wizard_welcome_f1_sub">Motor, ferramentas e plugins do DSH de desktop</string>
+    <string name="ob_wizard_welcome_f2">Fluxo de trabalho de desktop</string>
+    <string name="ob_wizard_welcome_f2_sub">Node.js nativo e terminal real; comandos rodam no celular</string>
+    <string name="ob_wizard_welcome_f3">Contêiner Linux próprio</string>
+    <string name="ob_wizard_welcome_f3_sub">Userland Alpine; instale software Linux e toolchains quando precisar</string>
+    <string name="ob_wizard_welcome_f4">Controle do celular</string>
+    <string name="ob_wizard_welcome_f4_sub">Ler tela, tocar, digitar — pare quando quiser</string>
+    <string name="ob_wizard_welcome_f5">Trabalha junto com o computador</string>
+    <string name="ob_wizard_welcome_f5_sub">Depois de pareado, o computador usa tela, câmera e contêiner deste celular</string>
+    <string name="ob_wizard_mode_desc">Até onde a IA pode alcançar o sistema. O modo normal serve para a maioria.</string>
+    <string name="ob_wizard_mode_footnote">O modo pode ser alterado a qualquer momento; Root exige duas confirmações e mostra o modo ativo na página Sobre.</string>
+    <string name="ob_mode_note_normal">O modo normal não precisa de preparo. Root e Shizuku são opções avançadas para ativar depois nos Ajustes.</string>
+    <string name="ob_mode_note_shizuku_absent">O Shizuku não está rodando: inicie o serviço primeiro. O modo normal não é afetado.</string>
+    <string name="ob_mode_note_shizuku_present">O Shizuku ainda não foi autorizado: permita no prompt do Shizuku. O modo normal segue funcionando sem ele.</string>
+    <string name="ob_mode_note_root_absent">Nenhum su encontrado: Root indisponível. Dá para ativar depois nos Ajustes.</string>
+    <string name="ob_mode_note_root_present">su encontrado: Root disponível. Todo o motor inicia como root e pode ler e gravar tudo.</string>
+    <string name="ob_wizard_caps_title">O que a IA pode tocar</string>
+    <string name="ob_wizard_caps_desc">Só o que você permitir. Com tudo desligado ele ainda conversa — só não vê nem toca.</string>
+    <string name="ob_caps_pos_fmt">Grupo %1$d de %2$d</string>
+    <string name="ob_caps_total_fmt">%1$d de %2$d permitidas</string>
+    <string name="ob_caps_chip_fmt">%1$d/%2$d</string>
+    <string name="ob_caps_recommend">Ativar as 6 recomendadas</string>
+    <string name="ob_caps_recommend_hint">Recomendadas: status do aparelho, sensores, área de transferência, controle, lembretes, notificações. Só adiciona, nunca desfaz suas escolhas.</string>
+    <string name="ob_caps_note">Capacidades sensíveis exigem ativação separada; gravação de tela e instalações ainda pedem confirmação do sistema. Mude depois em Ajustes → Permissões.</string>
+    <string name="ob_caps_recommended_toast">As 6 recomendadas estão ativas; suas outras escolhas foram mantidas</string>
+    <string name="ob_caps_domain_env">Aparelho e ambiente</string>
+    <string name="ob_caps_domain_notify">Notificações e mídia</string>
+    <string name="ob_caps_domain_control">Controle do aparelho</string>
+    <string name="ob_caps_domain_personal">Dados pessoais</string>
+    <string name="ob_caps_domain_input">Captura e sensores</string>
+    <string name="ob_caps_domain_system">Apps e contêiner</string>
+    <string name="ob_done_head_ready">Tudo pronto</string>
+    <string name="ob_done_head_preparing">Preparando</string>
+    <string name="ob_done_head_failed">Falta um passo</string>
+    <string name="ob_done_head_lite">Configuração concluída</string>
+    <string name="ob_done_sub_ready">Salvo. Adicione modelo e API key para começar a conversar.</string>
+    <string name="ob_done_sub_preparing">Você pode ir olhando enquanto isso; termina sozinho.</string>
+    <string name="ob_done_sub_failed">Você ainda entra e tenta de novo em Manutenção; suas escolhas ficam salvas.</string>
+    <string name="ob_done_sub_lite">A interface está configurada; o pacote lite não traz o motor até baixar.</string>
+    <string name="ob_done_rt_sub_preparing">O progresso continua em segundo plano</string>
+    <string name="ob_done_rt_sub_ready">O motor inicia em cerca de 2 s</string>
+    <string name="ob_done_rt_sub_failed">Tente de novo em Manutenção após entrar</string>
+    <string name="ob_done_rt_sub_lite">Escolha se baixa (cerca de 130 MB) após entrar</string>
+    <string name="ob_done_next_title">Falta uma coisa: modelo e API key</string>
+    <string name="ob_done_next_sub">Dentro do app, preencha em Ajustes → Modelo. Só então o chat funciona.</string>
+    <string name="ob_done_cta_ready">Entrar e continuar a configuração</string>
+    <string name="ob_done_cta_preparing">Entrar, continua preparando</string>
+    <string name="ob_done_cta_failed">Entrar e tentar em Manutenção</string>
+    <string name="ob_done_cta_lite">Entrar · baixar depois</string>
+    <string name="ob_done_browse">Ver primeiro</string>
     <string name="sensitive_kind_calendar">calendário</string>
     <string name="sensitive_kind_contacts">contatos</string>
     <string name="sensitive_kind_sms">SMS</string>
@@ -1302,8 +1334,7 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="sensitive_audit_title">A IA leu seu %1$s</string>
     <string name="sensitive_audit_detail">%1$d %2$s</string>
     <string name="sensitive_audit_detail_plain">Agora mesmo</string>
-    <string name="sensitive_audit_body">%1$s
-Se não é isso que você quer, desligue o botão de %2$s na Central de permissões.</string>
+    <string name="sensitive_audit_body">%1$s\nSe não é isso que você quer, desligue o botão de %2$s na Central de permissões.</string>
     <string name="personal_cap_disabled_hint">Ative este item em Central de permissões → Recursos de dispositivo da IA. Os quatro botões de dados pessoais são concedidos separadamente.</string>
     <string name="setting_bg_control_alpha">Opacidade dos cartões</string>
     <string name="setting_bg_control_alpha_sub">Quão sólidos os cartões ficam sobre a imagem de fundo</string>
@@ -1378,28 +1409,18 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="ext_linux_installing">Instalando %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Instalando %1$d pacotes…</string>
         <string name="ext_linux_check_none">Nenhuma extensão instalada neste contêiner ainda</string>
-    <string name="ext_linux_check_summary">%1$d instaladas no contêiner: %2$d prontas, %3$d parciais
-
-%4$s</string>
+    <string name="ext_linux_check_summary">%1$d instaladas no contêiner: %2$d prontas, %3$d parciais\n\n%4$s</string>
     <string name="ext_linux_repair_none">Nenhum pacote parcial ✓</string>
-    <string name="ext_linux_partial_note">Estes pacotes não existem neste contêiner: %1$s.
-
-Instalar o restante mesmo assim?</string>
+    <string name="ext_linux_partial_note">Estes pacotes não existem neste contêiner: %1$s.\n\nInstalar o restante mesmo assim?</string>
     <string name="ext_linux_partial_tag">falta: %1$s</string>
 
     <string name="ext_linux_install_done">%1$s instalado</string>
     <string name="ext_linux_removing">Removendo %1$s…</string>
-    <string name="ext_linux_uninstall_msg">Remover estes pacotes do contêiner?
-
-%1$s</string>
-    <string name="ext_linux_reinstall_msg">Reinstalar %1$s?
-
-Pacotes: %2$s</string>
+    <string name="ext_linux_uninstall_msg">Remover estes pacotes do contêiner?\n\n%1$s</string>
+    <string name="ext_linux_reinstall_msg">Reinstalar %1$s?\n\nPacotes: %2$s</string>
 
     <string name="degraded_title">Motor em execução, mas faltam recursos</string>
-    <string name="degraded_body">%1$d recurso(s) indisponível(is) porque seus plugins não carregaram:
-
-%2$s</string>
+    <string name="degraded_body">%1$d recurso(s) indisponível(is) porque seus plugins não carregaram:\n\n%2$s</string>
     <string name="degraded_open_maintenance">Abrir manutenção</string>
     <string name="status_degraded">Motor degradado · %1$d indisponível(is)</string>
 
@@ -1463,12 +1484,7 @@ Pacotes: %2$s</string>
     <string name="ext_linux_action_remove">Remover</string>
     <string name="ext_linux_action_unavailable">N/D</string>
     <string name="ext_version_default">Versão padrão</string>
-    <string name="ext_version_switch_msg">O contêiner só pode conter uma versão desta extensão por vez.
-
-Instalada agora: %2$s
-Você escolheu: %1$s
-
-Remover a versão instalada primeiro e depois mudar para esta?</string>
+    <string name="ext_version_switch_msg">O contêiner só pode conter uma versão desta extensão por vez.\n\nInstalada agora: %2$s\nVocê escolheu: %1$s\n\nRemover a versão instalada primeiro e depois mudar para esta?</string>
     <string name="ext_version_switch_go">Remover %1$s</string>
 
     <string name="ext_linux_install_failed">Falha na instalação: %1$s</string>
@@ -1663,9 +1679,7 @@ Remover a versão instalada primeiro e depois mudar para esta?</string>
     <string name="asr_local_need_install">Instale o reconhecedor primeiro</string>
     <string name="setting_linux_ssh">Ambiente SSH</string>
     <string name="setting_linux_ssh_sub">Permitir que um PC entre direto no contêiner Linux via SSH padrao</string>
-    <string name="linux_ssh_consent">Isto abre a porta 2222 e executa um servidor SSH dentro do app. Quem estiver na mesma Wi-Fi e souber a senha pode executar comandos no contêiner Linux.
-
-Ative apenas em redes confiaveis e desative ao terminar.</string>
+    <string name="linux_ssh_consent">Isto abre a porta 2222 e executa um servidor SSH dentro do app. Quem estiver na mesma Wi-Fi e souber a senha pode executar comandos no contêiner Linux.\n\nAtive apenas em redes confiaveis e desative ao terminar.</string>
     <string name="linux_ssh_need_password">Defina uma senha primeiro. A porta fica fechada sem ela.</string>
     <string name="linux_ssh_set_password">Definir senha</string>
     <string name="linux_ssh_save">Salvar</string>
@@ -1752,11 +1766,7 @@ Ative apenas em redes confiaveis e desative ao terminar.</string>
     <string name="a11y_voice_sub">Acionado pelo microfone da sobreposição; reconhecimento do sistema ou na nuvem</string>
     <string name="a11y_row_safety">Limites de segurança</string>
     <string name="a11y_safety_sub">Páginas do sistema somente leitura, documentos mascarados, toques de risco perguntam antes</string>
-    <string name="a11y_safety_body">Páginas de permissão e segurança do sistema (instalar apps desconhecidos, acessibilidade, administração do dispositivo) são somente leitura: o agente lê, mas nunca toca.
-
-Números de documento e cartões são mascarados antes de qualquer envio ao modelo.
-
-Linhas como enviar / pagar / excluir / autorizar são marcadas e o toque automático sempre as ignora.</string>
+    <string name="a11y_safety_body">Páginas de permissão e segurança do sistema (instalar apps desconhecidos, acessibilidade, administração do dispositivo) são somente leitura: o agente lê, mas nunca toca.\n\nNúmeros de documento e cartões são mascarados antes de qualquer envio ao modelo.\n\nLinhas como enviar / pagar / excluir / autorizar são marcadas e o toque automático sempre as ignora.</string>
     <string name="a11y_need_service">Ative primeiro o serviço de acessibilidade</string>
     <string name="tts_test_sub">Toque para ouvir um exemplo; se não houver motor, o motivo aparece aqui</string>
     <string name="tts_test_sample">A síntese de voz está pronta.</string>
@@ -1898,4 +1908,9 @@ Linhas como enviar / pagar / excluir / autorizar são marcadas e o toque automá
     <string name="peersync_saved">Salvo</string>
     <string name="peersync_invalid_port">A porta deve ser 1–65535</string>
 
+    <string name="style_title">Estilo da interface</string>
+    <string name="style_sub_material">Material 3 · cinza quente com azul-petróleo</string>
+    <string name="style_sub_classic">Clássico · cinza-azulado frio</string>
+    <string name="style_classic">Clássico</string>
+    <string name="style_material">Material 3</string>
 </resources>

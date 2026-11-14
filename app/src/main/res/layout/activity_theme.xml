@@ -36,6 +36,46 @@
             android:paddingHorizontal="@dimen/md3_page_padding"
             android:paddingBottom="@dimen/md3_page_bottom">
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/style_title"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/subStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/groupStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStyleClassic"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/md3_button_height"
+                    android:layout_weight="1"
+                    android:text="@string/style_classic" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStyleMaterial"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/md3_button_height"
+                    android:layout_weight="1"
+                    android:text="@string/style_material" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
             <!-- ===== 外观模式 ===== -->
             <TextView
                 android:layout_width="match_parent"

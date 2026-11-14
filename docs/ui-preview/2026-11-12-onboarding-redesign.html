@@ -32,8 +32,8 @@ select{background:#0e151d;border:1px solid var(--line);color:var(--ink);border-r
 .stage{max-width:1560px;margin:auto;padding:24px 32px 60px;display:flex;gap:34px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
 .device-wrap{display:flex;justify-content:center;padding-top:4px}
 .device{position:relative;display:flex;flex-direction:column;width:390px;height:844px;border-radius:34px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06);background:var(--bg);color:var(--ink);transition:background .25s}
-.device[data-theme=light]{--bg:#f3f7fb;--bg2:#e7eff8;--surface:#ffffff;--surface2:#f7fafd;--line:#dbe5f0;--ink:#0f172a;--ink2:#5a6b80;--chip:#eaf4fc;--accent:#0284c7;--accent-ink:#fff;--ok:#0f9d6b;--warn:#b45309;--danger:#c2410c;--glow:rgba(2,132,199,.20)}
-.device[data-theme=dark]{--bg:#0b131c;--bg2:#0e1a26;--surface:#121d2a;--surface2:#0d1722;--line:#223243;--ink:#e9f0f8;--ink2:#93a6b8;--chip:#0f2030;--accent:#4fa8e0;--accent-ink:#08131c;--ok:#34d399;--warn:#fbbf24;--danger:#fb7185;--glow:rgba(79,168,224,.22)}
+.device[data-theme=light]{--bg:#f3f7fb;--bg2:#e7eff8;--surface:#ffffff;--surface2:#f7fafd;--line:#dbe5f0;--ink:#0f172a;--ink2:#5a6b80;--chip:#eaf4fc;--accent:#0284c7;--accent-ink:#fff;--accent-text:#0b6a9c;--accent-fill:#0284c7;--ok:#0f9d6b;--warn:#b45309;--danger:#c2410c;--glow:rgba(2,132,199,.20)}
+.device[data-theme=dark]{--bg:#0b131c;--bg2:#0e1a26;--surface:#121d2a;--surface2:#0d1722;--line:#223243;--ink:#e9f0f8;--ink2:#93a6b8;--chip:#0f2030;--accent:#4fa8e0;--accent-ink:#08131c;--accent-text:#6ebbee;--accent-fill:#4fa8e0;--ok:#34d399;--warn:#fbbf24;--danger:#fb7185;--glow:rgba(79,168,224,.22)}
 .device[data-form=tablet]{width:820px;height:900px;border-radius:26px}
 .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;color:var(--ink);opacity:.92;flex:none}
 .statusbar .sb-r{display:flex;gap:6px;align-items:center;opacity:.85}
@@ -46,22 +46,25 @@ select{background:#0e151d;border:1px solid var(--line);color:var(--ink);border-r
 .rail button{display:flex;align-items:center;gap:9px;padding:8px;border-radius:9px;color:var(--ink2);font-size:12.5px;text-align:left}
 .rail button .n{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:10px;flex:none}
 .rail button.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--ink)}
-.rail button.on .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.rail button.done .n{background:color-mix(in srgb,var(--accent) 24%,transparent);border-color:transparent;color:var(--accent)}
+.rail button.on .n{background:var(--accent-fill);border-color:var(--accent-fill);color:var(--accent-ink)}
+.rail button.done .n{background:color-mix(in srgb,var(--accent) 24%,transparent);border-color:transparent;color:var(--accent-text)}
 .content{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;z-index:1}
 .pages{flex:1;min-height:0;position:relative;overflow:hidden}
 .page{position:absolute;inset:0;padding:10px 26px 8px;display:flex;flex-direction:column;gap:14px;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .22s,transform .22s}
 .page.on{opacity:1;pointer-events:auto;transform:none;overflow-y:auto;scrollbar-width:none}
 .page::-webkit-scrollbar{display:none}
+/* 窄屏（≤340dp）：欢迎页五行 + 眉标会顶出首屏，收紧密度而不是删内容 */
+}
 .device[data-form=tablet] .page{padding:22px 44px 8px;max-width:620px;margin:0 auto;width:100%}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:none;padding:6px 26px 0}
-.row .txt .badge{display:inline-block;width:max-content;margin:0 0 0 6px;vertical-align:1px;font-size:10px;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.row .txt .badge{display:inline-block;width:max-content;margin:0 0 0 6px;vertical-align:1px;font-size:10px;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text)}
 .row .txt .badge.danger{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
 .device[data-form=tablet] .topbar{display:none}
 .progress{flex:1;height:4px;border-radius:99px;background:color-mix(in srgb,var(--ink) 10%,transparent);overflow:hidden}
-.progress i{display:block;height:100%;background:var(--accent);border-radius:99px;width:11%;transition:width .3s}
+.progress i{display:block;height:100%;background:var(--accent-fill);border-radius:99px;width:11%;transition:width .3s}
 .ghost{font-size:12px;color:var(--ink2);border:1px solid var(--line);border-radius:99px;padding:5px 11px}
 .eyebrow{font-size:10.5px;letter-spacing:.18em;color:var(--ink2);text-transform:uppercase}
+.eyebrow.ac{color:var(--accent-text)}
 h1.t{font-size:26px;line-height:1.24;letter-spacing:-.4px;font-weight:700}
 h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);letter-spacing:0;margin-top:9px;line-height:1.5}
 .lede{font-size:13px;color:var(--ink2);line-height:1.6}
@@ -69,16 +72,16 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .device[data-theme=dark] .card{box-shadow:none}
 .row{display:flex;align-items:center;gap:12px;padding:13px 14px}
 .row+.row{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
-.row .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);flex:none}
+.row .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent-text);flex:none}
 .row .ico svg{width:18px;height:18px}
 .row .txt{flex:1;min-width:0}
 .row .txt b{display:block;font-size:13.5px;font-weight:600}
 .row .txt span{display:block;font-size:11.5px;color:var(--ink2);margin-top:2px;line-height:1.4}
 .row.sel{border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
-.tick{width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:none;place-items:center;flex:none}
+.tick{width:20px;height:20px;border-radius:50%;background:var(--accent-fill);color:var(--accent-ink);display:none;place-items:center;flex:none}
 .tick svg{width:12px;height:12px}
 .row.sel .tick{display:grid}
-.badge{font-size:10px;border-radius:99px;padding:2px 7px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);flex:none}
+.badge{font-size:10px;border-radius:99px;padding:2px 7px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text);flex:none}
 .badge.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
 .badge.danger{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
 .letter{font-size:17px;font-weight:600;line-height:1}
@@ -95,13 +98,16 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .dot{width:34px;height:34px;border-radius:50%;border:1px solid rgba(0,0,0,.12);display:grid;place-items:center;color:#fff}
 .device[data-theme=dark] .dot{border-color:rgba(255,255,255,.18)}
 .dot.on{outline:2px solid var(--ink);outline-offset:3px}
+.dot{position:relative}
+.dot::after{content:"";position:absolute;inset:-7px;border-radius:50%}
 .dot svg{width:14px;height:14px;display:none}
 .dot.on svg{display:block}
+.dot.on{border-color:transparent}
 .preview-card{padding:14px}
 .pv-line{height:9px;border-radius:99px;background:color-mix(in srgb,var(--ink) 12%,transparent);margin:9px 0}
 .pv-line.s{width:64%}
-.pv-btn{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-ink);border-radius:10px;padding:9px 16px;font-size:12.5px;font-weight:600}
-.pv-chip{display:inline-block;border-radius:99px;padding:3px 9px;font-size:11px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.pv-btn{display:inline-flex;align-items:center;justify-content:center;background:var(--accent-fill);color:var(--accent-ink);border-radius:10px;padding:9px 16px;font-size:12.5px;font-weight:600}
+.pv-chip{display:inline-block;border-radius:99px;padding:3px 9px;font-size:11px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text)}
 .pv-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
 .switch{width:40px;height:23px;border-radius:99px;background:color-mix(in srgb,var(--ink) 16%,transparent);position:relative;flex:none;transition:.18s}
 .switch::after{content:"";position:absolute;width:17px;height:17px;border-radius:50%;background:#fff;top:3px;left:3px;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
@@ -116,7 +122,7 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .segmented button{flex:1;padding:7px 0;border-radius:8px;font-size:12px;color:var(--ink2)}
 .segmented button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
 .note{font-size:11.5px;color:var(--ink2);display:flex;gap:7px;align-items:flex-start;line-height:1.5}
-.note svg{width:14px;height:14px;flex:none;margin-top:1px;color:var(--accent)}
+.note svg{width:14px;height:14px;flex:none;margin-top:1px;color:var(--accent-text)}
 .collapse{border-top:1px solid var(--line);margin-top:2px}
 .collapse-h{display:flex;align-items:center;justify-content:space-between;padding:12px 2px;font-size:12px;color:var(--ink2);cursor:pointer}
 .collapse-b{display:none;padding-bottom:6px}
@@ -124,14 +130,38 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .collapse.open .collapse-h svg{transform:rotate(180deg)}
 .collapse-h svg{width:15px;height:15px;transition:.2s}
 .dim{opacity:.62}
+.hscroll-wrap{position:relative;margin:0 -26px}
+.hscroll{display:flex;gap:8px;overflow-x:auto;padding:2px 26px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}
+.hscroll::-webkit-scrollbar{display:none}
+.hswipe{position:absolute;right:0;top:0;bottom:4px;width:24px;display:flex;align-items:center;justify-content:flex-end;pointer-events:none;background:linear-gradient(90deg,transparent,var(--bg) 55%);color:var(--ink2);transition:opacity .16s}
+.hswipe svg{width:14px;height:14px;transform:rotate(-90deg)}
+.hswipe.off{opacity:0}
+.device[data-form=tablet] .hswipe{display:none}
+.device[data-form=tablet] .hscroll{flex-wrap:wrap;overflow:visible;margin:0;padding-inline:0}
+.hchip{flex:none;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;min-width:104px;min-height:56px;padding:8px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--line);color:var(--ink2);white-space:nowrap;transition:.16s}
+.hchip b{font-size:12.5px;font-weight:600;line-height:1.25}
+.hchip i{font-size:10.5px;font-style:normal;color:var(--ink2);font-variant-numeric:tabular-nums;line-height:1.2}
+.hchip.on{background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-color:color-mix(in srgb,var(--accent) 45%,transparent);color:var(--ink)}
+.hchip.on b{color:var(--accent-text)}
+.hchip.on i{color:var(--accent-text)}
+.gpanel{display:none;margin-top:2px}
+.gpanel.on{display:block}
+.gpanel .row .ico{width:30px;height:30px;border-radius:9px}
+.gcount{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:var(--ink2);padding:0 2px;font-variant-numeric:tabular-nums}
+.gcount b{color:var(--ink);font-weight:600}
+.recwhat{display:flex;gap:7px;align-items:flex-start;font-size:11px;color:var(--ink2);line-height:1.5;padding:2px 2px 0}
+.recwhat svg{width:13px;height:13px;flex:none;margin-top:2px;color:var(--accent-text)}
+.recbtn{display:flex;flex-direction:column;gap:2px;align-items:flex-start;width:100%;min-height:52px;justify-content:center;padding:10px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));text-align:left}
+.recbtn{font-size:13px;font-weight:600;color:var(--accent-text);line-height:1.35}
+.recbtn small{font-size:11px;font-weight:400;color:var(--ink2)}
 .bar{flex:none;display:flex;gap:10px;padding:12px 24px 20px;background:linear-gradient(180deg,transparent,var(--bg) 42%)}
 .device[data-form=tablet] .bar{max-width:620px;margin:0 auto;width:100%}
-.btn{flex:1;height:50px;border-radius:14px;display:grid;place-items:center;font-size:15px;font-weight:650;background:var(--accent);color:var(--accent-ink);box-shadow:0 10px 24px color-mix(in srgb,var(--accent) 28%,transparent)}
-.btn.ghost2{flex:none;width:92px;background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none;font-weight:500}
+.btn{flex:1;height:50px;border-radius:14px;display:grid;place-items:center;font-size:15px;font-weight:650;background:var(--accent-fill);color:var(--accent-ink);box-shadow:0 10px 24px color-mix(in srgb,var(--accent) 28%,transparent)}
+.btn.ghost2{flex:none;width:auto;min-width:92px;padding:0 16px;white-space:nowrap;background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none;font-weight:500}
 .done-wrap{align-items:center;text-align:center;padding-top:18px}
-.glow{width:180px;height:180px;border-radius:50%;background:radial-gradient(50% 50% at 50% 50%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 72%);display:grid;place-items:center;flex:none;animation:breathe 3.2s ease-in-out infinite}
+.glow{width:120px;height:120px;border-radius:50%;background:radial-gradient(50% 50% at 50% 50%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 72%);display:grid;place-items:center;flex:none;animation:breathe 3.2s ease-in-out infinite}
 @keyframes breathe{50%{transform:scale(1.06)}}
-.glow .whale{width:78px;height:78px;color:var(--ink)}
+.glow .whale{width:60px;height:60px;color:var(--ink)}
 .done-title{font-size:28px;font-weight:700;letter-spacing:-.5px;margin-top:4px}
 .done-sub{font-size:13px;color:var(--ink2);margin-top:7px}
 .rt{margin-top:18px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;text-align:left}
@@ -140,7 +170,7 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .rt-h .dotw{width:8px;height:8px;border-radius:50%;background:var(--warn)}
 .rt-h .dotd{width:8px;height:8px;border-radius:50%;background:var(--danger)}
 .rt-bar{height:4px;border-radius:99px;background:color-mix(in srgb,var(--ink) 10%,transparent);overflow:hidden;margin-top:9px}
-.rt-bar i{display:block;height:100%;background:var(--accent);width:63%}
+.rt-bar i{display:block;height:100%;background:var(--accent-fill);width:63%}
 .rt-sub{font-size:11px;color:var(--ink2);margin-top:7px}
 .summary{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-top:14px}
 .summary span{font-size:11px;padding:4px 9px;border-radius:99px;background:var(--surface);border:1px solid var(--line);color:var(--ink2)}
@@ -151,12 +181,13 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .deck-card:nth-child(1){top:0;transform:rotate(-2.4deg) scale(.94);opacity:.72}
 .deck-card:nth-child(2){top:34px;transform:rotate(1.4deg) scale(.97);opacity:.88}
 .deck-card:nth-child(3){top:72px;transform:none}
-.deck-card .ico{width:38px;height:38px;border-radius:11px;background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);display:grid;place-items:center;flex:none}
+.deck-card .ico{width:38px;height:38px;border-radius:11px;background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent-text);display:grid;place-items:center;flex:none}
 .deck-card .ico svg{width:19px;height:19px}
 .deck-card b{font-size:13.5px;display:block}
 .deck-card span{font-size:11.5px;color:var(--ink2);display:block;margin-top:2px}
+.prereq{font-size:10.5px;color:var(--ink2);line-height:1.5;margin:0 0 7px;padding:0 4px}
 .prefetch{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--ink2);background:var(--chip);border-radius:99px;padding:5px 10px;margin:0 auto}
-.prefetch .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--accent) 30%,transparent);border-top-color:var(--accent);animation:spin 1s linear infinite}
+.prefetch .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--accent) 30%,transparent);border-top-color:var(--accent-fill);animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .notes{width:330px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
 .notes h3{font-size:12px;letter-spacing:.12em;color:var(--dim);font-weight:500}
@@ -177,7 +208,50 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 .clean .stage{display:block;width:100%;padding:0;margin:0;max-width:none}
 .clean .device-wrap{display:block;width:100%;padding:0}
 .clean .device{width:100vw!important;height:100vh!important;box-shadow:none;border-radius:0}
+/* 截图模式：关过渡与呼吸动画（否则 700ms 出图还在淡入中途，整体发灰）。
+   注意只能给 .page.on 强制不透明 —— 裸 .page 会把 9 页全部叠在一起。 */
+.clean .page{transition:none!important}
+.clean .page.on{opacity:1!important;transform:none!important}
+.clean .glow{animation:none!important}
 @media (max-width:1100px){.notes{width:100%}}
+
+/* ===== 窄屏（≤340dp）密度收紧 —— 放在样式末尾并用属性级选择器，
+   否则前面的 h1.t / .row / .lede 同优先级会把这里的值盖回去（实测已发生过一次） ===== */
+@media (max-width: 340px){
+  .device .page{padding:8px 18px 84px;gap:11px}
+  .device .page h1.t{font-size:22px;line-height:1.2}
+  .device .page h1.t small{font-size:12px;margin-top:7px}
+  .device .page .lede{font-size:12.5px;line-height:1.5}
+  .device .card .row{padding:8px 12px;gap:10px}
+  .device .card .row .ico{width:30px;height:30px;border-radius:9px}
+  .device .card .row .ico svg{width:16px;height:16px}
+  .device .card .row .txt b{font-size:12.5px}
+  .device .card .row .txt span{font-size:10.5px;margin-top:1px}
+  .device .bar{padding:10px 18px 14px}
+  .device .bar .btn{height:46px;font-size:14px}
+  .device .bar .btn.ghost2{min-width:76px;padding:0 12px;font-size:12.5px}
+  .device .topbar{padding:6px 18px 0}
+  .device .page .hchip{padding:8px 10px;min-height:48px;min-width:86px;border-radius:11px}
+  .device .page .hchip b{font-size:11.5px}
+  .device .page .hchip i{font-size:9.5px}
+  .device .page .eyebrow{font-size:9.5px}
+  .device .page .glow{width:100px;height:100px}
+  .device .page .glow .whale{width:50px;height:50px}
+  .device .page .done-title{font-size:24px}
+  .device .page .done-sub{font-size:12.5px}
+  .device .page .prereq{font-size:10px;margin-bottom:6px}
+}
+/* 横屏（矮视口）：底部操作条是固定的，页面必须留出同等高度，否则内容被压住 */
+@media (max-height: 480px){
+  .device .page{padding-bottom:72px;gap:10px}
+  .device .page h1.t{font-size:21px}
+  .device .page .lede{font-size:12px}
+  .device .card .row{padding:9px 13px}
+  .device .card .row .ico{width:28px;height:28px}
+  .device .card .row .txt span{font-size:11px}
+  .device .bar{padding:8px 18px 10px}
+  .device .bar .btn{height:42px;font-size:13.5px}
+}
 </style>
 </head>
 <body>
@@ -198,6 +272,9 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 2.6v5.6c0 4.4-2.9 7.7-7 9.3-4.1-1.6-7-4.9-7-9.3V5.6L12 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2.2 2.2L15.5 10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-hash" viewBox="0 0 24 24"><path d="M9 3L7 21M17 3l-2 18M4 9h16M3 15h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
 <symbol id="i-shz" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.2v9.6L12 21l-8-4.2V7.2L12 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 7.2l8 4.2 8-4.2M12 11.4V21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity=".7"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="9.5" y="10.5" width="12" height="9" rx="2" fill="var(--surface)" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 8h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 17h7M17 13.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
 </defs></svg>
 
 <header class="masthead">
@@ -235,17 +312,20 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
               <!-- 0 欢迎 -->
               <section class="page" data-page="0">
                 <div style="text-align:center;margin-top:0">
-                  <div style="display:flex;justify-content:center;margin:2px 0 10px"><svg style="width:62px;height:62px;color:var(--ink);filter:drop-shadow(0 6px 18px var(--glow))"><use href="#i-whale"/></svg></div>
-                  <div class="eyebrow" style="color:var(--accent)">DSH MOBILE</div>
-                  <h1 class="t" style="margin-top:8px">手机里，住着一个<br>会写代码的助手</h1>
-                  <p class="lede" style="margin-top:9px">原生引擎 2.3 秒启动。终端、编译环境、手机操控，都在这一块屏幕里。</p>
+                  <div style="display:flex;justify-content:center;margin:2px 0 8px"><svg style="width:56px;height:56px;color:var(--ink);filter:drop-shadow(0 6px 18px var(--glow))"><use href="#i-whale"/></svg></div>
+                  <div class="eyebrow ac">DEEPSEEK HARNESS · 完整移植</div>
+                  <h1 class="t" style="margin-top:7px;font-size:24px">完整的 DeepSeek Harness<br>住进了你的手机</h1>
+                  <p class="lede" style="margin-top:8px">克隆仓库、编译项目、运行测试、提交代码，也能读屏、点按、输入。引擎与工具在手机本地执行。</p>
                 </div>
                 <div class="card" style="margin-top:2px">
-                  <div class="row"><div class="ico"><svg><use href="#i-cpu"/></svg></div><div class="txt"><b>原生引擎</b><span>不跑虚拟机，冷启 2.3 秒</span></div></div>
-                  <div class="row"><div class="ico"><svg><use href="#i-term"/></svg></div><div class="txt"><b>真编译环境</b><span>clang / JDK / gradle / Linux 容器</span></div></div>
-                  <div class="row"><div class="ico"><svg><use href="#i-hand"/></svg></div><div class="txt"><b>手机操控</b><span>读屏、点按、输入，随时可停</span></div></div>
+                  <div class="row" style="padding:9px 14px"><div class="ico"><svg><use href="#i-cpu"/></svg></div><div class="txt"><b>同源引擎</b><span>沿用桌面端 DSH 的引擎、工具与插件机制</span></div></div>
+                  <div class="row" style="padding:9px 14px"><div class="ico"><svg><use href="#i-term"/></svg></div><div class="txt"><b>电脑级工作流</b><span>原生 Node.js 与真实终端，命令在手机执行</span></div></div>
+                  <div class="row" style="padding:9px 14px"><div class="ico"><svg><use href="#i-box"/></svg></div><div class="txt"><b>自研 Linux 容器</b><span>Alpine 用户态，按需安装 Linux 软件与编译工具链</span></div></div>
+                  <div class="row" style="padding:9px 14px"><div class="ico"><svg><use href="#i-hand"/></svg></div><div class="txt"><b>手机操控</b><span>读屏、点按、输入，随时可停</span></div></div>
+                  <div class="row" style="padding:9px 14px"><div class="ico"><svg><use href="#i-link"/></svg></div><div class="txt"><b>与电脑协同</b><span>配对后，电脑可调用这台手机的读屏、相机、容器等能力</span></div></div>
                 </div>
-                <div style="text-align:center;margin-top:auto;padding-bottom:6px">
+                <div style="text-align:center;margin-top:auto;padding-bottom:2px">
+                  <div class="prereq" id="pfNote">运行环境随安装包自带；模型与 API Key 进入后单独配置</div>
                   <span class="prefetch"><span class="spin"></span><span id="pfText">运行环境已在后台准备 · 12%</span></span>
                 </div>
               </section>
@@ -267,7 +347,7 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 
               <!-- 2 方向 -->
               <section class="page" data-page="2">
-                <div class="eyebrow">02 / 08</div>
+                <div class="eyebrow">02 / 08 · 可选，之后可改</div>
                 <h1 class="t">默认方向<small>按你平时的用法选。平板上会自动切换到桌面布局。</small></h1>
                 <div class="grid3" id="orientGrid">
                   <button class="mini on" data-k="portrait"><span class="phone-mini"></span>竖屏 · 手机</button>
@@ -284,7 +364,7 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 
               <!-- 3 主题 -->
               <section class="page" data-page="3">
-                <div class="eyebrow">03 / 08</div>
+                <div class="eyebrow">03 / 08 · 可选，之后可改</div>
                 <h1 class="t">外观<small>只改原生外壳。对话界面跟随网页端自己的深色设置。</small></h1>
                 <div class="grid3" id="themeGrid">
                   <button class="mini on" data-k="light"><svg style="width:22px;height:22px"><use href="#i-sun"/></svg>浅色</button>
@@ -300,7 +380,7 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 
               <!-- 4 强调色 -->
               <section class="page" data-page="4">
-                <div class="eyebrow">04 / 08</div>
+                <div class="eyebrow">04 / 08 · 可选，之后可改</div>
                 <h1 class="t">强调色<small>按钮、选中态、进度条会一起变。之后也能自定义取色。</small></h1>
                 <div class="swatch-row" id="accentRow"></div>
                 <div class="card preview-card">
@@ -315,7 +395,7 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 
               <!-- 5 屏幕与布局 -->
               <section class="page" data-page="5">
-                <div class="eyebrow">05 / 08</div>
+                <div class="eyebrow">05 / 08 · 可选，之后可改</div>
                 <h1 class="t">屏幕与布局<small>影响网页文字大小和设置页密度，随时可改。</small></h1>
                 <div class="card" style="padding:14px">
                   <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink2)"><span>页面缩放</span><span id="scaleVal">90%</span></div>
@@ -348,25 +428,53 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
               <section class="page" data-page="7">
                 <div class="eyebrow">07 / 08</div>
                 <h1 class="t">给 AI 的能力<small>只开你愿意的。不开也能正常聊天，只是它看不到、点不了。</small></h1>
-                <div class="card" style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
-                  <div style="display:flex;align-items:center;gap:9px"><span class="badge">推荐配置</span><span style="font-size:12px;color:var(--ink2)">通知 + 读屏 + 剪贴板</span></div>
-                  <span style="font-size:11.5px;color:var(--accent)">默认已勾选</span>
+
+                <div class="hscroll-wrap">
+                  <div class="hscroll" id="capGroups">
+                    <button class="hchip on" data-g="0"><b>设备环境</b><i>已允许 3 / 3</i></button>
+                    <button class="hchip" data-g="1"><b>通知媒体</b><i>已允许 0 / 3</i></button>
+                    <button class="hchip" data-g="2"><b>设备控制</b><i>已允许 0 / 4</i></button>
+                    <button class="hchip" data-g="3"><b>个人数据</b><i>已允许 0 / 2</i></button>
+                    <button class="hchip" data-g="4"><b>录屏感知</b><i>已允许 0 / 3</i></button>
+                    <button class="hchip" data-g="5"><b>应用容器</b><i>已允许 0 / 2</i></button>
+                  </div>
+                  <div class="hswipe" aria-hidden="true"><svg><use href="#i-chev"/></svg></div>
                 </div>
-                <div class="card">
-                  <div class="row"><div class="ico"><svg><use href="#i-bell"/></svg></div><div class="txt"><b>通知</b><span>读取通知，帮助你处理消息</span></div><span class="switch on"></span></div>
-                  <div class="row"><div class="ico"><svg><use href="#i-hand"/></svg></div><div class="txt"><b>读屏与点按</b><span>通过无障碍读屏、点按、输入</span></div><span class="switch on"></span></div>
+                <div class="gcount"><span id="gPos">第 1 / 6 组</span><span>已允许 <b id="gSum">3</b> / 17 项</span></div>
+
+                <div class="card gpanel on" data-g="0">
+                  <div class="row"><div class="ico"><svg><use href="#i-cpu"/></svg></div><div class="txt"><b>设备状态</b><span>电量、充电、屏幕、网络、音量 —— 只读</span></div><span class="switch on"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-auto"/></svg></div><div class="txt"><b>传感器</b><span>环境光、距离、运动 —— 只读</span></div><span class="switch on"></span></div>
                   <div class="row"><div class="ico"><svg><use href="#i-clip"/></svg></div><div class="txt"><b>剪贴板</b><span>读写剪贴板，复制结果给你</span></div><span class="switch on"></span></div>
-                  <div class="row"><div class="ico"><svg><use href="#i-mic"/></svg></div><div class="txt"><b>麦克风</b><span>语音输入（需要系统权限）</span></div><span class="switch"></span></div>
                 </div>
-                <div class="collapse" id="moreCaps"><div class="collapse-h"><span>更多能力（6 项，可稍后开启）</span><svg><use href="#i-chev"/></svg></div>
-                  <div class="collapse-b"><div class="card dim">
-                    <div class="row"><div class="txt"><b>定位</b><span>读取当前位置</span></div><span class="switch"></span></div>
-                    <div class="row"><div class="txt"><b>相机</b><span>拍照与扫码</span></div><span class="switch"></span></div>
-                    <div class="row"><div class="txt"><b>短信</b><span>只读查询，逐条确认</span></div><span class="switch"></span></div>
-                    <div class="row"><div class="txt"><b>传感器</b><span>光线 / 加速度 / 陀螺仪</span></div><span class="switch"></span></div>
-                  </div></div>
+                <div class="card gpanel" data-g="1">
+                  <div class="row"><div class="ico"><svg><use href="#i-bell"/></svg></div><div class="txt"><b>发送通知</b><span>把任务结果与提醒推给你</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-bell"/></svg></div><div class="txt"><b>读取通知</b><span>需要通知使用权，逐条读取</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-mic"/></svg></div><div class="txt"><b>媒体播放控制</b><span>播放、暂停、切歌、拖进度；需通知使用权</span></div><span class="switch"></span></div>
                 </div>
-                <div class="note"><svg><use href="#i-info"/></svg>以后可在「设置 → 权限与能力」逐项修改；敏感能力默认每次询问。</div>
+                <div class="card gpanel" data-g="2">
+                  <div class="row"><div class="ico"><svg><use href="#i-shield"/></svg></div><div class="txt"><b>设备控制</b><span>Wi-Fi、蓝牙、音量与响铃切换</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-auto"/></svg></div><div class="txt"><b>定时提醒</b><span>在稍后时间点推送通知</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-link"/></svg></div><div class="txt"><b>WiFi 控制</b><span>扫描周边网络、读链路细节与抓包</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-link"/></svg></div><div class="txt"><b>蓝牙控制</b><span>扫描、广播、收发真实蓝牙报文并读 HCI 日志</span></div><span class="switch"></span></div>
+                </div>
+                <div class="card gpanel" data-g="3">
+                  <div class="row"><div class="ico"><svg><use href="#i-clip"/></svg></div><div class="txt"><b>日历</b><span>读取日历并新建日程</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-clip"/></svg></div><div class="txt"><b>联系人</b><span>按姓名或号码搜索联系人</span></div><span class="switch"></span></div>
+                </div>
+                <div class="card gpanel" data-g="4">
+                  <div class="row"><div class="ico"><svg><use href="#i-hand"/></svg></div><div class="txt"><b>屏幕录制</b><span>录成 MP4，每次开始需系统确认</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-auto"/></svg></div><div class="txt"><b>位置</b><span>当前位置，可选粗/精精度</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-cpu"/></svg></div><div class="txt"><b>相机</b><span>拍照返回 JPEG</span></div><span class="switch"></span></div>
+                </div>
+                <div class="card gpanel" data-g="5">
+                  <div class="row"><div class="ico"><svg><use href="#i-box"/></svg></div><div class="txt"><b>应用管理</b><span>列出、安装、卸载，安装需系统确认</span></div><span class="switch"></span></div>
+                  <div class="row"><div class="ico"><svg><use href="#i-term"/></svg></div><div class="txt"><b>Linux 容器</b><span>执行命令、装包、切换发行版</span></div><span class="switch"></span></div>
+                </div>
+
+                <div class="recwhat"><svg><use href="#i-info"/></svg><span>推荐只开：设备状态、传感器、剪贴板、设备控制、定时提醒、发送通知</span></div>
+                <button class="recbtn" id="capRecommend">开启推荐的 6 项<small>只新增允许，不重置你已选的</small></button>
+                <div class="note"><svg><use href="#i-info"/></svg>敏感能力需单独开启；录屏、安装等个别操作还要系统确认。以后可在「设置 → 权限与能力」逐项修改。</div>
               </section>
 
               <!-- 8 完成 -->
@@ -380,15 +488,12 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
                     <div class="rt-bar" id="rtBar" style="display:none"><i id="rtFill"></i></div>
                     <div class="rt-sub" id="rtSub">引擎启动只需约 2 秒</div>
                   </div>
+                  <div class="card" style="width:100%;text-align:left;margin-top:14px">
+                    <div class="row"><div class="txt"><b>还需配置模型与 API Key</b><span>进入后在「设置 → 模型」填写，之后才能发起对话</span></div></div>
+                  </div>
                   <div class="summary" id="summary">
                     <span>中文</span><span>深色</span><span>强调色</span><span>普通模式</span><span>缩放 90%</span>
                   </div>
-                  <div class="card" style="width:100%;text-align:left;margin-top:12px">
-                    <div class="row"><div class="txt"><b>配置模型与 API Key</b><span>在网页设置 → 模型里填写</span></div></div>
-                    <div class="row"><div class="txt"><b>试试终端</b><span>输入 node -v 验证引擎可执行</span></div></div>
-                    <div class="row"><div class="txt"><b>连接远程主机</b><span>可选：把本机当控制端连到电脑</span></div></div>
-                  </div>
-                  <div class="foot">模型与 API Key 在随后的网页设置里配置</div>
                 </div>
               </section>
 
@@ -422,28 +527,32 @@ h1.t small{display:block;font-size:12.5px;font-weight:400;color:var(--ink2);lett
 
 <script>
 const WHALE = document.querySelector('#i-whale path');
+// 每个强调色给出 4 个可用颜色：浅色填充 fill / 浅色填充上的文字 ink /
+// 浅色下作为正文与图标的 accent-text（对白 ≥4.5:1）/ 深色下同角色的颜色。
 const ACCENTS = [
-  {id:'sky',c:'#0284c7',d:'#4fa8e0',n:'天蓝'},
-  {id:'indigo',c:'#4f6ef7',d:'#7f95ff',n:'靛蓝'},
-  {id:'teal',c:'#0f9d8a',d:'#3fc4b2',n:'青绿'},
-  {id:'violet',c:'#7c3aed',d:'#a982ff',n:'紫罗兰'},
-  {id:'amber',c:'#b45309',d:'#f0a24b',n:'琥珀'},
-  {id:'rose',c:'#be123c',d:'#f2637f',n:'玫红'}
+  {id:'sky',    fill:'#0274a8', ink:'#ffffff', tc:'#0b6a9c', d:'#4fa8e0', td:'#1f5e86', n:'天蓝',   sw:'#0284c7'},
+  {id:'indigo', fill:'#3d5be0', ink:'#ffffff', tc:'#3352d8', d:'#7f95ff', td:'#1f378f', n:'靛蓝',   sw:'#4f6ef7'},
+  {id:'teal',   fill:'#0a6a5e', ink:'#ffffff', tc:'#0a6a5e', d:'#3fc4b2', td:'#14544a', n:'青绿',   sw:'#0f9d8a'},
+  {id:'violet', fill:'#7c3aed', ink:'#ffffff', tc:'#7c3aed', d:'#a982ff', td:'#4b1f95', n:'紫罗兰', sw:'#7c3aed'},
+  {id:'amber',  fill:'#b45309', ink:'#ffffff', tc:'#8a3e06', d:'#f0a24b', td:'#f0a24b', n:'琥珀',   sw:'#b45309'},
+  {id:'rose',   fill:'#be123c', ink:'#ffffff', tc:'#be123c', d:'#f2637f', td:'#8a0d2c', n:'玫红',   sw:'#be123c'}
 ];
 const NOTES = [
-  {t:'欢迎 / 能力', tags:['新增','价值主张','预取入口'], l:[
-    '首屏先回答「这是什么、能干什么」，三张叠卡对应编译环境、原生引擎、手机操控。',
-    '底部预取胶囊直接暴露后台解压进度——用户第一次看到进度，而不是干等。',
-    '主按钮「开始设置 · 约 30 秒」，次按钮允许跳过外观直接进入。'
+  {t:'欢迎', tags:['新增','价值主张','首屏前提'], l:[
+    '副文案写「能做到什么」：克隆仓库、编译项目、运行测试、提交代码，也能读屏/点按/输入；引擎与工具都在手机本地执行。',
+    '五行卡按结果排序：同源引擎 → 电脑级工作流（原生 Node.js 与真实终端）→ 自研 Linux 容器（按需装软件与工具链）→ 手机操控 → 与电脑协同（需先配对）。',
+    '首屏明确前提：运行环境随包自带，模型与 API Key 进入后单独配置——避免把「本地执行」误解成自带模型。',
+    '底部预取胶囊暴露真实解压百分比；主按钮「开始设置 · 约 30 秒」，上一步 display:none 不占位。'
   ]},
   {t:'语言', tags:['图标区分','文案去重'], l:[
     '每张卡用该语言自身的字形做标记（文 / A / D / P / ก / Я），不再六张同款地球。',
     '副标题改为语言的原生名称，去掉「English / English」式重复。',
     '文案明确「只影响外壳」，避免用户误以为会改对话语言。'
   ]},
-  {t:'方向', tags:['保留预览','补齐说明'], l:[
-    '沿用现有真机画面预览：竖 / 横 / 自动三张卡。',
-    '自动卡用旋转角示意；横屏说明会切桌面布局。'
+  {t:'方向（可选页）', tags:['可选','保留默认'], l:[
+    '沿用现有真机画面预览：竖 / 横 / 自动三张卡；眉标写明「可选，之后可改」。',
+    '自动卡用旋转角示意；横屏说明会切桌面布局。',
+    '方向/外观/强调色/屏幕四页主按钮统一写「保留当前设置并继续」，不逼用户每页都研究。'
   ]},
   {t:'外观', tags:['图标区分','预览'], l:[
     '浅色 / 深色 / 跟随系统分别用太阳 / 月亮 / 分割圆，替换三张同款半圆。',
@@ -461,14 +570,15 @@ const NOTES = [
     '把「模式」与「能力开关」拆成两页，首启不再是一屏开关墙。',
     'Root 用红色高风险标签；未检测到 su 时置灰并给出原因。'
   ]},
-  {t:'能力', tags:['推荐预设','折叠'], l:[
-    '顶部给「推荐配置」一键方案，默认只开通知 / 读屏 / 剪贴板。',
-    '更多能力默认折叠，标注「可稍后开启」，降低首启压力。'
+  {t:'能力', tags:['横向分组','计数','按需展开'], l:[
+    '按 6 个能力域做横向 chip（设备与环境 / 通知与媒体 / 设备控制 / 个人数据 / 录屏与感知 / 应用与容器），每颗带「已允许 n/m」。',
+    '只渲染当前分组的 2–4 行，17 项能力不再把页面拉长；右侧留有渐隐箭头与「第 n / 6 组」提示可发现性。',
+    '底部「开启推荐的 6 项」是 52dp 次级按钮，只新增允许、不重置已选；说明改为「敏感能力需单独开启；个别操作还要系统确认」。'
   ]},
   {t:'完成', tags:['收口','首聊','状态'], l:[
-    '上半屏保留光晕 + 白鲸 + 呼吸；下半屏改为「运行状态 + 你的选择」。',
-    '状态块四态：解压中（百分比）/ 已就绪 / 失败可重试 / 精简包待下载。',
-    '主按钮「开始第一次对话」；次按钮「先看看设置」；完成页隐藏进度与步骤轨。'
+    '上半屏光晕缩到 120dp（原 180 会压过正文）+ 白鲸 + 呼吸；下半屏是「运行状态 + 你的选择」。',
+    '状态块四态：解压中（真实百分比）/ 已就绪 / 失败可在维护重试 / 精简包待下载；标题随态切换。',
+    '主按钮「开始第一次对话」；失败与精简包态下改为可执行的下一步，而不是同一句话。'
   ]}
 ];
 const state = {page:0,theme:'dark',form:'phone',rt:'ready',root:false,accent:0,scale:90,layout:'list',immersive:true,lang:'zh',orient:'portrait',appTheme:'light',mode:'normal',more:false,gallery:false};
@@ -479,14 +589,21 @@ function apply(){
   const d = $('#device');
   d.dataset.theme = state.theme; d.dataset.form = state.form;
   const a = ACCENTS[state.accent];
-  d.style.setProperty('--accent', state.theme==='dark'? a.d : a.c);
+  d.style.setProperty('--accent-fill', state.theme==='dark' ? a.d : a.fill);
+  d.style.setProperty('--accent-ink', state.theme==='dark' ? '#08131c' : a.ink);
+  d.style.setProperty('--accent-text', state.theme==='dark' ? a.d : a.tc);
+  d.style.setProperty('--accent', state.theme==='dark' ? a.d : a.sw);
   $$('#pages .page').forEach(p=>p.classList.toggle('on', +p.dataset.page===state.page));
   const n = 9;
   $('#progFill').style.width = (state.page/8*100)+'%';
+  if (typeof updateSummary === 'function' && state.page === 8) updateSummary();
   $('.progress').style.visibility = state.page===0?'hidden':'visible';
   buildRail();
-  $('#btnBack').style.visibility = state.page===0?'hidden':'visible';
-  $('#btnNext').textContent = state.page===0?'开始设置 · 约 30 秒':(state.page===8?'开始第一次对话':'下一步');
+  $('#btnBack').style.display = state.page===0?'none':'grid';
+  $('#btnNext').textContent = state.page===0 ? '开始设置 · 约 30 秒'
+    : (state.page===8 ? ({ready:'进入应用，继续配置模型',preparing:'先进去，后台继续',failed:'进入维护里重试',lite:'进入应用 · 需要时下载'}[state.rt] || '进入应用')
+      : ([2,3,4,5].includes(state.page) ? '保留当前设置并继续' : '下一步'));
+  $('#btnBack').textContent = state.page===8 ? '先浏览应用' : '上一步';
   $('#topbar')&&0;
   // 完成页隐藏步骤胶囊
   $('#topbarHide');
@@ -497,20 +614,23 @@ function apply(){
 }
 function buildRail(){
   const labels=['欢迎','语言','方向','外观','强调色','屏幕','模式','能力','完成'];
-  $('#rail').innerHTML = '<div class="r-title">设置步骤</div>' + labels.map((l,i)=>
-    '<button data-step="'+i+'" class="'+(i===state.page?'on':(i<state.page?'done':''))+'"><span class="n">'+(i+1)+'</span>'+l+'</button>').join('');
+  // 欢迎页是封面，不计入 8 步：它没有编号，其余按 1..8 编号（与页内 NNW / 08 一致）
+  $('#rail').innerHTML = '<div class="r-title">设置步骤</div>' + labels.map((l,i)=>{
+    const n = i===0 ? '' : (i);
+    return '<button data-step="'+i+'" class="'+(i===state.page?'on':(i<state.page?'done':''))+'">'+(n?'<span class="n">'+n+'</span>':'<span class="n cover">·</span>')+l+'</button>';
+  }).join('');
   $$('#rail button').forEach(b=>b.onclick=()=>{state.page=+b.dataset.step;apply()});
 }
 function renderDone(){
   const map = {
     preparing:{dot:'dotw',title:'正在解压运行环境… 63%',sub:'进度会在后台继续，完成后自动就绪',bar:true},
     ready:{dot:'dotok',title:'运行环境已就绪',sub:'引擎启动只需约 2 秒',bar:false},
-    failed:{dot:'dotd',title:'运行环境准备未完成',sub:'进入后可在「维护」里重试，或重新安装',bar:false},
+    failed:{dot:'dotd',title:'运行环境准备未完成',sub:'进入后可在「维护」里重试；已选设置会保留',bar:false},
     lite:{dot:'dotw',title:'精简包：尚未安装运行环境',sub:'点击开始后选择是否下载（约 130 MB）',bar:false}
   };
   const m = map[state.rt];
-  const heads = {preparing:'正在准备',ready:'准备就绪',failed:'还差一步',lite:'准备就绪'};
-  const subs = {preparing:'期间可以先看看下面的内容，完成后自动就绪',ready:'你的选择已保存，点下面开始第一次对话。',failed:'环境没装好也能进，进去后在「维护」里重试。',lite:'精简包不含引擎，开始时可选择下载约 130 MB。'};
+  const heads = {preparing:'正在准备',ready:'准备就绪',failed:'还差一步',lite:'界面设置已完成'};
+  const subs = {preparing:'期间可以先看看下面的内容，完成后自动就绪',ready:'设置已保存，配置模型后即可开始对话。',failed:'环境没装好也能进，进去后在「维护」里重试；已选设置保留。',lite:'界面设置已完成；精简包不含引擎，需要时再下载。'};
   $('#doneTitle').textContent = heads[state.rt] || '准备就绪';
   $('#doneSub').textContent = subs[state.rt] || '';
   $('#rtDot').className = m.dot; $('#rtTitle').textContent = m.title; $('#rtSub').textContent = m.sub;
@@ -530,7 +650,7 @@ function syncControls(){
 }
 // 控制面板
 $$('#segForm button').forEach(b=>b.onclick=()=>{state.form=b.dataset.v;syncControls();apply()});
-$$('#segTheme button').forEach(b=>b.onclick=()=>{state.theme=b.dataset.v;syncControls();apply()});
+$$('#segTheme button').forEach(b=>b.onclick=()=>{state.theme=b.dataset.v;syncControls();apply();paintAccentRow();});
 $$('#segRt button').forEach(b=>b.onclick=()=>{state.rt=b.dataset.v;syncControls();apply()});
 $$('#segRoot button').forEach(b=>b.onclick=()=>{state.root=b.dataset.v==='yes';syncControls();apply();updatePrereq()});
 $('#btnGallery').onclick = ()=>{state.gallery=!state.gallery;buildGallery();};
@@ -541,26 +661,92 @@ $('#btnSteps').onclick = ()=>{state.page=(state.page+1)%9;apply()};
 $$('#langList .row').forEach(r=>r.onclick=()=>{$$('#langList .row').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');state.lang=r.dataset.k;updateSummary();});
 $$('#orientGrid .mini').forEach(b=>b.onclick=()=>{$$('#orientGrid .mini').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.orient=b.dataset.k;});
 $$('#themeGrid .mini').forEach(b=>b.onclick=()=>{$$('#themeGrid .mini').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.appTheme=b.dataset.k;});
-$$('#modeList .row').forEach(r=>r.onclick=()=>{if(r.dataset.k==='root'&&!state.root)return;$$('#modeList .row').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');state.mode=r.dataset.k;updateSummary();});
+$$('#modeList .row').forEach(r=>r.onclick=()=>{if(r.dataset.k==='root'&&!state.root)return;$$('#modeList .row').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');state.mode=r.dataset.k;updateSummary();updatePrereq();});
 $('#scaleRange').oninput = e=>{state.scale=+e.target.value;$('#scaleVal').textContent=state.scale+'%';$('#sample').style.setProperty('--scale',state.scale/90);updateSummary();};
 $$('#layoutSeg button').forEach(b=>b.onclick=()=>{$$('#layoutSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.layout=b.dataset.k;});
 $('#swImmersive').onclick = e=>{state.immersive=!state.immersive;e.currentTarget.classList.toggle('on',state.immersive)};
-$('#moreCaps').querySelector('.collapse-h').onclick = ()=>{state.more=!state.more;$('#moreCaps').classList.toggle('open',state.more)};
+(function(){const m=$('#moreCaps');if(m)m.querySelector('.collapse-h').onclick=()=>{state.more=!state.more;m.classList.toggle('open',state.more)};})();
 function updatePrereq(){
-  $('#prereqText').textContent = state.root
-    ? '已检测到 su：Root 可用。开启后引擎以 root 启动，可读写全盘。'
-    : '未检测到 su：Root 模式不可用。Shizuku 未运行：先打开 Shizuku 应用并启动服务。';
+  // 普通模式是默认且无需准备；此时不要把「su/Shizuku 未就绪」渲染成黄色告警，
+  // 否则正常用户会误以为自己配置失败（复审第 D2 条）。
+  const note = $('#prereqCard').querySelector('.note');
+  const warn = (state.mode !== 'normal') || state.root;
+  note.style.color = warn ? 'var(--warn)' : 'var(--ink2)';
+  note.querySelector('svg').style.color = warn ? 'var(--warn)' : 'var(--ink2)';
+  $('#prereqText').textContent = state.mode === 'root'
+    ? (state.root ? '已检测到 su：Root 可用。开启后整个引擎以 root 启动，可读写全盘。' : '未检测到 su，Root 暂时不可用；需要时可在设置里再开。')
+    : (state.mode === 'shizuku'
+      ? (state.root ? 'Shizuku 未运行：先在 Shizuku 应用里启动服务，再回来开启。' : 'Shizuku 未运行：先在 Shizuku 应用里启动服务；普通模式不受影响。')
+      : '普通模式无需额外准备。Root / Shizuku 属进阶选项，需要时可在设置里再开。');
 }
 // 强调色
-$('#accentRow').innerHTML = ACCENTS.map((a,i)=>'<button class="dot '+(i===state.accent?'on':'')+'" data-i="'+i+'" style="background:'+(state.theme==='dark'?a.d:a.c)+'" title="'+a.n+'"><svg><use href="#i-check"/></svg></button>').join('');
-$$('#accentRow .dot').forEach(b=>b.onclick=()=>{state.accent=+b.dataset.i;
-  $$('#accentRow .dot').forEach((x,i)=>{x.classList.toggle('on',i===state.accent);x.style.background=state.theme==='dark'?ACCENTS[i].d:ACCENTS[i].c});
-  apply();updateSummary();});
+paintAccentRow();
 function updateSummary(){
   const langMap={zh:'中文',en:'English',de:'Deutsch',pt:'Português',th:'ไทย',ru:'Русский'};
   const themeMap={light:'浅色',dark:'深色',system:'跟随系统'};
   $('#summary').innerHTML = '<span>'+langMap[state.lang]+'</span><span>'+themeMap[state.appTheme]+'</span><span>'+ACCENTS[state.accent].n+'</span><span>'+(state.mode==='normal'?'普通模式':state.mode==='shizuku'?'Shizuku':'Root')+'</span><span>缩放 '+state.scale+'%</span>';
 }
+// 能力分组切换 + 计数联动
+const CAP_TOTAL = 17;
+function capState(){
+  const groups = $$('.gpanel');
+  let sum = 0;
+  const per = groups.map(p=>{
+    const rows = [...p.querySelectorAll('.switch')];
+    const on = rows.filter(s=>s.classList.contains('on')).length;
+    sum += on;
+    return {on, total: rows.length};
+  });
+  $$('#capGroups .hchip').forEach((chip,i)=>{
+    const c = per[i] || {on:0,total:0};
+    chip.querySelector('i').textContent = '已允许 ' + c.on + ' / ' + c.total;
+  });
+  const gs = $('#gSum'); if (gs) gs.textContent = sum;
+  return sum;
+}
+function capArrow(){
+  const sc = $('#capGroups'), ar = document.querySelector('.hswipe');
+  if (!sc || !ar) return;
+  // 没有横向溢出（宽屏/横屏）或已滚到末端时隐藏，避免「全组都看得见却还在提示右滑」
+  const overflow = sc.scrollWidth - sc.clientWidth;
+  const atEnd = overflow <= 4 || sc.scrollLeft >= overflow - 4;
+  ar.classList.toggle('off', atEnd);
+}
+function capPos(){
+  const on = [...$$('#capGroups .hchip')].findIndex(c=>c.classList.contains('on'));
+  const gp = $('#gPos'); if (gp) gp.textContent = '第 ' + (on+1) + ' / 6 组';
+  const sc = $('#capGroups'); const chip = $$('#capGroups .hchip')[on];
+  if (chip && sc) { const l = chip.offsetLeft - 26; if (l > sc.scrollLeft + 8 || chip.offsetLeft + chip.offsetWidth > sc.scrollLeft + sc.clientWidth) sc.scrollTo({left: Math.max(0,l), behavior:'smooth'}); }
+}
+$$('#capGroups .hchip').forEach(b=>b.onclick=()=>{
+  $$('#capGroups .hchip').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  const g = b.dataset.g;
+  $$('.gpanel').forEach(p=>p.classList.toggle('on', p.dataset.g===g));
+  capPos(); capState();
+});
+$$('.gpanel .switch').forEach(sw=>sw.onclick=()=>{sw.classList.toggle('on');capState();});
+(function(){
+  const rb = $('#capRecommend'); if (!rb) return;
+  rb.onclick = () => {
+    // 推荐配置：STATUS / SENSOR / CLIPBOARD / CONTROL / SCHED / NOTIFY —— 只新增允许
+    // 与 OnboardingActivity.kt:1352-1359 RECOMMENDED_CAPS 一一对应
+    const panels = $$('.gpanel');
+    const targets = [
+      [0,'设备状态'],[0,'传感器'],[0,'剪贴板'],[2,'设备控制'],[2,'定时提醒'],[1,'发送通知'],
+    ];
+    targets.forEach(([g,label])=>{
+      const p = panels[g]; if (!p) return;
+      [...p.querySelectorAll('.row')].forEach(r=>{
+        const b = r.querySelector('b');
+        if (b && b.textContent === label) { const sw = r.querySelector('.switch'); if (sw) sw.classList.add('on'); }
+      });
+    });
+    capState();
+  };
+})();
+capState(); capPos(); capArrow();
+document.querySelector('#capGroups').addEventListener('scroll', capArrow, {passive:true});
 // 全部页面
 function buildGallery(){
   const g = $('#gallery'), grid = $('#gGrid');
@@ -571,7 +757,7 @@ function buildGallery(){
   const saved = state.page;
   grid.innerHTML = labels.map((l,i)=>{
     const tmp = document.createElement('div'); tmp.className='g-card';
-    tmp.innerHTML = '<div class="g-label"><span>'+(i+1)+' / 9 · '+l+'</span><span>'+(state.form==='tablet'?'平板':'手机')+' · '+(state.theme==='dark'?'深色':'浅色')+'</span></div><div class="g-frame"></div>';
+    tmp.innerHTML = '<div class="g-label"><span>'+(i===0?'封面 · 欢迎':i+' / 8 · '+l)+'</span><span>'+(state.form==='tablet'?'平板':'手机')+' · '+(state.theme==='dark'?'深色':'浅色')+'</span></div><div class="g-frame"></div>';
     const frame = tmp.querySelector('.g-frame');
     const clone = $('#device').cloneNode(true);
     clone.querySelectorAll('.page').forEach((p,j)=>p.classList.toggle('on',j===i));
@@ -592,10 +778,13 @@ if(q.get('scale')) {state.scale=+q.get('scale');}
 if(q.get('gallery')==='1'){state.gallery=true;}
 $('#scaleRange').value=state.scale; $('#scaleVal').textContent=state.scale+'%';
 $('#sample').style.setProperty('--scale',state.scale/90);
-$('#accentRow').innerHTML = ACCENTS.map((a,i)=>'<button class="dot '+(i===state.accent?'on':'')+'" data-i="'+i+'" style="background:'+(state.theme==='dark'?a.d:a.c)+'" title="'+a.n+'"><svg><use href="#i-check"/></svg></button>').join('');
-$$('#accentRow .dot').forEach(b=>b.onclick=()=>{state.accent=+b.dataset.i;
-  $$('#accentRow .dot').forEach((x,i)=>{x.classList.toggle('on',i===state.accent);x.style.background=state.theme==='dark'?ACCENTS[i].d:ACCENTS[i].c});
-  apply();updateSummary();});
+function paintAccentRow(){
+  $('#accentRow').innerHTML = ACCENTS.map((a,i)=>'<button class="dot '+(i===state.accent?'on':'')+'" data-i="'+i+'" style="background:'+(state.theme==='dark'?a.d:a.sw)+'" title="'+a.n+'"><svg><use href="#i-check"/></svg></button>').join('');
+  $$('#accentRow .dot').forEach(b=>b.onclick=()=>{state.accent=+b.dataset.i;
+    $$('#accentRow .dot').forEach((x,i)=>{x.classList.toggle('on',i===state.accent);x.style.background=state.theme==='dark'?ACCENTS[i].d:ACCENTS[i].sw});
+    apply();updateSummary();});
+}
+paintAccentRow();
 syncControls(); apply(); updatePrereq(); updateSummary();
 if(state.gallery) buildGallery();
 if(q.get('debug')==='1'){const d=$('#device').getBoundingClientRect();document.title='W'+innerWidth+' D'+d.width.toFixed(0)+' L'+d.left+' B'+document.body.scrollWidth+' S'+$('#stage').getBoundingClientRect().width.toFixed(0);}

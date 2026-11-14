@@ -81,6 +81,19 @@ night = color_names(os.path.join(RES, "values-night", "colors.xml"))
 missing_night = sorted(n for n in day if n not in night and n.startswith(("md3_", "accent")))
 check("[C1] values-night 覆盖 md3_*/accent* 令牌", not missing_night, str(missing_night[:8]))
 
+# Upstream style tokens must exist in both effective day and night themes.
+declared = set(re.findall(r'<attr name="(dsh\w+)"', read(os.path.join(RES, "values", "attrs_style.xml"))))
+for loc in ("values", "values-night"):
+    root = ET.parse(os.path.join(RES, loc, "themes.xml")).getroot()
+    base = next(style for style in root.findall("style") if style.get("name") == "Theme.Dsh")
+    mapped_tokens = {item.get("name") for item in base.findall("item")}
+    check(f"[C2] {loc} 主题定义全部风格令牌", declared <= mapped_tokens,
+          str(sorted(declared - mapped_tokens)))
+themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
+check("[C3] 风格覆盖层不替换 Activity 主题",
+      "followsStyle && StylePref.isMaterial(this)" in themed
+      and "theme.applyStyle(styleOverlay, true)" in themed)
+
 # ---------- [D] Activity 不自己 setTheme ----------
 bad = []
 for p in glob.glob(os.path.join(JAVA, "*.kt")):

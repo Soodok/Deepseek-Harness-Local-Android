@@ -445,12 +445,12 @@ class PermissionCenterActivity : ThemedActivity() {
                 addView(TextView(this@PermissionCenterActivity).apply {
                     text = label
                     textSize = 16f
-                    setTextColor(getColor(R.color.text_primary))
+                    setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                 })
                 if (sub.isNotEmpty()) addView(TextView(this@PermissionCenterActivity).apply {
                     text = sub
                     textSize = 12f
-                    setTextColor(getColor(R.color.text_secondary))
+                    setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 })
             }
             return LinearLayout(this).apply {
@@ -914,19 +914,19 @@ class PermissionCenterActivity : ThemedActivity() {
         when {
             !ok -> {
                 st.text = getString(R.string.setting_cap_state_blocked)
-                st.setTextColor(getColor(R.color.warning))
+                st.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
             }
             on && notReady -> {
                 st.text = getString(R.string.linux_state_not_deployed)
-                st.setTextColor(getColor(R.color.warning))
+                st.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
             }
             on -> {
                 st.text = getString(R.string.state_on)
-                st.setTextColor(getColor(R.color.success))
+                st.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
             }
             else -> {
                 st.text = getString(R.string.state_off)
-                st.setTextColor(getColor(R.color.text_secondary))
+                st.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             }
         }
     }
@@ -1025,12 +1025,12 @@ class PermissionCenterActivity : ThemedActivity() {
         box.addView(TextView(this).apply {
             text = getString(spec.title)
             textSize = 17f
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
         })
         box.addView(TextView(this).apply {
             text = getString(spec.sub)
             textSize = 13f
-            setTextColor(getColor(R.color.text_secondary))
+            setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             setPadding(0, dp(8), 0, 0)
         })
         // 「门槛提示」与「开关能否点」是两件事：应用管理的开关始终可点（列出应用本来
@@ -1040,7 +1040,7 @@ class PermissionCenterActivity : ThemedActivity() {
             box.addView(TextView(this).apply {
                 text = getString(spec.need)
                 textSize = 13f
-                setTextColor(getColor(R.color.warning))
+                setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 setPadding(0, dp(10), 0, 0)
             })
             // 磁贴上的开关在缺权时是置灰的（点不动），所以「去补权限」必须在这里给一个
@@ -1048,7 +1048,7 @@ class PermissionCenterActivity : ThemedActivity() {
             box.addView(TextView(this).apply {
                 text = getString(R.string.setting_cap_grant_now)
                 textSize = 14f
-                setTextColor(getColor(R.color.accent))
+                setTextColor(dshColor(R.attr.dshAccent, R.color.accent))
                 setPadding(0, dp(12), 0, 0)
                 setOnClickListener {
                     if (!requestCapPerm(spec.cap)) {

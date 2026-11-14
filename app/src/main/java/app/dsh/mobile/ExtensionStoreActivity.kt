@@ -235,7 +235,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             },
             stateText = TextView(this).apply {
                 textSize = 12f
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             },
             action = TextView(this).apply {
                 textSize = 13f
@@ -257,7 +257,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 // 次要操作（重新安装 / 卸载）收进 ⋯ 菜单：行内只留一个主操作按钮，
                 // 把宽度让给扩展名与介绍文案（旧版 ⟳/✕ 两个文字符号按钮把描述挤没了）
                 setImageResource(R.drawable.ic_more_vert)
-                setColorFilter(getColor(R.color.text_secondary))
+                setColorFilter(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 contentDescription = getString(R.string.ext_more_cd)
                 scaleType = android.widget.ImageView.ScaleType.CENTER
                 val pad = dp(6)
@@ -323,13 +323,13 @@ class ExtensionStoreActivity : ThemedActivity() {
                     addView(TextView(this@ExtensionStoreActivity).apply {
                         text = ext.name
                         textSize = 16f
-                        setTextColor(getColor(R.color.text_primary))
+                        setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                     })
                     if (ext.desc.isNotEmpty()) addView(TextView(this@ExtensionStoreActivity).apply {
                         // 介绍文案（catalog desc）：上限两行，超出省略号，不再被按钮挤成竖条
                         text = ext.desc
                         textSize = 12f
-                        setTextColor(getColor(R.color.text_secondary))
+                        setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                         maxLines = 2
                         ellipsize = android.text.TextUtils.TruncateAt.END
                         setPadding(0, dp(3), 0, 0)
@@ -650,7 +650,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                     if (inset) R.drawable.bg_btn_outline_inset else R.drawable.bg_btn_outline
                 )
                 btn.backgroundTintList = null
-                btn.setTextColor(getColor(R.color.text_secondary))
+                btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             }
         }
     }
@@ -782,11 +782,11 @@ class ExtensionStoreActivity : ThemedActivity() {
                 // 浅色主题下会变成一块深色方块（未选中文字 2.2:1）。终端页继续用旧 drawable。
                 if (selected) {
                     background = getDrawable(R.drawable.bg_ext_chip_selected)
-                    setTextColor(getColor(R.color.accent))
+                    setTextColor(dshColor(R.attr.dshAccent, R.color.accent))
                     typeface = Typeface.DEFAULT_BOLD
                 } else {
                     background = getDrawable(R.drawable.bg_ext_chip)
-                    setTextColor(getColor(R.color.text_secondary))
+                    setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 }
                 isClickable = true
                 isFocusable = true
@@ -1450,11 +1450,11 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun categoryColor(ext: ExtensionManager.Extension): Int {
         val key = ext.categoryKey.ifEmpty { legacyCategoryKey(ext.category) }
         return when (key) {
-            "lang" -> getColor(R.color.success)
-            "build" -> getColor(R.color.warning)
-            "debug" -> getColor(R.color.danger)
+            "lang" -> dshColor(R.attr.dshSuccess, R.color.success)
+            "build" -> dshColor(R.attr.dshWarning, R.color.warning)
+            "debug" -> dshColor(R.attr.dshDanger, R.color.danger)
             "cross" -> getColor(R.color.accent_alt)
-            "media" -> getColor(R.color.accent)
+            "media" -> dshColor(R.attr.dshAccent, R.color.accent)
             // 逆向分析（v1.6.20）：深青绿。刻意不用 danger 的红 —— 逆向类条目
             // 容易被误读成「危险操作」，整块列表变红会像警告区而不是工具区。
             "reverse" -> getColor(R.color.reverse)

@@ -1254,14 +1254,13 @@
     <string name="ob_wizard_accent_title">Акцентный цвет</string>
     <string name="ob_wizard_accent_desc">Используется для кнопок, выделения и текста состояния.</string>
     <string name="ob_wizard_priv_title">Режим работы</string>
-    <string name="ob_wizard_priv_desc">Определяет, к чему агент имеет доступ. Рекомендуется «Обычный».</string>
     <string name="ob_wizard_done_title">Всё готово</string>
     <string name="ob_wizard_done_desc">Ваш выбор сохранён. Нажмите ниже, чтобы начать.</string>
     <string name="ob_rt_preparing">Распаковка среды выполнения…</string>
     <string name="ob_rt_pct">Распаковка среды выполнения… %1$d%%</string>
     <string name="ob_rt_ready">Среда выполнения готова</string>
     <string name="ob_rt_failed">Подготовка среды не завершена — повторите в «Обслуживании» после входа</string>
-    <string name="ob_rt_download">Облегчённый пакет: выберите загрузку среды после знакомства</string>
+    <string name="ob_rt_download">Облегчённый пакет · среда скачивается после знакомства</string>
     <string name="ob_wizard_back">Назад</string>
     <string name="ob_wizard_next">Далее</string>
     <string name="ob_wizard_start">Начать</string>
@@ -1299,6 +1298,67 @@
     <string name="ob_wizard_cap_desc">Выберите, к чему ИИ имеет доступ. Всё можно изменить позже в разделе «Настройки → Разрешения».</string>
     <string name="ob_wizard_cap_recommend">Рекомендуется</string>
     <string name="ob_wizard_cap_recommended">Включены безопасные возможности только для чтения</string>
+    <string name="ob_wizard_welcome_eyebrow">DEEPSEEK HARNESS · ПОЛНЫЙ ПОРТ</string>
+    <string name="ob_wizard_welcome_title">Полный DeepSeek Harness\nтеперь в вашем телефоне</string>
+    <string name="ob_wizard_welcome_lede">Клонировать репозитории, собирать проекты, запускать тесты, коммитить код — и читать экран, нажимать, вводить текст. Движок и инструменты работают на телефоне.</string>
+    <string name="ob_wizard_welcome_prereq">Среда выполнения входит в пакет; модель и API-ключ настраиваются внутри приложения.</string>
+    <string name="ob_wizard_welcome_cover_label">Добро пожаловать</string>
+    <string name="ob_wizard_mode_title">Режим работы</string>
+    <string name="ob_wizard_welcome_step_hint">Около 30 секунд на настройку; среда распаковывается в фоне</string>
+    <string name="ob_wizard_next_keep">Оставить и продолжить</string>
+    <string name="ob_done_summary_scale">Масштаб %1$d%%</string>
+    <string name="ob_wizard_welcome_start">Начать настройку · около 30 с</string>
+    <string name="ob_wizard_welcome_f1">Тот же движок</string>
+    <string name="ob_wizard_welcome_f1_sub">Движок, инструменты и плагины настольного DSH</string>
+    <string name="ob_wizard_welcome_f2">Рабочий процесс как на ПК</string>
+    <string name="ob_wizard_welcome_f2_sub">Настоящий Node.js и реальный терминал; команды выполняются на телефоне</string>
+    <string name="ob_wizard_welcome_f3">Собственный Linux-контейнер</string>
+    <string name="ob_wizard_welcome_f3_sub">Userland Alpine; ставит Linux-софт и тулчейны по требованию</string>
+    <string name="ob_wizard_welcome_f4">Управление телефоном</string>
+    <string name="ob_wizard_welcome_f4_sub">Читает экран, нажимает, вводит — можно остановить в любой момент</string>
+    <string name="ob_wizard_welcome_f5">Работа вместе с компьютером</string>
+    <string name="ob_wizard_welcome_f5_sub">После сопряжения компьютер использует экран, камеру и контейнер этого телефона</string>
+    <string name="ob_wizard_mode_desc">Насколько глубоко ИИ может проникать в систему. Обычный режим подходит большинству.</string>
+    <string name="ob_wizard_mode_footnote">Режим можно менять в любой момент; Root требует двух подтверждений и показывает активный режим на странице «О приложении».</string>
+    <string name="ob_mode_note_normal">Обычному режиму ничего не нужно. Root и Shizuku — дополнительные опции, их можно включить позже в настройках.</string>
+    <string name="ob_mode_note_shizuku_absent">Shizuku не запущен: сначала запустите его службу. На обычный режим это не влияет.</string>
+    <string name="ob_mode_note_shizuku_present">Shizuku ещё не авторизован: разрешите в его запросе. Обычный режим работает и без него.</string>
+    <string name="ob_mode_note_root_absent">su не найден, Root недоступен. Можно включить позже в настройках.</string>
+    <string name="ob_mode_note_root_present">su найден: Root доступен. Весь движок запускается от root и может читать и писать любые файлы.</string>
+    <string name="ob_wizard_caps_title">К чему ИИ имеет доступ</string>
+    <string name="ob_wizard_caps_desc">Только то, что вы разрешите. Даже со всем выключенным он общается — просто не видит и не нажимает.</string>
+    <string name="ob_caps_pos_fmt">Группа %1$d из %2$d</string>
+    <string name="ob_caps_total_fmt">Разрешено %1$d из %2$d</string>
+    <string name="ob_caps_chip_fmt">%1$d/%2$d</string>
+    <string name="ob_caps_recommend">Включить 6 рекомендованных</string>
+    <string name="ob_caps_recommend_hint">Рекомендуется: состояние устройства, датчики, буфер обмена, управление устройством, напоминания, уведомления. Только добавляет, не сбрасывает ваш выбор.</string>
+    <string name="ob_caps_note">Чувствительные возможности включаются отдельно; запись экрана и установка каждый раз подтверждаются системой. Изменить можно в Настройки → Разрешения.</string>
+    <string name="ob_caps_recommended_toast">6 рекомендованных включены; остальной выбор сохранён</string>
+    <string name="ob_caps_domain_env">Устройство и среда</string>
+    <string name="ob_caps_domain_notify">Уведомления и медиа</string>
+    <string name="ob_caps_domain_control">Управление устройством</string>
+    <string name="ob_caps_domain_personal">Личные данные</string>
+    <string name="ob_caps_domain_input">Запись и датчики</string>
+    <string name="ob_caps_domain_system">Приложения и контейнер</string>
+    <string name="ob_done_head_ready">Всё готово</string>
+    <string name="ob_done_head_preparing">Подготовка</string>
+    <string name="ob_done_head_failed">Остался один шаг</string>
+    <string name="ob_done_head_lite">Настройка завершена</string>
+    <string name="ob_done_sub_ready">Сохранено. Добавьте модель и API-ключ, и можно общаться.</string>
+    <string name="ob_done_sub_preparing">Пока можно осмотреться; подготовка идёт сама.</string>
+    <string name="ob_done_sub_failed">Войти можно и повторить в разделе «Обслуживание»; выбор сохранится.</string>
+    <string name="ob_done_sub_lite">Интерфейс настроен; в облегчённом пакете движка нет до загрузки.</string>
+    <string name="ob_done_rt_sub_preparing">Прогресс продолжается в фоне</string>
+    <string name="ob_done_rt_sub_ready">Движок стартует примерно за 2 с</string>
+    <string name="ob_done_rt_sub_failed">Повторите в «Обслуживании» после входа</string>
+    <string name="ob_done_rt_sub_lite">После входа решите, скачивать ли (около 130 МБ)</string>
+    <string name="ob_done_next_title">Ещё одно: модель и API-ключ</string>
+    <string name="ob_done_next_sub">В приложении заполните в Настройки → Модель. Только после этого заработает чат.</string>
+    <string name="ob_done_cta_ready">Войти и продолжить настройку</string>
+    <string name="ob_done_cta_preparing">Войти, подготовка продолжится</string>
+    <string name="ob_done_cta_failed">Войти и повторить в «Обслуживании»</string>
+    <string name="ob_done_cta_lite">Войти · скачать позже</string>
+    <string name="ob_done_browse">Сначала осмотреться</string>
     <string name="sensitive_kind_calendar">календарь</string>
     <string name="sensitive_kind_contacts">контакты</string>
     <string name="sensitive_kind_sms">текстовые сообщения</string>
@@ -1464,12 +1524,7 @@
     <string name="ext_linux_action_remove">Удалить</string>
     <string name="ext_linux_action_unavailable">Н/Д</string>
     <string name="ext_version_default">Версия по умолчанию</string>
-    <string name="ext_version_switch_msg">Контейнер может содержать только одну версию этого расширения.
-
-Установлена: %2$s
-Выбрана: %1$s
-
-Сначала удалить установленную версию, затем перейти на эту?</string>
+    <string name="ext_version_switch_msg">Контейнер может содержать только одну версию этого расширения.\n\nУстановлена: %2$s\nВыбрана: %1$s\n\nСначала удалить установленную версию, затем перейти на эту?</string>
     <string name="ext_version_switch_go">Удалить %1$s</string>
 
     <string name="ext_linux_install_failed">Установка не удалась: %1$s</string>
@@ -1744,11 +1799,7 @@
     <string name="a11y_voice_sub">Запускается микрофоном в оверлее; распознавание системы или облака</string>
     <string name="a11y_row_safety">Границы безопасности</string>
     <string name="a11y_safety_sub">Системные страницы только для чтения, номера документов маскируются, опасные нажатия требуют подтверждения</string>
-    <string name="a11y_safety_body">Системные страницы разрешений и безопасности только для чтения: читать можно, нажимать — нет.
-
-Номера документов и карт маскируются до отправки модели.
-
-Строки вида отправить / оплатить / удалить / авторизовать помечаются, автоматическое нажатие их всегда пропускает.</string>
+    <string name="a11y_safety_body">Системные страницы разрешений и безопасности только для чтения: читать можно, нажимать — нет.\n\nНомера документов и карт маскируются до отправки модели.\n\nСтроки вида отправить / оплатить / удалить / авторизовать помечаются, автоматическое нажатие их всегда пропускает.</string>
     <string name="a11y_need_service">Сначала включите службу специальных возможностей</string>
     <string name="tts_test_sub">Нажмите, чтобы услышать пример; если движка нет, причина появится здесь</string>
     <string name="tts_test_sample">Синтез речи готов.</string>
@@ -1897,4 +1948,9 @@
     <string name="theme_mode_section">Оформление</string>
     <string name="theme_mode_system_sub">Следовать настройкам системы</string>
     <string name="theme_source">Источник цвета</string>
+    <string name="style_title">Стиль интерфейса</string>
+    <string name="style_sub_material">Material 3 · тёплый серый с бирюзой</string>
+    <string name="style_sub_classic">Классический · холодный сине-серый</string>
+    <string name="style_classic">Классический</string>
+    <string name="style_material">Material 3</string>
 </resources>

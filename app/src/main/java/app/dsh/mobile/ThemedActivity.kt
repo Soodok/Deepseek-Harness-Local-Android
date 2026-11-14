@@ -149,7 +149,12 @@ fun IslandPalette.themed(context: Context): IslandPalette.Colors {
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */
 open class ThemedActivity : Activity() {
 
+    private var appliedUiStyle: StylePref.Style? = null
+
     /** 使用官方 Material 对话框主题和动态语义色，不覆盖其窗口背景。 */
+    protected fun styleNeedsRecreate(): Boolean =
+        followsStyle && appliedUiStyle != null && appliedUiStyle != StylePref.style(this)
+
     protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
     override fun attachBaseContext(newBase: Context) {
@@ -158,8 +163,15 @@ open class ThemedActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 保留上游 AppCompat 深浅色同步，避免弹窗把 Activity 的资源配置改回系统模式。
-        // 动态色已由 Application 的生命周期回调应用，这里不再覆盖 Activity 主题。
+        // 动态色已由 Application 的生命周期回调应用；风格覆盖层只设置 dsh 令牌。
         ThemeManager.syncAppCompatNight(this)
+        appliedUiStyle = StylePref.style(this)
+        val styleOverlay = if (followsStyle && appliedUiStyle == StylePref.Style.MATERIAL) {
+            R.style.ThemeOverlay_Dsh_Style_Material
+        } else {
+            R.style.ThemeOverlay_Dsh_Style_Classic
+        }
+        theme.applyStyle(styleOverlay, true)
         val paletteOverlay = ThemeAccent.overlayRes(this)
         if (paletteOverlay != 0) theme.applyStyle(paletteOverlay, true)
         super.onCreate(savedInstanceState)
@@ -178,6 +190,20 @@ open class ThemedActivity : Activity() {
      */
     protected open val usesSettingsBackground: Boolean get() = false
 
+    /**
+     * 本 Activity 是否跟随「界面风格」（设置 → 主题 → 界面风格）。
+     *
+     * 默认 true：v1.8.0 起全站都跟着风格走，布局里的 `?attr/dshXxx` 与
+     * Material 语义色才会同步解析，不会出现「设置页暖、主界面冷」的花脸。
+     *
+     * 覆盖为 false 的只有**自绘深色**的页面 —— 它们的底色是写死的 #FF101418，
+     * 套 Material 3 暖灰反而更割裂：
+     *   · TerminalActivity（终端，深色底色）
+     *   · LogViewerActivity（日志，深色底色，且不继承 ThemedActivity，不影响）
+     *   · LinuxActivity（工作台，整屏自绘）
+     */
+    protected open val followsStyle: Boolean get() = true
+
     override fun setContentView(layoutResID: Int) {
         super.setContentView(layoutResID)
         applySettingsBackground()
@@ -192,6 +218,10 @@ open class ThemedActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (styleNeedsRecreate()) {
+            recreate()
+            return
+        }
         // 从外观页选完图返回时立即生效，不需要用户手动刷新
         if (usesSettingsBackground) applySettingsBackground()
         // 强调色可能在别的页面被改过（主题页重建的只是它自己），

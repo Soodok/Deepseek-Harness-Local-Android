@@ -1,10 +1,10 @@
 package app.dsh.mobile
 
 import android.animation.ValueAnimator
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -30,16 +30,18 @@ import com.google.android.material.radiobutton.MaterialRadioButton
 import com.google.android.material.textview.MaterialTextView
 
 /**
- * 首次启动引导（v1.7.0 重做为七步、双形态向导）。
+ * 首次启动引导（v2 重做为九页、双形态向导）。
  *
- * ## 七步
+ * ## 九页 = 1 封面 + 8 步
+ *  0. 欢迎（封面，不计入步数；说明这是什么、要做什么准备）
  *  1. 语言（6 种）
- *  2. 显示方向（带画面预览）
+ *  2. 显示方向（带真机画面预览，切竖/横真实变形）
  *  3. 外观主题（带明暗预览）
- *  4. 系统动态取色开关
+ *  4. 系统动态取色或预设配色
  *  5. 屏幕与布局（新增：页面缩放 / 设置页布局 / 沉浸式）
- *  6. 运行模式与能力（模式单选 + 能力开关多选）
- *  7. 完成（保持 v1.5.x 原样，用户明确要求不改）
+ *  6. 运行模式（模式单选）
+ *  7. 能力开关
+ *  8. 完成
  *
  * ## 双形态
  *  · >=600dp（平板 / 横屏）：左侧 206dp 步骤轨常驻，步骤可点跳；
@@ -62,15 +64,27 @@ class OnboardingActivity : ThemedActivity() {
     /** 一步的定义：标题。 */
     private data class Step(val titleRes: Int)
 
+    /**
+     * 九页 = 1 封面 + 8 步，下标与 pages 一一对应。
+     *
+     * 封面（index 0）不计步：侧轨显示「·」，进度条与「第 n / 8 步」都不数它。
+     * 编号只有这一处来源 —— v1.7 之前 stepRow 跳转、refreshStepper、goTo
+     * 各自算了一次 index+1，加页后必然整体偏一页。
+     */
     private val steps = listOf(
+        Step(R.string.ob_wizard_welcome_cover_label),
         Step(R.string.ob_wizard_language_title),
         Step(R.string.ob_wizard_orientation_title),
         Step(R.string.ob_wizard_theme_title),
         Step(R.string.theme_color_section),
         Step(R.string.ob_wizard_screen_title),
-        Step(R.string.ob_wizard_priv_title),
+        Step(R.string.ob_wizard_mode_title),
+        Step(R.string.ob_wizard_caps_title),
         Step(R.string.ob_wizard_done_title),
     )
+
+    /** 方向 / 外观 / 强调色 / 屏幕四页是可选页，主按钮写「保留当前设置并继续」。 */
+    private val OPTIONAL_PAGES = setOf(2, 3, 4, 5)
 
     private var page = 0
 
@@ -82,10 +96,29 @@ class OnboardingActivity : ThemedActivity() {
     private var selectedLayoutMode: SettingsLayoutMode = SettingsLayoutMode.LIST
     private var selectedImmersive = false
 
+    /** 运行环境四态：欢迎页胶囊与完成页状态卡共用的唯一权威状态。 */
+    private enum class RtState { PREPARING, READY, FAILED, LITE }
+
+    @Volatile private var rtState: RtState = RtState.PREPARING
+    @Volatile private var rtPct: Int = 0
+
     /** 完成页的运行环境预取状态（v1.7.10）。 */
     private var doneRuntimeStatus: TextView? = null
     private var doneRuntimeBar: ProgressBar? = null
-    @Volatile private var lastPrefetchPct = -1
+    private var doneRuntimeSub: TextView? = null
+    private var welcomePill: LinearLayout? = null
+    private var welcomePillText: TextView? = null
+    private var welcomePillSpinner: ProgressBar? = null
+    private val runtimeHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val runtimeObserver = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed) return
+            val state = PrefetchResult.state ?: RtState.PREPARING
+            val pct = PrefetchResult.pct
+            if (state != rtState || pct != rtPct) renderRuntime(state, pct)
+            if (state == RtState.PREPARING) runtimeHandler.postDelayed(this, 250)
+        }
+    }
 
     private lateinit var pages: List<View>
     private lateinit var progress: ProgressBar
@@ -163,6 +196,7 @@ class OnboardingActivity : ThemedActivity() {
             ?.let { SettingsLayoutMode.fromId(it) } ?: SettingsLayoutMode.current(this)
         selectedImmersive = savedInstanceState?.getBoolean(KEY_IMMERSIVE)
             ?: MainActivity.immersiveEnabled(this)
+        capGroupIndex = savedInstanceState?.getInt(KEY_CAP_GROUP) ?: 0
 
         progress = findViewById(R.id.stepProgress)
         stepHint = findViewById(R.id.txtStepHint)
@@ -177,15 +211,20 @@ class OnboardingActivity : ThemedActivity() {
         btnSteps = findViewById(R.id.btnSteps)
 
         pages = listOf(
+            findViewById(R.id.pageWelcome),
             findViewById(R.id.pageLanguage),
             findViewById(R.id.pageOrientation),
             findViewById(R.id.pageTheme),
             findViewById(R.id.pageAccent),
             findViewById(R.id.pageScreen),
-            findViewById(R.id.pagePriv),
+            findViewById(R.id.pageMode),
+            findViewById(R.id.pageCaps),
             findViewById(R.id.pageDone),
         )
-        progress.max = pages.size
+        // 进度只算 8 步：封面不计入，否则「第 1 / 9 步」与侧轨编号对不上
+        progress.max = steps.size - 1
+
+        buildWelcomeRows()
 
         buildStepper()
         buildLanguageCards()
@@ -196,23 +235,36 @@ class OnboardingActivity : ThemedActivity() {
         buildPrivCards()
         buildCapabilitySwitches()
 
-        btnBack.setOnClickListener { goTo(page - 1) }
+        btnBack.setOnClickListener {
+            // 完成页的次按钮是「先浏览应用」：语义是进入应用，不是回退一页
+            if (page == pages.size - 1) finishOnboarding() else goTo(page - 1)
+        }
         btnNext.setOnClickListener {
             if (page == pages.size - 1) finishOnboarding() else goTo(page + 1)
         }
 
         // 手机形态：顶部胶囊打开步骤抽屉；点遮罩关闭
         btnSteps.setOnClickListener { openStepsDrawer(true) }
+        // 30dp 高的胶囊达不到 Android 的 48dp 最小触控尺寸（实测 65.5 × 30.2dp）。
+        // 视觉不动，用 TouchDelegate 把热区向外扩——和 MainActivity.applyHandleTouchTarget 同一套做法。
+        val topBlock = findViewById<ViewGroup>(R.id.topBlock)
+        btnSteps.post { expandTouchTarget(btnSteps, topBlock, minDp = 48) }
 
         applyFormFactor()
+        // 不要在 onCreate 里同步探测 su：Privilege.rootAvailableMinimal() 最坏要试
+        // 3 种 su 语法 × 2s 超时，实测直接把首屏卡到 ANR（FocusEvent 等 5s 超时）。
+        // 交给 probeCapabilities() 的后台线程，结果回主线程再应用。
         probeCapabilities()
         refreshShizukuStatus()
-        updateRootAvailability()
 
         // v1.7.10：用户挑语言/主题的这十几秒足够解压 runtime.zip。
         // 解压提前到这里，点「完成」后引擎只需启动，不再让用户盯着遮罩干等。
         doneRuntimeStatus = findViewById(R.id.txtDoneRuntime)
         doneRuntimeBar = findViewById(R.id.pbDoneRuntime)
+        doneRuntimeSub = findViewById(R.id.txtDoneRuntimeSub)
+        welcomePill = findViewById(R.id.welcomePill)
+        welcomePillText = findViewById(R.id.txtWelcomePill)
+        welcomePillSpinner = findViewById(R.id.pbWelcomePill)
         startRuntimePrefetch()
 
         goTo(page)
@@ -270,7 +322,11 @@ class OnboardingActivity : ThemedActivity() {
 
     private fun refreshStepper() {
         fun paint(row: MaterialButton, index: Int) {
-            val marker = if (index < page) "\u2713" else (index + 1).toString()
+            val marker = when {
+                index == 0 -> "\u00b7"
+                index < page -> "\u2713"
+                else -> index.toString()
+            }
             row.text = "$marker  ${getString(steps[index].titleRes)}"
             row.isSelected = index == page
             row.backgroundTintList = ColorStateList.valueOf(
@@ -317,15 +373,31 @@ class OnboardingActivity : ThemedActivity() {
         page = index
         pages.forEachIndexed { i, v -> v.visibility = if (i == index) View.VISIBLE else View.GONE }
         animateStep(previous, index)
-        progress.progress = index + 1
-        stepHint.text = getString(R.string.ob_wizard_step_fmt, index + 1, pages.size)
+        // 步数只算 8 步（封面不计）：进度条、眉标、侧轨编号统一从这里取，
+        // 之前三处各算一次 index+1，加页后整体偏一页。
+        val stepNo = index
+        val stepCount = steps.size - 1
+        progress.progress = stepNo
+        progress.visibility = if (index == 0) View.INVISIBLE else View.VISIBLE
+        // 封面不再显示页眉提示：那一行「约 30 秒、环境在后台解压」与胶囊
+        // 说的是同一件事，用户明确要求去掉（截图里顶部那行灰字）。
+        // 其余页照旧显示「第 n / 8 步」，显隐由 syncCoverStatus() 统一管。
+        if (index != 0) stepHint.text = getString(R.string.ob_wizard_step_fmt, stepNo, stepCount)
 
         // 首页不显示「上一步」：用 GONE 而不是 INVISIBLE，否则它仍占着
         // layout_weight 的宽度，右侧按钮会被挤到屏幕中间（v1.5.x 实测偏右 400px）。
         btnBack.visibility = if (index == 0) View.GONE else View.VISIBLE
+        btnBack.setText(if (index == pages.size - 1) R.string.ob_done_browse else R.string.ob_wizard_back)
+        syncCoverStatus()
         btnNext.setText(
-            if (index == pages.size - 1) R.string.ob_wizard_start else R.string.ob_wizard_next,
+            when {
+                index == pages.size - 1 -> R.string.ob_wizard_start   // 覆盖前的占位，随后由 refreshDoneCta 细化
+                index == 0 -> R.string.ob_wizard_welcome_start
+                index in OPTIONAL_PAGES -> R.string.ob_wizard_next_keep
+                else -> R.string.ob_wizard_next
+            },
         )
+        if (index == pages.size - 1) refreshDoneCta()
         if (index == pages.size - 1) playDoneAnimation() else stopGlowBreath()
         refreshStepper()
         refreshSelection()
@@ -433,7 +505,8 @@ class OnboardingActivity : ThemedActivity() {
         container: LinearLayout,
         title: String,
         subtitle: String?,
-        iconRes: Int,
+        iconRes: Int? = null,
+        glyph: String? = null,
         onClick: () -> Unit,
     ): MaterialCardView {
         val card = MaterialCardView(this).apply {
@@ -460,11 +533,20 @@ class OnboardingActivity : ThemedActivity() {
             setPaddingRelative(dp(16), dp(8), dp(8), dp(8))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
-        row.addView(ImageView(this).apply {
-            setImageResource(iconRes)
-            setColorFilter(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
-            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(16) }
-        })
+        if (glyph != null) {
+            row.addView(MaterialTextView(this).apply {
+                text = glyph
+                gravity = Gravity.CENTER
+                setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(16) }
+            })
+        } else if (iconRes != null) {
+            row.addView(ImageView(this).apply {
+                setImageResource(iconRes)
+                setColorFilter(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(16) }
+            })
+        }
         val textCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -545,7 +627,8 @@ class OnboardingActivity : ThemedActivity() {
                     box,
                     getString(langLabelRes[code]!!),
                     langNativeName(code),
-                    R.drawable.ic_language,
+                    iconRes = null,
+                    glyph = langGlyph(code),
                 ) {
                     if (selectedLang != code) {
                         // 切语言必须 recreate 才能让本页文案跟着变；页码与选项靠
@@ -558,6 +641,17 @@ class OnboardingActivity : ThemedActivity() {
             )
         }
         refreshSelection()
+    }
+
+    /** 语言卡的字形头像：每门语言用自己的一两个字，替代六张同款地球。 */
+    private fun langGlyph(code: String): String = when (code) {
+        "zh" -> "\u6587"
+        "en" -> "A"
+        "de" -> "D"
+        "pt" -> "P"
+        "th" -> "\u0e01"
+        "ru" -> "\u042f"
+        else -> "?"
     }
 
     private fun langNativeName(code: String): String = when (code) {
@@ -708,6 +802,73 @@ class OnboardingActivity : ThemedActivity() {
             setCardBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurfaceContainer))
             addView(selector)
         })
+        updateAccentPreview()
+        refreshSelection()
+    }
+
+    /**
+     * 配色实时预览：一条按钮 + 一条进度条，全部按当前强调色重涂。
+     *
+     * 这块同时是那个 bug 的回归证明 —— v1.5.x 选了配色后只有卡片文字变色，
+     * 按钮与进度条仍是静态 @color/accent，用户以为没生效。
+     */
+    private fun updateAccentPreview() {
+        val box = findViewById<LinearLayout>(R.id.accentPreview)
+        val accent = Accent.current(this).argb
+        val onAccent = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimary, getColor(R.color.on_accent))
+        box.removeAllViews()
+        box.addView(TextView(this).apply {
+            text = getString(R.string.ob_wizard_accent_preview)
+            textSize = 11f
+            setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
+            letterSpacing = 0.04f
+        })
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        row.addView(TextView(this).apply {
+            text = getString(R.string.ob_wizard_start)
+            textSize = 12.5f
+            setTextColor(onAccent)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(accent)
+            }
+        })
+        val track = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(5), 1f).apply { marginStart = dp(12) }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(3).toFloat()
+                setColor(dshColor(R.attr.dshStroke, R.color.stroke))
+            }
+        }
+        val filled = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(3).toFloat()
+                setColor(accent)
+            }
+            layoutParams = FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+        track.addView(filled)
+        track.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            (filled.layoutParams as FrameLayout.LayoutParams).width = (v.width * 0.55f).toInt()
+            filled.layoutParams = filled.layoutParams
+        }
+        row.addView(track)
+        box.addView(row)
+
+        // 进度条与主按钮一并重涂 —— 这两处正是 v1.5.x 漏掉的地方
+        progress.progressTintList = ColorStateList.valueOf(accent)
+        btnNext.backgroundTintList = ColorStateList.valueOf(accent)
+        btnNext.setTextColor(onAccent)
     }
 
     private fun buildScreenCards() {
@@ -801,7 +962,7 @@ class OnboardingActivity : ThemedActivity() {
             }
             privCards.add(
                 materialOptionCard(box, getString(titleRes), getString(descRes), icon) {
-                    if (mode == PrivMode.ROOT && !Privilege.rootAvailableMinimal()) {
+                    if (mode == PrivMode.ROOT && !rootAvailable) {
                         // 无 su 时不接受选择，直接说明原因（比置灰更好懂）
                         Toast.makeText(this, R.string.ob_priv_root_gray_hint, Toast.LENGTH_SHORT).show()
                         return@materialOptionCard
@@ -815,55 +976,319 @@ class OnboardingActivity : ThemedActivity() {
         refreshSelection()
     }
 
-    // ================= 能力开关 =================
+    // ================= 欢迎页 =================
 
     /**
-     * 十余个能力开关，按域分组。
+     * 欢迎页五行能力卡。
      *
-     * ## 为什么引导页要问这个
-     * 设置页 PermissionCenterActivity 有 6 个域、19 个开关，但用户在引导页
-     * 只能选「普通 / Shizuku / Root」三档 —— 进主界面后 AI 一调能力就 403，
-     * 而他不知道刚才漏了哪一项。
-     *
-     * ## 为什么分域而不是平铺
-     * 平铺十九行在小屏上要滚三屏，用户会直接跳过。按域分组带「n/m 已开」计数。
-     *
-     * ## 默认值
-     * 全部沿用设置页现状（CapabilityGate.enabled() 默认 false），
-     * 另给「推荐配置」一键开启低风险只读项 —— 见 applyRecommendedCaps。
+     * 文案全部走资源（`ob_wizard_welcome_f1..f5` + `_sub`），不写死在代码里：
+     * 6 套语言要一起过 check-i18n，写死等于给门禁挖坑。
      */
-    private fun buildCapabilitySwitches() {
-        val box = findViewById<LinearLayout>(R.id.capabilityContainer)
+    private fun buildWelcomeRows() {
+        val box = findViewById<LinearLayout>(R.id.welcomeRows)
         box.removeAllViews()
-        capSwitches.clear()
-        CAP_GROUPS.forEach { group ->
-            val header = LinearLayout(this).apply {
+ // 图标按现有 drawable 取（仓库没有 ic_cpu，用最接近的语义图标）
+        val items = listOf(
+            R.drawable.ic_terminal to (R.string.ob_wizard_welcome_f1 to R.string.ob_wizard_welcome_f1_sub),
+            R.drawable.ic_ext_make to (R.string.ob_wizard_welcome_f2 to R.string.ob_wizard_welcome_f2_sub),
+            R.drawable.ic_ext_archivers to (R.string.ob_wizard_welcome_f3 to R.string.ob_wizard_welcome_f3_sub),
+            R.drawable.ic_touch to (R.string.ob_wizard_welcome_f4 to R.string.ob_wizard_welcome_f4_sub),
+            R.drawable.ic_lan to (R.string.ob_wizard_welcome_f5 to R.string.ob_wizard_welcome_f5_sub),
+        )
+        items.forEach { (icon, texts) ->
+            val (titleRes, subRes) = texts
+            val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(14), 0, dp(6))
-                tag = "group:" + getString(group.titleRes)
+                setPadding(dp(12), dp(9), dp(12), dp(9))
             }
-            header.addView(TextView(this).apply {
-                text = getString(group.titleRes)
-                textSize = 12f
-                setTextColor(getColor(R.color.text_primary))
-                setTypeface(null, android.graphics.Typeface.BOLD)
+            val iconBox = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(9).toFloat()
+                    setColor(Accent.current(this@OnboardingActivity).softArgb)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(11) }
+            }
+            iconBox.addView(ImageView(this).apply {
+                setImageResource(icon)
+                setColorFilter(Accent.current(this@OnboardingActivity).argb)
+                layoutParams = FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER)
+            })
+            row.addView(iconBox)
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            header.addView(TextView(this).apply {
-                textSize = 11f
-                setTextColor(getColor(R.color.text_muted))
-                tag = "count"
-            })
-            box.addView(header)
-
-            group.items.forEach { item ->
-                box.addView(capRow(cap = item.cap, titleRes = item.titleRes, subRes = item.subRes))
             }
+            col.addView(TextView(this).apply {
+                text = getString(titleRes)
+                textSize = 13f
+                setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            })
+            col.addView(TextView(this).apply {
+                text = getString(subRes)
+                textSize = 11f
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                setPadding(0, dp(1), 0, 0)
+            })
+            row.addView(col)
+            box.addView(row)
         }
-        findViewById<TextView>(R.id.btnCapRecommend).setOnClickListener { applyRecommendedCaps() }
-        refreshCapCounters()
+        // 封面眉标已按需求移除（与胶囊重复的那行小字），这里不再重涂颜色。
     }
+
+    // ================= 完成页 =================
+
+    /**
+     * 完成页主按钮文案按运行环境四态切换。
+     *
+     * 不写死「开始第一次对话」：此时模型还没配，那句话做不到。
+     * ready→「进入应用，继续配置模型」，preparing→「先进去，后台继续」，
+     * failed→「进入维护里重试」，lite→「进入应用 · 需要时下载」。
+     */
+    private fun refreshDoneCta() {
+        if (page != pages.size - 1) return
+        btnNext.setText(
+            when (rtState) {
+                RtState.READY -> R.string.ob_done_cta_ready
+                RtState.PREPARING -> R.string.ob_done_cta_preparing
+                RtState.FAILED -> R.string.ob_done_cta_failed
+                RtState.LITE -> R.string.ob_done_cta_lite
+            },
+        )
+        val headRes = when (rtState) {
+            RtState.READY -> R.string.ob_done_head_ready
+            RtState.PREPARING -> R.string.ob_done_head_preparing
+            RtState.FAILED -> R.string.ob_done_head_failed
+            RtState.LITE -> R.string.ob_done_head_lite
+        }
+        val subRes = when (rtState) {
+            RtState.READY -> R.string.ob_done_sub_ready
+            RtState.PREPARING -> R.string.ob_done_sub_preparing
+            RtState.FAILED -> R.string.ob_done_sub_failed
+            RtState.LITE -> R.string.ob_done_sub_lite
+        }
+        findViewById<TextView>(R.id.doneTitle)?.text = getString(headRes)
+        findViewById<TextView>(R.id.doneSub)?.text = getString(subRes)
+        refreshDoneSummary()
+    }
+
+    /** 选择回顾：五枚 chip，靠状态函数生成（不写死，改任一项都会重算）。 */
+    private fun refreshDoneSummary() {
+        val box = findViewById<LinearLayout>(R.id.doneSummary) ?: return
+        box.removeAllViews()
+        val chips = listOf(
+            getString(langLabelRes[selectedLang] ?: R.string.lang_zh),
+            getString(
+                when (selectedTheme) {
+                    ThemeMode.DARK -> R.string.theme_dark
+                    ThemeMode.LIGHT -> R.string.theme_light
+                    ThemeMode.SYSTEM -> R.string.theme_system
+                },
+            ),
+            getString(ThemeAccent.labelRes(this)),
+            getString(
+                when (selectedPriv) {
+                    PrivMode.NORMAL -> R.string.ob_priv_normal
+                    PrivMode.SHIZUKU -> R.string.ob_priv_shizuku
+                    PrivMode.ROOT -> R.string.ob_priv_root
+                },
+            ),
+            getString(R.string.ob_done_summary_scale, selectedScale),
+        )
+        chips.forEach { label ->
+            box.addView(TextView(this).apply {
+                text = label
+                textSize = 11f
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                gravity = Gravity.CENTER
+                setPadding(dp(11), dp(6), dp(11), dp(6))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(999).toFloat()
+                    setColor(dshColor(R.attr.dshSurface, R.color.surface))
+                    setStroke(dp(1).coerceAtLeast(1), dshColor(R.attr.dshStroke, R.color.stroke))
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(6) }
+            })
+        }
+    }
+
+    // ================= 能力开关 =================
+
+    /** 当前选中的能力域（0..5），跨 recreate 由 savedInstanceState 保存。 */
+    private var capGroupIndex = 0
+    private val capPanelSwitches = mutableMapOf<Int, MutableList<Pair<String, com.google.android.material.materialswitch.MaterialSwitch>>>()
+
+    /**
+     * 六个能力域做成横向 chip，只渲染当前域。
+     *
+     * ## 为什么改成分组
+     * 原来 17 项平铺 + 每域一个标题，小屏要滚三屏；分组后单屏最多 4 行，
+     * 页面高度不再随能力总数增长。
+     *
+     * ## 为什么计数不能再靠 tag 找标题
+     * 旧实现 refreshCapCounters() 遍历 capabilityContainer 直系子项、用
+     * 「组标题 tag = 语言字符串」匹配组头。加分组长后组头不再是直系子项，
+     * 那套遍历必然失效 —— 这里改成按组对象直接记账。
+     */
+    private fun buildCapabilitySwitches() {
+        val chips = findViewById<LinearLayout>(R.id.capGroups)
+        val panels = findViewById<LinearLayout>(R.id.capPanels)
+        chips.removeAllViews()
+        panels.removeAllViews()
+        capSwitches.clear()
+        capPanelSwitches.clear()
+
+        CAP_GROUPS.forEachIndexed { gi, group ->
+            val chip = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                isClickable = true
+                isFocusable = true
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(52),
+                ).apply { marginEnd = dp(8) }
+                tag = "chip:$gi"
+            }
+            chip.addView(TextView(this).apply {
+                text = getString(capDomainRes(gi))
+                textSize = 12f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                tag = "chipTitle"
+            })
+            chip.addView(TextView(this).apply {
+                textSize = 10.5f
+                tag = "chipCount"
+                setPadding(0, dp(2), 0, 0)
+            })
+            chip.setOnClickListener { selectCapGroup(gi) }
+            chips.addView(chip)
+
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                tag = "panel:$gi"
+            }
+            val list = mutableListOf<Pair<String, com.google.android.material.materialswitch.MaterialSwitch>>()
+            group.items.forEach { item ->
+                val rowView = capRow(cap = item.cap, titleRes = item.titleRes, subRes = item.subRes)
+                panel.addView(rowView)
+                capSwitches[item.cap]?.let { list.add(item.cap to it) }
+            }
+            panels.addView(panel)
+            capPanelSwitches[gi] = list
+        }
+
+        findViewById<TextView>(R.id.capRecommendHint).text = getString(R.string.ob_caps_recommend_hint)
+        findViewById<TextView>(R.id.capNote).text = getString(R.string.ob_caps_note)
+        findViewById<TextView>(R.id.btnCapRecommend).setOnClickListener { applyRecommendedCaps() }
+
+        // 右侧提示箭头：滚到末端或没有溢出时隐藏（横向无溢出=所有域都看得见）
+        val scroll = findViewById<android.widget.HorizontalScrollView>(R.id.capGroupsScroll)
+        val arrow = findViewById<TextView>(R.id.capArrow)
+        scroll.setOnScrollChangeListener { _, _, _, _, _ ->
+            val overflow = chips.width - scroll.width
+            arrow.visibility = if (overflow <= dp(4) || scroll.scrollX >= overflow - dp(4)) View.GONE else View.VISIBLE
+        }
+        scroll.post {
+            val overflow = chips.width - scroll.width
+            arrow.visibility = if (overflow <= dp(4)) View.GONE else View.VISIBLE
+        }
+
+        selectCapGroup(capGroupIndex)
+    }
+
+    private fun capDomainRes(gi: Int): Int = when (gi) {
+        0 -> R.string.ob_caps_domain_env
+        1 -> R.string.ob_caps_domain_notify
+        2 -> R.string.ob_caps_domain_control
+        3 -> R.string.ob_caps_domain_personal
+        4 -> R.string.ob_caps_domain_input
+        5 -> R.string.ob_caps_domain_system
+        else -> R.string.ob_caps_domain_env
+    }
+
+    /** 选中一个能力域：只显示它的面板、chip 高亮、计数刷新、自动滚进可视区。 */
+    private fun selectCapGroup(gi: Int) {
+        capGroupIndex = gi.coerceIn(0, CAP_GROUPS.size - 1)
+        val chips = findViewById<LinearLayout>(R.id.capGroups)
+        val panels = findViewById<LinearLayout>(R.id.capPanels)
+        val accent = Accent.current(this)
+        for (i in 0 until chips.childCount) {
+            val chip = chips.getChildAt(i)
+            val active = i == capGroupIndex
+            chip.background = if (active) {
+                GradientDrawable().apply {
+                    cornerRadius = dp(11).toFloat()
+                    setColor(accent.softArgb)
+                    setStroke(dp(1).coerceAtLeast(1), accent.argb)
+                }
+            } else {
+                GradientDrawable().apply {
+                    cornerRadius = dp(11).toFloat()
+                    setColor(dshColor(R.attr.dshSurface, R.color.surface))
+                    setStroke(dp(1).coerceAtLeast(1), dshColor(R.attr.dshStroke, R.color.stroke))
+                }
+            }
+            chip.findViewWithTag<TextView>("chipTitle")?.setTextColor(
+                if (active) accent.argb else dshColor(R.attr.dshTextSecondary, R.color.text_secondary),
+            )
+            chip.findViewWithTag<TextView>("chipCount")?.setTextColor(
+                if (active) accent.argb else dshColor(R.attr.dshTextMuted, R.color.text_muted),
+            )
+        }
+        for (i in 0 until panels.childCount) {
+            panels.getChildAt(i).visibility = if (i == capGroupIndex) View.VISIBLE else View.GONE
+        }
+        refreshCapCounters()
+        findViewById<TextView>(R.id.capPos).text =
+            getString(R.string.ob_caps_pos_fmt, capGroupIndex + 1, CAP_GROUPS.size)
+        // 选中项自动滚进可视区（右侧箭头占位扣掉，避免刚露一半就被挡住）
+        val scroll = findViewById<android.widget.HorizontalScrollView>(R.id.capGroupsScroll)
+        val chip = chips.getChildAt(capGroupIndex) ?: return
+        val arrowW = if (findViewById<TextView>(R.id.capArrow).visibility == View.VISIBLE) dp(24) else 0
+        val left = chip.left - dp(4)
+        val right = chip.right + dp(4) + arrowW
+        if (left < scroll.scrollX || right > scroll.scrollX + scroll.width) {
+            scroll.smoothScrollTo(left.coerceAtLeast(0), 0)
+        }
+    }
+
+    /**
+     * 计数：每个 chip 显示「已允许 n/m」，右上角显示全站合计。
+     *
+     * 语义是「已允许」而不是「可用」——CapabilityGate 要求 enabled 且
+     * 系统权限可用才算真正可用，这里只反映用户的选择。
+     */
+    private fun refreshCapCounters() {
+        val chips = findViewById<LinearLayout>(R.id.capGroups)
+        var sum = 0
+        var total = 0
+        capPanelSwitches.forEach { (gi, list) ->
+            val on = list.count { it.second.isChecked }
+            total += list.size
+            sum += on
+            chips.getChildAt(gi)?.findViewWithTag<TextView>("chipCount")?.text =
+                getString(R.string.ob_caps_chip_fmt, on, list.size)
+        }
+        findViewById<TextView>(R.id.capTotal).text =
+            getString(R.string.ob_caps_total_fmt, sum, total)
+    }
+
+    private fun applyRecommendedCaps() {
+        RECOMMENDED_CAPS.forEach { cap ->
+            CapabilityGate.setEnabled(this, cap, true)
+            capSwitches[cap]?.isChecked = true
+        }
+        refreshCapCounters()
+        Toast.makeText(this, R.string.ob_caps_recommended_toast, Toast.LENGTH_SHORT).show()
+    }
+
+    // ================= 能力开关（单条渲染） =================
 
     private fun capRow(cap: String, titleRes: Int, subRes: Int): View {
         val row = LinearLayout(this).apply {
@@ -880,13 +1305,13 @@ class OnboardingActivity : ThemedActivity() {
         }
         textCol.addView(TextView(this).apply {
             text = getString(titleRes)
-            textSize = 13.5f
-            setTextColor(getColor(R.color.text_primary))
+            textSize = 13f
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
         })
         textCol.addView(TextView(this).apply {
             text = getString(subRes)
             textSize = 10.5f
-            setTextColor(getColor(R.color.text_muted))
+            setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
             setPadding(0, dp(1), 0, 0)
         })
         row.addView(textCol)
@@ -908,38 +1333,6 @@ class OnboardingActivity : ThemedActivity() {
         return row
     }
 
-    /** 每组「n/m 已开」的计数，让用户一眼看到哪一组还是空的。 */
-    private fun refreshCapCounters() {
-        val box = findViewById<LinearLayout>(R.id.capabilityContainer)
-        CAP_GROUPS.forEach { group ->
-            val opened = group.items.count { capSwitches[it.cap]?.isChecked == true }
-            val key = "group:" + getString(group.titleRes)
-            for (i in 0 until box.childCount) {
-                val child = box.getChildAt(i)
-                if (child.tag == key) {
-                    child.findViewWithTag<TextView>("count")?.text =
-                        "$opened/" + group.items.size
-                }
-            }
-        }
-    }
-
-    /**
-     * 「推荐配置」：只开低风险只读能力。
-     *
-     * 明确不包含：读取通知 / 回复通知 / 短信 / 通话记录 / 输入监听 / 按键监听 /
-     * 读取他人应用数据 / 系统级操作。那些是「看你在干什么」或「代你说话」，
-     * 必须在设置页单独、明确地打开，不能由引导页一键代劳。
-     */
-    private fun applyRecommendedCaps() {
-        RECOMMENDED_CAPS.forEach { cap ->
-            CapabilityGate.setEnabled(this, cap, true)
-            capSwitches[cap]?.isChecked = true
-        }
-        refreshCapCounters()
-        Toast.makeText(this, R.string.ob_wizard_cap_recommended, Toast.LENGTH_SHORT).show()
-    }
-
     /** 一个能力域：标题 + 条目。 */
     private data class CapGroup(val titleRes: Int, val items: List<CapItem>)
 
@@ -948,24 +1341,31 @@ class OnboardingActivity : ThemedActivity() {
 
     // ================= 能力检测 =================
 
+    /** su 可用性缓存：探测一次，点击 Root 卡片时不再同步跑 su（主线程不能阻塞）。 */
+    @Volatile private var rootAvailable = false
+
+    /** Root 双确认弹窗进行中：避免 Back / 重复点击再触发一次落库。 */
+    private var rootConfirmPending = false
+
     private fun probeCapabilities() {
         val v = findViewById<TextView>(R.id.capRoot)
         v.text = getString(R.string.ob_cap_root_checking)
-        v.setTextColor(getColor(R.color.text_secondary))
+        v.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         Thread({
             val hasRoot = Privilege.probe(this).hasRoot
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 v.text = getString(
                     if (hasRoot) R.string.ob_cap_root_present else R.string.ob_cap_root_absent,
                 )
-                v.setTextColor(if (hasRoot) getColor(R.color.success) else getColor(R.color.warning))
-                updateRootAvailability()
+                v.setTextColor(if (hasRoot) dshColor(R.attr.dshSuccess, R.color.success) else dshColor(R.attr.dshWarning, R.color.warning))
+                applyRootAvailability(hasRoot)
             }
         }, "probe-root").apply { isDaemon = true }.start()
     }
 
-    private fun updateRootAvailability() {
-        val rootOk = Privilege.rootAvailableMinimal()
+    private fun applyRootAvailability(rootOk: Boolean) {
+        rootAvailable = rootOk
         if (!rootOk && selectedPriv == PrivMode.ROOT) selectedPriv = PrivMode.NORMAL
         refreshSelection()
     }
@@ -975,14 +1375,14 @@ class OnboardingActivity : ThemedActivity() {
         when {
             Privilege.shizukuUsable() -> {
                 v.text = getString(R.string.ob_cap_shizuku_present)
-                v.setTextColor(getColor(R.color.success))
+                v.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                 v.setOnClickListener(null)
             }
             Privilege.shizukuServerRunning() -> {
                 // 不在此自动请求：用户拒绝后回调会回到这里形成死循环（历史教训）。
                 // 显式入口是「选中 Shizuku 卡片」→ maybeRequestShizuku()
                 v.text = getString(R.string.ob_cap_shizuku_request)
-                v.setTextColor(getColor(R.color.warning))
+                v.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 v.isClickable = true
                 v.setOnClickListener {
                     Privilege.requestShizukuPermission(SHIZUKU_REQ, this, explicit = true)
@@ -990,7 +1390,7 @@ class OnboardingActivity : ThemedActivity() {
             }
             else -> {
                 v.text = getString(R.string.ob_cap_shizuku_absent)
-                v.setTextColor(getColor(R.color.warning))
+                v.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 v.setOnClickListener(null)
             }
         }
@@ -1013,6 +1413,7 @@ class OnboardingActivity : ThemedActivity() {
         outState.putInt(KEY_SCALE, selectedScale)
         outState.putString(KEY_LAYOUT, selectedLayoutMode.id)
         outState.putBoolean(KEY_IMMERSIVE, selectedImmersive)
+        outState.putInt(KEY_CAP_GROUP, capGroupIndex)
         super.onSaveInstanceState(outState)
     }
 
@@ -1028,6 +1429,7 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     override fun onDestroy() {
+        runtimeHandler.removeCallbacks(runtimeObserver)
         stepsDrawer?.dismiss()
         stopGlowBreath()
         rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
@@ -1050,7 +1452,9 @@ class OnboardingActivity : ThemedActivity() {
             goTo(page - 1)
             return
         }
-        commit()
+        // 封面页按返回也走统一出口：Root 模式下同样要过两次确认，
+        // 否则「选 Root → 按 Back」就是历史上那条绕过路径。
+        finishOnboarding()
     }
 
     /**
@@ -1067,57 +1471,203 @@ class OnboardingActivity : ThemedActivity() {
         val installer = RuntimeInstaller(applicationContext)
         val needsDownload = runCatching { installer.needsRuntimeDownload() }.getOrDefault(false)
         if (needsDownload) {
-            showRuntimeStatus(getString(R.string.ob_rt_download), null)
+            renderRuntime(RtState.LITE, 0)
             return
         }
-        showRuntimeStatus(getString(R.string.ob_rt_preparing), 0)
-        Thread({
-            var failed = false
-            runCatching {
-                installer.ensureInstalled(
-                    onProgress = { p ->
-                        val pct = (p * 100f).toInt().coerceIn(0, 100)
-                        if (pct == lastPrefetchPct) return@ensureInstalled
-                        lastPrefetchPct = pct
-                        runOnUiThread {
-                            if (isFinishing || isDestroyed) return@runOnUiThread
-                            if (pct < 100) showRuntimeStatus(getString(R.string.ob_rt_pct, pct), pct)
-                        }
-                    },
-                )
-            }.onFailure { failed = true }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (failed) {
-                    showRuntimeStatus(getString(R.string.ob_rt_failed), null)
-                } else {
-                    lastPrefetchPct = 100
-                    showRuntimeStatus(getString(R.string.ob_rt_ready), 100)
-                }
-            }
-        }, "onboarding-runtime-prefetch").apply { isDaemon = true }.start()
+
+        // recreate（切语言/主题）会重建 Activity，但解压任务属于进程级：
+        // 上一个实例可能仍在跑，这里先接上它已有的结果，不要从 0% 重来、
+        // 更不要并发再起一份解压（INSTALL_LOCK 会串行化，只是白等）。
+        val known = PrefetchResult.state
+        renderRuntime(known ?: RtState.PREPARING, PrefetchResult.pct)
+        if (known == null && PrefetchResult.thread?.isAlive != true) {
+            val t = Thread({
+                var failed = false
+                runCatching {
+                    installer.ensureInstalled(
+                        onProgress = { p ->
+                            PrefetchResult.pct = (p * 100f).toInt().coerceIn(0, 100)
+                        },
+                    )
+                }.onFailure { failed = true }
+                PrefetchResult.pct = if (failed) 0 else 100
+                PrefetchResult.state = if (failed) RtState.FAILED else RtState.READY
+            }, "onboarding-runtime-prefetch")
+            t.isDaemon = true
+            PrefetchResult.thread = t
+            t.start()
+        }
+        if (known == null) runtimeHandler.post(runtimeObserver)
     }
 
-    private fun showRuntimeStatus(text: String, progress: Int?) {
+    /** 预取任务属于进程而非 Activity：recreate 后新实例要能接上同一份进度。 */
+    private object PrefetchResult {
+        @Volatile var state: RtState? = null
+        @Volatile var pct: Int = 0
+        @Volatile var thread: Thread? = null
+    }
+
+    /**
+     * 运行环境四态的唯一渲染入口。
+     *
+     * 欢迎页胶囊与完成页状态卡都从这里取，避免两处各算一套导致
+     * 「胶囊 12% / 完成页 63%」这类假数据。
+     */
+    private fun renderRuntime(state: RtState, pct: Int) {
+        rtState = state
+        rtPct = pct
+        val titleRes = when (state) {
+            RtState.PREPARING -> if (pct >= 100) R.string.ob_rt_ready else R.string.ob_rt_pct
+            RtState.READY -> R.string.ob_rt_ready
+            RtState.FAILED -> R.string.ob_rt_failed
+            RtState.LITE -> R.string.ob_rt_download
+        }
+        val subRes = when (state) {
+            RtState.PREPARING -> R.string.ob_done_rt_sub_preparing
+            RtState.READY -> R.string.ob_done_rt_sub_ready
+            RtState.FAILED -> R.string.ob_done_rt_sub_failed
+            RtState.LITE -> R.string.ob_done_rt_sub_lite
+        }
+
         doneRuntimeStatus?.apply {
-            this.text = text
+            text = if (state == RtState.PREPARING && pct < 100) getString(titleRes, pct)
+                   else getString(titleRes)
+            visibility = View.VISIBLE
+            setTextColor(getColor(if (state == RtState.FAILED) R.color.danger else R.color.text_primary))
+        }
+        doneRuntimeSub?.apply {
+            text = getString(subRes)
             visibility = View.VISIBLE
         }
         doneRuntimeBar?.apply {
-            if (progress == null) {
-                visibility = View.GONE
-            } else {
-                visibility = View.VISIBLE
-                this.progress = progress
-            }
+            visibility = if (state == RtState.PREPARING) View.VISIBLE else View.GONE
+            progress = pct
         }
+        // 100% 也算终态：解压回调会先报满再落到 READY，若这里继续按
+        // PREPARING 走就能拍出「正在解压… 100%」还带转圈的画面，
+        // 看上去像卡在最后一格。与 titleRes 的判定保持一致。
+        val settling = state == RtState.PREPARING && pct < 100
+        // 进度只在视觉上变是不行的：TalkBack 与触摸探索用户拿不到任何反馈。
+        // 朗读源**只留一处** —— 内层 TextView 的 text + POLITE liveRegion。
+        // 不要再给容器补 contentDescription：ViewGroup 一旦有 content-description
+        // 就会把子视图合并成一个节点，容器描述与子 TextView 文本叠在一起，
+        // 实测 dump 里两处都有，TalkBack 会把同一句话读两遍。
+        // 转圈本身是装饰，重要度设 no 让它不单独入焦点、也不念「进度条」。
+        welcomePillText?.apply {
+            text = if (settling) getString(R.string.ob_rt_pct, pct) else getString(titleRes)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        // 进度条不能每 1% 都念一遍：60 秒的解析过程能触发上百次播报，
+        // 用户的听觉反馈会被彻底淹没。只在四分之一档与终态播报，
+        // 既保证「还活着/到哪了」可感知，又不打断用户正在做的事。
+        if (page == 0) announceRuntimeMilestone(state, pct)
+        // 只有「还在解压」才转圈：就绪/失败/需下载都是终态，转圈会让人以为还在跑。
+        welcomePillSpinner?.visibility = if (settling) View.VISIBLE else View.GONE
+        syncCoverStatus()
+        refreshDoneCta()
     }
 
-    private fun finishOnboarding() {
-        if (selectedPriv == PrivMode.ROOT) {
-            warnRoot { warnRootAgain { commit() } }
+    /**
+     * 封面页眉只能有一行状态，否则重复说同一件事。
+     *
+     * 完整包有可跟踪的进度胶囊（「正在解压 4%」），此时眉标「约 30 秒、
+     * 环境在后台解压」就是废话；精简包（LITE）拿不到进度，眉标才有价值。
+     * 胶囊挂在 topBlock（所有页共用），所以离开封面页必须一起收起来，
+     * 否则后台解压回调会在「选择语言」的页眉上冒出「正在解压 63%」。
+     */
+    /**
+     * 把一个视觉尺寸不足 48dp 的控件，用 [android.view.TouchDelegate] 把**热区**扩到 [minDp]。
+     *
+     * 只扩热区不动外观：引导页顶栏的「全部步骤」胶囊只有 30dp 高（再多就把
+     * pageHost 视口压掉一行），但 30dp 触控目标在实测里确实难按中。
+     * 父容器负责把落在扩展区的触摸转发给这个 View —— Android 官方支持的
+     * 「小控件大热区」做法；扩展区允许负起点，超出父容器的部分自然无效。
+     */
+    private fun expandTouchTarget(target: View, host: ViewGroup, minDp: Int) {
+        val minPx = dp(minDp)
+        val growX = ((minPx - target.width) / 2).coerceAtLeast(0)
+        val growY = ((minPx - target.height) / 2).coerceAtLeast(0)
+        if (growX == 0 && growY == 0) return
+        // TouchDelegate 的 rect 用的是**代理视图自己的坐标系**，但事件是交给
+        // host 派发的 —— host 必须先覆盖那块区域，否则点在 host 之外根本到不了
+        // 这里。所以直接按 host 的左上角算偏移（先实测见 touch_above 两轮失败）。
+        val loc = IntArray(2)
+        val hostLoc = IntArray(2)
+        target.getLocationInWindow(loc)
+        host.getLocationInWindow(hostLoc)
+        val left = loc[0] - hostLoc[0]
+        val top = loc[1] - hostLoc[1]
+        val rect = android.graphics.Rect(
+            left - growX,
+            top - growY,
+            left + target.width + growX,
+            top + target.height + growY,
+        )
+        host.touchDelegate = android.view.TouchDelegate(rect, target)
+    }
+
+    /** 上一次播报过的档位（0/25/50/75/100），避免重复念同一句话。 */
+    private var announcedMilestone: Int = -1
+
+    private fun announceRuntimeMilestone(state: RtState, pct: Int) {
+        val milestone = when {
+            state != RtState.PREPARING -> 100
+            pct >= 100 -> 100
+            pct >= 75 -> 75
+            pct >= 50 -> 50
+            pct >= 25 -> 25
+            else -> 0
+        }
+        if (milestone == announcedMilestone) return
+        announcedMilestone = milestone
+        val spoken = if (state == RtState.PREPARING && pct < 100) {
+            getString(R.string.ob_rt_pct, pct)
         } else {
-            commit()
+            getString(
+                when (state) {
+                    RtState.READY -> R.string.ob_rt_ready
+                    RtState.FAILED -> R.string.ob_rt_failed
+                    RtState.LITE -> R.string.ob_rt_download
+                    RtState.PREPARING -> R.string.ob_rt_ready
+                },
+            )
+        }
+        welcomePill?.announceForAccessibility(spoken)
+    }
+
+    private fun syncCoverStatus() {
+        val onCover = page == 0
+        // 封面页永远只有胶囊这一行状态：眉标「约 30 秒、环境在后台解压」
+        // 对精简包（LITE）是假的 —— 那种包根本没有可解压的东西，要用户
+        // 自己确认下载，所以精简包的封面必须是「精简包：进入后选择是否下载」。
+        stepHint.visibility = if (onCover) View.GONE else View.VISIBLE
+        welcomePill?.visibility = if (onCover) View.VISIBLE else View.GONE
+    }
+
+    private fun showRuntimeStatus(text: String, progress: Int?) = Unit
+
+    /**
+     * 完成引导的**唯一**出口。
+     *
+     * 历史缺陷：Root 双确认只挂在「下一步」这一条路径上，而系统 Back
+     * （`onBackPressed` 在封面页）与步骤轨跳转都会直接 `commit()`，
+     * 于是「选 Root → 按 Back」可以完全绕过两次确认就落库。
+     * 现在所有出口都走这里，双确认在内部统一执行。
+     */
+    private fun finishOnboarding() {
+        if (rootConfirmPending) return   // 防止 Back 在弹窗期间再触发一次
+        if (selectedPriv == PrivMode.ROOT && rootAvailable) {
+            rootConfirmPending = true
+            warnRoot {
+                warnRootAgain {
+                    rootConfirmPending = false
+                    commitNow()
+                }
+            }
+        } else {
+            // 无 su 时 Root 本就选不了；若状态残留则回落普通，不让它静默落库
+            if (selectedPriv == PrivMode.ROOT) selectedPriv = PrivMode.NORMAL
+            commitNow()
         }
     }
 
@@ -1129,8 +1679,9 @@ class OnboardingActivity : ThemedActivity() {
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
             .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ ->
                 // 取消 = 以普通模式继续并进主界面；不落 Root，也不卡在引导页
+                rootConfirmPending = false
                 selectedPriv = PrivMode.NORMAL
-                commit()
+                commitNow()
             }
             .show()
     }
@@ -1145,13 +1696,15 @@ class OnboardingActivity : ThemedActivity() {
             .setCancelable(false)
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
             .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ ->
+                rootConfirmPending = false
                 selectedPriv = PrivMode.NORMAL
-                commit()
+                commitNow()
             }
             .show()
     }
 
-    private fun commit() {
+    /** 真正落库并进主界面。**不要**从任何出口直接调用，一律走 [finishOnboarding]。 */
+    private fun commitNow() {
         Privilege.setMode(this, selectedPriv)
         Privilege.markOnboarded(this)
         LocaleHelper.set(this, selectedLang)
@@ -1177,7 +1730,7 @@ class OnboardingActivity : ThemedActivity() {
     private fun sectionLabel(res: Int): TextView = TextView(this).apply {
         text = getString(res)
         textSize = 11f
-        setTextColor(getColor(R.color.text_muted))
+        setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
         letterSpacing = 0.05f
         isAllCaps = true
         setPadding(0, 0, 0, dp(4))
@@ -1196,6 +1749,7 @@ class OnboardingActivity : ThemedActivity() {
         const val KEY_SCALE = "ob_scale"
         const val KEY_LAYOUT = "ob_layout"
         const val KEY_IMMERSIVE = "ob_immersive"
+        const val KEY_CAP_GROUP = "ob_cap_group"
 
         const val KEY_PAGE_SCALE = "page_scale"
         const val DEFAULT_PAGE_SCALE = 90

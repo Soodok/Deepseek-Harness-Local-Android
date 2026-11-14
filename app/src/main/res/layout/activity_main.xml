@@ -88,7 +88,7 @@
             android:layout_weight="1"
             android:paddingStart="18dp"
             android:paddingEnd="6dp"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="?attr/dshIslandText"
             android:textSize="13sp"
             android:gravity="center_vertical"
             android:singleLine="true"
@@ -113,7 +113,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_restart"
-            android:tint="?attr/colorPrimary"
+            android:tint="?attr/dshIslandAccent"
             android:contentDescription="@string/btn_restart"
             android:background="@drawable/bg_island_btn" />
 
@@ -124,7 +124,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_terminal"
-            android:tint="?attr/colorPrimary"
+            android:tint="?attr/dshIslandAccent"
             android:contentDescription="@string/btn_terminal"
             android:background="@drawable/bg_island_btn" />
 
@@ -135,7 +135,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_chevron"
-            android:tint="?attr/colorOnSurface"
+            android:tint="?attr/dshIslandText"
             android:contentDescription="@string/btn_hide"
             android:background="@drawable/bg_island_btn" />
 
@@ -147,7 +147,7 @@
             android:padding="10dp"
             android:layout_marginEnd="2dp"
             android:src="@drawable/ic_settings"
-            android:tint="?attr/colorOnSurface"
+            android:tint="?attr/dshIslandText"
             android:background="@drawable/bg_island_btn"
             android:contentDescription="@string/settings_title" />
     </LinearLayout>
