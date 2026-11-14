@@ -138,6 +138,7 @@ fun IslandPalette.themed(context: Context): IslandPalette.Colors {
         ok = tertiary,
         okSoft = androidx.core.graphics.ColorUtils.setAlphaComponent(tertiary, 31),
         warn = role(androidx.appcompat.R.attr.colorError),
+        outline = if (ThemeManager.isDark(context)) 0 else role(com.google.android.material.R.attr.colorOutline),
     )
 }
 

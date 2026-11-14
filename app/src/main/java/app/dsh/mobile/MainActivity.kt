@@ -1288,7 +1288,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         handle.visibility = if (showHandle) View.VISIBLE else View.GONE
         // 收起态把手的透明度复位：动画收尾失败时它可能停在 0f（同样会「看不见」）
         if (showHandle && handle.alpha < 1f) handle.alpha = 1f
-        if (showHandle) handle.post { applyHandleTouchTarget(handle, handle.width) }
+        if (showHandle) {
+            handle.requestApplyInsets()
+            handle.post { applyHandleTouchTarget(handle, handle.width) }
+        }
     }
 
     /**
