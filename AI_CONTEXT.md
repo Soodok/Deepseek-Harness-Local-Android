@@ -12587,3 +12587,147 @@ M3(R.attr.colorSurface→0) / M4(守卫 if(true)) **全部 EXIT=1**，还原 EXI
     工作区版 LinuxDnsProxy.kt 在改看门狗（`PROBE_NAME = "dsh-probe.invalid"`、
     `WATCHDOG_INTERVAL_MS = 20_000L`、`PROBE_TIMEOUT_MS = 3_000`），未提交。
 - i18n 0
+
+**补记十二（2026-11-14 上午）**：补做补记十一未覆盖的两项 —— **触控目标**与 **TalkBack 播报**。两项都先发现问题、再修、再用真机可复现的证据收尾。
+
+### 1. 触控目标：`btnSteps` 只有 30.2dp
+
+实测（uiautomator bounds × density 440/160）：封面页仅两个可点目标 ——
+- `btnSteps`（顶栏「All steps」）**65.5 × 30.2 dp** ← 低于 Android 48dp 最小触控尺寸
+- `btnNext` 344.7 × 50.2 dp ✅
+
+修法：**只把热区扩到 48dp，视觉不动**（顶栏高度是稀缺资源，把胶囊撑到 48dp 会压掉 pageHost 一行）。新增 `OnboardingActivity.expandTouchTarget(target, host, minDp)`，用 `View.touchDelegate`。
+
+**第一版是错的**，两轮实测才定下来：
+- 版本 A：`parent` 直接取 `target.parent`（LinearLayout 内层），并把 rect 按「以 target 为原点」写。结果**整块失效**，`y=120/132/…/230` 全部点不开抽屉。
+- 根因：`TouchDelegate` 的 rect 用的是**代理视图自己的坐标系**，但事件是由 `host` 派发的；host 没覆盖那块区域，点在 host 之外根本进不来。内层 LinearLayout 只包着进度条与胶囊，不会收到胶囊外侧的触摸。
+- 版本 B（现行）：`host = topBlock`（覆盖整条顶栏），rect 用 `getLocationInWindow` 求 target 相对 host 的偏移再扩。
+
+**修复后实测**（`docs/ui-preview/probes/hotzone.sh`，逐点重启 App 避免抽屉状态污染，用 CTA 像素判断抽屉是否打开）：
+```
+y=100 -> closed   y=120 -> open   y=132 -> open   y=145 -> open
+y=175 -> open     y=210 -> open   y=218 -> open   y=230 -> open   y=250 -> closed
+```
+视觉边界 `[834,132][1014,215]`：向上扩到 120（12px 外）、向下扩到 230（15px 外）都可点，250 恢复不响应 —— 热区确实被扩到约 48dp 见方，且没有无限外扩。
+
+### 2. TalkBack：先发现「读两遍」，再发现「念太多次」
+
+**问题一（重复朗读）**：给容器 `welcomePill` 加 `contentDescription` 后，dump 里出现**两个**节点：容器 desc = 「Lite package · download the runtime after setup」+ 内层 `txtWelcomePill` text = 同一句。ViewGroup 一旦有 content-description 会把子视图合并成一个节点，叠在一起就会读两遍。
+修法：**朗读源只留一处** —— 内层 `txtWelcomePill` 的 text + `accessibilityLiveRegion = POLITE`；容器不再设 contentDescription；转圈 `pbWelcomePill` 加 `importantForAccessibility="no"`（它是装饰，不该单独入焦点、也不该念「进度条」）。修后 dump 里 pill 相关节点 = **1 个**（`txtWelcomePill`, text=`Preparing the runtime… 16%`）。
+
+**问题二（播报淹没）**：只靠 liveRegion 时，进度每变 1% 都可能触发一次播报 —— 60 秒解压能念上百次。改为**档位播报**：只在 25/50/75/100（含终态）`announceForAccessibility` 一次，`announcedMilestone` 去重。
+
+**实测对比**（logcat 里 TalkBack 的 `USAGE_ASSISTANCE_ACCESSIBILITY` 语音请求）：
+- 只有 liveRegion：55 秒内 **1 次**（liveRegion 本身在 `TextWatcher` 上不一定被每次都采纳，不可控）
+- 加档位 `announceForAccessibility`：55 秒内 **6 次**，时间戳 `02:08:45 / 48:49 / 49:10 / 49:23 / 49:31 / 49:37`，最后一次落在解压完成、`pill` 变为 `Runtime is ready` 之后 —— 与「25/50/75/100 + 首帧 + 终态」的预期一致。
+
+### 3. arm64 完整包也编过了
+
+`-Pabi=arm64-v8a -Ppackage=full -PruntimeZip=_runtime_bak/rt-arm64-20261112.zip` → BUILD SUCCESSFUL 9s，APK **177,101,538 B**，包内 `assets/runtime.zip` 存在、`lib/arm64-v8a/` 5 个 so、`lib/x86_64/` **0 个**（ABI 没有串台）。日志 `runtime: embedded rt-arm64-20261112.zip (130 MB)`。
+
+### 4. 已确认无法在模拟器完成的项
+- **Root 双确认弹窗路径**：模拟器 `userdebug` 可 `adb root`，但 `su` 只有 `/system/xbin/su`（toybox，`-c` 语法报 `su: invalid uid/gid '-c'`），且 **app uid 读不到它**（`run-as app.dsh.mobile` → `sh: /system/xbin/su: inaccessible or not found`）。所以 `Privilege.probe()` 在 App 进程里必然返回 `hasRoot=false`，`selectedPriv` 永远回落到 NORMAL。这条只能在有真 su 的设备上验 —— 已列为未覆盖。
+- **TalkBack 实际听到的内容**：只验证到「发出了几次语音请求」与「节点结构正确」，无法验证音质/语速/实际念的句子（模拟器无声卡回环）。
+- **能力页 chip 横向滚动的 TalkBack 焦点顺序**：未逐项走查。
+
+### 5. 顺带记录的两个构建坑
+- `processDebugResources` 报 `Unable to delete file … R.jar` / `Unable to delete directory app/build/tmp/kotlin-classes/debug`：多会话并行构建抢锁。处置：`gradle.bat --stop` + 删 `intermediates/compile_and_runtime_not_namespaced_r_class_jar`，重试即过（不必 `clean`，全量 clean 反而要重解压 174MB runtime）。
+- **每轮必须复核 `assets/runtime.zip` 是否在最终 APK 里**：本轮曾出现 `app-debug.apk` 只有 20.6MB 的中间产物，若拿它验「完整包」会得到完全错误的结论。
+
+**本轮验证产物**：`docs/ui-preview/shots/onboarding-impl/cover-preparing.png`（10:14 版，含 16dp 转圈 + `Preparing the runtime… 6%`）与 `cover-ready.png`（`Runtime is ready`，转圈已隐藏）；两个可复跑的探针脚本已归档到 `docs/ui-preview/probes/`：`hotzone.sh`（热区逐点扫描）与 `px.py`（按 CTA 像素判定抽屉开合），两者都依赖 `emulator-5556` 与 `PATH` 里的 adb。
+
+---
+
+## 一百一十三、Linux 容器 DNS 代理「跑久了哑掉」：根因与自愈（2026-11-14）
+
+### 现象（真机 PLZ110 / Android 16 / arm64）
+
+容器里 `apk update` / `apk add` / `wget` 全部报
+```
+WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
+         temporary error (try again later)
+```
+而 `am force-stop` + 重启 App 立刻恢复。`files/engine/dns.log` 里只有 listening/start 记录，
+`udp got` 计数停在启动期的 50~64 条不再增长；`netstat -lun` 显示 `::ffff:127.0.0.1:15353` 仍在 LISTEN，
+**Recv-Q 堆到 2048**。
+
+### 根因（两条，第一条是主因）
+
+**① 每条 UDP 查询新建一个线程 → 线程爆炸 → 静默杀死收包循环。**
+
+`LinuxDnsProxy.udpLoop` 原实现在 receive 之后直接 `thread(isDaemon = true) { forward(...) }`。
+上游 DoH 不通时 `forward()` 要串行走两个端点、每端点 connect/read 各 4s，单条最长 8s。
+`apk update` 一次就发几十条并发查询，几轮下来线程能堆到几百 → `thread { }` 抛 OutOfMemoryError。
+当时 `try` 只包住 `receive`，异常从 while 里逃出去，收包线程就此消失，而：
+- socket 仍开着 → netstat 看着还在 LISTEN
+- Recv-Q 一路涨（实测 2048）
+- dns.log 再无新行（日志写在 receive 之后）
+- `socketsAlive` 仍是 true → `currentPort()` 继续把 15353 交给容器
+
+**② 探针缺失导致的判据假绿。** `socketsAlive` 只在 receive/accept 抛异常时清掉，
+「线程没了但没走异常路径」这种情况它完全看不见，`start()` 的幂等短路因此永远成立。
+
+### 修法（`app/src/main/java/app/dsh/mobile/engine/LinuxDnsProxy.kt`，+397 −25）
+
+1. **有界转发池** `forwardPool`：`ThreadPoolExecutor(8, 8, 60s, ArrayBlockingQueue<Runnable>(32), DiscardPolicy)`，
+   线程名 `dns-fwd`，`allowCoreThreadTimeOut(true)`。队列满即丢弃（阻塞会让 receive 停摆，症状不变）。
+   submit 本身也包 `runCatching`，提交失败不再逃出 while。
+2. **catch 改 Throwable**：`acceptLoop` / `udpLoop` 的 catch 从 `Exception` 改成 `Throwable`，
+   Error 也走「清标志 + 记日志」而不是静默消失。
+3. **看门狗自检** `dns-watchdog` 线程：每 `WATCHDOG_INTERVAL_MS=20_000` 向自己的端口发一个
+   `PROBE_NAME = "dsh-probe.invalid"` 查询，`PROBE_TIMEOUT_MS=3000`；连续 `PROBE_FAILS_TO_REBIND=2`
+   次失败即判定死亡 → `stop()` → **就地 `start()` 自愈重绑**（不是只丢弃等外部调用）。
+   探针在 `udpLoop` 内被认出后**本地直接回空应答**，不转发、不计入 udp got 统计，与上游可达性完全解耦
+   （否则断网会被误判成代理死了）。
+4. **`loopAlive` 事实判据**：`currentPort()` 从 `running && socketsAlive` 改为 `running && socketsAlive && loopAlive`。
+5. **代际保护** `generation: AtomicInteger`：每次 start() +1，循环只在「自己仍是当前代」时才允许改 `socketsAlive`。
+   踩坑实录：stop()→start() 是两步，旧线程还阻塞在 receive，stop 关 socket 后它抛异常，
+   而此时 `running` 已被新 start 置回 true → 旧线程把**刚建好的新代理**判成死的
+   （端口在听、日志刚写 listening，currentPort 却返回 0）。
+6. **端口不漂移**：`PREFERRED_PORT=15353` 绑定失败时重试 5 次（每次 150ms，带 `reuseAddress`），
+   而不是直接落到候选 53/随机端口 —— env `DSH_DNS_PORT` 与 rootfs `resolv.conf` 都按固定端口写死，漂移等于静默毁约。
+   实测踩到过：自愈瞬间 15353 报 `EADDRINUSE`，旧代码于是绑到 53。
+
+### 验收（真机 PLZ110 / Android 16 / arm64 / 192.168.101.21:9000，versionCode 387）
+
+构建：`gradle.bat -p . -Ppackage=noruntime -Pabi=arm64-v8a assembleDebug --offline`
+签名：release key（CN=DSH Mobile，SHA-256 d28ca4f5…92c8），`apksigner sign --ks-key-alias dsh`
+
+| 用例 | 手段 | 结果 |
+|---|---|---|
+| 探针快路径 | 容器内 `nslookup dsh-probe.invalid` | NOERROR 空应答，无 Parse error，udp got 不增长 ✅ |
+| 线程有界 | 容器内并发 200 条真实查询 | `dns-fwd` 恒定 8，总线程峰值 101（基线 90，无爆炸）✅ |
+| 真实下载 | `apk add --no-progress sl` | `(1/1) Installing sl`，`/usr/bin/sl` 67320 B 落地 ✅ |
+| 故障注入 | `iptables -I INPUT -p udp --dport 15353 -j DROP` | 查询立即超时（socket 仍在 LISTEN）✅ 复现原始故障态 |
+| 看门狗判定 | 同上 | 20s 后 `probe failed (1/2)`，40s 后 `(2/2)` → `rebinding listener now` ✅ |
+| 自愈重绑 | 同上 | `listening 127.0.0.1:15353` + `watchdog: rebind OK on port 15353` ✅ |
+| 端口不漂移 | 同上 | 移除 DROP 后 `netstat` 仍是 15353，无 `:53` ✅ |
+| 恢复后可解析 | 同上 | `nslookup mirrors.aliyun.com` 返回 CNAME ✅，`apk add` 再次成功 ✅ |
+| 代际日志 | 同上 | `udp loop exited (gen=1 current, ...)` + `udp loop started on 15353 (gen=2)` 可区分新旧 ✅ |
+| 门禁 | `check-i18n.py` / `check-ui-tokens.py` | exit 0 / exit 0 ✅ |
+
+### 踩坑与教训
+
+- **探针应答必须回显 question 段**：第一版只回 12 字节头（QR=1、RCODE=0），`nslookup` 报
+  `*** Can not find dsh-probe.invalid: Parse error` —— RFC 1035 要求 QDCOUNT 与实际携带的 question 段一致。
+  修法：`buildProbeReply()` 复制 `q[0 until qEnd+4]`（头 + 原样 QNAME/QTYPE/QCLASS）再改头。
+- **SIGSTOP 不能冻结单线程**：`kill -STOP <tid>` 会停整个进程组（实测三个 dns 线程全变 T），
+  要复现「单循环死掉」只能用 `iptables DROP`。同理 `SIGCONT <pid>` 才能恢复。
+- **构建产物会被并行会话吃掉**：`app/build/intermediates/project_dex_archive/debug` 被清空但 Gradle 认为 up-to-date，
+  打出的 APK 有 11 个 dex 却**不含 app.dsh.mobile.DshApp**，装上直接
+  `java.lang.ClassNotFoundException: Didn not find class app.dsh.mobile.DshApp`（FATAL EXCEPTION: main）。
+  判别：`grep -a -c DshApp classes*.dex` 应为非 0。修法：删 `project_dex_archive/debug`、
+  `dex_archive_input_jar_hashes/debug`、`desugar_graph/debug`、`dex_number_of_buckets_file/debug` 后重建。
+- **Kotlin 字符串转义**：`log("… \$fresh")` 在 Kotlin 里会输出字面量 `$fresh`（不需要反斜杠），
+  实测日志出现 `start() returned $fresh`，排查时容易误以为变量没求值。
+- 设备 adb 会周期性掉线，需 `adb connect 192.168.101.21:9000`；`pidof` 在安装后被清空是正常（装包会杀进程）。
+
+### 未覆盖
+
+- 未在低端机型 / Android 8~10 上验（`ThreadPoolExecutor` 与 `reuseAddress` 行为一致，但未实测）。
+- 未验证「上游 DoH 真挂掉 + 高并发」组合下队列丢弃的实际观感（设计上丢弃会让部分查询无应答，客户端自行重试）。
+- 未做 8 小时以上的长跑（原故障是「跑几小时」出现，看门狗 20s 周期理论上限 40s 就能自愈，但未做长时观测）。
+
+### 改动文件（未提交）
+
+`app/src/main/java/app/dsh/mobile/engine/LinuxDnsProxy.kt`（+397 −25）。仓内另有并行会话的 WIP，提交前需确认归属。
