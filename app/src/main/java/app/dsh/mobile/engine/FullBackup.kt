@@ -169,12 +169,10 @@ object FullBackup {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Result {
         val app = ctx.applicationContext as? DshApp ?: throw IOException("supervisor unavailable")
-        if (options.replaceExisting) throw IOException("replacement restore is unavailable until rollback and exclusive maintenance are supported")
-        if (app.supervisor.state.value !is EngineSupervisor.State.Stopped || !app.supervisor.isUserStopped()) {
-            throw IOException("import unavailable: safe engine and background-writer shutdown is required")
-        }
+        app.supervisor.stopForMaintenance()
         val base = ctx.filesDir.parentFile.canonicalFile
         val stage = Files.createTempDirectory(ctx.cacheDir.toPath(), "full-backup-").toFile()
+        val rollback = Files.createTempDirectory(ctx.cacheDir.toPath(), "full-backup-rollback-").toFile()
         var skipped = 0
         var totalBytes = 0L
         try {
@@ -257,26 +255,45 @@ object FullBackup {
 
                 var published = 0
                 var publishedBytes = 0L
-                for (item in staged) {
-                    val target = File(base, item.name)
-                    if (!prepareParents(base, target)) { skipped++; continue }
-                    try {
-                        Files.newOutputStream(target.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
-                            LinkOption.NOFOLLOW_LINKS).use { output -> item.file.inputStream().use { it.copyTo(output) } }
-                    } catch (e: java.nio.file.FileAlreadyExistsException) {
-                        skipped++
-                        if (item.name == REGISTRY) Log.w(TAG, "workspace registry exists; incoming registry skipped to preserve current data")
-                        continue
+                val moved = mutableListOf<Pair<File, File>>()
+                try {
+                    for (item in staged) {
+                        val target = File(base, item.name)
+                        if (!prepareParents(base, target)) { skipped++; continue }
+                        val existing = target.exists()
+                        if (existing && !options.replaceExisting) { skipped++; continue }
+                        if (existing && options.replaceExisting) {
+                            val backup = File(rollback, item.name)
+                            backup.parentFile?.mkdirs()
+                            Files.move(target.toPath(), backup.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                            moved += target to backup
+                        }
+                        try {
+                            Files.newOutputStream(target.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
+                                LinkOption.NOFOLLOW_LINKS).use { output -> item.file.inputStream().use { it.copyTo(output) } }
+                        } catch (e: Exception) {
+                            if (target.exists()) Files.deleteIfExists(target.toPath())
+                            throw e
+                        }
+                        published++
+                        publishedBytes += item.size
                     }
-                    published++
-                    publishedBytes += item.size
+                    return Result(published, publishedBytes, skipped)
+                } catch (e: Exception) {
+                    moved.asReversed().forEach { (target, backup) ->
+                        runCatching { Files.deleteIfExists(target.toPath()) }
+                        runCatching { Files.move(backup.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE) }
+                    }
+                    throw e
                 }
-                return Result(published, publishedBytes, skipped)
             }
         } finally {
             // This directory was freshly created by this operation and contains numeric files only.
             stage.listFiles()?.forEach { runCatching { Files.deleteIfExists(it.toPath()) } }
             runCatching { Files.deleteIfExists(stage.toPath()) }
+            rollback.walkBottomUp().forEach { runCatching { Files.deleteIfExists(it.toPath()) } }
+            app.supervisor.allowStartAfterMaintenance()
+            app.supervisor.restart()
         }
     }
 
