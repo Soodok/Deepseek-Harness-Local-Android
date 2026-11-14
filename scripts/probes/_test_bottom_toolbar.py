@@ -35,7 +35,9 @@ checks = {
         'collapseButton.setOnClickListener' in controller
         and 'collapsedView.setOnClickListener' in controller
         and 'view.performClick()' in controller
-        and 'setIslandBottomAlongRatio(this@MainActivity, ratio)' in main,
+        and 'setIslandBottomAlongRatio(this@MainActivity, ratio)' in main
+        and 'collapsedView.performLongClick()' in controller
+        and 'override fun onMoveDock()' in main,
     'keyboard temporarily hides toolbar without mistaking navigation for IME':
         'toolbar.setShown(active && !bottomToolbarImeVisible)' in main
         and 'insets.systemWindowInsetBottom >= (96 * d).toInt()' in main

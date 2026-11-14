@@ -1201,6 +1201,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private var bottomToolbarCollapsed = false
     private var bottomToolbarInset = 0
     private var bottomToolbarImeVisible = false
+    private var imeFreeWindowBottom = 0
 
     /**
      * 灵动岛是否处于「收起态」（只剩下把手的缩小状态）。
@@ -1263,6 +1264,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 override fun onCollapse() { bottomToolbarCollapsed = true; renderBottomToolbar() }
                 override fun onDragRatio(ratio: Float) {
                     CustomVisualPref.setIslandBottomAlongRatio(this@MainActivity, ratio)
+                }
+                override fun onMoveDock() {
+                    islandDock = IslandDock.TOP
+                    islandCollapsed = true
+                    CustomVisualPref.setIslandDock(this@MainActivity, islandDock)
+                    applyDock()
                 }
             },
             initialDragRatio = CustomVisualPref.islandBottomAlongRatio(this),
@@ -1830,6 +1837,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        imeFreeWindowBottom = 0
         // ⚠️ v1.5.1：自由窗口/分屏的**尺寸变化也走这里**（configChanges 含 screenSize），
         // 而且拖动时每变一像素来一次。旧实现无条件 reload() → 拖动过程中连续整页重载
         // （卡顿、闪白、反复重走启动遮罩）。
@@ -1850,6 +1858,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        imeFreeWindowBottom = 0
         scheduleViewportReapply("multiwindow=$isInMultiWindowMode")
     }
 
@@ -2739,9 +2748,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 insets.isVisible(android.view.WindowInsets.Type.ime())
             } else imeFromInsets > 0
             val imeVisible = imeReported || imeFromFrame > 0
+            val contentBottom = location[1] + content.height
+            if (!imeVisible && content.height > 0) imeFreeWindowBottom = contentBottom
+            val resizeConsumed = (imeFreeWindowBottom - contentBottom).coerceAtLeast(0)
+            val remainingIme = if (imeFreeWindowBottom > 0) {
+                (imeFromInsets - resizeConsumed).coerceAtLeast(0)
+            } else imeFromInsets
             val imeBottom = if (islandDock != IslandDock.BOTTOM || immersive) {
                 maxOf(imeFromInsets, imeFromFrame)
-            } else imeFromFrame
+            } else maxOf(remainingIme, imeFromFrame).coerceAtMost(content.height.coerceAtLeast(0))
             val imeAffectsViewport = imeVisible || imeBottom > 0
             val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(

@@ -32,6 +32,7 @@ class DshBottomToolbarController(
         fun onExpand()
         fun onCollapse()
         fun onDragRatio(ratio: Float)
+        fun onMoveDock()
     }
 
     val root: FrameLayout = inflater.inflate(R.layout.view_dsh_bottom_toolbar, parent, false) as FrameLayout
@@ -52,6 +53,7 @@ class DshBottomToolbarController(
         root.findViewById<View>(R.id.dsh_bottom_toolbar_settings).setOnClickListener { callbacks.onSettings() }
         collapseButton.setOnClickListener { collapseFromUser() }
         collapsedView.setOnClickListener { expandFromUser() }
+        collapsedView.setOnLongClickListener { callbacks.onMoveDock(); true }
         installCollapseGesture()
         installDragGesture()
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionHandle() }
@@ -154,6 +156,13 @@ class DshBottomToolbarController(
         var startRatio = 0f
         var dragging = false
         var moved = false
+        var longPressed = false
+        val longPress = Runnable {
+            if (!moved) {
+                longPressed = true
+                collapsedView.performLongClick()
+            }
+        }
         collapsedView.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -162,13 +171,18 @@ class DshBottomToolbarController(
                     startRatio = dragRatio
                     dragging = false
                     moved = false
+                    longPressed = false
+                    view.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
-                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) moved = true
+                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                        moved = true
+                        view.removeCallbacks(longPress)
+                    }
                     if (!dragging && abs(dx) > touchSlop && abs(dx) > abs(dy)) dragging = true
                     if (dragging) {
                         val available = root.width - root.paddingLeft - root.paddingRight - view.width
@@ -179,7 +193,9 @@ class DshBottomToolbarController(
                 MotionEvent.ACTION_UP -> {
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
+                    view.removeCallbacks(longPress)
                     view.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (longPressed) return@setOnTouchListener true
                     if (dragging) {
                         val available = root.width - root.paddingLeft - root.paddingRight - view.width
                         if (available > 0) setDragRatio(startRatio + dx / available)
@@ -190,6 +206,7 @@ class DshBottomToolbarController(
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    view.removeCallbacks(longPress)
                     if (dragging) setDragRatio(startRatio)
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     true
