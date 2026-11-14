@@ -267,6 +267,14 @@
                     </LinearLayout>
 
                     </LinearLayout>
+                <LinearLayout android:id="@+id/rowDeveloperOptions" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid" android:visibility="gone" android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_settings" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:tint="?attr/colorOnSurface"/>
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/developer_options_title" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/developer_options_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                    </LinearLayout>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/colorOnSurface"/>
+                </LinearLayout>
                 <LinearLayout android:id="@+id/rowAbout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="1dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
                     <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_info" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
 
@@ -280,14 +288,6 @@
                     </LinearLayout>
 
                     </LinearLayout>
-                <LinearLayout android:id="@+id/rowDeveloperOptions" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom" android:visibility="gone">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_settings" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:tint="?attr/colorOnSurface"/>
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/developer_options_title" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/developer_options_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-                    </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/colorOnSurface"/>
-                </LinearLayout>
             </LinearLayout>
 
 
