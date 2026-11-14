@@ -8,7 +8,12 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-14 · `main` HEAD `6098f19f` · 本轮新增「任务化执行 `/dev/jobs`」（见一百二十二节）。
+**最后更新**：2026-11-14 · `main` HEAD `6781e9b5` · 本轮新增「MD3 全量适配」（见一百二十四节）。
+本轮：**MD3 全量适配** —— 用户要的是「补上原作者没适配到的页面」，查下来真问题是
+**两套主题画出来一模一样**（Theme.Dsh 与 Theme.Dsh.MD3 唯一差异是一个 colorOnSurfaceInverse，
+21 个 md3_* 色全被回映射到旧冷蓝灰）。落地三层：21 个 `dsh*` 主题令牌、385 处静态色改 `?attr`、
+`StylePref` 风格开关。21 条探针 + 4 条变异全红。真机 1.6.0-beta.11-md3 装成，启动正常。
+**逐页视觉对比截图未完成**（设备被占用 + 两个 Activity exported=false），如实记为未验证。详见「一百二十四」。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
@@ -12855,3 +12860,126 @@ WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
 - 提交后立刻验：`git show --stat HEAD` 的文件数是否等于预期；对「已推送的树能否单独编译」存疑时，用 `git worktree add --detach` 检出该提交跑一次资源编译 —— 别只看工作区编译通过（工作区有别人的声明文件，会假绿）。
 - **不要 amend 已推送的提交**：一度 `git commit --amend` 想就地修，结果 amend 又带进另一条改动，只能 `git reset --mixed origin/main` 撤回，白折腾一轮。已推送一律补提交。
 - 提交信息含反引号/撇号时走 `git commit -F <文件>`，否则 shell 吃掉反引号内容。
+
+
+## 一百二十四、MD3 全量适配：两套主题画出来一模一样（2026-11-14，提交 `6781e9b5`）
+
+### 起因与真问题（与"补几页样式"的预期完全不同）
+
+用户原话：「MD3 样式，根据现在也全量适配，原作者已经适配了大多数设置选项了，我们搞一个页面样式和适配一下他们没适配到的地方就行」。
+
+逐项比对 `app/src/main/res/values/themes.xml` 的 Theme.Dsh（28 item）与 Theme.Dsh.MD3（27 item）：
+
+    Theme.Dsh 多一个 colorOnSurfaceInverse，其余同名 item 取值全部相同。
+
+即作者（PR #97）把 21 个 md3_* 色全回映射到旧冷蓝灰，**切风格切了等于没切**。所以「补没适配的页面」是伪命题 —— 真正要修的是两套主题没有分叉。
+
+色温差实测：页面底 #F5F7FA（R−B=−5）vs md3_bg #F7F6F5（R−B=+2），相差 7 个色阶；
+accent #0284C7（R−B=−197）vs md3_primary #1B6C8C（R−B=−113）。
+
+### 根因：`@color` 是资源解析期定型的
+
+   位置             @color  ?attr
+   layout 29 文件     267     639
+   drawable 137 文件  174      13
+   合计               441     652
+
+核心语义色占 403 处（91.4%）：icon_color 101、accent 70、island_text 35、stroke 32、surface 30、
+text_secondary 30、text_muted 25、text_primary 22、bg 14、divider 8。剩下 38 处是功能专属色
+（splash_* 15、island_* 8、ext_chip_* 4 等），本就不该跟随风格。
+代码侧 `getColor(R.color.*)` 另有 173 处，写死 0xFF 常量 88 处 / 22 文件。
+
+### 三层改动
+
+**第 0 层 · 风格令牌**（新增 `app/src/main/res/values/attrs_style.xml`，21 个属性）
+dshBg / dshSurface / dshSurfaceAlt / dshSurfaceHigh / dshDialogBg / dshTextPrimary /
+dshTextSecondary / dshTextMuted / dshAccent / dshAccentSoft / dshOnAccent / dshDivider /
+dshStroke / dshDanger / dshSuccess / dshWarning / dshIconColor / dshBtnRipple / dshOverlay /
+dshIslandText / dshIslandAccent。**前缀 dsh 必须有**，否则与 Material 的 colorXxx 撞名。
+`values/themes.xml` 与 `values-night/themes.xml` 各注入两套：Theme.Dsh → 旧色（一像素不改），
+Theme.Dsh.MD3 → md3_*。MD3 主题的 Material 语义色也分叉了 20 项
+（colorPrimary→md3_primary、colorSurface→md3_surface、colorOnSurface→md3_on_surface 等）。
+
+**第 1 层 · 静态色 → 主题属性**：142 个文件、385 处（drawable 136 / layout 249）。
+显式排除（一旦 attr 化就会拿错误上下文的值）：
+- `ic_download` / `ic_health` / `ic_pet` —— 通知栏 `setSmallIcon` 在 Service 上下文取图
+- `splash_*` 全部 —— 启动闪屏
+- `bg_dynamic_island_dot` / `bg_overlay_*` / `ic_island_*` —— WindowManager 浮层
+
+代码侧 99 处 / 12 文件 `getColor(R.color.x)` → `dshColor(R.attr.dshX, R.color.x)`；LinuxActivity 排除。
+
+**第 2 层 · 风格开关**（新增 `app/src/main/java/app/dsh/mobile/StylePref.kt`）
+`enum Style { CLASSIC, MATERIAL }`、`DEFAULT = MATERIAL`、`StylePref.color(ctx, attr, fallback)`
+（resolveAttribute 失败或 resourceId==0 回退 fallback，**绝不返回透明** —— 那会让文字消失），
+文件末尾 `fun Context.dshColor(attr, fallback)` 供原地替换。
+`ThemedActivity` 分派从 `usesSettingsBackground` 改为 `followsStyle && StylePref.isMaterial(this)`，
+让全站跟随（否则「设置页暖、主界面冷」）；`protected open val followsStyle = true`，
+LinuxActivity 覆盖为 false（整屏自绘深色工作台，80 处 addView / 29 处 getColor）。
+`ThemeActivity` 加「界面风格」卡片 + 带空转保护的按钮组（值没变不 recreate）。
+6 语言各加 5 条字符串。
+
+### 探针 `scripts/probes/_test_style_tokens.py`（21 条）
+
+T1 两套主题令牌齐全 / T2 取值必须真分叉（ALLOW_SAME = dshDanger·dshSuccess·dshWarning·dshBtnRipple·dshOverlay，本就同值）/
+T3 夜间两套齐全 / T4 通知与浮层图标不得含 ?attr / 主题分派用 followsStyle + StylePref。
+
+四条变异在隔离树逐条跑，**全部 EXIT=1**，改完逐文件核字节还原：
+
+| 变异 | 结果 |
+|---|---|
+| M1 删掉 MD3 的 dshBg | EXIT=1 |
+| M2 MD3 的 dshAccent 改成 @color/accent（与经典同源） | EXIT=1 |
+| M3 通知图标 ic_download 塞 ?attr | EXIT=1 |
+| M4 分派退回 usesSettingsBackground | EXIT=1 |
+
+**变异教训**：M2 第一版用正则 `(<item name="dshAccent">)...` 配 `find("Theme.Dsh.MD3")` 定位，
+命中的是注释里那处 `Theme.Dsh.MD3`（第 54 行），改到的是 Theme.Dsh 段 → **EXIT=0 假绿**。
+改成按行号精确改第 182 行（`@color/md3_primary`）才转红。
+
+### 顺带修的 4 条过期断言（判据宽于被测对象）
+
+- `_test_settings_theme_consistency.py` [A2]：原来靠 `onCreate` 后 1200 字符内出现过 `setTheme(`，
+  被 v1.8.0 加的注释挤破（实测 1263 字符）误红；且把 setTheme 挪到 super.onCreate 之后照样绿。
+  改成取 onCreate 函数体，断言 `setTheme 索引 < super.onCreate 索引`。
+- `_test_theme_menu.py`：「plugin name 不写死白」原找 `getColor(R.color.text_primary)`，改走令牌后失效。
+- `_test_plugin_engine_compat.py`：同理，钉住 warning 语义而非字面写法。
+- `_test_theme_flicker.py` 第 10 条：守卫形式随 dshColor 变化，改成正则钉控制流。
+
+### 验证
+
+- `:app:mergeReleaseResources` EXIT=0（先单独验资源；?attr 能否写在 vector 的 fillColor 与
+  shape 的 solid 里，用临时探针 zz_spike_vector.xml / zz_spike_shape.xml 试过，验完删除）
+- `:app:compileReleaseKotlin`、`:app:assembleRelease` 均 BUILD SUCCESSFUL
+- 隔离树 `/e/tmp/wt-md3chk`（`git worktree add --detach` 从 HEAD 起，非复用旧树）构建
+  **43,906,889 B**，装真机 OnePlus PLZ110 / Android 16：
+  `versionCode=395 versionName=1.6.0-beta.11-md3 lastUpdateTime=2026-11-14 12:56:31`，启动正常
+- JVM **2402 passed / 0 failed**；`check-i18n.py` 全过
+- py 探针 **PASS=130 FAIL=2**：`_test_onboarding_v2.py`（8/109 失败，"six scrolling pages exist → found 9"）
+  与 `_test_linux_apt_nonroot.py`（42 checks / 3 failed）。**在 `3eb72fdb` 基线的独立 worktree
+  `/e/tmp/wt-prev3` 复跑同样红**（OB_EXIT=1 / APT_EXIT=1），证明与本提交无关
+- 提交树里 `?attr/dsh*` 共 22 个唯一名（21 个属性 + 注释里的占位 `dshXxx`），
+  与 attrs_style.xml 的 21 条声明对齐，无未声明引用
+- **未完成：逐页两套风格的视觉对比截图**。用户当时在用抖音，坐标点击落空；
+  SettingsActivity / ThemeActivity 均 exported=false，`am start -n` 起不来，只能从侧边栏进
+
+### ★ 事故：第一次提交把 CRLF 写进了 173 个文件
+
+- 现象：`da4281fe`（已从分支摘下、未推送）的 stat 是 173 files / 33064 insertions / 32334 deletions，
+  看着像"内容重写"。核 `.gitattributes`（`* text=auto eol=lf`）与 `core.autocrlf=input` 都正常。
+- 根因：提交时用 `git hash-object -w --stdin` 灌内容，**没有带 `--path`**，于是 gitattributes 的
+  clean filter（eol=lf）没生效，存在 Windows 上带 CRLF 的工作区字节被原样写进 blob。
+  实测 `git cat-file blob HEAD:.../bg_card.xml` 有 13 个 CRLF，HEAD~1 是 0 个。
+- 修法：`git hash-object -w --path <路径> --stdin` 让 clean filter 生效；重建 173 个文件的新树，
+  核「新树含 CRLF 的文件数 = 0」后 `git commit-tree` 重造提交（父仍是 `3eb72fdb`），
+  `git update-ref` 替换。修完 stat 变 **173 files / 1259 insertions / 529 deletions** —— 这才是真实改动规模。
+- 反向验证：`git diff --ignore-cr-at-eol da4281fe 6781e9b5` **输出为空**，证明两次提交内容完全一致，
+  只差行尾。
+- 附带教训：`echo '"\r\n" in b'` 这类在 Windows 上写 Python 会把 `\r` 解析成真回车，
+  判断 CRLF 必须用字节面量 `b"\r\n"`，否则自检本身假绿。
+
+### 提交
+
+`6781e9b5`（173 文件）。手术式提交：`GIT_INDEX_FILE` 独立索引 + `git read-tree HEAD` +
+`git update-index --add --cacheinfo`，其中 OnboardingActivity.kt / activity_onboarding.xml /
+六个 strings.xml **用手工合成的版本**（`git show HEAD:<path>` 的内容 + 只加我的颜色替换与 5 条字符串），
+避开他人删 `pagePriv` 的在途改动。提交后主 index 同步回 HEAD，工作区 `git status` 干净。
