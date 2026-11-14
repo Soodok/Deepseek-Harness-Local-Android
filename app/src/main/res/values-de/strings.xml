@@ -1932,4 +1932,9 @@
     <string name="peersync_saved">Gespeichert</string>
     <string name="peersync_invalid_port">Port muss 1–65535 sein</string>
 
+    <string name="style_title">Oberflächenstil</string>
+    <string name="style_sub_material">Material 3 · warmes Grau mit Petrol</string>
+    <string name="style_sub_classic">Klassisch · kühles Blaugrau</string>
+    <string name="style_classic">Klassisch</string>
+    <string name="style_material">Material 3</string>
 </resources>

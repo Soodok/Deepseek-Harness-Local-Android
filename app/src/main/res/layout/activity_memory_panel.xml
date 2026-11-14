@@ -204,8 +204,8 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="4dp"
-        android:background="@color/surface"
-        android:divider="@color/bg"
+        android:background="?attr/dshSurface"
+        android:divider="?attr/dshBg"
         android:dividerHeight="1dp"
         android:scrollbars="vertical" />
 </LinearLayout>

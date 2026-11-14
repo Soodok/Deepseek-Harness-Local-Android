@@ -1929,4 +1929,9 @@
     <string name="peersync_saved">已保存</string>
     <string name="peersync_invalid_port">端口必须是 1–65535</string>
 
+    <string name="style_title">界面风格</string>
+    <string name="style_sub_material">Material 3 · 暖灰配青墨</string>
+    <string name="style_sub_classic">经典 · 冷蓝灰</string>
+    <string name="style_classic">经典</string>
+    <string name="style_material">材料 3</string>
 </resources>

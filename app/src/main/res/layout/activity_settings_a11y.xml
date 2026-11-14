@@ -26,7 +26,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/accessibility_label" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtA11yService" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/a11y_service_checking" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
 
                 <!-- ② 任务记忆：录制 → 剪枝 → 向量召回 → 重放，管理在记忆面板里 -->
@@ -36,7 +36,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_row_memory" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/a11y_memory_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
 
                 <!-- ③ 悬浮窗：点一下立刻显示/收起，省得等 AI 动起来才看得到 -->
@@ -46,7 +46,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/a11y_row_overlay" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtA11yOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/a11y_overlay_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
 
                 <!-- AI 触摸点（v1.7.9 从「个性化」搬来）：只控制画不画点，手势照常执行 -->
@@ -71,7 +71,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_section_voice" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:id="@+id/txtA11yVoice" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_section_voice_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
 
                 <!-- ⑥ 安全边界：只读说明。用户问过「AI 能不能在权限页乱点」，答案写在这里 -->
@@ -81,7 +81,7 @@
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/a11y_row_safety" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/a11y_safety_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end" />
                     </LinearLayout>
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                 </LinearLayout>
             </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>

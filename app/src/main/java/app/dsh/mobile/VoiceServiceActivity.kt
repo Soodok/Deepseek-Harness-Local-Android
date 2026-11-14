@@ -302,7 +302,7 @@ class VoiceServiceActivity : ThemedActivity() {
                 val v = super.getView(position, convertView, parent)
                 (v as? TextView)?.apply {
                     // 同样不设 setBackgroundColor（Spinner 收起态的背景由外层 bg_voice_input 提供）
-                    setTextColor(getColor(R.color.text_primary))
+                    setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                 }
                 return v
             }
@@ -313,7 +313,7 @@ class VoiceServiceActivity : ThemedActivity() {
                     // ⚠️ 不要用 setBackgroundColor：那会**冲掉 drawable 的圆角**，
                     // 条目变成直角方块（主人反馈"边缘还是不圆润"）。
                     // 背景交给 item_spinner_dark 的 drawable（含圆角 + 水波纹），这里只设文字色。
-                    setTextColor(getColor(R.color.text_primary))
+                    setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                     setPadding(dp(16), dp(12), dp(16), dp(12))
                 }
                 return v

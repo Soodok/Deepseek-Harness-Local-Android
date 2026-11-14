@@ -129,14 +129,14 @@ object ThemeManager {
         val dynamic = runCatching {
             ThemeAccent.mode(activity) == ThemeAccent.Mode.DYNAMIC
         }.getOrDefault(false)
-        if (!dynamic) return activity.getColor(R.color.bg)
+        if (!dynamic) return activity.dshColor(R.attr.dshBg, R.color.bg)
         val tv = android.util.TypedValue()
         val ok = activity.theme.resolveAttribute(
             com.google.android.material.R.attr.colorSurface, tv, true,
         )
-        if (!ok) return activity.getColor(R.color.bg)
+        if (!ok) return activity.dshColor(R.attr.dshBg, R.color.bg)
         return if (tv.resourceId != 0) {
-            runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.getColor(R.color.bg))
+            runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.dshColor(R.attr.dshBg, R.color.bg))
         } else {
             tv.data
         }
@@ -214,7 +214,18 @@ open class ThemedActivity : Activity() {
         // 必须在 setTheme 之前同步：AppCompat 的夜间模式决定了 Material 控件
         // 在构造时会不会把我们这份 Resources 的 uiMode 改掉（见 syncAppCompatNight）。
         ThemeManager.syncAppCompatNight(this)
-        setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
+        // ★ v1.8.0：主题分派改由「界面风格」决定，不再由 usesSettingsBackground 决定。
+        //
+        // 原来只有设置体系那 18 个页面套 MD3，其余页面永远 Theme.Dsh —— 而这两套
+        // 主题的语义色以前都映射到同一张旧色板，画出来一样，所以没人发现。
+        // v1.8.0 让 MD3 走真正的暖灰色板后，如果还按旧分派，就会出现
+        // 「设置页暖、主界面冷」的花脸。因此改成全站跟随风格，
+        // 只有显式声明 followsStyle = false 的页面（自绘深色的编辑器/工作台）
+        // 保持经典主题。
+        //
+        // ⚠️ usesSettingsBackground 仍然保留它原本的第二职责（设置页背景图，
+        //    见 applySettingsBackground），不要为了主题把那个开关也删了。
+        setTheme(if (followsStyle && StylePref.isMaterial(this)) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
         // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
         //
         // ⚠️ 2026-11-10：PRESET / CUSTOM 不再走 DynamicColors。
@@ -247,6 +258,20 @@ open class ThemedActivity : Activity() {
      * 都能看到同一张背景图 —— 而不是只有点进设置的那一屏有。
      */
     protected open val usesSettingsBackground: Boolean get() = false
+
+    /**
+     * 本 Activity 是否跟随「界面风格」（设置 → 主题 → 界面风格）。
+     *
+     * 默认 true：v1.8.0 起全站都跟着风格走，布局里的 `?attr/dshXxx` 与
+     * Material 语义色才会同步解析，不会出现「设置页暖、主界面冷」的花脸。
+     *
+     * 覆盖为 false 的只有**自绘深色**的页面 —— 它们的底色是写死的 #FF101418，
+     * 套 Material 3 暖灰反而更割裂：
+     *   · TerminalActivity（终端，深色底色）
+     *   · LogViewerActivity（日志，深色底色，且不继承 ThemedActivity，不影响）
+     *   · LinuxActivity（工作台，整屏自绘）
+     */
+    protected open val followsStyle: Boolean get() = true
 
     override fun setContentView(layoutResID: Int) {
         super.setContentView(layoutResID)

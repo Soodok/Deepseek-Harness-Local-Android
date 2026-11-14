@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- MD3 outlined 按钮 + 涟漪：圆角 20dp，与 filled 按钮同一弧度。 -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="@color/btn_ripple">
+    android:color="?attr/dshBtnRipple">
     <item android:id="@android:id/mask">
         <shape android:shape="rectangle">
             <corners android:radius="20dp" />

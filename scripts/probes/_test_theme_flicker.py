@@ -65,8 +65,12 @@ check("barBackground 有静态兜底",
       "R.color.bg" in bars)
 # 只断言「出现了 DYNAMIC」太宽：把守卫改成 always-true 也照样命中（变异 #4 曾假绿）。
 # 必须钉住守卫本身，而不是它附近出现过什么常量。
+# v1.8.0：静态兜底改成走风格令牌（dshColor），守卫形式随之变化 ——
+# 判据钉住的是「非动态模式必须先返回」这条控制流，而不是某个 API 的具体写法。
+# 原来写死 getColor(R.color.bg) 会把任何换色的重构都判红，属于判据宽于被测对象。
 check("仅动态模式才取主题色（守卫形式）",
-      "if (!dynamic) return activity.getColor(R.color.bg)" in bars)
+      re.search(r"if \(!dynamic\) return activity\.[\w]+\(R\.attr\.dshBg, R\.color\.bg\)", bars)
+      is not None)
 
 # ---- 4. 不自造 content-based 伪动态色 ----
 check("不用 setContentBasedSource（避免中性色把卡片层次洗掉）",

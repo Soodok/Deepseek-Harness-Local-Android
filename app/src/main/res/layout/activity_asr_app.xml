@@ -12,43 +12,43 @@
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                     <TextView android:id="@+id/oursTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="?attr/colorOnSurface" android:textSize="16sp" android:textStyle="bold" />
                     <TextView android:id="@+id/oursDesc" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
-                    <TextView android:id="@+id/oursAction" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/oursAction" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textColor="?attr/dshAccent" android:textSize="13sp" android:textStyle="bold" />
                 </LinearLayout>
                 <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
             </LinearLayout>
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginStart="8dp" android:layout_marginBottom="10dp" android:text="@string/asrapp_guide_title" android:textColor="?attr/colorOnSurface" android:textSize="15sp" android:textStyle="bold" />
-            app:strokeColor="@color/stroke"
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginBottom="10dp">
-                    <TextView android:id="@+id/step1Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/accent" android:textSize="14sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/step1Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/dshAccent" android:textSize="14sp" android:textStyle="bold" />
                     <TextView android:id="@+id/step1Body" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            app:strokeColor="@color/stroke"
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginBottom="10dp">
-                    <TextView android:id="@+id/step2Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/accent" android:textSize="14sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/step2Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/dshAccent" android:textSize="14sp" android:textStyle="bold" />
                     <TextView android:id="@+id/step2Body" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            app:strokeColor="@color/stroke"
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginBottom="10dp">
-                    <TextView android:id="@+id/step3Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/accent" android:textSize="14sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/step3Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/dshAccent" android:textSize="14sp" android:textStyle="bold" />
                     <TextView android:id="@+id/step3Body" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            app:strokeColor="@color/stroke"
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginBottom="10dp">
-                    <TextView android:id="@+id/step4Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/accent" android:textSize="14sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/step4Title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/dshAccent" android:textSize="14sp" android:textStyle="bold" />
                     <TextView android:id="@+id/step4Body" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            app:strokeColor="@color/stroke"
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginTop="14dp" android:layout_marginBottom="10dp">
-                    <TextView android:id="@+id/troubleTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/warning" android:textSize="14sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/troubleTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/dshWarning" android:textSize="14sp" android:textStyle="bold" />
                     <TextView android:id="@+id/troubleBody" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

@@ -65,6 +65,7 @@ class ThemeActivity : ThemedActivity() {
         seekVal = findViewById(R.id.seekVal)
         btnApply = findViewById(R.id.btnApplyCustom)
 
+        setupStyle()
         setupDynamic()
         setupChips()
         setupCustom()
@@ -75,6 +76,51 @@ class ThemeActivity : ThemedActivity() {
         super.onResume()
         OrientationPrefs.applyToSettingsPage(this)
         refreshSummary()
+    }
+
+    // ---------------------------------------------------------------- 界面风格
+
+    /**
+     * 界面风格：Classic（冷蓝灰）↔ Material 3（暖灰青墨）。
+     *
+     * 与动态取色是两件正交的事：这里换的是**整套语义色板**（底/面/字/描边/图标），
+     * 动态取色换的是**强调色来源**。所以两者可以同时生效 —— 选了 Material 3
+     * 又开了跟随壁纸，得到的是「暖灰底 + 壁纸强调色」。
+     *
+     * 切换只需写偏好 + recreate：布局里 385 处 ?attr/dshXxx 与 99 处代码侧
+     * dshColor() 都会重新解析到新主题，不需要逐页刷新。
+     */
+    private fun setupStyle() {
+        val current = StylePref.style(this)
+        val group = findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.groupStyle)
+        val sub = findViewById<TextView>(R.id.subStyle)
+        // 先设选中再挂监听，避免程序性赋值触发一次多余的重建
+        group.check(
+            if (current == StylePref.Style.MATERIAL) R.id.btnStyleMaterial else R.id.btnStyleClassic,
+        )
+        val describe = { s: StylePref.Style ->
+            getString(
+                if (s == StylePref.Style.MATERIAL) R.string.style_sub_material
+                else R.string.style_sub_classic,
+            )
+        }
+        sub.text = describe(current)
+        group.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            val wanted = if (checkedId == R.id.btnStyleMaterial) {
+                StylePref.Style.MATERIAL
+            } else {
+                StylePref.Style.CLASSIC
+            }
+            // 空转保护：与 ThemeActivity.setupDynamic() 同一条纪律 ——
+            // 值没变就绝不重建，否则「赋值 → 回调 → 重建 → 再赋值」就是闭环。
+            if (wanted == StylePref.style(this)) {
+                sub.text = describe(wanted)
+                return@addOnButtonCheckedListener
+            }
+            StylePref.setStyle(this, wanted)
+            recreate()
+        }
     }
 
     // ---------------------------------------------------------------- 动态取色

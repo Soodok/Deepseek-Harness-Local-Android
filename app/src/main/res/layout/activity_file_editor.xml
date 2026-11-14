@@ -14,7 +14,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="?attr/dshBg">
 
     <!-- 顶部栏：返回 + 文件名 + 保存 -->
     <LinearLayout
@@ -22,7 +22,7 @@
         android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/bg"
+        android:background="?attr/dshBg"
         android:elevation="2dp">
 
         <ImageView
@@ -43,7 +43,7 @@
             android:ellipsize="middle"
             android:singleLine="true"
             android:text="@string/file_editor_title"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/dshTextPrimary"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -54,7 +54,7 @@
             android:gravity="center"
             android:paddingHorizontal="12dp"
             android:text="@string/file_editor_reload"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/dshTextSecondary"
             android:textSize="14sp"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
 
@@ -65,7 +65,7 @@
             android:gravity="center"
             android:paddingHorizontal="18dp"
             android:text="@string/file_editor_save"
-            android:textColor="@color/accent"
+            android:textColor="?attr/dshAccent"
             android:textSize="16sp"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
     </LinearLayout>
@@ -83,7 +83,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/file_editor_path"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/dshTextSecondary"
             android:textSize="12sp" />
 
         <TextView
@@ -94,7 +94,7 @@
             android:layout_marginStart="8dp"
             android:ellipsize="middle"
             android:singleLine="true"
-            android:textColor="@color/text_muted"
+            android:textColor="?attr/dshTextMuted"
             android:textSize="12sp"
             android:fontFamily="monospace" />
 
@@ -105,7 +105,7 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="2dp"
             android:text="@string/file_editor_copy_path"
-            android:textColor="@color/accent"
+            android:textColor="?attr/dshAccent"
             android:textSize="12sp"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
     </LinearLayout>
@@ -117,7 +117,7 @@
         android:layout_height="wrap_content"
         android:paddingHorizontal="16dp"
         android:paddingTop="10dp"
-        android:textColor="@color/warning"
+        android:textColor="?attr/dshWarning"
         android:textSize="13sp"
         android:lineSpacingExtra="2dp"
         android:visibility="gone" />
@@ -133,8 +133,8 @@
         android:padding="14dp"
         android:gravity="top|start"
         android:inputType="textMultiLine|textNoSuggestions"
-        android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_muted"
+        android:textColor="?attr/dshTextPrimary"
+        android:textColorHint="?attr/dshTextMuted"
         android:textSize="14sp"
         android:fontFamily="monospace"
         android:lineSpacingExtra="3dp"

@@ -18,7 +18,7 @@
         android:paddingTop="11dp"
         android:paddingBottom="11dp"
         android:textSize="14sp"
-        android:textColor="@color/text_primary"
+        android:textColor="?attr/dshTextPrimary"
         android:background="@drawable/bg_menu_item"
         android:text="@string/ext_reinstall_title" />
 
@@ -27,7 +27,7 @@
         android:layout_height="1dp"
         android:layout_marginStart="10dp"
         android:layout_marginEnd="10dp"
-        android:background="@color/divider" />
+        android:background="?attr/dshDivider" />
 
     <TextView
         android:id="@+id/menuUninstall"
@@ -38,7 +38,7 @@
         android:paddingTop="11dp"
         android:paddingBottom="11dp"
         android:textSize="14sp"
-        android:textColor="@color/danger"
+        android:textColor="?attr/dshDanger"
         android:background="@drawable/bg_menu_item"
         android:text="@string/ext_uninstall_title" />
 </LinearLayout>

@@ -19,7 +19,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="?attr/dshBg">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -34,7 +34,7 @@
             android:layout_width="206dp"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:background="@color/surface"
+            android:background="?attr/dshSurface"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
             android:paddingTop="20dp"
@@ -49,7 +49,7 @@
                 android:text="@string/ob_wizard_rail_title"
                 android:textAllCaps="true"
                 android:letterSpacing="0.06"
-                android:textColor="@color/text_muted"
+                android:textColor="?attr/dshTextMuted"
                 android:textSize="11sp" />
 
             <LinearLayout
@@ -90,8 +90,8 @@
                         android:layout_weight="1"
                         android:max="7"
                         android:progress="1"
-                        android:progressBackgroundTint="@color/stroke"
-                        android:progressTint="@color/accent" />
+                        android:progressBackgroundTint="?attr/dshStroke"
+                        android:progressTint="?attr/dshAccent" />
 
                     <TextView
                         android:id="@+id/btnSteps"
@@ -105,7 +105,7 @@
                         android:gravity="center"
                         android:paddingHorizontal="12dp"
                         android:text="@string/ob_wizard_steps_open"
-                        android:textColor="@color/accent"
+                        android:textColor="?attr/dshAccent"
                         android:textSize="11sp" />
                 </LinearLayout>
 
@@ -114,7 +114,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/dshTextSecondary"
                     android:textSize="12sp" />
 
                 <!-- 运行环境实时状态（v2）：解压进度 / 已就绪 / 失败 / 需下载。
@@ -146,14 +146,14 @@
                         android:layout_marginEnd="8dp"
                         android:importantForAccessibility="no"
                         android:indeterminate="true"
-                        android:indeterminateTint="@color/accent"
+                        android:indeterminateTint="?attr/dshAccent"
                         android:indeterminateTintMode="src_in" />
 
                     <TextView
                         android:id="@+id/txtWelcomePill"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_secondary"
+                        android:textColor="?attr/dshTextSecondary"
                         android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
@@ -198,7 +198,7 @@
                             android:gravity="center"
                             android:lineSpacingExtra="2dp"
                             android:text="@string/ob_wizard_welcome_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -209,7 +209,7 @@
                             android:gravity="center"
                             android:lineSpacingExtra="4dp"
                             android:text="@string/ob_wizard_welcome_lede"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
 
@@ -230,7 +230,7 @@
                             android:gravity="center"
                             android:lineSpacingExtra="3dp"
                             android:text="@string/ob_wizard_welcome_prereq"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="10.5sp" />
 
 
@@ -258,7 +258,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_language_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -267,7 +267,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_language_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <LinearLayout
@@ -301,7 +301,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_orientation_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -310,7 +310,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_orientation_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <!-- 预览框：切方向时真实变形，不是示意图片 -->
@@ -335,7 +335,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
                             android:gravity="center"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="11sp" />
 
                         <LinearLayout
@@ -378,7 +378,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_theme_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -387,7 +387,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_theme_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <!-- 明暗对照：同一块界面画两遍，不用切主题就能看出差别 -->
@@ -423,7 +423,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="6dp"
                                     android:gravity="center"
-                                    android:textColor="@color/text_muted"
+                                    android:textColor="?attr/dshTextMuted"
                                     android:textSize="11sp" />
                             </LinearLayout>
 
@@ -454,7 +454,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="6dp"
                                     android:gravity="center"
-                                    android:textColor="@color/text_muted"
+                                    android:textColor="?attr/dshTextMuted"
                                     android:textSize="11sp" />
                             </LinearLayout>
                         </LinearLayout>
@@ -490,7 +490,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_accent_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -499,7 +499,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_accent_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <!-- 实时预览：选色后这里立刻重涂（与按钮/进度条同色，证明生效） -->
@@ -543,7 +543,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_screen_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -552,7 +552,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_screen_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <TextView
@@ -560,7 +560,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
                             android:text="@string/ob_wizard_screen_scale"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="11sp"
                             android:textAllCaps="true"
                             android:letterSpacing="0.05" />
@@ -577,7 +577,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
                             android:text="@string/ob_wizard_screen_layout"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="11sp"
                             android:textAllCaps="true"
                             android:letterSpacing="0.05" />
@@ -594,7 +594,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
                             android:text="@string/ob_wizard_screen_immersive"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="11sp"
                             android:textAllCaps="true"
                             android:letterSpacing="0.05" />
@@ -630,7 +630,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_mode_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -640,7 +640,7 @@
                             android:layout_marginTop="6dp"
                             android:lineSpacingExtra="3dp"
                             android:text="@string/ob_wizard_mode_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <LinearLayout
@@ -665,7 +665,7 @@
                                 android:id="@+id/capRoot"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
 
                             <TextView
@@ -673,7 +673,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="6dp"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
 
                             <TextView
@@ -682,7 +682,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
                                 android:lineSpacingExtra="3dp"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -692,7 +692,7 @@
                             android:layout_marginTop="12dp"
                             android:lineSpacingExtra="3dp"
                             android:text="@string/ob_wizard_mode_footnote"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="12sp" />
                     </LinearLayout>
                 </ScrollView>
@@ -719,7 +719,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_caps_title"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -729,7 +729,7 @@
                             android:layout_marginTop="6dp"
                             android:lineSpacingExtra="3dp"
                             android:text="@string/ob_wizard_caps_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <LinearLayout
@@ -760,7 +760,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="4dp"
                                 android:text="\u203A"
-                                android:textColor="@color/text_muted"
+                                android:textColor="?attr/dshTextMuted"
                                 android:textSize="18sp" />
                         </LinearLayout>
 
@@ -775,14 +775,14 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:textColor="@color/text_muted"
+                                android:textColor="?attr/dshTextMuted"
                                 android:textSize="12sp" />
 
                             <TextView
                                 android:id="@+id/capTotal"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textColor="@color/text_muted"
+                                android:textColor="?attr/dshTextMuted"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -802,7 +802,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
                             android:lineSpacingExtra="3dp"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="12sp" />
 
                         <TextView
@@ -815,7 +815,7 @@
                             android:focusable="true"
                             android:gravity="center"
                             android:text="@string/ob_caps_recommend"
-                            android:textColor="@color/accent"
+                            android:textColor="?attr/dshAccent"
                             android:textSize="13sp" />
 
                         <TextView
@@ -825,7 +825,7 @@
                             android:layout_marginTop="10dp"
                             android:lineSpacingExtra="3dp"
                             android:text="@string/ob_caps_note"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/dshTextMuted"
                             android:textSize="12sp" />
                     </LinearLayout>
                 </ScrollView>
@@ -879,7 +879,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
                             android:text="@string/ob_done_head_ready"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/dshTextPrimary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
 
@@ -891,7 +891,7 @@
                             android:gravity="center"
                             android:lineSpacingExtra="3dp"
                             android:text="@string/ob_done_sub_ready"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/dshTextSecondary"
                             android:textSize="13sp" />
 
                         <!-- 运行环境状态卡：四态唯一权威来源（txtDoneRuntime 文案由代码给） -->
@@ -907,7 +907,7 @@
                                 android:id="@+id/txtDoneRuntime"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:textColor="@color/text_primary"
+                                android:textColor="?attr/dshTextPrimary"
                                 android:textSize="13sp"
                                 android:textStyle="bold" />
 
@@ -917,7 +917,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="6dp"
                                 android:lineSpacingExtra="3dp"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
 
                             <ProgressBar
@@ -928,7 +928,7 @@
                                 android:layout_marginTop="10dp"
                                 android:max="100"
                                 android:progress="0"
-                                android:progressTint="@color/accent"
+                                android:progressTint="?attr/dshAccent"
                                 android:visibility="gone" />
                         </LinearLayout>
 
@@ -946,7 +946,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:text="@string/ob_done_next_title"
-                                android:textColor="@color/text_primary"
+                                android:textColor="?attr/dshTextPrimary"
                                 android:textSize="13sp"
                                 android:textStyle="bold" />
 
@@ -956,7 +956,7 @@
                                 android:layout_marginTop="6dp"
                                 android:lineSpacingExtra="3dp"
                                 android:text="@string/ob_done_next_sub"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -994,7 +994,7 @@
                         android:paddingHorizontal="18dp"
                         android:text="@string/ob_wizard_back"
                         android:textAllCaps="false"
-                        android:textColor="@color/text_primary"
+                        android:textColor="?attr/dshTextPrimary"
                         android:textSize="15sp"
                         android:visibility="gone" />
 
@@ -1006,7 +1006,7 @@
                         android:background="@drawable/bg_btn_accent_ripple"
                         android:text="@string/ob_wizard_next"
                         android:textAllCaps="false"
-                        android:textColor="@color/on_accent"
+                        android:textColor="?attr/dshOnAccent"
                         android:textSize="15sp"
                         android:textStyle="bold" />
                 </LinearLayout>
@@ -1024,7 +1024,7 @@
             android:id="@+id/drawerScrim"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@color/overlay" />
+            android:background="?attr/dshOverlay" />
 
         <LinearLayout
             android:id="@+id/drawerPanel"
@@ -1043,7 +1043,7 @@
                 android:text="@string/ob_wizard_rail_title"
                 android:textAllCaps="true"
                 android:letterSpacing="0.06"
-                android:textColor="@color/text_muted"
+                android:textColor="?attr/dshTextMuted"
                 android:textSize="11sp" />
 
             <LinearLayout

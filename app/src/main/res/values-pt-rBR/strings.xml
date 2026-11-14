@@ -1886,4 +1886,9 @@
     <string name="peersync_saved">Salvo</string>
     <string name="peersync_invalid_port">A porta deve ser 1–65535</string>
 
+    <string name="style_title">Estilo da interface</string>
+    <string name="style_sub_material">Material 3 · cinza quente com azul-petróleo</string>
+    <string name="style_sub_classic">Clássico · cinza-azulado frio</string>
+    <string name="style_classic">Clássico</string>
+    <string name="style_material">Material 3</string>
 </resources>

@@ -1926,4 +1926,9 @@
     <string name="peersync_saved">Saved</string>
     <string name="peersync_invalid_port">Port must be 1–65535</string>
 
+    <string name="style_title">Interface style</string>
+    <string name="style_sub_material">Material 3 · warm grey with teal ink</string>
+    <string name="style_sub_classic">Classic · cool blue-grey</string>
+    <string name="style_classic">Classic</string>
+    <string name="style_material">Material 3</string>
 </resources>

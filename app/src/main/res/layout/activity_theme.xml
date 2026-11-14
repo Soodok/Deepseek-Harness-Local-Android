@@ -35,17 +35,108 @@
             android:paddingHorizontal="@dimen/md3_page_padding"
             android:paddingBottom="@dimen/md3_page_bottom">
 
-            <!-- ===== 1. 动态取色 ===== -->
+            <!-- ===== 0. 界面风格（v1.8.0）=====
+                 这一组决定全站走 Classic 冷蓝灰还是 Material 3 暖灰青墨。
+                 它不是「换强调色」（那是下面第 2 组），而是换整套语义色板：
+                 底、面、字、描边、图标全部一起变，布局里的 ?attr/dshXxx 自动跟随。 -->
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardDynamic"
+                android:id="@+id/cardStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/md3_card_gap_first"
                 app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/stroke"
+                app:strokeColor="?attr/dshStroke"
                 app:strokeWidth="1dp"
-                app:cardBackgroundColor="@color/surface">
+                app:cardBackgroundColor="?attr/dshSurface">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/md3_item_padding_h">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_display"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:tint="?attr/colorPrimary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/md3_item_gap"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/style_title"
+                                android:textAppearance="?attr/textAppearanceBodyLarge"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/subStyle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/style_sub_material"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:id="@+id/groupStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnStyleClassic"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/md3_button_height"
+                            android:layout_weight="1"
+                            android:text="@string/style_classic"
+                            android:textAllCaps="false"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnStyleMaterial"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/md3_button_height"
+                            android:layout_weight="1"
+                            android:text="@string/style_material"
+                            android:textAllCaps="false"
+                            android:textColor="?attr/colorOnSurface" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ===== 1. 动态取色 ===== -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardDynamic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/md3_card_gap"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -110,9 +201,9 @@
                 android:layout_marginTop="@dimen/md3_card_gap"
                 app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/stroke"
+                app:strokeColor="?attr/dshStroke"
                 app:strokeWidth="1dp"
-                app:cardBackgroundColor="@color/surface">
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -192,9 +283,9 @@
                 android:layout_marginTop="@dimen/md3_card_gap"
                 app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/stroke"
+                app:strokeColor="?attr/dshStroke"
                 app:strokeWidth="1dp"
-                app:cardBackgroundColor="@color/surface">
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"

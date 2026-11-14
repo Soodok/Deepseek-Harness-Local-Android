@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  风格令牌（v1.8.0）。
+
+  为什么需要这一层：布局与 drawable 里 441 处颜色引用中，403 处用的是
+  @color/text_secondary 这类**静态色**——资源解析期就定型，运行时换主题改不到它。
+  主题切换只对 ?attr/colorOnSurface 这类 Material 语义生效（本仓已有 451 处）。
+  于是同一页里「图标色冷、卡片底暖」，切风格必然花脸。
+
+  解法：把自定义语义色也升级成主题属性。布局改成 ?attr/dshXxx 之后，
+  Theme.Dsh（经典冷蓝灰）与 Theme.Dsh.MD3（暖灰青墨）各自给一套值，
+  一处切换全站生效，且不需要 API 31 的 ColorResourcesOverride。
+
+  命名前缀 dsh 是必须的：不带前缀会和 Material 的 colorXxx 撞名，
+  且 aapt2 对未知属性的报错信息会指向错误位置。
+-->
+<resources>
+
+    <!-- ===== 底色与容器 ===== -->
+    <attr name="dshBg" format="color" />           <!-- 页面底 -->
+    <attr name="dshSurface" format="color" />      <!-- 卡片/行的面 -->
+    <attr name="dshSurfaceAlt" format="color" />   <!-- 次级底（分组内凹、输入框底） -->
+    <attr name="dshSurfaceHigh" format="color" />  <!-- 浮起面（菜单、弹出卡片） -->
+    <attr name="dshDialogBg" format="color" />     <!-- 弹窗容器（Material 的 surfaceContainerHigh） -->
+
+    <!-- ===== 文字 ===== -->
+    <attr name="dshTextPrimary" format="color" />
+    <attr name="dshTextSecondary" format="color" />
+    <attr name="dshTextMuted" format="color" />    <!-- 三级：时间戳、计数、说明尾 -->
+
+    <!-- ===== 强调 ===== -->
+    <attr name="dshAccent" format="color" />
+    <attr name="dshAccentSoft" format="color" />   <!-- 强调色的浅底（胶囊、选中态） -->
+    <attr name="dshOnAccent" format="color" />     <!-- 强调色底上的字 -->
+
+    <!-- ===== 描边与分隔 ===== -->
+    <attr name="dshDivider" format="color" />
+    <attr name="dshStroke" format="color" />
+
+    <!-- ===== 状态 ===== -->
+    <attr name="dshDanger" format="color" />
+    <attr name="dshSuccess" format="color" />
+    <attr name="dshWarning" format="color" />
+
+    <!-- ===== 图标 ===== -->
+    <attr name="dshIconColor" format="color" />
+
+    <!-- ===== 交互 ===== -->
+    <attr name="dshBtnRipple" format="color" />
+    <attr name="dshOverlay" format="color" />      <!-- 模态遮罩 -->
+
+    <!-- ===== 设置页副文字（island_text 的历史命名，实为「设置行副标题」） ===== -->
+    <attr name="dshIslandText" format="color" />
+    <attr name="dshIslandAccent" format="color" />
+
+</resources>

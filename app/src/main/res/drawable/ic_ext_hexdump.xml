@@ -3,5 +3,5 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path android:fillColor="@color/icon_color" android:pathData="M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v14h16V5H4zM6 7h3.2v2.2H6V7zm5 0h3.2v2.2H11V7zm5 0h2v2.2h-2V7zM6 10.9h3.2v2.2H6v-2.2zm5 0h3.2v2.2H11v-2.2zm5 0h2v2.2h-2v-2.2zM6 14.8h3.2V17H6v-2.2zm5 0h3.2V17H11v-2.2z"/>
+    <path android:fillColor="?attr/dshIconColor" android:pathData="M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v14h16V5H4zM6 7h3.2v2.2H6V7zm5 0h3.2v2.2H11V7zm5 0h2v2.2h-2V7zM6 10.9h3.2v2.2H6v-2.2zm5 0h3.2v2.2H11v-2.2zm5 0h2v2.2h-2v-2.2zM6 14.8h3.2V17H6v-2.2zm5 0h3.2V17H11v-2.2z"/>
 </vector>

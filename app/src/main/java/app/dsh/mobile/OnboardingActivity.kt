@@ -339,7 +339,7 @@ class OnboardingActivity : ThemedActivity() {
                         setColor(Accent.current(this@OnboardingActivity).softArgb)
                     }
                     badge?.text = if (countsAsStep(index)) index.toString() else "\u00b7"
-                    badge?.setTextColor(getColor(R.color.on_accent))
+                    badge?.setTextColor(dshColor(R.attr.dshOnAccent, R.color.on_accent))
                     badge?.background = circle(accent)
                     label?.setTextColor(accent)
                     label?.setTypeface(null, android.graphics.Typeface.BOLD)
@@ -350,15 +350,15 @@ class OnboardingActivity : ThemedActivity() {
                     badge?.text = if (countsAsStep(index)) "\u2713" else "\u00b7"
                     badge?.setTextColor(accent)
                     badge?.background = circle(Accent.current(this@OnboardingActivity).softArgb)
-                    label?.setTextColor(getColor(R.color.text_primary))
+                    label?.setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                     label?.setTypeface(null, android.graphics.Typeface.NORMAL)
                 }
                 else -> {
                     row.background = null
                     badge?.text = if (countsAsStep(index)) index.toString() else "\u00b7"
-                    badge?.setTextColor(getColor(R.color.text_muted))
-                    badge?.background = outlinedCircle(getColor(R.color.stroke))
-                    label?.setTextColor(getColor(R.color.text_secondary))
+                    badge?.setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
+                    badge?.background = outlinedCircle(dshColor(R.attr.dshStroke, R.color.stroke))
+                    label?.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                     label?.setTypeface(null, android.graphics.Typeface.NORMAL)
                 }
             }
@@ -568,7 +568,7 @@ class OnboardingActivity : ThemedActivity() {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = dp(10).toFloat()
-                    setColor(getColor(R.color.surface))
+                    setColor(dshColor(R.attr.dshSurface, R.color.surface))
                 }
                 layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply {
                     marginEnd = dp(13)
@@ -576,7 +576,7 @@ class OnboardingActivity : ThemedActivity() {
             }
             box.addView(ImageView(this).apply {
                 setImageResource(iconRes)
-                setColorFilter(getColor(R.color.text_secondary))
+                setColorFilter(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 tag = "icon"
                 layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
             })
@@ -590,14 +590,14 @@ class OnboardingActivity : ThemedActivity() {
         textCol.addView(TextView(this).apply {
             text = title
             textSize = 15.5f
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             tag = "title"
         })
         if (!subtitle.isNullOrBlank()) {
             textCol.addView(TextView(this).apply {
                 text = subtitle
                 textSize = 12f
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 setPadding(0, dp(2), 0, 0)
             })
         }
@@ -619,7 +619,7 @@ class OnboardingActivity : ThemedActivity() {
     private fun refreshSelection() {
         val accent = Accent.current(this).argb
         val soft = Accent.current(this).softArgb
-        val normal = getColor(R.color.text_primary)
+        val normal = dshColor(R.attr.dshTextPrimary, R.color.text_primary)
 
         fun mark(card: LinearLayout, active: Boolean) {
             card.alpha = 1f
@@ -641,9 +641,9 @@ class OnboardingActivity : ThemedActivity() {
             card.findViewWithTag<View>("tick")?.visibility =
                 if (active) View.VISIBLE else View.INVISIBLE
             card.findViewWithTag<ImageView>("icon")?.setColorFilter(
-                if (active) accent else getColor(R.color.text_secondary),
+                if (active) accent else dshColor(R.attr.dshTextSecondary, R.color.text_secondary),
             )
-            card.findViewWithTag<TextView>("glyph")?.setTextColor(if (active) accent else getColor(R.color.text_primary))
+            card.findViewWithTag<TextView>("glyph")?.setTextColor(if (active) accent else dshColor(R.attr.dshTextPrimary, R.color.text_primary))
         }
 
         langCards.forEachIndexed { i, c -> mark(c, langCodes[i] == selectedLang) }
@@ -753,7 +753,7 @@ class OnboardingActivity : ThemedActivity() {
             row.addView(TextView(this).apply {
                 text = getString(hintRes)
                 textSize = 12f
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
             hintBox.addView(row)
@@ -870,12 +870,12 @@ class OnboardingActivity : ThemedActivity() {
     private fun updateAccentPreview() {
         val box = findViewById<LinearLayout>(R.id.accentPreview)
         val accent = Accent.current(this).argb
-        val onAccent = getColor(R.color.on_accent)
+        val onAccent = dshColor(R.attr.dshOnAccent, R.color.on_accent)
         box.removeAllViews()
         box.addView(TextView(this).apply {
             text = getString(R.string.ob_wizard_accent_preview)
             textSize = 11f
-            setTextColor(getColor(R.color.text_muted))
+            setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
             letterSpacing = 0.04f
         })
         val row = LinearLayout(this).apply {
@@ -901,7 +901,7 @@ class OnboardingActivity : ThemedActivity() {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(3).toFloat()
-                setColor(getColor(R.color.stroke))
+                setColor(dshColor(R.attr.dshStroke, R.color.stroke))
             }
         }
         val filled = View(this).apply {
@@ -1077,13 +1077,13 @@ class OnboardingActivity : ThemedActivity() {
             col.addView(TextView(this).apply {
                 text = getString(titleRes)
                 textSize = 13f
-                setTextColor(getColor(R.color.text_primary))
+                setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                 setTypeface(null, android.graphics.Typeface.BOLD)
             })
             col.addView(TextView(this).apply {
                 text = getString(subRes)
                 textSize = 11f
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 setPadding(0, dp(1), 0, 0)
             })
             row.addView(col)
@@ -1155,13 +1155,13 @@ class OnboardingActivity : ThemedActivity() {
             box.addView(TextView(this).apply {
                 text = label
                 textSize = 11f
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 gravity = Gravity.CENTER
                 setPadding(dp(11), dp(6), dp(11), dp(6))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(999).toFloat()
-                    setColor(getColor(R.color.surface))
-                    setStroke(dp(1).coerceAtLeast(1), getColor(R.color.stroke))
+                    setColor(dshColor(R.attr.dshSurface, R.color.surface))
+                    setStroke(dp(1).coerceAtLeast(1), dshColor(R.attr.dshStroke, R.color.stroke))
                 }
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1285,15 +1285,15 @@ class OnboardingActivity : ThemedActivity() {
             } else {
                 GradientDrawable().apply {
                     cornerRadius = dp(11).toFloat()
-                    setColor(getColor(R.color.surface))
-                    setStroke(dp(1).coerceAtLeast(1), getColor(R.color.stroke))
+                    setColor(dshColor(R.attr.dshSurface, R.color.surface))
+                    setStroke(dp(1).coerceAtLeast(1), dshColor(R.attr.dshStroke, R.color.stroke))
                 }
             }
             chip.findViewWithTag<TextView>("chipTitle")?.setTextColor(
-                if (active) accent.argb else getColor(R.color.text_secondary),
+                if (active) accent.argb else dshColor(R.attr.dshTextSecondary, R.color.text_secondary),
             )
             chip.findViewWithTag<TextView>("chipCount")?.setTextColor(
-                if (active) accent.argb else getColor(R.color.text_muted),
+                if (active) accent.argb else dshColor(R.attr.dshTextMuted, R.color.text_muted),
             )
         }
         for (i in 0 until panels.childCount) {
@@ -1361,12 +1361,12 @@ class OnboardingActivity : ThemedActivity() {
         textCol.addView(TextView(this).apply {
             text = getString(titleRes)
             textSize = 13f
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
         })
         textCol.addView(TextView(this).apply {
             text = getString(subRes)
             textSize = 10.5f
-            setTextColor(getColor(R.color.text_muted))
+            setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
             setPadding(0, dp(1), 0, 0)
         })
         row.addView(textCol)
@@ -1404,7 +1404,7 @@ class OnboardingActivity : ThemedActivity() {
     private fun probeCapabilities() {
         val v = findViewById<TextView>(R.id.capRoot)
         v.text = getString(R.string.ob_cap_root_checking)
-        v.setTextColor(getColor(R.color.text_secondary))
+        v.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         Thread({
             val hasRoot = Privilege.probe(this).hasRoot
             runOnUiThread {
@@ -1412,7 +1412,7 @@ class OnboardingActivity : ThemedActivity() {
                 v.text = getString(
                     if (hasRoot) R.string.ob_cap_root_present else R.string.ob_cap_root_absent,
                 )
-                v.setTextColor(if (hasRoot) getColor(R.color.success) else getColor(R.color.warning))
+                v.setTextColor(if (hasRoot) dshColor(R.attr.dshSuccess, R.color.success) else dshColor(R.attr.dshWarning, R.color.warning))
                 applyRootAvailability(hasRoot)
             }
         }, "probe-root").apply { isDaemon = true }.start()
@@ -1429,14 +1429,14 @@ class OnboardingActivity : ThemedActivity() {
         when {
             Privilege.shizukuUsable() -> {
                 v.text = getString(R.string.ob_cap_shizuku_present)
-                v.setTextColor(getColor(R.color.success))
+                v.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                 v.setOnClickListener(null)
             }
             Privilege.shizukuServerRunning() -> {
                 // 不在此自动请求：用户拒绝后回调会回到这里形成死循环（历史教训）。
                 // 显式入口是「选中 Shizuku 卡片」→ maybeRequestShizuku()
                 v.text = getString(R.string.ob_cap_shizuku_request)
-                v.setTextColor(getColor(R.color.warning))
+                v.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 v.isClickable = true
                 v.setOnClickListener {
                     Privilege.requestShizukuPermission(SHIZUKU_REQ, this, explicit = true)
@@ -1444,7 +1444,7 @@ class OnboardingActivity : ThemedActivity() {
             }
             else -> {
                 v.text = getString(R.string.ob_cap_shizuku_absent)
-                v.setTextColor(getColor(R.color.warning))
+                v.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 v.setOnClickListener(null)
             }
         }
@@ -1805,7 +1805,7 @@ class OnboardingActivity : ThemedActivity() {
     private fun sectionLabel(res: Int): TextView = TextView(this).apply {
         text = getString(res)
         textSize = 11f
-        setTextColor(getColor(R.color.text_muted))
+        setTextColor(dshColor(R.attr.dshTextMuted, R.color.text_muted))
         letterSpacing = 0.05f
         isAllCaps = true
         setPadding(0, 0, 0, dp(4))

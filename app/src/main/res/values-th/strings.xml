@@ -1876,4 +1876,9 @@
     <string name="peersync_saved">บันทึกแล้ว</string>
     <string name="peersync_invalid_port">พอร์ตต้องอยู่ระหว่าง 1–65535</string>
 
+    <string name="style_title">สไตล์อินเทอร์เฟซ</string>
+    <string name="style_sub_material">Material 3 · เทาอุ่นคู่สีเขียวน้ำเงิน</string>
+    <string name="style_sub_classic">คลาสสิก · เทาฟ้าโทนเย็น</string>
+    <string name="style_classic">คลาสสิก</string>
+    <string name="style_material">Material 3</string>
 </resources>

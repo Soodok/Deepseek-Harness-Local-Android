@@ -167,9 +167,13 @@ for name in THEMED_PAGES:
     text = kt(name)
     found = sorted({lit for lit in DARK_ONLY if lit in text})
     check("code: %s has no dark-only colour literals" % name, not found, ", ".join(found))
+# v1.8.0：代码侧静态色统一走 dshColor(...)，直接 getColor(R.color.text_primary)
+# 已经不存在 —— 判据改成「跟随风格令牌」这一条真正的契约。
 check(
-    "code: plugin name no longer hardcodes white",
-    "getColor(R.color.text_primary)" in kt("PluginStoreActivity.kt"),
+    "code: plugin name follows the style token (not hardcoded white)",
+    "dshColor(R.attr.dshTextPrimary, R.color.text_primary)" in kt("PluginStoreActivity.kt")
+    or "getColor(R.color.text_primary)" in kt("PluginStoreActivity.kt"),
+    "既不是令牌也不是静态色 → 可能是写死的白",
 )
 
 # --------------------------------------------------- palettes must be themeable

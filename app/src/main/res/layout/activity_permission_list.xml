@@ -38,7 +38,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/perm_list_tab_all"
-            android:textColor="@color/accent"
+            android:textColor="?attr/dshAccent"
             android:textSize="12sp"
             android:background="@drawable/bg_btn_outline_ripple"
             android:paddingHorizontal="12dp"
@@ -88,8 +88,8 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@color/surface"
-        android:divider="@color/bg"
+        android:background="?attr/dshSurface"
+        android:divider="?attr/dshBg"
         android:dividerHeight="1dp"
         android:scrollbars="vertical" />
 </LinearLayout>

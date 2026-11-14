@@ -3,6 +3,6 @@
      作用是让自绘的 LayoutPreviewView 看起来「装在」一个屏幕框里，
      而不是直接贴在页面背景上。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/surface_alt" />
+    <solid android:color="?attr/dshSurfaceAlt" />
     <corners android:radius="18dp" />
 </shape>

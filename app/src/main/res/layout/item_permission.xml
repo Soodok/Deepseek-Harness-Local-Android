@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="middle"
             android:maxLines="1"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/dshTextPrimary"
             android:textSize="14sp" />
 
         <TextView
@@ -30,7 +30,7 @@
             android:layout_marginTop="2dp"
             android:ellipsize="middle"
             android:maxLines="1"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/dshTextSecondary"
             android:textSize="11sp" />
     </LinearLayout>
 

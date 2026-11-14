@@ -167,7 +167,7 @@ object FailureDialog {
         val tv = TextView(activity).apply {
             text = activity.getString(fixTitleRes(fix.kind))
             textSize = 15f
-            setTextColor(activity.getColor(R.color.accent))
+            setTextColor(activity.dshColor(R.attr.dshAccent, R.color.accent))
             val v = dp(activity, 10)
             setPadding(0, v, 0, v)
             isClickable = true
@@ -267,7 +267,7 @@ object FailureDialog {
             text = activity.getString(textRes)
             textSize = 16f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(activity.getColor(R.color.text_primary))
+            setTextColor(activity.dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             setPadding(0, dp(activity, 4), 0, dp(activity, 8))
         }
 
@@ -275,7 +275,7 @@ object FailureDialog {
         TextView(activity).apply {
             this.text = text
             textSize = 12f
-            setTextColor(activity.getColor(R.color.text_secondary))
+            setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             setPadding(0, dp(activity, 12), 0, dp(activity, 4))
         }
 
@@ -283,7 +283,7 @@ object FailureDialog {
         TextView(activity).apply {
             this.text = text
             textSize = 13f
-            setTextColor(activity.getColor(R.color.text_secondary))
+            setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             setPadding(0, dp(activity, 4), 0, dp(activity, 4))
         }
 
@@ -291,7 +291,7 @@ object FailureDialog {
         TextView(activity).apply {
             this.text = "\u2022 $text"
             textSize = 13f
-            setTextColor(activity.getColor(R.color.text_primary))
+            setTextColor(activity.dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             setPadding(dp(activity, 4), dp(activity, 2), 0, dp(activity, 2))
         }
 }

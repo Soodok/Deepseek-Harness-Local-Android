@@ -7,9 +7,9 @@
     <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
         <app.dsh.mobile.MaxWidthLinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="32dp">
             <LinearLayout android:id="@+id/groupEngine" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:orientation="vertical">
-                <TextView android:id="@+id/txtGroupEngineSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_engine" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingBottom="6dp" />
-                app:strokeColor="@color/stroke"
-                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+                <TextView android:id="@+id/txtGroupEngineSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_engine" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingBottom="6dp" />
+                app:strokeColor="?attr/dshStroke"
+                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                         <LinearLayout android:id="@+id/rowPriv" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:id="@+id/iconPriv" android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
@@ -24,7 +24,7 @@
                                 </LinearLayout>
                             </LinearLayout>
                         </LinearLayout>
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                         <LinearLayout android:id="@+id/rowRootStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
                             <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -37,7 +37,7 @@
                                 </LinearLayout>
                             </LinearLayout>
                         </LinearLayout>
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                         <LinearLayout android:id="@+id/rowShizukuStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
                             <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_link" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -54,9 +54,9 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
             <LinearLayout android:id="@+id/groupCaps" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:orientation="vertical">
-                <TextView android:id="@+id/txtGroupCapsSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_caps" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="16dp" android:paddingBottom="6dp" />
-                app:strokeColor="@color/stroke"
-                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+                <TextView android:id="@+id/txtGroupCapsSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_caps" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="16dp" android:paddingBottom="6dp" />
+                app:strokeColor="?attr/dshStroke"
+                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                         <LinearLayout android:id="@+id/rowAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_touch" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
@@ -65,9 +65,9 @@
                                 <TextView android:id="@+id/subAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
                             </LinearLayout>
                             <TextView android:id="@+id/valAccess" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
-                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="@color/island_text" android:layout_marginStart="6dp" />
+                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="?attr/dshIslandText" android:layout_marginStart="6dp" />
                         </LinearLayout>
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                         <LinearLayout android:id="@+id/rowStorage" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_folder" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
@@ -75,9 +75,9 @@
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_storage_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
                             </LinearLayout>
                             <TextView android:id="@+id/valStorage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/storage_denied" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
-                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="@color/island_text" android:layout_marginStart="6dp" />
+                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="?attr/dshIslandText" android:layout_marginStart="6dp" />
                         </LinearLayout>
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                         <LinearLayout android:id="@+id/rowNotif" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
@@ -85,9 +85,9 @@
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_notif_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
                             </LinearLayout>
                             <TextView android:id="@+id/valNotif" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notif_denied" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
-                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="@color/island_text" android:layout_marginStart="6dp" />
+                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="?attr/dshIslandText" android:layout_marginStart="6dp" />
                         </LinearLayout>
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                         <LinearLayout android:id="@+id/rowMic" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_mic_wave" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
@@ -95,11 +95,11 @@
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_mic_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
                             </LinearLayout>
                             <TextView android:id="@+id/valMic" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/mic_denied" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
-                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="@color/island_text" android:layout_marginStart="6dp" />
+                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="?attr/dshIslandText" android:layout_marginStart="6dp" />
                         </LinearLayout>
                         <!-- v1.7.9：TTS 语音合成测试（用户要求放进「系统能力」）——
                              点一下用当前 TTS 通道念一句示例；引擎缺失/初始化超时把原因写在 chip 上。 -->
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                         <LinearLayout android:id="@+id/rowTtsTest" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_speaker" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
@@ -107,26 +107,26 @@
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/tts_test_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
                             </LinearLayout>
                             <TextView android:id="@+id/valTtsTest" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/cloud_tts_test" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
-                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="@color/island_text" android:layout_marginStart="6dp" />
+                            <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_chevron" android:tint="?attr/dshIslandText" android:layout_marginStart="6dp" />
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
             <LinearLayout android:id="@+id/groupDeviceCaps" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="18dp">
-                app:strokeColor="@color/stroke"
-                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+                app:strokeColor="?attr/dshStroke"
+                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
                         <!-- 能力磁贴采用两段式（header+detail）：标题与状态分行显示，勿删除状态行。 -->
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
                             <TextView android:id="@+id/txtCapTotal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="0 / 0" android:textColor="?attr/colorOnSurface" android:textSize="26sp" android:textStyle="bold" />
-                            <TextView android:id="@+id/txtCapPct" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0%" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
+                            <TextView android:id="@+id/txtCapPct" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0%" android:textColor="?attr/dshAccent" android:textSize="13sp" android:textStyle="bold" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
                         </LinearLayout>
                         <ProgressBar android:id="@+id/barCapProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="10dp" android:max="100" android:progress="0" android:progressDrawable="@drawable/bg_cap_progress" />
                         <TextView android:id="@+id/txtCapOverviewSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_perm_group_device" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="8dp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_env" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_env" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomEnv" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -151,7 +151,7 @@
                     </LinearLayout>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_notify" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_notify" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomNotify" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -197,7 +197,7 @@
                     </LinearLayout>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_control" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_control" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomControl" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -243,7 +243,7 @@
                     </LinearLayout>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_personal" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_personal" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomPersonal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -289,7 +289,7 @@
                     </LinearLayout>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_input" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_input" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomInput" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -327,7 +327,7 @@
                     <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_system" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_system" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomSystem" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -421,7 +421,7 @@
                     </LinearLayout>
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_linux" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_linux" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" />
                     <TextView android:id="@+id/txtDomLinux" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
@@ -466,9 +466,9 @@
                         <TextView android:id="@+id/stCapCamera" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
                     </LinearLayout>
                 </LinearLayout>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_cap_batch_title" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="18dp" android:paddingBottom="6dp" />
-            app:strokeColor="@color/stroke"
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_cap_batch_title" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="18dp" android:paddingBottom="6dp" />
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/dshSurface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                     <LinearLayout android:id="@+id/rowGrantAll" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
@@ -476,16 +476,16 @@
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                             <TextView android:id="@+id/txtGrantAllSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_grant_perms_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnGrantAll" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline_ripple" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:id="@+id/btnGrantAll" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="?attr/dshAccent" android:textSize="12sp" android:background="@drawable/bg_btn_outline_ripple" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                     <LinearLayout android:id="@+id/rowPermList" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/perm_list_title" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_perm_list_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_view" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline_ripple" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_view" android:textColor="?attr/dshAccent" android:textSize="12sp" android:background="@drawable/bg_btn_outline_ripple" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

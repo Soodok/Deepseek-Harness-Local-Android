@@ -38,7 +38,7 @@
             android:gravity="center"
             android:paddingHorizontal="18dp"
             android:text="@string/user_prompt_save"
-            android:textColor="@color/accent"
+            android:textColor="?attr/dshAccent"
             android:textSize="16sp"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
     </LinearLayout>
@@ -64,7 +64,7 @@
         android:gravity="top|start"
         android:inputType="textMultiLine|textCapSentences"
         android:textColor="?attr/colorOnSurface"
-        android:textColorHint="@color/text_muted"
+        android:textColorHint="?attr/dshTextMuted"
         android:textSize="15sp"
         android:lineSpacingExtra="4dp"
         android:background="@drawable/bg_search_field"
@@ -77,6 +77,6 @@
         android:paddingHorizontal="16dp"
         android:paddingTop="10dp"
         android:paddingBottom="16dp"
-        android:textColor="@color/text_muted"
+        android:textColor="?attr/dshTextMuted"
         android:textSize="12sp" />
 </LinearLayout>

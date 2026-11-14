@@ -26,7 +26,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_section_appearance" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:id="@+id/subAppearanceEntry" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_section_appearance_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -46,7 +46,7 @@
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_ext" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
                         <TextView android:id="@+id/valExt" android:layout_width="wrap_content" android:maxWidth="96dp" android:maxLines="1" android:ellipsize="end" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant"/>
 
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_ext_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
 
                     </LinearLayout>
@@ -61,7 +61,7 @@
 
                         <TextView android:id="@+id/valLinux" android:layout_width="wrap_content" android:maxWidth="96dp" android:maxLines="1" android:ellipsize="end" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant"/>
 
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:id="@+id/subLinux" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_linux_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -73,7 +73,7 @@
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_row_plugins" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_row_plugins_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
 
                     </LinearLayout>
@@ -95,7 +95,7 @@
 
                     </LinearLayout>
 
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout>
                 <LinearLayout android:id="@+id/rowPermEngine" android:layout_width="match_parent" android:layout_marginTop="1dp" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
                     <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_key" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
@@ -106,7 +106,7 @@
 
                     </LinearLayout>
 
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout>
                 <LinearLayout android:id="@+id/rowPermCaps" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="1dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
                     <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_shield" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
@@ -117,7 +117,7 @@
 
                     </LinearLayout>
 
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout>
             </LinearLayout>
 
@@ -134,7 +134,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_user_prompt" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_user_prompt_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -147,7 +147,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_backup" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_backup_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -158,7 +158,7 @@
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
                             <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/peersync_row_title" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1" />
-                            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
+                            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText" />
                         </LinearLayout>
                         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/peersync_row_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
@@ -174,7 +174,7 @@
 
                     <TextView android:id="@+id/valFilesDir" android:layout_width="wrap_content" android:maxWidth="96dp" android:maxLines="1" android:ellipsize="end" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant"/>
 
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout>
             </LinearLayout>
 
@@ -217,7 +217,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_runtime_proxy" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:id="@+id/subRuntimeProxy" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_runtime_proxy_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -235,7 +235,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_update_group" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:id="@+id/subUpdateEntry" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_update_group" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -248,7 +248,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_maintenance" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_maintenance_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -261,7 +261,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/app_language" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:id="@+id/appLanguageSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/app_language" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>
@@ -274,7 +274,7 @@
 
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_about" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="?attr/dshIslandText"/>
                 </LinearLayout><TextView android:id="@+id/subAbout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_about" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
 
                     </LinearLayout>

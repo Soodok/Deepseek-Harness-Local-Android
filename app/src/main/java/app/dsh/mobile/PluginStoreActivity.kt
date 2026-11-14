@@ -366,9 +366,9 @@ class PluginStoreActivity : ThemedActivity() {
         hideKeyboard()
         etSearch.clearFocus()
         // 标签样式：选中蓝色加粗，未选中灰色
-        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
+        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else dshColor(R.attr.dshTextMuted, R.color.text_muted))
         btnTabMarket.setTypeface(null, if (market) Typeface.BOLD else Typeface.NORMAL)
-        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
+        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else dshColor(R.attr.dshTextMuted, R.color.text_muted))
         btnTabInstalled.setTypeface(null, if (!market) Typeface.BOLD else Typeface.NORMAL)
         etSearch.visibility = if (market) View.VISIBLE else View.GONE
         btnCheckUpdates.visibility = if (market) View.GONE else View.VISIBLE
@@ -460,7 +460,7 @@ class PluginStoreActivity : ThemedActivity() {
 
     private fun hint(text: String): TextView = TextView(this).apply {
         this.text = text
-        setTextColor(getColor(R.color.text_secondary))
+        setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         textSize = 14f
         gravity = Gravity.CENTER
         setPadding(0, dp(30), 0, dp(10))
@@ -490,7 +490,7 @@ class PluginStoreActivity : ThemedActivity() {
         }
         nameCol.addView(TextView(this).apply {
             text = e.name
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             maxLines = 1
@@ -520,7 +520,7 @@ class PluginStoreActivity : ThemedActivity() {
         e.metaLine().takeIf { it.isNotBlank() }?.let { meta ->
             card.addView(TextView(this).apply {
                 text = meta
-                setTextColor(if (e.hasUpdate) getColor(R.color.warning) else getColor(R.color.text_secondary))
+                setTextColor(if (e.hasUpdate) dshColor(R.attr.dshWarning, R.color.warning) else dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 textSize = 11f
                 setPadding(0, dp(4), 0, 0)
             })
@@ -530,7 +530,7 @@ class PluginStoreActivity : ThemedActivity() {
         if (e.desc.isNotBlank()) {
             card.addView(TextView(this).apply {
                 text = e.desc
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -549,11 +549,11 @@ class PluginStoreActivity : ThemedActivity() {
     private fun compatBadge(e: Entry): TextView? {
         val (label, color) = when (e.compat) {
             Compat.PURE_JS -> return null   // 纯 JS 是常态，不加徽标
-            Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to getColor(R.color.danger)
-            Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to getColor(R.color.danger)
-            Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to getColor(R.color.text_secondary)
+            Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to dshColor(R.attr.dshDanger, R.color.danger)
+            Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to dshColor(R.attr.dshDanger, R.color.danger)
+            Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to dshColor(R.attr.dshTextSecondary, R.color.text_secondary)
             // issue #66：不是插件坏，是我们内置引擎落后于 npm next 线
-            Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old) to getColor(R.color.warning)
+            Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old) to dshColor(R.attr.dshWarning, R.color.warning)
         }
         return TextView(this).apply {
             text = "⚠ $label"
@@ -583,7 +583,7 @@ class PluginStoreActivity : ThemedActivity() {
              minHeight = dp(48)
             setPadding(dp(12), dp(6), dp(12), dp(6))
             setBackgroundResource(R.drawable.bg_btn_outline)
-            setTextColor(if (enabled) getColor(R.color.success) else Accent.current(this@PluginStoreActivity).argb)
+            setTextColor(if (enabled) dshColor(R.attr.dshSuccess, R.color.success) else Accent.current(this@PluginStoreActivity).argb)
             isClickable = true
             isFocusable = true
             layoutParams = LinearLayout.LayoutParams(
@@ -647,7 +647,7 @@ class PluginStoreActivity : ThemedActivity() {
             e.hasUpdate -> {
                 // 精确版本升级：pnpm 12 下 add pkg / @latest / update 全部无效（v1.4.18 实测）
                 btn.text = getString(R.string.plugin_upgrade)
-                btn.setTextColor(getColor(R.color.warning))
+                btn.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 btn.setText(getString(R.string.plugin_upgrade) + " → ${e.version}")
                 btn.setOnClickListener {
                     runInstall("${e.pkg}@${e.version}", btn, e.pkg)
@@ -655,7 +655,7 @@ class PluginStoreActivity : ThemedActivity() {
             }
             else -> {
                 btn.text = getString(R.string.plugin_installed)
-                btn.setTextColor(getColor(R.color.success))
+                btn.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                 btn.setOnClickListener { confirmUninstall(e.pkg, btn) }
             }
         }
@@ -856,7 +856,7 @@ class PluginStoreActivity : ThemedActivity() {
         }
         btn.text = getString(R.string.plugin_installing)
         btn.isEnabled = false
-        btn.setTextColor(getColor(R.color.text_secondary))
+        btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         // v1.4.66（宝宝反馈「下载完没有回调，一直显示安装中」）：
         // UI 层看门狗。底层已经修了阻塞读的死锁（见 runDshPluginCli），但
         // installExecutor 是**单线程**池 —— 万一某个任务仍卡住，后续所有安装
@@ -873,7 +873,7 @@ class PluginStoreActivity : ThemedActivity() {
             btn.text = getString(R.string.plugin_install)
             btn.isEnabled = true
             btn.isClickable = true
-            btn.setTextColor(getColor(R.color.text_secondary))
+            btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             Toast.makeText(
                 this@PluginStoreActivity,
                 getString(R.string.plugin_install_timeout),
@@ -887,7 +887,7 @@ class PluginStoreActivity : ThemedActivity() {
                 installWatchdog = null
                 if (ok) {
                     btn.text = getString(R.string.plugin_installed)
-                    btn.setTextColor(getColor(R.color.success))
+                    btn.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                     btn.isClickable = true
                     btn.isEnabled = true
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
@@ -929,7 +929,7 @@ class PluginStoreActivity : ThemedActivity() {
                     val shown = if (isNetworkError(msg)) getString(R.string.plugin_net_error)
                     else summarizeInstallError(msg)
                     btn.text = getString(R.string.plugin_failed, shown)
-                    btn.setTextColor(getColor(R.color.danger))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                     btn.setOnLongClickListener {
@@ -1015,7 +1015,7 @@ class PluginStoreActivity : ThemedActivity() {
                     doInstall(pkg, btn, basePkg)
                 } else {
                     btn.text = getString(R.string.plugin_failed, getString(R.string.plugin_build_approve_failed).take(28))
-                    btn.setTextColor(getColor(R.color.danger))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                 }
@@ -1157,14 +1157,14 @@ class PluginStoreActivity : ThemedActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (ok) {
                     btn.text = getString(R.string.plugin_installed)
-                    btn.setTextColor(getColor(R.color.success))
+                    btn.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                     btn.isEnabled = true
                     btn.isClickable = true
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
                     reload(verbose = true)
                 } else {
                     btn.text = getString(R.string.plugin_failed, msg.take(28))
-                    btn.setTextColor(getColor(R.color.danger))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                 }
@@ -1184,7 +1184,7 @@ class PluginStoreActivity : ThemedActivity() {
     private fun runUninstall(pkg: String, btn: TextView) {
         btn.text = getString(R.string.plugin_uninstalling)
         btn.isEnabled = false
-        btn.setTextColor(getColor(R.color.text_secondary))
+        btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         PluginCenter.uninstall(this, pkg) { ok, msg ->
             runOnUiThread {
                 if (ok) {
@@ -1198,7 +1198,7 @@ class PluginStoreActivity : ThemedActivity() {
                     reload(verbose = true)
                 } else {
                     btn.text = getString(R.string.plugin_failed, msg.take(28))
-                    btn.setTextColor(getColor(R.color.danger))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                 }

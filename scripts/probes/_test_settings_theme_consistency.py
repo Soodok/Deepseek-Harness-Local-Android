@@ -78,8 +78,17 @@ night = provided("app/src/main/res/values-night/themes.xml")
 # ---------- [A] 基本存在性 ----------
 themed = read("app/src/main/java/app/dsh/mobile/ThemedActivity.kt")
 check("[A1] ThemedActivity 存在", bool(themed))
-check("[A2] onCreate 里必须 setTheme（否则用 Manifest 的主题，行为不可控）",
-      re.search(r"override\s+fun\s+onCreate\b[\s\S]{0,1200}?setTheme\(", themed) is not None)
+# 判据要钉住**控制流**，不能靠「1200 字符窗口内出现过 setTheme」：
+# 那条规则被 v1.8.0 在 onCreate 里加的注释挤破（1263 字符），红得毫无道理；
+# 更糟的是只要附近随便出现一次 setTheme 就绿，把调用挪到 super.onCreate 之后就查不出来。
+# 真正的契约只有一条：**setTheme 必须在 super.onCreate 之前**。
+_oc = re.search(r"override\s+fun\s+onCreate\b(.*?)\n    \}", themed, re.S)
+_body = _oc.group(1) if _oc else ""
+_i_set = _body.find("setTheme(")
+_i_super = _body.find("super.onCreate(")
+check("[A2] onCreate 里必须 setTheme，且在 super.onCreate 之前",
+      _i_set >= 0 and _i_super >= 0 and _i_set < _i_super,
+      f"setTheme@{_i_set} super.onCreate@{_i_super}")
 
 # ---------- [B] 一致性：布局用到的属性，明暗两套主题都得有 ----------
 if not users:

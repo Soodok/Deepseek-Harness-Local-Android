@@ -703,7 +703,7 @@ class SettingsActivity : ThemedActivity() {
                 RuntimeDownloadConfig.DEFAULT_PROXY,
             )
             textSize = 12f
-            setTextColor(getColor(R.color.text_secondary))
+            setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             setPadding(0, dp(8), 0, 0)
             setLineSpacing(dp(2).toFloat(), 1f)
         }

@@ -8,11 +8,11 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24"
-    android:tint="@color/icon_color">
+    android:tint="?attr/dshIconColor">
     <path
-        android:fillColor="@color/icon_color"
+        android:fillColor="?attr/dshIconColor"
         android:pathData="M5,15h4v6h6v-6h4l-7,-7 -7,7z" />
     <path
-        android:fillColor="@color/icon_color"
+        android:fillColor="?attr/dshIconColor"
         android:pathData="M5,4v2h14V4H5z" />
 </vector>
