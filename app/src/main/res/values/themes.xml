@@ -56,5 +56,11 @@
         <item name="android:textColorAlertDialogListItem">?attr/colorOnSurface</item>
     </style>
 
-    <style name="ThemeOverlay.Dsh.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog" />
+    <style name="ThemeOverlay.Dsh.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="alertDialogStyle">@style/MaterialAlertDialog.Dsh</item>
+    </style>
+
+    <style name="MaterialAlertDialog.Dsh" parent="MaterialAlertDialog.Material3">
+        <item name="singleChoiceItemLayout">@layout/dialog_single_choice</item>
+    </style>
 </resources>

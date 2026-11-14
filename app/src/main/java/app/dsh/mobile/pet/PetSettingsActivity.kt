@@ -920,9 +920,10 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun chooseSize() {
-        val values = PetPrefs.SIZE_LEVELS
+        val size = PetPrefs.sizeDp(this)
+        val values = (PetPrefs.SIZE_LEVELS.toList() + size).distinct().sorted()
         val labels = values.map { getString(R.string.pet_size_value, it) }.toTypedArray()
-        val current = values.indexOfFirst { it == PetPrefs.sizeDp(this) }
+        val current = values.indexOf(size)
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.pet_size)
             .setSingleChoiceItems(labels, current) { dlg, which ->

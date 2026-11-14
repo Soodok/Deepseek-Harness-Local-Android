@@ -439,9 +439,6 @@ class PermissionCenterActivity : ThemedActivity() {
                 isChecked = checked
                 isEnabled = enabled
                 isClickable = false   // 由整行接管点击
-                buttonTintList = android.content.res.ColorStateList.valueOf(
-                    getColor(R.color.md3_primary),
-                )
             }
             val textCol = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -459,6 +456,18 @@ class PermissionCenterActivity : ThemedActivity() {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                contentDescription = if (sub.isEmpty()) label else "$label, $sub"
+                radio.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                accessibilityDelegate = object : View.AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(
+                        host: View, info: android.view.accessibility.AccessibilityNodeInfo,
+                    ) {
+                        super.onInitializeAccessibilityNodeInfo(host, info)
+                        info.className = android.widget.RadioButton::class.java.name
+                        info.isCheckable = true
+                        info.isChecked = radio.isChecked
+                    }
+                }
                 setPadding(dp(16), dp(12), dp(16), dp(12))
                 if (enabled) {
                     // 解析主题的 ripple 背景为真实 resId 再取 drawable（attr 不能直接 getDrawable）
@@ -474,11 +483,6 @@ class PermissionCenterActivity : ThemedActivity() {
                 isEnabled = enabled
                 if (enabled) {
                     setOnClickListener {
-                        // 互斥：重画全部 radio
-                        for (i in 0 until box.childCount) {
-                            val row = box.getChildAt(i) as LinearLayout
-                            (row.getChildAt(0) as android.widget.RadioButton).isChecked = row === this
-                        }
                         when (mode) {
                             PrivMode.ROOT -> warnRootSwitch {
                                 dismissPrivPick()
@@ -519,7 +523,6 @@ class PermissionCenterActivity : ThemedActivity() {
             .setView(box)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
-        privPickDialog?.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
         privPickDialog?.show()
     }
 

@@ -1420,6 +1420,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             (250 * resources.displayMetrics.density).toInt(),
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
+            topMargin = dpV(24)
+            bottomMargin = dpV(24)
             gravity = if (islandDock == IslandDock.RIGHT)
                 android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
             else android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL

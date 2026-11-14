@@ -44,16 +44,19 @@
                 android:paddingBottom="32dp">
 
                 <FrameLayout
-                    android:layout_width="144dp"
-                    android:layout_height="144dp">
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
 
                     <com.google.android.material.progressindicator.CircularProgressIndicator
                         android:id="@+id/splashRing"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:padding="0dp"
                         android:indeterminate="true"
                         android:max="10000"
                         app:indicatorSize="144dp"
+                        app:indicatorInset="4dp"
                         app:trackThickness="4dp"
                         app:trackColor="?attr/colorPrimaryContainer"
                         android:contentDescription="@string/splash_starting" />

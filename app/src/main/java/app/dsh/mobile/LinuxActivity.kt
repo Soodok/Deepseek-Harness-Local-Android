@@ -2665,7 +2665,10 @@ class LinuxActivity : ThemedActivity() {
         // 卡片自己吃掉点击：否则点在卡片的留白上会穿到背景层，把浮层关掉
         card.isClickable = true
         val width = minOf(dp(320), resources.displayMetrics.widthPixels - dp(48))
-        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply {
+            topMargin = dp(24)
+            bottomMargin = dp(24)
+        })
         container.addView(
             host,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),

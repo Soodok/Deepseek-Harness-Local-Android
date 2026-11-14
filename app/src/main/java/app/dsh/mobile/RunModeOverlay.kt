@@ -95,6 +95,19 @@ class RunModeOverlay(private val act: Activity) {
         )
 
         box.addView(sectionLabel(act.getString(R.string.run_mode_container)))
+        val currentAvailable = deployed.any { opt ->
+            active != null && active.family == opt.family &&
+                active.versionLabel == opt.versionLabel && active.flavor == opt.flavor
+        }
+        if (linuxOn && !currentAvailable) {
+            val label = active?.let { opt ->
+                val flavor = opt.flavor.label.ifBlank { act.getString(R.string.run_mode_flavor_base) }
+                "${opt.displayName} · $flavor"
+            } ?: act.getString(R.string.run_mode_container)
+            val unavailable = act.getString(R.string.ext_linux_state_unavailable)
+            val detail = active?.let { "${it.versionLabel} · ${it.libc} · $unavailable" } ?: unavailable
+            box.addView(optionRow(label, detail, true, false) {})
+        }
         if (deployed.isEmpty()) {
             box.addView(
                 TextView(act).apply {
@@ -125,7 +138,13 @@ class RunModeOverlay(private val act: Activity) {
                 )
             }
         }
-        return box
+        return android.widget.ScrollView(act).apply {
+            isFillViewport = false
+            isClickable = true
+            addView(box, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
     }
 
     private fun sectionLabel(text: String) = TextView(act).apply {
@@ -136,7 +155,10 @@ class RunModeOverlay(private val act: Activity) {
         setPadding(px(4), px(12), px(4), px(4))
     }
 
-    private fun optionRow(title: String, sub: String, selected: Boolean, onClick: () -> Unit): View {
+    private fun optionRow(
+        title: String, sub: String, selected: Boolean, enabled: Boolean = true,
+        onClick: () -> Unit,
+    ): View {
         val row = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -147,9 +169,28 @@ class RunModeOverlay(private val act: Activity) {
                 setColor(if (selected) pal.okSoft else Color.TRANSPARENT)
                 if (selected) setStroke(px(1).coerceAtLeast(1), pal.ok)
             }
-            isClickable = true
-            setOnClickListener { onClick() }
+            isEnabled = enabled
+            contentDescription = "$title, $sub"
+            isClickable = enabled
+            if (enabled) setOnClickListener { onClick() }
+            accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(
+                    host: View, info: android.view.accessibility.AccessibilityNodeInfo,
+                ) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.className = android.widget.RadioButton::class.java.name
+                    info.isCheckable = true
+                    info.isChecked = selected
+                }
+            }
         }
+        row.addView(com.google.android.material.radiobutton.MaterialRadioButton(act).apply {
+            isChecked = selected
+            isEnabled = enabled
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        })
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(TextView(act).apply {
             text = title
@@ -162,23 +203,9 @@ class RunModeOverlay(private val act: Activity) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(pal.body)
         })
-        row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (selected) {
-            // 勾必须贴**标题行**，不能居中：副标题一换行，居中的勾会卡在两行文字中间，
-            // 看上去像「最✓快」这种断字（v1.7.11 真机浅色截图发现）。
-            row.addView(TextView(act).apply {
-                text = "✓"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTextColor(pal.ok)
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                gravity = Gravity.TOP
-                topMargin = px(1)
-                marginStart = px(6)
-            })
-        }
+        row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = px(8)
+        })
         row.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { bottomMargin = px(6) }
