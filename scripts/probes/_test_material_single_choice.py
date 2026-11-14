@@ -31,11 +31,13 @@ checks = {
     'shared dialog style supplies a single-choice row':
         styles['MaterialAlertDialog.Dsh'].get('parent') == 'MaterialAlertDialog.Material3'
         and items('MaterialAlertDialog.Dsh').get('singleChoiceItemLayout') == '@layout/dialog_single_choice',
-    'single-choice row is a checkable Material radio used by ListView':
-        row.tag == 'com.google.android.material.radiobutton.MaterialRadioButton'
+    'single-choice row uses Material dialog metrics and a checkable compat view':
+        row.tag == 'androidx.appcompat.widget.AppCompatCheckedTextView'
         and row.get(ANDROID + 'id') == '@android:id/text1'
-        and row.get(ANDROID + 'clickable') == 'false'
-        and row.get(ANDROID + 'focusable') == 'false',
+        and row.get(ANDROID + 'paddingStart') == '@dimen/abc_select_dialog_padding_start_material'
+        and row.get(ANDROID + 'paddingEnd') == '?attr/dialogPreferredPadding'
+        and row.get(ANDROID + 'drawablePadding') == '20dp'
+        and row.get(APP + 'drawableStartCompat') == '?android:attr/listChoiceIndicatorSingle',
     'progress ring and parent wrap actual measured size':
         all(node.get(ANDROID + dim) == 'wrap_content' for node in (ring, parent)
             for dim in ('layout_width', 'layout_height'))
