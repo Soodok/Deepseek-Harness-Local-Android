@@ -1,0 +1,169 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-jobs: 把编译这类长活离机跑 —— 提交、看进度、取产物。
+#
+#   dev-jobs                          最近的任务（同 dev-jobs list）
+#   dev-jobs list [N]                 最近 N 条（默认 20）
+#   dev-jobs show <id>                单条详情（状态/退出码/耗时/输出字节）
+#   dev-jobs log <id> [N]             日志尾部 N 行（默认 200，stdout）
+#   dev-jobs err <id> [N]             错误流尾部 N 行
+#   dev-jobs submit <命令...>          提交任务，回 jobId
+#   dev-jobs submit --label=X --timeout=600000 --workdir=/ws <命令...>
+#   dev-jobs cancel <id>              请求取消（协作式，不保证立刻死）
+#   dev-jobs get <id> <路径>          取产物到当前目录（带 sha256 校验）
+#   dev-jobs help                     本段说明
+#
+# 例：
+#   dev-jobs submit 'make -j2'
+#   dev-jobs submit --label=build --timeout=600000 'cd /ws/proj && make -j2'
+#   dev-jobs log job-20261114-101530-a1b2c3 50
+#   dev-jobs get job-20261114-101530-a1b2c3 out/app
+#
+# ⚠️ 与 dev-linux 同一个 cap.linux 开关（默认关闭），关了返 403。
+# ⚠️ 同时最多 2 个任务在跑，多出来的排队（state=queued），不是失败。
+# ⚠️ submit 返回 202 意思是"已受理"，不代表做完 —— 必须自己轮询 show/log。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+_usage() {
+  sed -n '6,30p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+_join() {
+  local out="" a
+  for a in "$@"; do
+    if [ -z "$out" ]; then out="$a"; else out="$out $a"; fi
+  done
+  printf '%s' "$out"
+}
+
+# 取任务状态里的一个字段（避免为一次查询拉一大坨 JSON 给 AI 看）
+_field() {
+  python - "$1" "$2" <<'PY' 2>/dev/null || printf ''
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+k = sys.argv[2]
+print(d.get(k, '') if not isinstance(d.get(k), (dict, list)) else json.dumps(d.get(k), ensure_ascii=False))
+PY
+}
+
+case "${1:-}" in
+  ""|list|ls)
+    n="${2:-20}"
+    case "$n" in ''|*[!0-9]*) n=20 ;; esac
+    dsh_http GET "/dev/jobs?limit=$n"
+    ;;
+
+  show|get-job)
+    id="${2:-}"
+    [ -z "$id" ] && { echo 'usage: dev-jobs show <id>' >&2; exit 2; }
+    dsh_http GET "/dev/jobs/get?id=$id"
+    ;;
+
+  log)
+    id="${2:-}"; n="${3:-200}"
+    [ -z "$id" ] && { echo 'usage: dev-jobs log <id> [lines]' >&2; exit 2; }
+    case "$n" in ''|*[!0-9]*) n=200 ;; esac
+    dsh_http GET "/dev/jobs/log?id=$id&lines=$n"
+    ;;
+
+  err|stderr)
+    id="${2:-}"; n="${3:-200}"
+    [ -z "$id" ] && { echo 'usage: dev-jobs err <id> [lines]' >&2; exit 2; }
+    case "$n" in ''|*[!0-9]*) n=200 ;; esac
+    dsh_http GET "/dev/jobs/log?id=$id&stream=stderr&lines=$n"
+    ;;
+
+  submit)
+    shift
+    label="job"; tmo=300000; wdir=""
+    while :; do
+      case "${1:-}" in
+        --label=*)   label="${1#--label=}"; shift ;;
+        --timeout=*) tmo="${1#--timeout=}"; shift ;;
+        --workdir=*) wdir="${1#--workdir=}"; shift ;;
+        *) break ;;
+      esac
+    done
+    # timeout 必须是纯数字：非数字拼进 JSON 数字位会得到 400 invalid json，
+    # 而用户看不出是"参数格式"问题（服务端只回一句解析失败）。
+    case "$tmo" in ''|*[!0-9]*) tmo=300000 ;; esac
+    [ $# -eq 0 ] && { echo 'usage: dev-jobs submit [--label=X] [--timeout=MS] [--workdir=P] <命令...>' >&2; exit 2; }
+    cmd="$(_join "$@")"
+    [ -z "$cmd" ] && { echo 'empty command' >&2; exit 2; }
+    # 用 python 拼 JSON：命令里带引号/反斜杠/中文时，手拼必坏
+    body=$(python - "$cmd" "$label" "$tmo" "$wdir" <<'PY'
+import json, sys
+cmd, label, tmo, wdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+d = {"cmd": cmd, "label": label, "timeout_ms": int(tmo)}
+if wdir:
+    d["workdir"] = wdir
+print(json.dumps(d, ensure_ascii=False))
+PY
+)
+    dsh_http POST /dev/jobs "$body"
+    ;;
+
+  cancel)
+    id="${2:-}"
+    [ -z "$id" ] && { echo 'usage: dev-jobs cancel <id>' >&2; exit 2; }
+    dsh_http POST /dev/jobs/cancel "{\"id\":\"$id\"}"
+    ;;
+
+  get|artifact)
+    id="${2:-}"; p="${3:-}"
+    if [ -z "$id" ] || [ -z "$p" ]; then
+      echo 'usage: dev-jobs get <id> <path-in-job-dir>' >&2
+      exit 2
+    fi
+    # 路径要 URL 编码（`src/a b/lib.so` 直接拼进 query 会被截断）
+    enc=$(python - "$p" <<'PY'
+import sys, urllib.parse
+print(urllib.parse.quote(sys.argv[1], safe=''))
+PY
+)
+    out=$(dsh_http GET "/dev/jobs/artifact?id=$id&path=$enc")
+    # 落盘 + 校验。整段交给 python：base64 解码与 sha256 用 shell 拼不可靠。
+    python - "$out" "$id" "$p" <<'PY'
+import base64, hashlib, json, os, sys
+raw, job, path = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    d = json.loads(raw)
+except Exception:
+    print('响应不是 JSON:', raw[:200], file=sys.stderr)
+    sys.exit(1)
+if not d.get('ok'):
+    print('取产物失败:', d.get('error') or d, file=sys.stderr)
+    sys.exit(1)
+data = base64.b64decode(d['content_base64'])
+want = d.get('sha256', '')
+got = hashlib.sha256(data).hexdigest()
+if want and got != want:
+    print('sha256 不符：期望 %s，实得 %s（传输被改过）' % (want, got), file=sys.stderr)
+    sys.exit(1)
+dst = os.path.basename(path.rstrip('/')) or 'artifact'
+with open(dst, 'wb') as f:
+    f.write(data)
+os.chmod(dst, 0o755)
+print('已保存 %s (%d 字节, sha256 %s)' % (dst, len(data), got[:16]))
+PY
+    ;;
+
+  help|-h|--help)
+    _usage
+    ;;
+
+  *)
+    echo "unknown subcommand: $1" >&2
+    _usage >&2
+    exit 2
+    ;;
+esac

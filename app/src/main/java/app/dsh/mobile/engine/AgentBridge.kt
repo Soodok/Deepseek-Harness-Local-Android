@@ -693,6 +693,14 @@ object AgentBridge {
         "POST /dev/linux/switch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.switch(c, b) },
         "POST /dev/linux/deploy" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.deploy(c, b) },
         "POST /dev/linux/exec" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.exec(c, b) },
+        // 任务化执行（同受 cap.linux 门控）。exec 的硬上限是 120 秒且要返全量输出，
+        // 编译这种跑几分钟、输出几百 KB 的活走不通，所以单独一层「提交 → 轮询 → 取产物」。
+        "POST /dev/jobs" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.JobsCap.submit(c, b) },
+        "GET /dev/jobs" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.list(c, q) },
+        "GET /dev/jobs/get" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.get(c, q) },
+        "GET /dev/jobs/log" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.log(c, q) },
+        "POST /dev/jobs/cancel" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.JobsCap.cancel(c, b) },
+        "GET /dev/jobs/artifact" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.artifact(c, q) },
         "GET /dev/notifications" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.NotifyCap.read(c, q) },
         "POST /dev/clipboard" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.clipboard(c, b) },
         "POST /dev/control" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.control(c, b) },

@@ -1060,6 +1060,78 @@ object EndpointCatalog {
             )
         ),
         Triple(
+            "任务化执行", "把编译这类长活离机跑：提交 → 轮询 → 取产物", listOf(
+                e(
+                    "jobs/submit", "POST", "/dev/jobs",
+                    "提交一个容器内任务，立即返回 jobId；执行在后台，最多 2 个并发",
+                    cap = "linux",
+                    body = "{\"cmd\":\"make -j2\",\"workdir\":\"/ws\",\"timeout_ms\":600000,\"label\":\"build\"}",
+                    limits = "① 整组受 cap.linux 门控，与 /dev/linux/exec 同一个开关。\n" +
+                        "② 返回 **202** 不是 200 —— 意思是「已受理」，不是「已完成」。\n" +
+                        "③ 同时最多 2 个任务在跑（WORKERS=2），超出的排队等；队列里的状态是 queued。\n" +
+                        "④ 单任务硬超时默认 5 分钟、上限 20 分钟，到点标记 state=timeout。\n" +
+                        "⑤ 容器没部署时直接 409，先调 /dev/linux/deploy。",
+                    examples = listOf(
+                        "dev api POST /dev/jobs '{\"cmd\":\"make -j2\",\"label\":\"build\"}'",
+                    ),
+                ),
+                e(
+                    "jobs/list", "GET", "/dev/jobs",
+                    "最近的任务（默认 20 条，含 state / exit_code / 耗时 / 输出字节数）",
+                    cap = "linux",
+                    limits = "① 按 jobId 倒序（jobId 前缀是时间戳），新的在前。\n" +
+                        "② 只保留最近 50 个任务目录，多余的按开始时间删最老的**已终态**任务。\n" +
+                        "③ state 取值：queued / running / success / failed / timeout / cancelled / error。\n" +
+                        "④ `error` 是任务体自身抛异常（不是命令退出码非零），message 在 error 字段。",
+                    examples = listOf("dev jobs", "dev api GET '/dev/jobs?limit=5'"),
+                ),
+                e(
+                    "jobs/get", "GET", "/dev/jobs/get",
+                    "单个任务的详情（必须带 id）",
+                    cap = "linux",
+                    limits = "① id 必填，缺了返 400；不存在的 id 返 404。\n" +
+                        "② 详情里没有日志正文 —— 日志走 /dev/jobs/log，避免每次轮询搬几百 KB。",
+                    examples = listOf("dev api GET '/dev/jobs/get?id=job-20261114-...'"),
+                ),
+                e(
+                    "jobs/log", "GET", "/dev/jobs/log",
+                    "读任务日志尾部（默认 stdout 最后 200 行）",
+                    cap = "linux",
+                    limits = "① 默认读 stdout，`stream=stderr` 读错误流。\n" +
+                        "② 只读尾部，最多往回扫 512 KB；`lines` 夹在 1..2000。\n" +
+                        "③ 单条日志文件上限 8 MiB，超了截断并追加 `[truncated: ...]` 标记 —— " +
+                        "一条 `yes` 不该有写满磁盘的权力。\n" +
+                        "④ 任务还没产生输出时返回空字符串，不是 404。",
+                    examples = listOf(
+                        "dev api GET '/dev/jobs/log?id=job-...&lines=50'",
+                        "dev api GET '/dev/jobs/log?id=job-...&stream=stderr'",
+                    ),
+                ),
+                e(
+                    "jobs/cancel", "POST", "/dev/jobs/cancel",
+                    "请求取消任务（协作式：当前命令返回后标记 cancelled）",
+                    cap = "linux",
+                    limits = "① **不承诺立刻终止**：置标志位，命令返回后才标终态。\n" +
+                        "② 已终态的任务返 409，并带上真实 state（不要在 UI 里假装成功）。\n" +
+                        "③ 取消后即使命令成功了，state 也是 cancelled —— 谁下的令谁负责。",
+                    examples = listOf("dev api POST /dev/jobs/cancel '{\"id\":\"job-...\"}'"),
+                ),
+                e(
+                    "jobs/artifact", "GET", "/dev/jobs/artifact",
+                    "取任务产物（编译出的二进制等），返回 base64 + sha256",
+                    cap = "linux",
+                    limits = "① path 相对任务目录；`..` 穿出目录会被拒（规范比对，不是字符串找 `..`）。\n" +
+                        "② 单文件上限 **8 MiB** —— bridge 响应只能是字符串，base64 会膨胀 33%。" +
+                        "更大的产物走 /dev/open-file 或 peersync。\n" +
+                        "③ 必须用返回的 sha256 校验：JSON 里塞 base64 一旦被中间层改动，" +
+                        "拿到手的二进制会静默损坏。",
+                    examples = listOf(
+                        "dev api GET '/dev/jobs/artifact?id=job-...&path=out/app'",
+                    ),
+                ),
+            )
+        ),
+        Triple(
             "扩展与诊断", "环境自检", listOf(
                 e(
                     "ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）",
