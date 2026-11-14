@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""引导页 v2（七步 + 双形态）回归门禁。
+"""引导页 v2（封面 + 八步，双形态）回归门禁。
 
 ## 这份探针守什么
 
@@ -7,7 +7,7 @@
 再往前丢过 Root 二次确认。所以这里不测「页面长什么样」，
 只测**改了会静默坏掉的行为**：
 
-1. 七步顺序与页面 View 一一对应（少一个就会漏页且不报错）；
+1. 封面及八步顺序与页面 View 一一对应（少一个就会漏页且不报错）；
 2. 平板/手机双形态的判据在（>=600dp 走侧栏，否则走胶囊 + 抽屉）；
 3. 配色真的重涂到按钮与进度条（v1.5.x 的真 bug：只改卡片文字）；
 4. 方向页有真机预览控件且真的联动（不是一张静态图）；
@@ -27,6 +27,7 @@
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 APP = os.path.join(ROOT, "app", "src", "main")
@@ -75,16 +76,27 @@ def fn_body(src, signature):
 act = read(ACT)
 layout = read(LAYOUT)
 
-print("\n=== 1. 七步结构 ===")
-# 页面 View 必须与 steps 数量一致，否则 progress.max 与翻页边界会错位
-page_ids = re.findall(r'findViewById\(R\.id\.(page[A-Z]\w+)\)', act)
-check("seven pages are bound", len(page_ids) == 7, "found: %r" % (page_ids,))
-for pid in ("pageLanguage", "pageOrientation", "pageTheme", "pageAccent", "pageScreen", "pagePriv", "pageDone"):
+print("\n=== 1. 封面及八步结构 ===")
+# 标题和页面顺序必须对应；封面不计入进度。
+expected_pages = ("pageWelcome", "pageLanguage", "pageOrientation", "pageTheme", "pageAccent",
+                  "pageScreen", "pageMode", "pageCaps", "pageDone")
+expected_steps = ("ob_wizard_welcome_cover_label", "ob_wizard_language_title",
+                  "ob_wizard_orientation_title", "ob_wizard_theme_title", "ob_wizard_accent_title",
+                  "ob_wizard_screen_title", "ob_wizard_mode_title", "ob_wizard_caps_title",
+                  "ob_wizard_done_title")
+pages_block = re.search(r'pages\s*=\s*listOf\((.*?)\n\s*\)', act, re.S)
+page_ids = re.findall(r'findViewById\(R\.id\.(page[A-Z]\w+)\)', pages_block.group(1)) if pages_block else []
+steps_block = re.search(r'private val steps\s*=\s*listOf\((.*?)\n\s*\)', act, re.S)
+step_ids = re.findall(r'Step\(R\.string\.(\w+)\)', steps_block.group(1)) if steps_block else []
+check("nine pages are bound in order", tuple(page_ids) == expected_pages, "found: %r" % (page_ids,))
+for pid in expected_pages:
     check("layout declares %s" % pid, '@+id/%s"' % pid in layout)
     check("activity binds %s" % pid, 'R.id.%s' % pid in act)
-check("progress max derives from pages.size", "progress.max = pages.size" in act)
-check("seven steps declared", act.count("Step(R.string.") == 7,
-      "got %d" % act.count("Step(R.string."))
+check("cover and eight step titles match page order", tuple(step_ids) == expected_steps,
+      "found: %r" % (step_ids,))
+check("progress excludes the cover", "progress.max = steps.size - 1" in act
+      and "val stepNo = index" in fn_body(act, "private fun goTo(")
+      and "progress.progress = stepNo" in fn_body(act, "private fun goTo("))
 
 print("\n=== 2. 双形态（平板侧栏 / 手机抽屉）===")
 check("wide threshold constant exists", "WIDE_DP = 600" in act)
@@ -199,10 +211,16 @@ check("button bar lives inside the content column",
       "outside it the bar spans the whole screen and ignores the side rail")
 
 print("\n=== 8. 既有行为不退化 ===")
-check("back key still commits from the first page",
-      "override fun onBackPressed()" in act and "commit()" in act)
+back_body = fn_body(act, "override fun onBackPressed()")
+finish_body = fn_body(act, "private fun finishOnboarding()")
+check("back key still finishes from the first page through the guarded exit",
+      "if (page > 0)" in back_body and "goTo(page - 1)" in back_body
+      and "finishOnboarding()" in back_body and "commitNow()" in finish_body)
 check("back key closes the drawer first", "stepsDrawer.visibility == View.VISIBLE" in act)
-check("root double warning preserved", "warnRoot { warnRootAgain { commit() } }" in act)
+check("root double warning preserved",
+      re.search(r"if \(selectedPriv == PrivMode\.ROOT && rootAvailable\)\s*\{"
+                r"[\s\S]*?warnRoot\s*\{\s*warnRootAgain\s*\{"
+                r"[\s\S]*?commitNow\(\)", finish_body) is not None)
 check("root warning text preserved", "ob_priv_root_paths_warn" in act)
 check("root probe stays off the main thread",
       'Thread({' in act and '"probe-root"' in act)
@@ -262,10 +280,15 @@ if m_radius and m_box:
     radius_detail = "gradientRadius=%s%s vs %sdp box (bare number = px)" % (
         m_radius.group(1), unit or "", m_box.group(1))
 check("done glow radius has a unit and fills its box", radius_ok, radius_detail)
-# 呼吸放大到 1.12 倍会超出 200dp 的 FrameLayout；父级裁剪会把光晕切出方边。
-m_done = re.search(r'<LinearLayout\s+android:id="@\+id/pageDone"[^>]*>', layout)
+# 呼吸放大到 1.12 倍会超出包裹它的 FrameLayout；直接父级不能裁剪。
+android_id = "{http://schemas.android.com/apk/res/android}id"
+clip_children = "{http://schemas.android.com/apk/res/android}clipChildren"
+layout_tree = ET.fromstring(layout)
+done = next((e for e in layout_tree.iter() if e.get(android_id) == "@+id/pageDone"), None)
+glow_parent = next((p for p in done.iter() if any(
+    c.get(android_id) == "@+id/doneGlow" for c in p)), None) if done is not None else None
 check("done page does not clip the breathing glow",
-      bool(m_done) and 'android:clipChildren="false"' in m_done.group(0))
+      glow_parent is not None and glow_parent.get(clip_children) == "false")
 
 # (b) 能力开关行：文字列紧贴开关，长副标题会一直顶到开关边上。
 cap_row = fn_body(act, "private fun capRow(")
@@ -278,7 +301,7 @@ check("capability text keeps a gap before the switch",
 scrolls = re.findall(r'<ScrollView\b[^>]*>', layout)
 faded = [s for s in scrolls if 'android:requiresFadingEdge="vertical"' in s
          and 'android:fadingEdgeLength="' in s]
-check("six scrolling pages exist", len(scrolls) == 6, "found %d" % len(scrolls))
+check("nine scrolling pages exist", len(scrolls) == len(expected_pages), "found %d" % len(scrolls))
 check("every scrolling page fades at its edges",
       len(scrolls) > 0 and len(faded) == len(scrolls),
       "%d/%d ScrollViews fade" % (len(faded), len(scrolls)))

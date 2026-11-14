@@ -2,13 +2,11 @@ package app.dsh.mobile
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Resources
 import java.util.Locale
 
 /**
- * 应用内语言设置（v1.2.120）：en / de / zh / pt-BR / th / ru，默认 en。
- *
- * 历史：此前是 system（跟随系统）/ zh / en，默认 system。现按需求收敛为
- * 三种明确语言、英语为默认；旧值 system 或未知值一律归一化为 en。
+ * 应用内语言设置：首次使用系统语言，未支持的语言和旧值回退至英语。
  */
 object LocaleHelper {
     private const val PREFS = "app_locale"
@@ -20,8 +18,12 @@ object LocaleHelper {
     val SUPPORTED = listOf("en", "de", "zh", "pt", "th", "ru")
 
     fun get(ctx: Context): String {
-        // getString() 返回平台类型 String!；先兜底再比较，避免可空推断
-        val v = prefs(ctx).getString(KEY, DEFAULT) ?: DEFAULT
+        val preferences = prefs(ctx)
+        val v = if (preferences.contains(KEY)) {
+            preferences.getString(KEY, DEFAULT) ?: DEFAULT
+        } else {
+            Resources.getSystem().configuration.locales[0]?.language ?: DEFAULT
+        }
         return if (v in SUPPORTED) v else DEFAULT
     }
 

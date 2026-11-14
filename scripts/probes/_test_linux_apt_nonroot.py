@@ -119,11 +119,21 @@ check("S8 交还失败不中断装包（只记日志）",
 check("D1 有 socketsAlive 健康标记", "socketsAlive" in dns)
 check("D2 currentPort 同时判 running 与 socketsAlive",
       re.search(r"fun currentPort\(\)[^\n]*running\.get\(\)\s*&&\s*socketsAlive\.get\(\)", dns) is not None)
-check("D3 start 幂等判据会检查健康并重绑", "listener socket is dead" in dns)
-check("D4 acceptLoop 异常时标记 socket 死亡",
-      re.search(r"tcp accept:[\s\S]{0,300}socketsAlive\.set\(false\)", dns) is not None)
-check("D5 udpLoop 异常时标记 socket 死亡",
-      re.search(r"udp recv:[\s\S]{0,300}socketsAlive\.set\(false\)", dns) is not None)
+start_block = re.search(r"fun start\([^\n]*\): Int \{([\s\S]*?)\n    /\*\*", dns)
+check("D3 start 仅在 socket 和监听循环健康时复用端口，否则停止并重绑",
+      start_block is not None and re.search(
+          r"if \(running\.get\(\) && port > 0\) \{\s*"
+          r"if \(socketsAlive\.get\(\) && loopAlive\.get\(\)\) return port"
+          r"[\s\S]*?\bstop\(\)", start_block.group(1)) is not None)
+for name, loop, operation in (("D4", "acceptLoop", "ss.accept()"),
+                              ("D5", "udpLoop", "us.receive(pkt)")):
+    block = re.search(r"private fun %s\([^\n]*\) \{([\s\S]*?)\n    \}" % loop, dns)
+    check(name + " 监听异常时仅当前代标记 socket 死亡",
+          block is not None and re.search(
+              re.escape(operation) + r"\s*\} catch \(e: Throwable\) \{"
+              r"[\s\S]*?if \(running\.get\(\)\) \{[\s\S]*?"
+              r"if \(generation\.get\(\) == myGen\) socketsAlive\.set\(false\)",
+              block.group(1)) is not None)
 check("D6 容器执行前端口取不到会重绑",
       "LinuxDnsProxy.start(ctx)" in runner and "DSH_DNS_PORT" in runner)
 
