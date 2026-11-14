@@ -82,16 +82,59 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <com.google.android.material.progressindicator.LinearProgressIndicator
-                        android:id="@+id/stepProgress"
-                        style="@style/Widget.Material3.LinearProgressIndicator"
+                    <!-- 进度与欢迎页运行状态共享这一格。 -->
+                    <FrameLayout
                         android:layout_width="0dp"
-                        android:layout_height="5dp"
-                        android:layout_weight="1"
-                        android:max="7"
-                        android:progress="1"
-                        android:progressBackgroundTint="?attr/dshStroke"
-                        android:progressTint="?attr/dshAccent" />
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1">
+
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
+                            android:id="@+id/stepProgress"
+                            style="@style/Widget.Material3.LinearProgressIndicator"
+                            android:layout_width="match_parent"
+                            android:layout_height="5dp"
+                            android:layout_gravity="center_vertical"
+                            android:max="7"
+                            android:progress="1"
+                            android:progressBackgroundTint="?attr/dshStroke"
+                            android:progressTint="?attr/dshAccent" />
+
+                        <LinearLayout
+                            android:id="@+id/welcomePill"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="start|center_vertical"
+                            android:background="@drawable/bg_ob_pill"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingHorizontal="12dp"
+                            android:paddingVertical="4dp"
+                            android:visibility="gone">
+
+                            <!-- 解压进行中才有转圈。纯百分比数字在 10 秒没变化时会被当成卡死，
+                                 一点守恒的转动就是「还活着」的证据（原型里也是这颗点）。 -->
+                            <!-- 16dp 是实测下限：12dp 时默认弧形指示器只剩一根短线，
+                                 看着像渲染残迹而不是转圈。 -->
+                            <ProgressBar
+                                android:id="@+id/pbWelcomePill"
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:layout_marginEnd="7dp"
+                                android:importantForAccessibility="no"
+                                android:indeterminate="true"
+                                android:indeterminateTint="?attr/dshAccent"
+                                android:indeterminateTintMode="src_in" />
+
+                            <TextView
+                                android:id="@+id/txtWelcomePill"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:textColor="?attr/dshTextSecondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                    </FrameLayout>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSteps"
@@ -113,45 +156,6 @@
                     android:textColor="?attr/dshTextSecondary"
                     android:textSize="12sp" />
 
-                <!-- 运行环境实时状态（v2）：解压进度 / 已就绪 / 失败 / 需下载。
-                     放在 topBlock 而不是欢迎页内容里：欢迎页正文高度已经顶满
-                     pageHost 视口（实测边界 1988px），塞进正文的小胶囊会被整块裁掉，
-                     截图和 uiautomator 里都看不到，后台解压就等于没有反馈。
-                     只在封面页显示，由 goTo() 与 renderRuntime() 一起管显隐。 -->
-                <LinearLayout
-                    android:id="@+id/welcomePill"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_ob_pill"
-                    android:layout_gravity="center_horizontal"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="7dp"
-                    android:visibility="gone">
-
-                    <!-- 解压进行中才有转圈。纯百分比数字在 10 秒没变化时会被当成卡死，
-                         一点守恒的转动就是「还活着」的证据（原型里也是这颗点）。 -->
-                    <!-- 16dp 是实测下限：12dp 时默认弧形指示器只剩一根短线，
-                         看着像渲染残迹而不是转圈。 -->
-                    <ProgressBar
-                        android:id="@+id/pbWelcomePill"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:layout_marginEnd="8dp"
-                        android:importantForAccessibility="no"
-                        android:indeterminate="true"
-                        android:indeterminateTint="?attr/dshAccent"
-                        android:indeterminateTintMode="src_in" />
-
-                    <TextView
-                        android:id="@+id/txtWelcomePill"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="?attr/dshTextSecondary"
-                        android:textSize="11sp" />
-                </LinearLayout>
             </LinearLayout>
 
             <!-- ===== 内容区：九页叠放，只显示当前页 ===== -->

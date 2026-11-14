@@ -13209,3 +13209,34 @@ lockfile 内两包出现次数 0，临时目录 `files/fp`、`files/lc` 已删�
 正在被另一会话反复改写，抓取瞬间处于**编译不过**状态，行号随时间漂移不可引用）、
 `engine/RootfsModes.kt`、`RootfsModesTest.kt` 属并行会话在途，本轮未纳入提交。
 本轮验证在 `git worktree` 于提交 96825f0f 独立检出后重跑，不依赖工作区状态。
+
+
+---
+
+**补记十四（2026-11-14 傍晚）**：按实机反馈把「运行环境胶囊」从顶栏独立一行挪进**进度条那一格**，解决首屏内容被迫下滚的问题。
+
+### 1. 改动
+- 顶栏第一行由「进度条 + 全部步骤」两个并列子项，改成「一个 `weight=1` 的 FrameLayout（progressBar 与 welcomePill 叠放）+ 全部步骤」。
+- 封面页进度条是 `INVISIBLE`、`txtStepHint` 也不显示，那一格横向本来就空着；胶囊换成 `layout_gravity="start|center_vertical"`，内边距 7dp → 4dp（16dp 转圈 + 11sp 文本）。
+- `txtWelcomePill` 加 `ellipsize=end` + `maxLines=1`：LITE 文案 46 字符，720dp 宽下要省略，否则会把「全部步骤」顶出屏幕。
+- 旧独立行整块删除（`layout_marginTop=10dp` + 上下 7dp 内边距，约 40dp 高）。
+
+### 2. 实测（emulator-5562，x86_64 noruntime，pm clear 后冷启，uiautomator bounds / density 440）
+| 视图 | 改动前 | 改动后 | 差 |
+|---|---|---|---|
+| `pageWelcome` | [0,339][1080,1988] | [0,232][1080,1988] | 起点 **−107 px（−38.9 dp）** |
+| `welcomeRows` | [66,1046][1014,1858] | [66,939][1014,1751] | −107 px |
+| `welcomePrereq` | [66,1897][1014,1978] | [66,1790][1014,1871] | −107 px |
+| `welcomePill` | [190,243][889,322] | [66,142][765,205] | 上移 101 px，并贴到左侧 |
+| `btnNext` | [66,2010][1014,2148] | 同左 | 0（在 pageHost 外的底栏） |
+
+改动前正文底边 1978 距视口底 1988 只剩 **10 px**，字号/密度略有偏差就会溢出；改动后底边 1871，**余量 117 px（≈42 dp）**。
+
+### 3. 覆盖与未覆盖
+- 已验证：1080×2280/440（完整包 noruntime 版，LITE 文案）在封面一屏内完整可见，胶囊与「全部步骤」同行不重叠；切到语言页后胶囊隐藏（dump 只剩 `stepProgress` 与 `1 / 8`）。
+- **未完全解决**：把窗口压到 720×1520/density 320（≈360dp 宽的小屏）后，未滚动时 `welcomePrereq` 仍在视口外，仍需一次轻滚。剩余原因不是顶栏，而是五行能力卡本身的高度（`welcomeRows` 在 1080×2280 上就占 812 px ≈ 295 dp）。
+- 可选进一步压缩（**未做，等拍板**）：行内边距 9dp→7dp、副文案 11sp→10.5sp、鲸鱼 92→80dp，估算还能再省 30~40 dp。
+
+### 4. 过程记录
+- 截图里出现绿色描边框，一度以为是布局问题；实为模拟器开着 TalkBack（`settings get secure enabled_accessibility_services` 有 TalkBackService），焦点框被 screencap 拍进去。关掉 TalkBack（`accessibility_enabled 0` + `enabled_accessibility_services null`）后画面干净，绿色像素从 14,236 降到 0。**以后拍视觉证据前先确认无障碍服务状态。**
+- 为对比「改动前」，临时把工作区那份布局换回 `HEAD` 版本、单独编了一份 APK 装机量测（耗时约 1 分钟），量完立刻用备份 `_tmp_shots/my_layout.xml` 还原，`git diff` 确认只剩我这处改动。

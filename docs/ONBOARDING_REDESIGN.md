@@ -100,7 +100,15 @@
   4. 手机操控 / 读屏、点按、输入，随时可停
   5. 与电脑协同 / 配对后，电脑可调用这台手机的读屏、相机、容器等能力
 - 定位主张：**完整移植**（不是遥控器、不是网页套壳）+ **真在手机上完成电脑级工作流**。所有描述必须能在仓库里找到对应实现（引擎同源、`dsh-linux-runtime` Alpine rootfs、`RemoteAccessSheet.kt` 局域网能力桥、无障碍操控），不得写未落地的能力。
-- 运行胶囊：16dp 转圈 + 文案，挂在 **顶栏 topBlock**（不是欢迎页正文）。`preparing` 显示「Preparing the runtime… 63%」且转圈；`ready/failed/lite` 是终态，隐藏转圈只留文案。
+- 运行胶囊：16dp 转圈 + 文案，挂在 **顶栏第一行、与进度条同一格**（`weight=1` 的 FrameLayout 里叠放，不是欢迎页正文、也不是单独一行）。
+  `preparing` 显示「Preparing the runtime… 63%」且转圈；`ready/failed/lite` 是终态，隐藏转圈只留文案。
+  **为什么必须挤进那一行**（2026-11-14 按实机反馈改）：胶囊原先单独占一行，10dp 上边距 + 上下 7dp 内边距让顶栏多出约 40dp，
+  欢迎页正文被顶下去，部分机型必须下滚才能看全首屏。封面页这一格里进度条是 `INVISIBLE`、页眉提示也不显示，横向正好空着；
+  胶囊叠进来后内边距压到 4dp（16dp 转圈 + 11sp 文本），1080×2280/440 实测 `pageWelcome` 起点从 266 前置到 232、
+  正文底部 1871 → 1751、`btnNext` 从 2010 回到 1988 以内的可视区。
+  用 FrameLayout 叠放而不是与进度条并列：胶囊最长文案（LITE 的 `Lite package · download the runtime after setup`，46 字符）
+  若直接 `wrap_content` 会把右侧「全部步骤」顶出屏幕；放进限宽格子才拿得到 AT_MOST，再由 `ellipsize=end` + `maxLines=1` 兜底
+  （实测 720×1520/320 的小屏缩成「Lite package · download the runtime after…」，按钮仍完整可见）。
   实现要点（三条都是实测踩出来的）：
   1. **位置**：不能放欢迎页正文底部。欢迎页内容总高超过 `pageHost` 视口（实测裁切边界 1988px），放底部时 uiautomator 与截图里整块消失，后台解压等于没有反馈 —— 用户看到的只有「约 30 秒」静态眉标。
   2. **互斥**：胶囊在顶栏时它与 `txtStepHint` 抢同一行语义。完整包用胶囊（有真实百分比），`syncCoverStatus()` 把眉标收起来；`lite` 包也只用胶囊（正文是「精简包 · 进入后再下载运行环境」），不用眉标 —— 眉标那句「环境在后台解压」对精简包是假的。
