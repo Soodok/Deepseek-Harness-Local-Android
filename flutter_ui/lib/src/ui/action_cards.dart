@@ -21,14 +21,13 @@ class ApprovalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       key: const ValueKey('approval-card'),
-      margin: const EdgeInsets.only(top: 16),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       decoration: BoxDecoration(
         color: DshPalette.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: DshPalette.line),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
@@ -45,7 +44,7 @@ class ApprovalCard extends StatelessWidget {
             request.title,
             style: const TextStyle(
               color: DshPalette.ink,
-              fontSize: 16,
+              fontSize: 14.5,
               fontWeight: FontWeight.w600,
               height: 1.35,
             ),
@@ -56,23 +55,27 @@ class ApprovalCard extends StatelessWidget {
               request.detail,
               style: const TextStyle(
                 color: DshPalette.inkSoft,
-                fontSize: 14.5,
-                height: 1.55,
+                fontSize: 13,
+                height: 1.45,
               ),
             ),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               FilledButton(
                 key: const ValueKey('approval-approve'),
+                style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: busy ? null : onApprove,
                 child: const Text('允许继续'),
               ),
               OutlinedButton(
                 key: const ValueKey('approval-stop'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                ),
                 onPressed: busy ? null : onStop,
                 child: const Text('停止'),
               ),
@@ -89,11 +92,17 @@ class QuestionCard extends StatefulWidget {
     super.key,
     required this.request,
     required this.onSubmit,
+    this.onStructuredSubmit,
+    this.initialDraft,
+    this.onDraftChanged,
     this.busy = false,
   });
 
   final ActionRequest request;
   final ValueChanged<String> onSubmit;
+  final ValueChanged<QuestionAnswer>? onStructuredSubmit;
+  final QuestionAnswer? initialDraft;
+  final ValueChanged<QuestionAnswer>? onDraftChanged;
   final bool busy;
 
   @override
@@ -111,6 +120,7 @@ class _QuestionCardState extends State<QuestionCard>
   void initState() {
     super.initState();
     _answerController = TextEditingController();
+    _restoreDraft();
   }
 
   @override
@@ -119,6 +129,7 @@ class _QuestionCardState extends State<QuestionCard>
     if (oldWidget.request.requestId != widget.request.requestId) {
       _selectedChoices.clear();
       _answerController.clear();
+      _restoreDraft();
     }
   }
 
@@ -127,6 +138,25 @@ class _QuestionCardState extends State<QuestionCard>
     _answerController.dispose();
     super.dispose();
   }
+
+  void _restoreDraft() {
+    final draft = widget.initialDraft;
+    if (draft == null) return;
+    _answerController.text = draft.custom;
+    for (var i = 0; i < widget.request.choices.length; i++) {
+      if (draft.selected.contains(widget.request.choices[i]))
+        _selectedChoices.add(i);
+    }
+  }
+
+  QuestionAnswer get _draft => QuestionAnswer(
+    selected: [
+      for (var i = 0; i < widget.request.choices.length; i++)
+        if (_selectedChoices.contains(i)) widget.request.choices[i],
+    ],
+    custom: _answerController.text,
+  );
+  void _saveDraft() => widget.onDraftChanged?.call(_draft);
 
   String get _answer {
     final parts = <String>[
@@ -137,21 +167,41 @@ class _QuestionCardState extends State<QuestionCard>
     return parts.where((part) => part.isNotEmpty).join('\n');
   }
 
+  bool get _exclusiveAnswer =>
+      widget.onStructuredSubmit != null &&
+      !widget.request.multiSelect &&
+      widget.request.choices.isNotEmpty;
+
   void _toggleChoice(int index) {
     if (widget.busy) return;
     setState(() {
       if (!_selectedChoices.remove(index)) {
         if (!widget.request.multiSelect) _selectedChoices.clear();
         _selectedChoices.add(index);
+        if (_exclusiveAnswer) _answerController.clear();
       }
     });
+    _saveDraft();
   }
 
   void _submit() {
     if (widget.busy) return;
     final answer = _answer;
     if (answer.isEmpty) return;
-    widget.onSubmit(answer);
+    final structured = widget.onStructuredSubmit;
+    if (structured != null) {
+      structured(
+        QuestionAnswer(
+          selected: [
+            for (var i = 0; i < widget.request.choices.length; i++)
+              if (_selectedChoices.contains(i)) widget.request.choices[i],
+          ],
+          custom: _answerController.text,
+        ),
+      );
+    } else {
+      widget.onSubmit(answer);
+    }
   }
 
   Widget _choice(int index) {
@@ -208,14 +258,13 @@ class _QuestionCardState extends State<QuestionCard>
     super.build(context);
     return Container(
       key: const ValueKey('question-card'),
-      margin: const EdgeInsets.only(top: 16),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       decoration: BoxDecoration(
         color: DshPalette.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: DshPalette.line),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -234,7 +283,7 @@ class _QuestionCardState extends State<QuestionCard>
             widget.request.title,
             style: const TextStyle(
               color: DshPalette.ink,
-              fontSize: 16,
+              fontSize: 14.5,
               fontWeight: FontWeight.w600,
               height: 1.35,
             ),
@@ -245,12 +294,12 @@ class _QuestionCardState extends State<QuestionCard>
               widget.request.detail,
               style: const TextStyle(
                 color: DshPalette.inkSoft,
-                fontSize: 14.5,
-                height: 1.55,
+                fontSize: 13,
+                height: 1.45,
               ),
             ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           for (var i = 0; i < widget.request.choices.length; i++) _choice(i),
           if (widget.request.choices.isNotEmpty) const SizedBox(height: 6),
           Row(
@@ -270,9 +319,17 @@ class _QuestionCardState extends State<QuestionCard>
                     decoration: InputDecoration(
                       hintText: widget.request.choices.isEmpty
                           ? '写下你的回答'
+                          : _exclusiveAnswer
+                          ? '或填写其他答案'
                           : '补充想法（可选）',
                     ),
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (value) {
+                      setState(() {
+                        if (_exclusiveAnswer && value.isNotEmpty)
+                          _selectedChoices.clear();
+                      });
+                      _saveDraft();
+                    },
                   ),
                 ),
               ),

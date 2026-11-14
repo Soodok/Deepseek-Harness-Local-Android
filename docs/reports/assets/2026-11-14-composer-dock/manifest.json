@@ -1,0 +1,241 @@
+{
+  "version": "1.6.0-beta.21",
+  "versionCode": 396,
+  "baseCommit": "68057f08b03ce3b53a0f7ac834de9c2b12913cbf",
+  "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+  "source": "Flutter Web release, fixture only; no APK or online engine acceptance",
+  "screenshots": [
+    {
+      "file": "dock-final-main-432.png",
+      "sha256": "6da197432bcaa40dd80f957cd11372ced601d1a6a8d5c185223a84d0c542a6c6",
+      "bytes": 57000,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--draft"
+      ]
+    },
+    {
+      "file": "dock-final-showcase.png",
+      "sha256": "eee30bb3670b672b2a0ba611923405d1e8097d0c1ed54d16daf143b15b680c4a",
+      "bytes": 103931,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase"
+      ]
+    },
+    {
+      "file": "dock-final-collapsed.png",
+      "sha256": "91cb4ded8c2c265a039e8f86f93df5c87a19e166cfb66046397c33c078e7d629",
+      "bytes": 103528,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "dock-final-permissions.png",
+      "sha256": "75f32d3b763e3c744211909783c3551990effa2ef0d19b2dbc9b1eebb21b1802",
+      "bytes": 111814,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--permissions"
+      ]
+    },
+    {
+      "file": "dock-final-subagents.png",
+      "sha256": "c5c42792947253b6ea0c74d70a5a87a20d26f6feed0631dd1b175b6ed51e2a63",
+      "bytes": 83687,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--subagents",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "dock-final-child.png",
+      "sha256": "59c297e5ce17affc0a91890af7dea132ea117cc07e555a15b74b9ecd16c4d7b3",
+      "bytes": 44012,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--subagents",
+        "--child-chat",
+        "--child-send",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "dock-final-main-390.png",
+      "sha256": "0903ff06391dd8c09fa92b638379a0b4b98f889e6e6b65e91d615cf5e423efd7",
+      "bytes": 56151,
+      "width": 390,
+      "height": 960,
+      "viewport": {
+        "width": 390,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 390,
+        "bodyWidth": 390
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=390",
+        "--draft"
+      ]
+    },
+    {
+      "file": "dock-final-main-360.png",
+      "sha256": "51ca913f0f5feb5ad56eb5e1905691ecb0251ff4dd373f4402d48dc602a46830",
+      "bytes": 54756,
+      "width": 360,
+      "height": 960,
+      "viewport": {
+        "width": 360,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 360,
+        "bodyWidth": 360
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=360",
+        "--draft"
+      ]
+    },
+    {
+      "file": "dock-final-thinking.png",
+      "sha256": "cb404b69798ad576cb22f69f8a4a5a39b7978527b86d8ba8e52bd1f9aaf4a6dc",
+      "bytes": 104372,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--thinking",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "dock-final-command.png",
+      "sha256": "9e35052cd6ea92334c562c4c2038379afcd1fada261eb113be002d52c67f3b40",
+      "bytes": 103152,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--command",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "dock-final-code.png",
+      "sha256": "e2b7182daefd980862cc73433b68dd2d813524b1df7501a93ae293c6b10f2576",
+      "bytes": 98750,
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--code",
+        "--semantics"
+      ]
+    }
+  ]
+}

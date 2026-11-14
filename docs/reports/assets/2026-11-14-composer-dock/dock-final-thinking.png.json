@@ -1,0 +1,27 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 432,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 432,
+    "bodyWidth": 432
+  },
+  "url": "http://127.0.0.1:63918/",
+  "output": "E:\\tmp\\native-chat-web-preview\\dock-final-thinking.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data",
+  "bundleSha256": "161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7",
+  "args": [
+    "--width=432",
+    "--showcase",
+    "--settled",
+    "--collapse-question",
+    "--thinking",
+    "--semantics"
+  ],
+  "capturedAt": "2026-11-14T12:33:48.986Z"
+}

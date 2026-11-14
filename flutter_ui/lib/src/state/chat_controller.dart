@@ -29,14 +29,25 @@ class ChatController extends ChangeNotifier {
   final List<PromptAttachment> _attachments = [];
   final List<PromptSubmission> _queuedSubmissions = [];
   String? _modelId;
-  ComposerPermission _permission = ComposerPermission.ask;
+  ComposerPermission _permission = ComposerPermission.workspaceWrite;
   List<ComposerModel> get models => transport is ComposerTransport
       ? List.unmodifiable((transport as ComposerTransport).models)
       : const [];
   bool get supportsComposerOptions => transport is ComposerTransport;
+  bool get supportsAttachments =>
+      supportsComposerOptions &&
+      (transport is! ComposerCapabilities ||
+          (transport as ComposerCapabilities).supportsAttachments);
+  bool supportsPermission(ComposerPermission mode) =>
+      supportsComposerOptions &&
+      (transport is! ComposerCapabilities ||
+          (transport as ComposerCapabilities).permissions.contains(mode));
+  bool get supportsStructuredQuestions =>
+      transport is StructuredQuestionTransport;
   String? get selectedModelId => _modelId;
   String get modelLabel =>
-      models.where((m) => m.id == _modelId).firstOrNull?.label ?? '模型未接入';
+      models.where((m) => m.id == _modelId).firstOrNull?.label ??
+      (supportsComposerOptions ? '当前会话模型' : '模型未接入');
   ComposerPermission get permission => _permission;
   List<PromptAttachment> get attachments => List.unmodifiable(_attachments);
   static const maxFiles = 5;
@@ -48,15 +59,15 @@ class ChatController extends ChangeNotifier {
   }
 
   void selectPermission(ComposerPermission mode) {
-    if (!supportsComposerOptions)
-      throw const TransportException('当前引擎尚未接入权限模式');
+    if (!supportsPermission(mode))
+      throw const TransportException('当前引擎未提供此权限模式，请使用 Web 版查看');
     _permission = mode;
     if (!_disposed) notifyListeners();
   }
 
   void addAttachments(List<PromptAttachment> files) {
     if (_disposed) return;
-    if (!supportsComposerOptions) throw const TransportException('当前引擎尚未接入附件');
+    if (!supportsAttachments) throw const TransportException('当前引擎尚未接入附件');
     final next = [..._attachments, ...files];
     if (next.length > maxFiles ||
         next.fold<int>(0, (sum, f) => sum + f.bytes.length) >
@@ -132,7 +143,7 @@ class ChatController extends ChangeNotifier {
     } else {
       if (submission.attachments.isNotEmpty ||
           submission.modelId != null ||
-          submission.permission != ComposerPermission.ask) {
+          submission.permission != ComposerPermission.workspaceWrite) {
         throw const TransportException('当前引擎不支持模型、附件和权限参数');
       }
       await transport.sendPrompt(submission.text);
@@ -196,6 +207,21 @@ class ChatController extends ChangeNotifier {
     final value = answer.trim();
     if (value.isEmpty || _state.question?.requestId != requestId) return;
     await _submitAction(requestId, () => transport.answer(requestId, value));
+  }
+
+  Future<void> answerQuestion(String requestId, QuestionAnswer answer) async {
+    if (_state.question?.requestId != requestId ||
+        (answer.selected.isEmpty && answer.custom.trim().isEmpty))
+      return;
+    await _submitAction(
+      requestId,
+      () => transport is StructuredQuestionTransport
+          ? (transport as StructuredQuestionTransport).answerQuestion(
+              requestId,
+              answer,
+            )
+          : transport.answer(requestId, answer.plainText),
+    );
   }
 
   Future<void> _submitAction(

@@ -10,12 +10,14 @@ class SessionDrawer extends StatelessWidget {
     super.key,
     this.onNewSession,
     this.onShowcase,
+    this.onOpenEngineSessions,
     this.currentTitle,
     this.isFixture = false,
   });
 
   final VoidCallback? onNewSession;
   final VoidCallback? onShowcase;
+  final VoidCallback? onOpenEngineSessions;
   final String? currentTitle;
   final bool isFixture;
 
@@ -132,6 +134,16 @@ class SessionDrawer extends StatelessWidget {
                 onTap: () {
                   Navigator.of(context).pop();
                   onShowcase!();
+                },
+              ),
+            if (onOpenEngineSessions != null)
+              ListTile(
+                key: const ValueKey('engine-sessions'),
+                leading: const Icon(Icons.hub_outlined),
+                title: const Text('连接本机引擎'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onOpenEngineSessions!();
                 },
               ),
             const Spacer(),

@@ -4,13 +4,20 @@ import '../model/chat_model.dart';
 import '../theme/dsh_theme.dart';
 import '../bridge/host_bridge.dart';
 import 'tool_content_view.dart';
+import 'tool_process_card.dart';
 
 import 'package:flutter/services.dart';
 
 class ToolRunCard extends StatefulWidget {
-  const ToolRunCard({super.key, required this.tool, this.showDivider = false});
+  const ToolRunCard({
+    super.key,
+    required this.tool,
+    this.showDivider = false,
+    this.showPlan = true,
+  });
   final ToolRun tool;
   final bool showDivider;
+  final bool showPlan;
   @override
   State<ToolRunCard> createState() => _ToolRunCardState();
 }
@@ -20,6 +27,25 @@ class _ToolRunCardState extends State<ToolRunCard> {
   ToolRun get tool => widget.tool;
   @override
   Widget build(BuildContext context) {
+    final content = tool.content;
+    if (content != null &&
+        (content.reasoning.isNotEmpty ||
+            content.command != null ||
+            content.edits.isNotEmpty))
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ToolProcessCard(tool: tool),
+          if (content.resources.isNotEmpty ||
+              (widget.showPlan && content.steps.isNotEmpty))
+            ToolContentView(
+              content: content,
+              showPlan: widget.showPlan,
+              showAgents: false,
+              onOpenResource: HostBridge.openResource,
+            ),
+        ],
+      );
     final running = tool.status == ToolStatus.running;
     final color = switch (tool.status) {
       ToolStatus.running => DshPalette.ice,
@@ -67,6 +93,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
                 if (tool.content != null)
                   ToolContentView(
                     content: tool.content!,
+                    showPlan: widget.showPlan,
+                    showAgents: false,
                     onOpenResource: HostBridge.openResource,
                   ),
                 if (detail.isNotEmpty)

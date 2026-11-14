@@ -6,6 +6,7 @@ import '../model/chat_model.dart';
 import '../bridge/host_bridge.dart';
 import 'glass_panel.dart';
 import 'runtime_panel.dart';
+import 'subagent_panel.dart';
 import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
 import 'composer.dart';
@@ -32,12 +33,16 @@ class ChatShell extends StatefulWidget {
     super.key,
     required this.controller,
     this.onOpenWebFallback,
+    this.onOpenEngineSessions,
+    this.onBack,
     this.hostInfo,
     this.disposeController = false,
   });
 
   final ChatController controller;
   final VoidCallback? onOpenWebFallback;
+  final VoidCallback? onOpenEngineSessions;
+  final VoidCallback? onBack;
   final bool disposeController;
   final HostInfo? hostInfo;
 
@@ -80,6 +85,7 @@ class _ChatShellState extends State<ChatShell> {
           backgroundColor: DshPalette.paper,
           drawer: SessionDrawer(
             currentTitle: firstPrompt,
+            onOpenEngineSessions: widget.onOpenEngineSessions,
             onShowcase:
                 widget.controller.transport is FixtureTransport &&
                     state.status == ChatStatus.ready
@@ -88,23 +94,39 @@ class _ChatShellState extends State<ChatShell> {
             isFixture: widget.controller.transport.isFixture,
           ),
           body: SafeArea(
-            child: Column(
-              children: [
-                _TopBar(
-                  controller: widget.controller,
-                  hostInfo: widget.hostInfo,
-                  onOpenWebFallback: widget.onOpenWebFallback,
-                ),
-                if (state.status == ChatStatus.reconnecting ||
-                    state.status == ChatStatus.error)
-                  _ConnectionBanner(
+            child: LayoutBuilder(
+              builder: (context, viewport) => Column(
+                children: [
+                  _TopBar(
                     controller: widget.controller,
-                    status: state.status,
-                    detail: state.error,
+                    hostInfo: widget.hostInfo,
+                    onBack: widget.onBack,
+                    onOpenWebFallback: widget.onOpenWebFallback,
                   ),
-                Expanded(child: MessageList(controller: widget.controller)),
-                Composer(controller: widget.controller),
-              ],
+                  if (state.status == ChatStatus.reconnecting ||
+                      state.status == ChatStatus.error)
+                    _ConnectionBanner(
+                      controller: widget.controller,
+                      status: state.status,
+                      detail: state.error,
+                    ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, remaining) => Column(
+                        children: [
+                          Expanded(
+                            child: MessageList(controller: widget.controller),
+                          ),
+                          Composer(
+                            controller: widget.controller,
+                            availableHeight: remaining.maxHeight,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -117,10 +139,12 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.controller,
     this.hostInfo,
+    this.onBack,
     this.onOpenWebFallback,
   });
   final ChatController controller;
   final HostInfo? hostInfo;
+  final VoidCallback? onBack;
   final VoidCallback? onOpenWebFallback;
   @override
   Widget build(BuildContext context) {
@@ -138,10 +162,13 @@ class _TopBar extends StatelessWidget {
               child: Row(
                 children: [
                   IconButton(
-                    tooltip: '打开会话抽屉',
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                    icon: const Icon(
-                      Icons.menu_rounded,
+                    tooltip: onBack == null ? '打开会话抽屉' : '返回会话列表',
+                    onPressed:
+                        onBack ?? () => Scaffold.of(context).openDrawer(),
+                    icon: Icon(
+                      onBack == null
+                          ? Icons.menu_rounded
+                          : Icons.arrow_back_rounded,
                       size: 23,
                       color: DshPalette.inkSoft,
                     ),
@@ -157,65 +184,85 @@ class _TopBar extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Tooltip(
-                    message: controller.transport.isFixture
-                        ? 'fixture 模式'
-                        : 'engine',
-                    child: KeyedSubtree(
-                      key: const ValueKey('web-fallback'),
-                      child: TextButton(
-                        key: const ValueKey('runtime-selector'),
-                        onPressed: () => showRuntimePanel(
-                          context,
-                          hostInfo: hostInfo,
-                          isFixture: controller.transport.isFixture,
-                          onOpenWebFallback: onOpenWebFallback,
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          minimumSize: const Size(0, 48),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              host.runtimeMode.startsWith('ssh_')
-                                  ? Icons.dns_outlined
-                                  : Icons.terminal_rounded,
-                              size: 18,
-                              color: DshPalette.inkSoft,
-                            ),
-                            const SizedBox(width: 8),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  host.runtimeLabel,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: DshPalette.ink,
-                                  ),
+                  IconButton(
+                    key: const ValueKey('subagent-selector'),
+                    tooltip: '子代理',
+                    onPressed: () =>
+                        showSubagentPanel(context, controller: controller),
+                    icon: const Icon(
+                      Icons.account_tree_outlined,
+                      size: 21,
+                      color: DshPalette.ice,
+                    ),
+                  ),
+                  Flexible(
+                    flex: 2,
+                    child: Tooltip(
+                      message: controller.transport.isFixture
+                          ? 'fixture 模式'
+                          : 'engine',
+                      child: KeyedSubtree(
+                        key: const ValueKey('web-fallback'),
+                        child: TextButton(
+                          key: const ValueKey('runtime-selector'),
+                          onPressed: () => showRuntimePanel(
+                            context,
+                            hostInfo: hostInfo,
+                            isFixture: controller.transport.isFixture,
+                            onOpenWebFallback: onOpenWebFallback,
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            minimumSize: const Size(0, 48),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                host.runtimeMode.startsWith('ssh_')
+                                    ? Icons.dns_outlined
+                                    : Icons.terminal_rounded,
+                                size: 18,
+                                color: DshPalette.inkSoft,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      host.runtimeLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: DshPalette.ink,
+                                      ),
+                                    ),
+                                    Text(
+                                      (controller.transport.isFixture
+                                              ? '演示 · '
+                                              : '') +
+                                          _statusLabel(controller.state.status),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: DshPalette.inkFaint,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  (controller.transport.isFixture
-                                          ? '演示 · '
-                                          : '') +
-                                      _statusLabel(controller.state.status),
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: DshPalette.inkFaint,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(width: 5),
-                            const Icon(
-                              Icons.expand_more_rounded,
-                              size: 15,
-                              color: DshPalette.inkSoft,
-                            ),
-                          ],
+                              ),
+                              const SizedBox(width: 5),
+                              const Icon(
+                                Icons.expand_more_rounded,
+                                size: 15,
+                                color: DshPalette.inkSoft,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

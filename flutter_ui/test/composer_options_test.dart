@@ -93,7 +93,7 @@ void main() {
       await flush();
       final queued = fixture.submissions.last;
       expect(queued.modelId, 'fixture-fast');
-      expect(queued.permission, ComposerPermission.ask);
+      expect(queued.permission, ComposerPermission.workspaceWrite);
       expect(queued.attachments.single.name, 'queued.txt');
       expect(queued.attachments.single.bytes, [7]);
       expect(controller.state.queuedPrompts, isEmpty);

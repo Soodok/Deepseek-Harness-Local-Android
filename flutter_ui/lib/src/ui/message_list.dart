@@ -3,7 +3,6 @@ import 'package:material_ui/material_ui.dart';
 import '../model/chat_model.dart';
 import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
-import 'action_cards.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'tool_run_card.dart';
 
@@ -28,10 +27,24 @@ class MessageList extends StatelessWidget {
     }
 
     final messages = state.messages;
+    final activePlanId = state.tools
+        .where((t) => t.content?.steps.isNotEmpty ?? false)
+        .lastOrNull
+        ?.id;
     final byMessage = <String, List<ToolRun>>{};
     final unbound = <ToolRun>[];
     final ids = messages.map((m) => m.id).toSet();
     for (final tool in state.tools) {
+      final content = tool.content;
+      if (content != null &&
+          (content.steps.isNotEmpty || content.agents.isNotEmpty) &&
+          (content.steps.isEmpty || tool.id == activePlanId) &&
+          tool.detail.isEmpty &&
+          content.resources.isEmpty &&
+          content.command == null &&
+          content.edits.isEmpty &&
+          content.reasoning.isEmpty)
+        continue;
       if (tool.messageId != null && ids.contains(tool.messageId)) {
         byMessage.putIfAbsent(tool.messageId!, () => []).add(tool);
       } else {
@@ -41,7 +54,7 @@ class MessageList extends StatelessWidget {
     Widget toolRow(ToolRun tool) => Padding(
       key: ValueKey('row-tool-' + tool.id),
       padding: const EdgeInsets.only(top: 4, bottom: 4),
-      child: ToolRunCard(tool: tool),
+      child: ToolRunCard(tool: tool, showPlan: tool.id != activePlanId),
     );
     for (final message in messages) {
       children.add(
@@ -53,28 +66,6 @@ class MessageList extends StatelessWidget {
     }
     children.addAll(unbound.map(toolRow));
 
-    if (state.approval != null) {
-      children.add(
-        ApprovalCard(
-          key: ValueKey('approval-' + state.approval!.requestId),
-          request: state.approval!,
-          busy: controller.actionBusy(state.approval!.requestId),
-          onApprove: () => controller.approve(state.approval!.requestId),
-          onStop: controller.stop,
-        ),
-      );
-    }
-    if (state.question != null) {
-      children.add(
-        QuestionCard(
-          key: ValueKey('question-' + state.question!.requestId),
-          request: state.question!,
-          busy: controller.actionBusy(state.question!.requestId),
-          onSubmit: (answer) =>
-              controller.answer(state.question!.requestId, answer),
-        ),
-      );
-    }
     if (state.needsResync) {
       children.add(
         const Padding(

@@ -1,9 +1,13 @@
+import 'dart:async';
+
+import '../model/subagent_model.dart';
 import '../model/chat_model.dart';
 import '../model/tool_content.dart';
 import '../model/composer_model.dart';
 import 'dsh_transport.dart';
 
-class FixtureTransport implements DshTransport, ComposerTransport {
+class FixtureTransport
+    implements DshTransport, ComposerTransport, SubagentTransport {
   FixtureTransport();
   @override
   List<ComposerModel> get models => const [
@@ -174,6 +178,7 @@ class FixtureTransport implements DshTransport, ComposerTransport {
   @override
   Future<void> close() async {
     _connected = false;
+    await _childUpdates.close();
     await _events.close();
   }
 
@@ -192,6 +197,43 @@ class FixtureTransport implements DshTransport, ComposerTransport {
       ),
     );
     final outputs = <(String, String, ToolContent)>[
+      (
+        'thinking',
+        '思考过程',
+        ToolContent(
+          title: '检查思路',
+          reasoning: '先核对数据和调用边界，再分别检查界面和状态更新。这里展示的是公开的过程摘要。',
+        ),
+      ),
+      (
+        'command',
+        '执行命令',
+        ToolContent(
+          title: '运行检查',
+          command: const CommandResult(
+            command: 'flutter analyze',
+            cwd: '/workspace/dsh-mobile',
+            stdout: 'Analyzing dsh_native_chat…\nNo issues found!',
+            exitCode: 0,
+          ),
+        ),
+      ),
+      (
+        'code',
+        '修改代码',
+        ToolContent(
+          title: '更新界面',
+          edits: const [
+            CodeEdit(
+              path: 'lib/chat/composer.dart',
+              language: 'dart',
+              before: 'const gap = 12;',
+              after: 'const gap = 8;',
+              unifiedDiff: '@@ -1 +1 @@\n-const gap = 12;\n+const gap = 8;',
+            ),
+          ],
+        ),
+      ),
       (
         'plan',
         '检查计划',
@@ -216,6 +258,11 @@ class FixtureTransport implements DshTransport, ComposerTransport {
           agents: const [
             AgentTask(
               id: 'review',
+              address: SubagentAddress(
+                parentSessionId: 'fixture-parent',
+                childSessionId: 'review',
+                mode: SubagentMode.continuable,
+              ),
               name: '代码检查',
               task: '检查变更的边界与回归风险',
               status: AgentState.completed,
@@ -223,6 +270,11 @@ class FixtureTransport implements DshTransport, ComposerTransport {
             ),
             AgentTask(
               id: 'docs',
+              address: SubagentAddress(
+                parentSessionId: 'fixture-parent',
+                childSessionId: 'docs',
+                mode: SubagentMode.oneShot,
+              ),
               name: '文档整理',
               task: '整理本轮验证证据',
               status: AgentState.completed,
@@ -310,6 +362,69 @@ class FixtureTransport implements DshTransport, ComposerTransport {
         multiSelect: true,
       ),
     );
+  }
+
+  final _childUpdates = StreamController<SubagentConversation>.broadcast();
+  final Map<String, SubagentConversation> _children = {};
+  final Set<String> _deliveredRequests = {};
+  @override
+  Future<SubagentConversation> readSubagent(SubagentAddress address) async {
+    _ensureConnected();
+    if (address.parentSessionId != 'fixture-parent' ||
+        !['review', 'docs'].contains(address.childSessionId))
+      throw const TransportException('演示子会话不存在');
+    return _children.putIfAbsent(
+      address.childSessionId,
+      () => SubagentConversation(
+        address: address,
+        revision: 0,
+        messages: [
+          SubagentMessage(
+            id: 'task',
+            role: 'user',
+            text: address.childSessionId == 'review'
+                ? '检查变更的边界与回归风险'
+                : '整理本轮验证证据',
+          ),
+          const SubagentMessage(
+            id: 'result',
+            role: 'assistant',
+            text: '演示子会话：已核对任务范围与现有结果。此页面不会执行真实工作。',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Stream<SubagentConversation> watchSubagent(SubagentAddress address) =>
+      _childUpdates.stream.where((value) => value.address == address);
+  @override
+  Future<SubagentReceipt> sendSubagent(
+    SubagentAddress address,
+    String text, {
+    required String requestId,
+  }) async {
+    if (!address.canSend) throw const TransportException('一次性子代理为只读');
+    final old = await readSubagent(address);
+    if (_deliveredRequests.add(requestId)) {
+      final next = SubagentConversation(
+        address: address,
+        revision: old.revision + 1,
+        messages: [
+          ...old.messages,
+          SubagentMessage(id: requestId, role: 'user', text: text),
+          SubagentMessage(
+            id: requestId + '-demo',
+            role: 'assistant',
+            text: '演示回执：已收到补充要求。真实模式将把消息交给该子代理处理。',
+          ),
+        ],
+      );
+      _children[address.childSessionId] = next;
+      _childUpdates.add(next);
+    }
+    return SubagentReceipt(requestId: requestId, delivery: 'queue');
   }
 
   void emitDisconnect() {

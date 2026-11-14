@@ -1,0 +1,220 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.3.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+> Task :gradle:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle:compileKotlin UP-TO-DATE
+> Task :gradle:compileJava NO-SOURCE
+> Task :gradle:compileGroovy NO-SOURCE
+> Task :gradle:pluginDescriptors UP-TO-DATE
+> Task :gradle:processResources UP-TO-DATE
+> Task :gradle:classes UP-TO-DATE
+> Task :gradle:jar UP-TO-DATE
+
+> Configure project :flutter
+Warning: Flutter support for your project's Gradle version (9.3.1) will soon be dropped. Please upgrade your Gradle version to a version of at least 9.5.0 soon.
+Alternatively, use the flag "--android-skip-build-dependency-validation" to bypass this check.
+
+Potential fix: Your project's gradle version is typically defined in the gradle wrapper file. By default, this can be found at E:\tmp\wt-flutter-native-chat/gradle/wrapper/gradle-wrapper.properties.
+For more information, see https://docs.gradle.org/current/userguide/gradle_wrapper.html.
+
+Warning: Flutter support for your project's Android Gradle Plugin version (Android Gradle Plugin version 9.1.1) will soon be dropped. Please upgrade your Android Gradle Plugin version to a version of at least Android Gradle Plugin version 9.3.1 soon.
+Alternatively, use the flag "--android-skip-build-dependency-validation" to bypass this check.
+
+Potential fix: Your project's AGP version is typically defined in the plugins block of the `settings.gradle` file (E:\tmp\wt-flutter-native-chat/settings.gradle), by a plugin with the id of com.android.application.
+If you don't see a plugins block, your project was likely created with an older template version. In this case it is most likely defined in the top-level build.gradle file (E:\tmp\wt-flutter-native-chat/build.gradle) by the following line in the dependencies block of the buildscript: "classpath 'com.android.tools.build:gradle:<version>'".
+
+
+> Configure project :app
+w: file:///E:/tmp/wt-flutter-native-chat/app/build.gradle.kts:296:39: 'fun srcDir(srcDir: Any): Any' is deprecated. Use `directories` mutable set instead.
+w: file:///E:/tmp/wt-flutter-native-chat/app/build.gradle.kts:298:41: 'fun srcDir(srcDir: Any): Any' is deprecated. Use `directories` mutable set instead.
+w: file:///E:/tmp/wt-flutter-native-chat/app/build.gradle.kts:300:38: 'fun srcDir(srcDir: Any): Any' is deprecated. Use `directories` mutable set instead.
+⚠️ 未配置共享 debug 签名密钥，本次 debug 包使用本机默认 key（无法覆盖 edge/preview 包）。配置方法见 docs/RELEASE.md §3。
+
+> Task :app:generateIndexPubKey
+index pubkey: none (cloud runtime updates disabled for this build)
+
+> Task :app:generateRepoConfig
+
+> Task :app:prepareRuntimeAssets
+runtime: noruntime package — no runtime.zip embedded
+hardssh: no bundle at E:\tmp\wt-flutter-native-chat\app\src\main\assets\hardssh; SSH workspace will be unavailable
+mobile-layout: embedded E:\tmp\wt-flutter-native-chat\vendor\mobile-layout
+solution-explorer: no tgz bundle (searched -, E:\tmp\wt-flutter-native-chat\local-overrides\solution-explorer, E:\tmp\wt-flutter-native-chat\vendor\solution-explorer, E:\tmp\wt-flutter-native-chat\app\src\main\assets\solution-explorer); this profile plugin will not be preinstalled
+manifest: E:\tmp\wt-flutter-native-chat\app\build\generated\runtimeAssets\runtime\MANIFEST.json (package=noruntime, abi=arm64-v8a)
+
+> Task :app:preBuild
+> Task :app:preDebugBuild
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :file_selector_android:preBuild UP-TO-DATE
+> Task :file_selector_android:preDebugBuild UP-TO-DATE
+> Task :file_selector_android:processDebugNavigationResources
+> Task :flutter:validateCompileSdkVersion
+> Task :flutter:preBuild
+> Task :flutter:preDebugBuild
+> Task :flutter:processDebugNavigationResources
+> Task :app:processDebugNavigationResources FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:processDebugNavigationResources'.
+> Could not resolve all files for configuration ':app:debugRuntimeClasspath'.
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find org.jetbrains.kotlin:kotlin-stdlib:2.4.10.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/org/jetbrains/kotlin/kotlin-stdlib/2.4.10/kotlin-stdlib-2.4.10.pom
+        Required by:
+            project ':app'
+            project ':app' > project :flutter
+            project ':app' > project :flutter > project :file_selector_android
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/org/jetbrains/kotlinx/kotlinx-coroutines-android/1.8.1/kotlinx-coroutines-android-1.8.1.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find org.tukaani:xz:1.10.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/org/tukaani/xz/1.10/xz-1.10.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find dev.rikka.shizuku:api:13.1.5.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/dev/rikka/shizuku/api/13.1.5/api-13.1.5.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find dev.rikka.shizuku:provider:13.1.5.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/dev/rikka/shizuku/provider/13.1.5/provider-13.1.5.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find dev.rikka.shizuku:aidl:13.1.5.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/dev/rikka/shizuku/aidl/13.1.5/aidl-13.1.5.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find org.java-websocket:Java-WebSocket:1.6.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/org/java-websocket/Java-WebSocket/1.6.0/Java-WebSocket-1.6.0.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find org.apache.sshd:sshd-core:2.14.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/org/apache/sshd/sshd-core/2.14.0/sshd-core-2.14.0.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find net.i2p.crypto:eddsa:0.3.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/net/i2p/crypto/eddsa/0.3.0/eddsa-0.3.0.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find com.google.mlkit:text-recognition-chinese:16.0.1.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/com/google/mlkit/text-recognition-chinese/16.0.1/text-recognition-chinese-16.0.1.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find com.termux.termux-app:terminal-view:0.118.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/com/termux/termux-app/terminal-view/0.118.0/terminal-view-0.118.0.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find com.google.android.material:material:1.12.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/com/google/android/material/material/1.12.0/material-1.12.0.pom
+        Required by:
+            project ':app'
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.lifecycle:lifecycle-common:2.7.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.lifecycle:lifecycle-common-java8:2.7.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.lifecycle:lifecycle-process:2.7.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.lifecycle:lifecycle-runtime:2.7.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.fragment:fragment:1.7.1.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/fragment/fragment/1.7.1/fragment-1.7.1.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.annotation:annotation:1.10.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/annotation/annotation/1.10.0/annotation-1.10.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.tracing:tracing:1.2.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/tracing/tracing/1.2.0/tracing-1.2.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.core:core:1.13.1.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/core/core/1.13.1/core-1.13.1.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.window:window-java:1.2.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/window/window-java/1.2.0/window-java-1.2.0.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find com.getkeepsafe.relinker:relinker:1.4.5.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.exifinterface:exifinterface:1.4.1.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.pom
+        Required by:
+            project ':app' > project :flutter > io.flutter:flutter_embedding_debug:1.0.0-371f77202a73e8dff57a8b3bff75bca55c090aee
+   > Could not resolve all dependencies for configuration ':app:debugRuntimeClasspath'.
+      > Could not find androidx.annotation:annotation:1.10.0.
+        Searched in the following locations:
+          - https://storage.googleapis.com/download.flutter.io/androidx/annotation/annotation/1.10.0/annotation-1.10.0.pom
+        Required by:
+            project ':app' > project :flutter > project :file_selector_android
+
+* Try:
+> The project declares repositories, effectively ignoring the repositories you have declared in the settings.
+   To determine how project repositories are declared, configure your build to fail on project repositories.
+   For more information, please refer to https://docs.gradle.org/9.3.1/userguide/declaring_repositories.html#sub:fail_build_on_project_repositories in the Gradle documentation.
+> If the artifact you are trying to retrieve can be found in the repository but without metadata in 'Maven POM' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m
+13 actionable tasks: 9 executed, 4 up-to-date

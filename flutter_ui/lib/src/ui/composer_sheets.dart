@@ -108,18 +108,27 @@ Future<void> _show(
                       (mode) => _Choice(
                         key: ValueKey('permission-option-' + mode.name),
                         leading: DshPermissionIcon(
-                          glyph: mode == ComposerPermission.readOnly
-                              ? DshPermissionGlyph.readOnly
-                              : DshPermissionGlyph.fullAccess,
+                          glyph: switch (mode) {
+                            ComposerPermission.readOnly =>
+                              DshPermissionGlyph.readOnly,
+                            ComposerPermission.workspaceWrite =>
+                              DshPermissionGlyph.workspaceWrite,
+                            ComposerPermission.fullAccess =>
+                              DshPermissionGlyph.fullAccess,
+                          },
                           size: 20,
                         ),
                         title: mode.label,
-                        detail: mode.description,
+                        detail: controller.supportsPermission(mode)
+                            ? mode.description
+                            : '当前引擎未提供此模式，请使用 Web 版查看。',
                         selected: controller.permission == mode,
-                        onTap: () {
-                          controller.selectPermission(mode);
-                          Navigator.of(sheetContext).pop();
-                        },
+                        onTap: !controller.supportsPermission(mode)
+                            ? null
+                            : () {
+                                controller.selectPermission(mode);
+                                Navigator.of(sheetContext).pop();
+                              },
                       ),
                     ),
                 ],
@@ -143,7 +152,7 @@ class _Choice extends StatelessWidget {
   });
   final String title, detail;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget? leading;
   @override
   Widget build(BuildContext context) => Padding(
@@ -155,6 +164,7 @@ class _Choice extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: ListTile(
         selected: selected,
+        enabled: onTap != null,
         leading: leading,
         selectedColor: DshPalette.ink,
         onTap: onTap,

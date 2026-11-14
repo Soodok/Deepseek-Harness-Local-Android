@@ -10,9 +10,13 @@ class ToolContentView extends StatelessWidget {
     super.key,
     required this.content,
     this.onOpenResource,
+    this.showPlan = true,
+    this.showAgents = true,
   });
 
   final ToolContent content;
+  final bool showPlan;
+  final bool showAgents;
   final Future<bool> Function(OutputResource)? onOpenResource;
 
   @override
@@ -28,8 +32,9 @@ class ToolContentView extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(content.title, style: _titleStyle),
             ),
-          if (content.steps.isNotEmpty) _PlanView(steps: content.steps),
-          for (final agent in content.agents)
+          if (showPlan && content.steps.isNotEmpty)
+            _PlanView(steps: content.steps),
+          for (final agent in showAgents ? content.agents : const <AgentTask>[])
             _AgentView(key: ValueKey('agent-' + agent.id), agent: agent),
           for (final resource in content.resources)
             _ResourceView(

@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'src/bridge/host_bridge.dart';
+import 'src/bridge/engine_sessions_stub.dart'
+    if (dart.library.io) 'src/bridge/engine_sessions_native.dart';
 import 'src/state/chat_controller.dart';
 import 'src/theme/dsh_theme.dart';
 import 'src/transport/fixture_transport.dart';
@@ -53,17 +55,24 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
       title: 'DSH',
       theme: DshTheme.light(),
       debugShowCheckedModeBanner: false,
-      home: ChatShell(
-        controller: _controller,
-        hostInfo: _hostInfo,
-        onOpenWebFallback: () async {
-          final opened = await HostBridge.openWebFallback();
-          if (!opened && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Web 版入口由 Android HostBridge 提供。')),
-            );
-          }
-        },
+      home: Builder(
+        builder: (context) => ChatShell(
+          controller: _controller,
+          hostInfo: _hostInfo,
+          onOpenEngineSessions: _hostInfo?.available == true
+              ? () => showEngineSessions(context, _hostInfo!)
+              : null,
+          onOpenWebFallback: () async {
+            final opened = await HostBridge.openWebFallback();
+            if (!opened && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Web 版入口由 Android HostBridge 提供。'),
+                ),
+              );
+            }
+          },
+        ),
       ),
     );
   }

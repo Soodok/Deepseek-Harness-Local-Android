@@ -21,6 +21,7 @@ enum ChatEventKind {
   toolUpdated,
   approval,
   question,
+  actionWithdrawn,
   turnComplete,
   disconnected,
   error,
@@ -93,6 +94,17 @@ class ToolRun {
   );
 }
 
+class QuestionAnswer {
+  QuestionAnswer({List<String> selected = const [], this.custom = ''})
+    : selected = List.unmodifiable(selected);
+  final List<String> selected;
+  final String custom;
+  String get plainText => [
+    ...selected,
+    if (custom.isNotEmpty) custom,
+  ].join(String.fromCharCode(10));
+}
+
 class ActionRequest {
   const ActionRequest({
     required this.requestId,
@@ -100,6 +112,7 @@ class ActionRequest {
     required this.detail,
     this.choices = const [],
     this.multiSelect = false,
+    this.draftKey,
   });
 
   final String requestId;
@@ -107,6 +120,7 @@ class ActionRequest {
   final String detail;
   final List<String> choices;
   final bool multiSelect;
+  final String? draftKey;
 }
 
 class ChatEvent {
@@ -129,7 +143,19 @@ class ChatEvent {
     this.content,
     this.choices = const [],
     this.multiSelect = false,
+    this.draftKey,
   });
+
+  const ChatEvent.actionWithdrawn({
+    required int generation,
+    required int sequence,
+    required String requestId,
+  }) : this._(
+         kind: ChatEventKind.actionWithdrawn,
+         generation: generation,
+         sequence: sequence,
+         requestId: requestId,
+       );
 
   const ChatEvent.snapshot({
     required int generation,
@@ -231,10 +257,12 @@ class ChatEvent {
     required String detail,
     List<String> choices = const [],
     bool multiSelect = false,
+    String? draftKey,
   }) : this._(
          kind: ChatEventKind.question,
          choices: choices,
          multiSelect: multiSelect,
+         draftKey: draftKey,
          generation: generation,
          sequence: sequence,
          requestId: requestId,
@@ -285,4 +313,5 @@ class ChatEvent {
   final ToolContent? content;
   final List<String> choices;
   final bool multiSelect;
+  final String? draftKey;
 }

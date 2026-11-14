@@ -17,7 +17,13 @@ class ChatReducer {
         }
       }
       return ChatState(
-        status: ChatStatus.ready,
+        status:
+            event.generation == state.generation &&
+                (state.approval != null || state.question != null)
+            ? ChatStatus.waitingAction
+            : ChatStatus.ready,
+        approval: event.generation == state.generation ? state.approval : null,
+        question: event.generation == state.generation ? state.question : null,
         generation: event.generation,
         nextSequence: event.sequence + 1,
         messages: event.messages,
@@ -66,7 +72,6 @@ class ChatReducer {
         );
       case ChatEventKind.toolFinished:
         next = next.copyWith(
-          clearApproval: true,
           tools: next.tools
               .map(
                 (tool) => tool.id == event.toolId
@@ -99,9 +104,26 @@ class ChatReducer {
             detail: event.detail!,
             choices: List.unmodifiable(event.choices),
             multiSelect: event.multiSelect,
+            draftKey: event.draftKey,
           ),
           clearApproval: true,
         );
+      case ChatEventKind.actionWithdrawn:
+        next = next.copyWith(
+          clearApproval: next.approval?.requestId == event.requestId,
+          clearQuestion: next.question?.requestId == event.requestId,
+        );
+        if (next.approval == null &&
+            next.question == null &&
+            next.status == ChatStatus.waitingAction) {
+          next = next.copyWith(
+            status:
+                next.tools.any((t) => t.status == ToolStatus.running) ||
+                    next.messages.any((m) => m.isStreaming)
+                ? ChatStatus.streaming
+                : ChatStatus.ready,
+          );
+        }
       case ChatEventKind.turnComplete:
         next = next.copyWith(
           messages: next.messages

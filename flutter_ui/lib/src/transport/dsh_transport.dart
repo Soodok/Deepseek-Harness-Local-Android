@@ -15,6 +15,10 @@ abstract interface class DshTransport {
   Future<void> close();
 }
 
+abstract interface class StructuredQuestionTransport {
+  Future<void> answerQuestion(String requestId, QuestionAnswer answer);
+}
+
 class TransportException implements Exception {
   const TransportException(this.message);
 

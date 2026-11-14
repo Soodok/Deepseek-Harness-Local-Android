@@ -34,9 +34,11 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('composer-send')));
     await tester.pump();
+    await tester.ensureVisible(find.byKey(const ValueKey('approval-approve')));
+    expect(find.text('允许继续读取吗？'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('approval-approve')),
-      180,
+      find.text('读取项目状态'),
+      160,
       scrollable: find
           .descendant(
             of: find.byKey(const ValueKey('conversation-list')),
@@ -44,20 +46,10 @@ void main() {
           )
           .first,
     );
-    expect(find.text('允许继续读取吗？'), findsOneWidget);
     expect(find.text('读取项目状态'), findsOneWidget);
     expect(find.byKey(const ValueKey('approval-approve')), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('approval-approve')),
-      240,
-      scrollable: find
-          .descendant(
-            of: find.byType(ListView).first,
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
+    await tester.ensureVisible(find.byKey(const ValueKey('approval-approve')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('approval-approve')));
     await tester.pump();
@@ -66,16 +58,7 @@ void main() {
 
     transport.emitQuestion();
     await tester.pump();
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('question-input')),
-      180,
-      scrollable: find
-          .descendant(
-            of: find.byKey(const ValueKey('conversation-list')),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
+    await tester.ensureVisible(find.byKey(const ValueKey('question-input')));
     expect(find.text('接下来想看什么？'), findsOneWidget);
     expect(find.byKey(const ValueKey('question-input')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const ValueKey('question-input')));

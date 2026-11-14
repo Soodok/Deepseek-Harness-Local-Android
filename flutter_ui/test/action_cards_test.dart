@@ -23,6 +23,70 @@ Future<void> _pumpCard(WidgetTester tester, Widget card) async {
 }
 
 void main() {
+  testWidgets(
+    'native single choice treats custom text as an alternative answer',
+    (tester) async {
+      final replies = <QuestionAnswer>[];
+      await _pumpCard(
+        tester,
+        QuestionCard(
+          request: const ActionRequest(
+            requestId: 'single-native',
+            title: 'Choose',
+            detail: '',
+            choices: ['Alpha', 'Beta'],
+          ),
+          onSubmit: (_) {},
+          onStructuredSubmit: replies.add,
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('question-choice-0')));
+      await tester.enterText(find.byKey(_inputKey), 'Gamma');
+      await tester.pump();
+      await tester.tap(find.byKey(_submitKey));
+      expect(replies.last.selected, isEmpty);
+      expect(replies.last.custom, 'Gamma');
+      await tester.tap(find.byKey(const ValueKey('question-choice-1')));
+      await tester.pump();
+      await tester.tap(find.byKey(_submitKey));
+      expect(replies.last.selected, ['Beta']);
+      expect(replies.last.custom, isEmpty);
+      expect(
+        tester.widget<TextField>(find.byKey(_inputKey)).controller!.text,
+        isEmpty,
+      );
+    },
+  );
+
+  testWidgets(
+    'structured reply keeps labels and custom text in separate fields',
+    (tester) async {
+      final legacy = <String>[];
+      final typed = <QuestionAnswer>[];
+      await _pumpCard(
+        tester,
+        QuestionCard(
+          request: const ActionRequest(
+            requestId: 'native',
+            title: 'Which?',
+            detail: '',
+            choices: ['Alpha', 'Beta'],
+            multiSelect: true,
+          ),
+          onSubmit: legacy.add,
+          onStructuredSubmit: typed.add,
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('question-choice-0')));
+      await tester.enterText(find.byKey(_inputKey), 'and Gamma');
+      await tester.pump();
+      await tester.tap(find.byKey(_submitKey));
+      expect(legacy, isEmpty);
+      expect(typed.single.selected, ['Alpha']);
+      expect(typed.single.custom, 'and Gamma');
+    },
+  );
+
   testWidgets('free text is trimmed and an empty answer cannot submit', (
     tester,
   ) async {

@@ -1,0 +1,103 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.3.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+> Task :gradle:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle:pluginDescriptors UP-TO-DATE
+> Task :gradle:processResources UP-TO-DATE
+
+> Task :gradle:compileKotlin
+w: file:///E:/tools/flutter/packages/flutter_tools/gradle/src/main/kotlin/Deeplink.kt:13:5 This annotation is currently applied to the value parameter only, but in the future it will also be applied to property.
+- To opt in to applying to both value parameter and property, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///E:/tools/flutter/packages/flutter_tools/gradle/src/main/kotlin/Deeplink.kt:15:5 This annotation is currently applied to the value parameter only, but in the future it will also be applied to property.
+- To opt in to applying to both value parameter and property, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///E:/tools/flutter/packages/flutter_tools/gradle/src/main/kotlin/Deeplink.kt:17:5 This annotation is currently applied to the value parameter only, but in the future it will also be applied to property.
+- To opt in to applying to both value parameter and property, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///E:/tools/flutter/packages/flutter_tools/gradle/src/main/kotlin/Deeplink.kt:19:5 This annotation is currently applied to the value parameter only, but in the future it will also be applied to property.
+- To opt in to applying to both value parameter and property, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///E:/tools/flutter/packages/flutter_tools/gradle/src/main/kotlin/FlutterPluginUtils.kt:777:29 Condition is always 'true'.
+
+> Task :gradle:compileJava NO-SOURCE
+> Task :gradle:compileGroovy NO-SOURCE
+> Task :gradle:classes UP-TO-DATE
+> Task :gradle:jar UP-TO-DATE
+
+> Configure project :flutter
+Warning: Flutter support for your project's Gradle version (9.3.1) will soon be dropped. Please upgrade your Gradle version to a version of at least 9.5.0 soon.
+Alternatively, use the flag "--android-skip-build-dependency-validation" to bypass this check.
+
+Potential fix: Your project's gradle version is typically defined in the gradle wrapper file. By default, this can be found at E:\tmp\wt-flutter-native-chat/gradle/wrapper/gradle-wrapper.properties.
+For more information, see https://docs.gradle.org/current/userguide/gradle_wrapper.html.
+
+Warning: Flutter support for your project's Android Gradle Plugin version (Android Gradle Plugin version 9.1.1) will soon be dropped. Please upgrade your Android Gradle Plugin version to a version of at least Android Gradle Plugin version 9.3.1 soon.
+Alternatively, use the flag "--android-skip-build-dependency-validation" to bypass this check.
+
+Potential fix: Your project's AGP version is typically defined in the plugins block of the `settings.gradle` file (E:\tmp\wt-flutter-native-chat/settings.gradle), by a plugin with the id of com.android.application.
+If you don't see a plugins block, your project was likely created with an older template version. In this case it is most likely defined in the top-level build.gradle file (E:\tmp\wt-flutter-native-chat/build.gradle) by the following line in the dependencies block of the buildscript: "classpath 'com.android.tools.build:gradle:<version>'".
+
+Build was configured to prefer settings repositories over project repositories but repository 'maven' was added by plugin 'dev.flutter.flutter-gradle-plugin'
+Build was configured to prefer settings repositories over project repositories but repository 'maven' was added by plugin 'dev.flutter.flutter-gradle-plugin'
+Build was configured to prefer settings repositories over project repositories but repository 'maven' was added by plugin 'dev.flutter.flutter-gradle-plugin'
+Build was configured to prefer settings repositories over project repositories but repository 'maven' was added by plugin 'dev.flutter.flutter-gradle-plugin'
+
+> Configure project :app
+w: file:///E:/tmp/wt-flutter-native-chat/app/build.gradle.kts:296:39: 'fun srcDir(srcDir: Any): Any' is deprecated. Use `directories` mutable set instead.
+w: file:///E:/tmp/wt-flutter-native-chat/app/build.gradle.kts:298:41: 'fun srcDir(srcDir: Any): Any' is deprecated. Use `directories` mutable set instead.
+w: file:///E:/tmp/wt-flutter-native-chat/app/build.gradle.kts:300:38: 'fun srcDir(srcDir: Any): Any' is deprecated. Use `directories` mutable set instead.
+⚠️ 未配置共享 debug 签名密钥，本次 debug 包使用本机默认 key（无法覆盖 edge/preview 包）。配置方法见 docs/RELEASE.md §3。
+
+> Configure project :file_selector_android
+Build was configured to prefer settings repositories over project repositories but repository 'Google' was added by build file 'C:\Users\Qt\AppData\Local\Pub\Cache\hosted\pub.dev\file_selector_android-0.5.2+11\android\build.gradle.kts'
+Build was configured to prefer settings repositories over project repositories but repository 'MavenRepo' was added by build file 'C:\Users\Qt\AppData\Local\Pub\Cache\hosted\pub.dev\file_selector_android-0.5.2+11\android\build.gradle.kts'
+
+> Task :app:generateIndexPubKey
+index pubkey: none (cloud runtime updates disabled for this build)
+
+> Task :app:generateRepoConfig
+
+> Task :app:prepareRuntimeAssets
+runtime: noruntime package — no runtime.zip embedded
+hardssh: no bundle at E:\tmp\wt-flutter-native-chat\app\src\main\assets\hardssh; SSH workspace will be unavailable
+mobile-layout: embedded E:\tmp\wt-flutter-native-chat\vendor\mobile-layout
+solution-explorer: no tgz bundle (searched -, E:\tmp\wt-flutter-native-chat\local-overrides\solution-explorer, E:\tmp\wt-flutter-native-chat\vendor\solution-explorer, E:\tmp\wt-flutter-native-chat\app\src\main\assets\solution-explorer); this profile plugin will not be preinstalled
+manifest: E:\tmp\wt-flutter-native-chat\app\build\generated\runtimeAssets\runtime\MANIFEST.json (package=noruntime, abi=arm64-v8a)
+
+> Task :app:preBuild
+> Task :app:preDebugBuild
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :file_selector_android:preBuild UP-TO-DATE
+> Task :file_selector_android:preDebugBuild UP-TO-DATE
+> Task :file_selector_android:processDebugNavigationResources UP-TO-DATE
+> Task :flutter:validateCompileSdkVersion
+> Task :flutter:preBuild
+> Task :flutter:preDebugBuild
+> Task :flutter:processDebugNavigationResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :file_selector_android:generateDebugResources UP-TO-DATE
+> Task :file_selector_android:packageDebugResources UP-TO-DATE
+> Task :file_selector_android:parseDebugLocalResources UP-TO-DATE
+> Task :file_selector_android:generateDebugRFile UP-TO-DATE
+> Task :file_selector_android:javaPreCompileDebug UP-TO-DATE
+> Task :flutter:generateDebugResources UP-TO-DATE
+> Task :flutter:packageDebugResources UP-TO-DATE
+> Task :flutter:parseDebugLocalResources UP-TO-DATE
+> Task :flutter:generateDebugRFile UP-TO-DATE
+> Task :flutter:javaPreCompileDebug UP-TO-DATE
+> Task :file_selector_android:compileDebugKotlin
+> Task :file_selector_android:compileDebugJavaWithJavac
+> Task :file_selector_android:bundleLibCompileToJarDebug
+> Task :flutter:compileDebugKotlin NO-SOURCE
+> Task :flutter:compileDebugJavaWithJavac

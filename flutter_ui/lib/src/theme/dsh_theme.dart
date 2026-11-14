@@ -4,22 +4,22 @@ import 'package:material_ui/material_ui.dart';
 class DshPalette {
   const DshPalette._();
 
-  static const ink = Color(0xFFECECEC);
-  static const inkSoft = Color(0xFFA5A5A5);
-  static const inkFaint = Color(0xFF969696);
-  static const paper = Color(0xFF141414);
-  static const paperDeep = Color(0xFF1B1B1B);
-  static const surface = Color(0xFF202020);
-  static const surfaceRaised = Color(0xFF292929);
-  static const line = Color(0xFF414141);
-  static const ice = Color(0xFFECECEC);
+  static const ink = Color(0xFFE3ECEA);
+  static const inkSoft = Color(0xFFA8B8B8);
+  static const inkFaint = Color(0xFF93A4A6);
+  static const paper = Color(0xFF0F1517);
+  static const paperDeep = Color(0xFF0B1012);
+  static const surface = Color(0xFF172023);
+  static const surfaceRaised = Color(0xFF1E2A2D);
+  static const line = Color(0xFF2A383C);
+  static const ice = Color(0xFF7DB6D6);
   static const sendBlue = Color(0xFF3B82F6);
   static const sendBlueMuted = Color(0xFF203B62);
-  static const iceDeep = Color(0xFFC5C5C5);
-  static const userWash = Color(0xFF2B2B2B);
+  static const iceDeep = Color(0xFF7DB6D6);
+  static const userWash = Color(0xFF1A2B2E);
   static const good = Color(0xFF6FCB9A);
-  static const warn = Color(0xFFE0A15A);
-  static const bad = Color(0xFFE07A72);
+  static const warn = Color(0xFFE6B45A);
+  static const bad = Color(0xFFE6877D);
 }
 
 class DshTheme {
@@ -34,7 +34,7 @@ class DshTheme {
           brightness: Brightness.dark,
         ).copyWith(
           primary: DshPalette.ice,
-          onPrimary: const Color(0xFF141414),
+          onPrimary: const Color(0xFF0F1517),
           surface: paper,
           onSurface: ink,
         );
@@ -80,7 +80,7 @@ class DshTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: DshPalette.ice,
-          foregroundColor: const Color(0xFF141414),
+          foregroundColor: const Color(0xFF0F1517),
           minimumSize: const Size(64, 48),
           padding: const EdgeInsets.symmetric(horizontal: 18),
           textStyle: const TextStyle(
@@ -192,7 +192,7 @@ class _DshMarkPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(s * 0.66, s * 0.45),
       s * 0.035,
-      Paint()..color = const Color(0xFF141414),
+      Paint()..color = const Color(0xFF0F1517),
     );
   }
 

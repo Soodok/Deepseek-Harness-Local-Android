@@ -1,3 +1,5 @@
+import 'subagent_model.dart';
+
 /// Structured UI output, independent of an engine wire schema.
 enum StepState { pending, running, completed, failed, cancelled }
 
@@ -23,7 +25,9 @@ class AgentTask {
     required this.task,
     this.status = AgentState.running,
     this.detail = '',
+    this.address,
   });
+  final SubagentAddress? address;
   final String id;
   final String name;
   final String task;
@@ -61,16 +65,46 @@ class OutputResource {
   }
 }
 
+class CommandResult {
+  const CommandResult({
+    required this.command,
+    this.cwd = '',
+    this.stdout = '',
+    this.stderr = '',
+    this.exitCode,
+  });
+  final String command, cwd, stdout, stderr;
+  final int? exitCode;
+}
+
+class CodeEdit {
+  const CodeEdit({
+    required this.path,
+    this.before = '',
+    this.after = '',
+    this.unifiedDiff = '',
+    this.language = '',
+  });
+  final String path, before, after, unifiedDiff, language;
+}
+
 class ToolContent {
   ToolContent({
     required this.title,
+    this.reasoning = '',
+    this.command,
+    List<CodeEdit> edits = const [],
     List<PlanStep> steps = const [],
     List<AgentTask> agents = const [],
     List<OutputResource> resources = const [],
-  }) : steps = List.unmodifiable(steps),
+  }) : edits = List.unmodifiable(edits),
+       steps = List.unmodifiable(steps),
        agents = List.unmodifiable(agents),
        resources = List.unmodifiable(resources);
   final String title;
+  final String reasoning;
+  final CommandResult? command;
+  final List<CodeEdit> edits;
   final List<PlanStep> steps;
   final List<AgentTask> agents;
   final List<OutputResource> resources;

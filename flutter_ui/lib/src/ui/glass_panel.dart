@@ -31,7 +31,7 @@ class GlassPanel extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xE6353535), Color(0xEE202020)],
+              colors: [Color(0xEC263337), Color(0xF2172023)],
             ),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(

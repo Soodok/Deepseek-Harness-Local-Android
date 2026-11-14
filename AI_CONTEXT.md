@@ -1,5 +1,16 @@
 # DSH Android · 交接文档
 
+## 输入坞、子会话与执行过程迭代（2026-11-14 20:37，已验证并归档）
+
+- 隔离目录 E:/tmp/wt-flutter-native-chat，分支 feat/flutter-native-chat，基线 68057f08b03ce3b53a0f7ac834de9c2b12913cbf；主仓库未写入。
+- Claude Code协作提供Ink、Ember、Indigo、Paper四套概念；实际Flutter采用Ink、分色工具摘要与蓝色发送。三档权限、输入框上方计划/问题/审批、两秒后260ms收起、子代理目录/续聊、思考/命令/差异已实现。
+- DSH 0.2.2-rc.2真实契约接线：Cookie交换、unary/mux、session/follow、子会话直接父子地址、owner $events与结构化答复；实际loopback覆盖取消、重连、送达与状态恢复。未使用桌面DSH凭据或发送在线任务。Android显式入口enableInteractions=true，默认仍fixture。
+- 两轮独立只读审查共7个问题均有效红测后修复：发送锁、历史计划、小屏错误横幅、减少动效、无关toolFinished审批锁、重连草稿、单选契约。最终214项测试通过（64s），analyze无问题（29.6s），job bash-dc39e5cef8354de8退出0，之后Dart未再改动。
+- beta.21/code396最终Web release退出0（74.3s），主bundle SHA256 161ce360e3b4212bb8659b573f4cbd72d4844a7a5887c1c575f241008062d7a7。11张实际PNG与同bundle旁证、三档宽360/390/432、实际子会话发送/过程展开、哈希清单归档docs/reports/assets/2026-11-14-composer-dock；画廊index.html与配色HTML可独立审阅。
+- Android根Flutter插件classpath、仓库优先级已修正，未改PubCache；beta.19因C/E跨盘Kotlin增量缓存失败。beta.20命令级关闭增量后插件Kotlin/Java通过，后续远程artifact下载停滞，11分35秒有界终止。CLI25012/daemon39832已退出，其他会话进程未停止。不能声称Android编译成功。
+- 验证报告docs/reports/2026-11-14-composer-dock-validation.md含真实接线及回退边界。多问题/计时/question.intent专属决定转Web，原生附件禁用；APK、真机、在线引擎、性能帧率仍未验收。下一项独立工作是恢复依赖下载并完成Android构建/真机在线验收。
+
+
 ## 当前隔离 Flutter 迭代（2026-11-14 16:12）
 
 - 工作范围 E:/tmp/wt-flutter-native-chat，分支 feat/flutter-native-chat，起始 HEAD 545f2a130d1ee1c45eb7aa7400eeb154814728f9。当前声明 beta.16/code391，未安装或发布 APK。
