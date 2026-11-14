@@ -1680,8 +1680,12 @@
     <string name="island_side_no_plugins">Плагины пока не установлены</string>
     <string name="island_side_plugin_count">установлено: %1$d</string>
     <string name="island_dock_switched">Док: %1$s</string>
-    <string name="setting_island_dock">Положение панели состояния</string>
-    <string name="setting_island_dock_sub">Выберите край экрана для панели состояния</string>
+    <string name="setting_island_dock">Панель состояния</string>
+    <string name="setting_island_dock_sub">Выберите остров или панель инструментов и положение</string>
+    <string name="setting_island_dock_island">Остров</string>
+    <string name="setting_island_dock_toolbar">Панель инструментов</string>
+    <string name="setting_island_dock_position">Положение острова</string>
+    <string name="setting_island_dock_toolbar_description">Панель инструментов отображается внизу экрана.</string>
     <string name="setting_island_dock_top">Сверху</string>
     <string name="setting_island_dock_left">Слева</string>
     <string name="setting_island_dock_right">Справа</string>

@@ -1630,8 +1630,12 @@
     <string name="island_side_no_plugins">ยังไม่มีปลั๊กอินที่ติดตั้ง</string>
     <string name="island_side_plugin_count">ติดตั้งแล้ว %1$d</string>
     <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
-    <string name="setting_island_dock">ตำแหน่งแผงสถานะ</string>
-    <string name="setting_island_dock_sub">เลือกขอบหน้าจอสำหรับแผงสถานะ</string>
+    <string name="setting_island_dock">แผงสถานะ</string>
+    <string name="setting_island_dock_sub">เลือกรูปแบบเกาะหรือแถบเครื่องมือและตำแหน่ง</string>
+    <string name="setting_island_dock_island">เกาะ</string>
+    <string name="setting_island_dock_toolbar">แถบเครื่องมือ</string>
+    <string name="setting_island_dock_position">ตำแหน่งเกาะ</string>
+    <string name="setting_island_dock_toolbar_description">แถบเครื่องมือจะแสดงที่ด้านล่างของหน้าจอ</string>
     <string name="setting_island_dock_top">ด้านบน</string>
     <string name="setting_island_dock_left">ด้านซ้าย</string>
     <string name="setting_island_dock_right">ด้านขวา</string>

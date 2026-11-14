@@ -1563,6 +1563,11 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <activity
+            android:name=".IslandDockActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 主题与配色（v1.5.x）：预设 / 自定义 / 系统动态取色 -->
         <activity
             android:name=".ThemeActivity"

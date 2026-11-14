@@ -1683,8 +1683,12 @@
     <string name="island_side_no_plugins">还没有安装插件</string>
     <string name="island_side_plugin_count">已装 %1$d 个</string>
     <string name="island_dock_switched">停靠位置：%1$s</string>
-    <string name="setting_island_dock">状态悬浮窗位置</string>
-    <string name="setting_island_dock_sub">选择状态悬浮窗停靠的屏幕边缘</string>
+    <string name="setting_island_dock">状态悬浮窗</string>
+    <string name="setting_island_dock_sub">选择灵动岛或工具栏及其位置</string>
+    <string name="setting_island_dock_island">灵动岛</string>
+    <string name="setting_island_dock_toolbar">工具栏</string>
+    <string name="setting_island_dock_position">灵动岛位置</string>
+    <string name="setting_island_dock_toolbar_description">工具栏显示在屏幕底部。</string>
     <string name="setting_island_dock_top">顶部</string>
     <string name="setting_island_dock_left">左侧</string>
     <string name="setting_island_dock_right">右侧</string>

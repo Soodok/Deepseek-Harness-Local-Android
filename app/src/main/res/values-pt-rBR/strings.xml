@@ -1640,8 +1640,12 @@
     <string name="island_side_no_plugins">Nenhum plugin instalado</string>
     <string name="island_side_plugin_count">%1$d instalados</string>
     <string name="island_dock_switched">Ancoragem: %1$s</string>
-    <string name="setting_island_dock">Posição do painel de status</string>
-    <string name="setting_island_dock_sub">Escolha uma borda da tela para o painel de status</string>
+    <string name="setting_island_dock">Painel de status</string>
+    <string name="setting_island_dock_sub">Escolha ilha ou barra de ferramentas e posição</string>
+    <string name="setting_island_dock_island">Ilha</string>
+    <string name="setting_island_dock_toolbar">Barra de ferramentas</string>
+    <string name="setting_island_dock_position">Posição da ilha</string>
+    <string name="setting_island_dock_toolbar_description">A barra de ferramentas aparece na parte inferior da tela.</string>
     <string name="setting_island_dock_top">Superior</string>
     <string name="setting_island_dock_left">Esquerda</string>
     <string name="setting_island_dock_right">Direita</string>

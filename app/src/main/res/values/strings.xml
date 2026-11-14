@@ -1680,8 +1680,12 @@
     <string name="island_side_no_plugins">No plugins installed yet</string>
     <string name="island_side_plugin_count">%1$d installed</string>
     <string name="island_dock_switched">Dock: %1$s</string>
-    <string name="setting_island_dock">Status dock position</string>
-    <string name="setting_island_dock_sub">Choose a screen edge for the status dock</string>
+    <string name="setting_island_dock">Status dock</string>
+    <string name="setting_island_dock_sub">Choose island or toolbar and position</string>
+    <string name="setting_island_dock_island">Island</string>
+    <string name="setting_island_dock_toolbar">Toolbar</string>
+    <string name="setting_island_dock_position">Island position</string>
+    <string name="setting_island_dock_toolbar_description">The toolbar appears at the bottom of the screen.</string>
     <string name="setting_island_dock_top">Top</string>
     <string name="setting_island_dock_left">Left</string>
     <string name="setting_island_dock_right">Right</string>

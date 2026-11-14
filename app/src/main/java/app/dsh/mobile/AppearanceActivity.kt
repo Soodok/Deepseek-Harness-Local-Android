@@ -66,7 +66,7 @@ class AppearanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(orientMode))
 
         findViewById<LinearLayout>(R.id.rowIslandDock).setOnClickListener {
-            showIslandDockDialog()
+            startActivity(Intent(this, IslandDockActivity::class.java))
         }
 
         // —— 设置页跟随屏幕方向（v1.5.x）——
@@ -217,22 +217,7 @@ class AppearanceActivity : ThemedActivity() {
         IslandDock.TOP -> R.string.setting_island_dock_top
         IslandDock.LEFT -> R.string.setting_island_dock_left
         IslandDock.RIGHT -> R.string.setting_island_dock_right
-        IslandDock.BOTTOM -> R.string.setting_island_dock_bottom
-    }
-
-    private fun showIslandDockDialog() {
-        val docks = listOf(IslandDock.TOP, IslandDock.LEFT, IslandDock.RIGHT, IslandDock.BOTTOM)
-        val labels = docks.map { getString(islandDockLabel(it)) }.toTypedArray()
-        val checked = docks.indexOf(CustomVisualPref.islandDock(this))
-        md3Dialog()
-            .setTitle(R.string.setting_island_dock)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                CustomVisualPref.setIslandDock(this, docks[which])
-                refreshValueRows()
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        IslandDock.BOTTOM -> R.string.setting_island_dock_toolbar
     }
 
     /**

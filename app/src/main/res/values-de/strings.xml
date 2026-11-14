@@ -1686,8 +1686,12 @@
     <string name="island_side_no_plugins">Noch keine Plugins installiert</string>
     <string name="island_side_plugin_count">%1$d installiert</string>
     <string name="island_dock_switched">Andocken: %1$s</string>
-    <string name="setting_island_dock">Position des Status-Docks</string>
-    <string name="setting_island_dock_sub">Bildschirmrand für das Status-Dock wählen</string>
+    <string name="setting_island_dock">Status-Dock</string>
+    <string name="setting_island_dock_sub">Insel oder Symbolleiste und Position wählen</string>
+    <string name="setting_island_dock_island">Insel</string>
+    <string name="setting_island_dock_toolbar">Symbolleiste</string>
+    <string name="setting_island_dock_position">Position der Insel</string>
+    <string name="setting_island_dock_toolbar_description">Die Symbolleiste wird unten auf dem Bildschirm angezeigt.</string>
     <string name="setting_island_dock_top">Oben</string>
     <string name="setting_island_dock_left">Links</string>
     <string name="setting_island_dock_right">Rechts</string>
