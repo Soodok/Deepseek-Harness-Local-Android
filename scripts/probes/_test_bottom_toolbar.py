@@ -26,6 +26,14 @@ checks = {
     'official Material docked toolbar handles three actions':
         bar is not None and bar.tag == 'com.google.android.material.dockedtoolbar.DockedToolbarLayout'
         and all('@+id/dsh_bottom_toolbar_' + x in items for x in ('home', 'menu', 'settings')),
+    'home and settings use expressive buttons with icons above labels':
+        all(items['@+id/dsh_bottom_toolbar_' + name].get('style') == '@style/Widget.Material3Expressive.Button.TextButton'
+            and items['@+id/dsh_bottom_toolbar_' + name].get(app + 'iconGravity') == 'textTop'
+            and items['@+id/dsh_bottom_toolbar_' + name].get(a + 'text')
+            for name in ('home', 'settings')),
+    'menu remains icon-only and accessible':
+        items['@+id/dsh_bottom_toolbar_menu'].get(a + 'text') is None
+        and items['@+id/dsh_bottom_toolbar_menu'].get(a + 'contentDescription') == '@string/bottom_toolbar_menu',
     'system insets are owned by activity':
         bar is not None and bar.get(app + 'paddingBottomSystemWindowInsets') == 'false'
         and 'val viewportBottom = bottomPad + bottomToolbarInset' in main
