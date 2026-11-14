@@ -23,6 +23,8 @@ if (!PLUGIN) {
   console.error("usage: node fast_mode_runtime_test.mjs <plugin.mjs>");
   process.exit(2);
 }
+/** 源码原文，供「某段写法必须不存在」这类结构断言用。 */
+const SRC = fs.readFileSync(PLUGIN, "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -255,13 +257,26 @@ async function loadPlugin(engineWithAgentModel) {
           JSON.stringify(agent.model.current()));
   }
 
-  // A8: fast 关掉后要撤回 off
+  // A8: fast 关掉后**不许撤回** off
+  //
+  // 2026-11-14 真机事故：撤回写成 `select({provider, model})`（不带 effort）
+  // = 回到适配器默认 high = thinking 开启，而 off 期间写进会话的 assistant
+  // 消息没有 thinking 块 → 下一轮 400：
+  //   The `content[].thinking` in the thinking mode must be passed back to the API.
+  // 历史补不回来，所以唯一安全做法是：停止强制 off，但不主动恢复思考。
   fs.unlinkSync(path.join(home, "fast-mode"));
   await new Promise((r) => setTimeout(r, 1600));
+  const beforeRevert = state.selectCalls.length;
   await runPreStepHook(hooks, agent, state);
-  check("A8 fast 关闭：撤回 off（否则用户后续都没思考了）",
-        agent.model.current().reasoningEffort !== "off",
+  check("A8 fast 关闭：不撤回 off（撤回会让下一轮 400）",
+        agent.model.current().reasoningEffort === "off",
         JSON.stringify(agent.model.current()));
+  check("A8b fast 关闭时不调用 select（一次都不能调）",
+        state.selectCalls.length === beforeRevert,
+        `${beforeRevert} -> ${state.selectCalls.length}`);
+  check("A8c fast 关闭：撤回路径已删干净（源码里没有不带 effort 的 select）",
+        !/model\.select\(\s*\{\s*provider:\s*cur\.provider,\s*model:\s*cur\.model\s*\}\s*\)/.test(SRC),
+        "不带的 effort 的 select 就是「恢复默认档位」= 那个会炸的行为");
 
   // A9: 已经在 off 且 fast 开 → 幂等，不重复 select
   fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));

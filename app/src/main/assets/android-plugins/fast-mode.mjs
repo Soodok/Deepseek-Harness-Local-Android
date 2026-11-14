@@ -232,6 +232,22 @@ async function apply(ctx) {
     );
   };
 
+  // 本会话是否由**本插件**把档位写成了 off。
+  // 只有 true 时才认为「会话已经进过无思考模式」，撤回才会炸（见下方 else 分支）。
+  let offAppliedByUs = false;
+
+  const warnedNoRevert = { done: false };
+  const warnNoRevertOnce = () => {
+    if (warnedNoRevert.done) return;
+    warnedNoRevert.done = true;
+    console.warn(
+      "[android-fast-mode] this session already ran steps with reasoning off; " +
+      "switching reasoning back on would make the API reject the turn " +
+      "(history is missing thinking blocks that cannot be reconstructed). " +
+      "Staying at off for the rest of THIS session — start a new session for normal thinking.",
+    );
+  };
+
   /**
    * 该模型是否支持 `off`。
    * @returns true / false；拿不到能力信息时返回 null（未知）。
@@ -308,6 +324,7 @@ async function apply(ctx) {
         if (ok === true) {
           try {
             model.select({ provider: cur.provider, model: cur.model, reasoningEffort: "off" });
+            offAppliedByUs = true;
           } catch (e) {
             console.warn("[android-fast-mode] model.select failed: " + (e && e.message));
           }
@@ -319,16 +336,28 @@ async function apply(ctx) {
         // ok === null（探测失败）同样不改：保守优先，不能拿整轮任务赌。
       }
     } else {
-      // fast 关掉时要把之前写进去的 off 撤回来，否则会话会一直停在 off。
-      // 只撤自己写的那档：用户/别的插件设的其它档位不动。
+      // ⚠️ 这里**不撤回**（2026-11-14 真机事故，本插件第三处崩溃点）。
+      //
+      // 原来的写法是 `model.select({ provider, model })` —— 不带 effort 就等于
+      // 「回到适配器默认」，也就是 high（thinking.type = enabled），想的是
+      // 「fast 关掉就把思考还给我」。结果整轮 400：
+      //
+      //   The `content[].thinking` in the thinking mode must be passed back to the API.
+      //
+      // 因为**会话历史已经被写成混合态**：off 期间产生的 assistant 消息没有
+      // thinking 块，撤回后请求变成 thinking 模式，而 API 要求历史 assistant
+      // 消息都带回 thinking —— 拿不到就整轮失败（不是这一步失败，这一轮全丢）。
+      //
+      // 关键认知：这不是「参数没传对」，而是**已经写进会话的记录补不回来**。
+      // 一旦本会话有过 off 步，就再也不能把 reasoningEffort 切回开启态。
+      // 而触发几乎必然 —— 标记文件 30 分钟 TTL 到期是自动的、静默的。
+      //
+      // 所以：**只停止强制 off，绝不主动恢复思考**。本会话剩余时间保持 off；
+      // 新会话天然从用户默认档位开始（model/selection 是 per-session 的），
+      // 思考自然就回来了。用户手动在界面上把档位调回 high 会撞同一个 400，
+      // 那属引擎侧限制，插件拦不住 —— 所以在警告里说明白。
       const cur = model.current();
-      if (cur && cur.reasoningEffort === "off") {
-        try {
-          model.select({ provider: cur.provider, model: cur.model });
-        } catch (e) {
-          console.warn("[android-fast-mode] model.select revert failed: " + (e && e.message));
-        }
-      }
+      if (offAppliedByUs && cur && cur.reasoningEffort === "off") warnNoRevertOnce();
     }
     return next();
   };
@@ -414,7 +443,14 @@ async function apply(ctx) {
       if (action === "off") {
         try { fs.unlinkSync(marker); } catch {}
         cached = false; cachedAt = Date.now();
-        return Promise.resolve({ ok: true, fast: false, note: "fast mode OFF — back to normal (thinking on)." });
+        return Promise.resolve({
+          ok: true, fast: false,
+          note: "fast mode OFF — this session stops forcing reasoning off. " +
+            "Note: if this session already ran steps with reasoning off, switching it back ON " +
+            "would make the API reject the turn (history lacks thinking blocks that cannot be " +
+            "reconstructed), so reasoning stays off for the rest of THIS session. " +
+            "Start a new session for normal thinking.",
+        });
       }
       if (action === "status") {
         const st = readMarker(marker);
