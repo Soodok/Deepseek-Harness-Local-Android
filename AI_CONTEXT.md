@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-12 13:35 · `main` HEAD `f18b56e9` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+**最后更新**：2026-11-14 · `main` HEAD `d67c0eef` · 本轮新增「任务化执行 `/dev/jobs`」（见一百二十二节）。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
@@ -12737,3 +12737,93 @@ WARNING: updating and opening http://mirrors.aliyun.com/alpine/v3.22/main:
 | `089e444d` | `fix(linux)` DNS 代理跑久后静默失效 —— 有界转发池 + 看门狗自愈（`LinuxDnsProxy.kt` +397 −25） |
 
 三个提交在本地 `main` 上，尚未推送；`origin/main` 停在 `4bcc2102`。
+
+## 一百二十二、任务化执行 `/dev/jobs`（2026-11-14，提交 `4bcc2102` / `84887c0e` / `d67c0eef`）
+
+### 起因与形态
+`/dev/linux/exec` 的硬上限是 120 秒且要返全量 stdout/stderr —— 编译这种跑几分钟、
+输出几百 KB 的活走不通。这一层补上「提交 → 轮询 → 取产物」，让手机当离机编译机。
+
+六个端点（`app/src/main/java/app/dsh/mobile/engine/cap/JobsCap.kt`，518 行，均受 `cap.linux` 门控）：
+
+| 端点 | 语义 |
+|---|---|
+| `POST /dev/jobs` | 提交，**202** 立即返回 jobId |
+| `GET /dev/jobs` | 最近任务（默认 20，`limit` 夹 1..50） |
+| `GET /dev/jobs/get?id=` | 单条详情 |
+| `GET /dev/jobs/log?id=&stream=&lines=` | 日志尾部（stdout/stderr 分开，默认 200 行） |
+| `POST /dev/jobs/cancel` | 协作式取消 |
+| `GET /dev/jobs/artifact?id=&path=` | 取产物（base64 + sha256） |
+
+目录布局 `filesDir/jobs/<id>/`：`meta.json`（原子写 tmp→rename）、`stdout.log`、`stderr.log`、`result.json`。
+放 `filesDir` 不放 `dsh-home`：后者会被用户 LAN/备份外置，混进几百个编译日志不好清理。
+
+### 五个设计取舍（都写进代码注释）
+1. **固定 2 线程池**（`WORKERS = 2`）而非每任务一线程 —— Android 12+ phantom process killer
+   在进程数超约 32 时杀 rootfs；2 线程让「排队」可见（`state=queued`），而不是让用户看到一堆 running。
+2. **任务体 `catch (t: Throwable)`** —— 任何异常都要落终态。任务永远停在 running 是最糟的失败模式：
+   调用方一直轮询，看不出它已经死了。
+3. **日志单流 8 MiB 截断**（`MAX_LOG_BYTES`）—— 一条 `yes` 不该有写满磁盘的权力（磁盘满会让整个 App 一起坏）。
+4. **产物上限 8 MiB** 而非 64 —— bridge 响应只能是字符串（`Route.handle` 返回 `Pair<Int, String>`），
+   base64 膨胀 33%。更大的产物走 `/dev/open-file` 或 peersync。
+5. **`prune` 只删已终态任务** —— 删掉还在跑的会让 `finish()` 写进重建的空目录，
+   变成一个占着 worker 的幽灵任务（列表里没有它，但 worker 被吃掉）。
+
+### ★ 真机两轮才定位的两个缺陷（这是本节最该读的部分）
+
+**缺陷 1：query 解析漏掉第一个参数。**
+第一版用 `Regex("[?&]id=...")` 抠字段，而 `AgentBridge` 传给 `Route` 的 query
+**不含前导 `?`**（`rawPath.substringAfter('?', "")`）—— 于是第一个参数永远匹配不到。
+真机症状：`GET /dev/jobs/log?id=job-xxx` 返回 `{"ok":false,"error":"missing id"}`，
+**看着像 id 传错，实际是解析器漏了首个参数**。
+修法：加 `parseQuery()` 按 `&` 切再按首个 `=` 分，与全仓其它端点同一套语义。
+
+**缺陷 2：默认工作目录（最隐蔽的一个）。**
+- 第一轮：不设 cwd → 容器 cwd 是只读的 `/` → `mkdir: cannot create directory 'out': Read-only file system`
+- 第二轮：把**宿主**的 `/data/data/<pkg>/files/jobs/<id>` 传给
+  `LinuxContainerRunner.run(workdir=...)` → 该参数按 **rootfs 相对路径** 解析
+  （`File(rootfsDir(), workdir.trimStart('/'))`，只有拼出来的宿主目录真实存在才
+  `pb.directory(...)`）→ 那目录必然不存在 → **静默不切目录**，cwd 还是 `/`，
+  症状与第一轮完全相同，但原因完全不同。
+- 第三轮（现在）：cmd 前缀 `cd <容器绝对路径> &&`。该路径在容器视角确实可写
+  （实测 uid 10499 `mkdir`/`echo`/`cat` 全通，与宿主 App 同一 uid），且不依赖 runner 的路径假设。
+
+### 真机验收（OnePlus PLZ110 / Android 16 / arm64，v1.6.0-beta.11）
+- `pwd` → `/data/data/app.dsh.mobile/files/jobs/job-20261114-114354-…`，`state=success exit_code=0`
+- 产物：`GET /dev/jobs/artifact?...&path=r.txt` → 12 字节、`sha256 2751a3a2…` 本地实算一致
+- 并发：同时提 4 个 6 秒任务 → `running=2 queued=1`（`workers=2` 上限生效）
+- 取消：命令 `exit 0` 但终态 `cancelled`（不因成功而洗白）
+- 超时：`timeout_ms=1000` 跑 `sleep 5` → `state=timeout duration=1012ms`
+- 边界：缺 `cmd` → 400；不存在 id → 404；`path=../../../../etc/hosts` → 400 `path escapes the job directory`
+- 门脚本 `dev-jobs`（5907 字节）已部署到 `engine/bin/` 并真跑通
+
+### 配套与门禁
+- `app/src/main/assets/gates/dev-jobs`：`list`/`show`/`log`/`err`/`submit`/`cancel`/`get` 子命令；
+  `get` 用 python 解码 base64 + 校验 sha256（shell 拼不可靠）；命令用 python 拼 JSON（引号/反斜杠/中文手拼必坏）。
+- `EndpointCatalog.kt` 新增「任务化执行」组 6 条（entries 167 → 173）。
+- `EngineConfig.kt` 三处列表登记 `dev-jobs`（漏一处就不部署）。
+- `scripts/probes/_test_linux_jobs.py` **60 条**（A 门禁 / B 路由 / C 目录 / D 门脚本 / E 配额 /
+  F 终态完整性 / G 安全 / H query 解析 / I 默认 cwd）；
+  `scripts/probes/_rv_linux_jobs.py` **10 条变异全红**（不入库，`.gitignore:74` 惯例）。
+- 门禁：`check-i18n` All passed；`compileDebugKotlin` BUILD SUCCESSFUL。
+
+### ⚠️ 踩过的两个自身操作事故（写下来防再犯）
+1. **变异脚本用空文件覆盖了源码**：`tempfile.mkstemp()[1]` 只创建空文件、不复制内容，
+   我漏了 `shutil.copy2(path, bak)`，还原时把 `EngineConfig.kt` 清成 0 行
+   （`git diff` 显示 2494 deletions），只能 `git checkout` 救回。
+   现在脚本**开跑前对全部目标文件做快照目录**，收尾无条件还原并校验没有一个文件被清空。
+2. **Kotlin 字面量写中文触发 i18n 门禁**：submit 的 `hint` 写了中文 →
+   `check-i18n.py` 的 D 段报 `CJK in Kotlin string literal`。改英文。
+
+### 门禁红的归属（重要，别误记成自己弄红的）
+`_test_onboarding_v2.py` 与 `_test_linux_apt_nonroot.py` 当前是红的，**不是我引入的**。
+在干净 worktree 上逐提交二分：
+
+| 提交 | apt_nonroot | onboarding_v2 | 作者归属 |
+|---|---|---|---|
+| `4bcc2102`（我的 jobs） | 0 | 0 | 我 |
+| `8b7261bd` feat(onboarding) 九页向导 | 0 | **1** | 并发会话 |
+| `089e444d` fix(linux) DNS 看门狗 | **1** | 1 | 并发会话 |
+| `84887c0e` / `d67c0eef`（我的修复） | 1 | 1 | 我（rc 不变） |
+
+即：这两个红分别由 `8b7261bd` 与 `089e444d` 带进来，需要那两个会话自己补探针。
