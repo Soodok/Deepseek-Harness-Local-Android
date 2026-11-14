@@ -4,8 +4,7 @@
 
      页面只有两组，全部原生组件：
        1. 外观模式：MaterialRadioButton 单选（浅色/深色/跟随系统）
-       2. 动态取色：MaterialSwitch（Android 12+，官方 Monet）
-     颜色不再由本页「生成色板」，而是交给系统动态取色或主题静态色板。 -->
+       2. 配色方案：系统动态取色或预设色板 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -201,7 +200,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- ===== 动态取色 ===== -->
+            <!-- ===== 配色方案 ===== -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

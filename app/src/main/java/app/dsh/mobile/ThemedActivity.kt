@@ -97,17 +97,7 @@ object ThemeManager {
     }
 
     fun applyBars(activity: Activity) {
-        // 跟随主题的 colorSurface；动态取色启用时它就是壁纸派生色，
-        // 写死 @color/bg 会让状态栏在切换主题瞬间闪回旧色。
-        val tv = android.util.TypedValue()
-        val bg = if (activity.theme.resolveAttribute(
-                com.google.android.material.R.attr.colorSurface, tv, true,
-            )
-        ) {
-            if (tv.resourceId != 0) activity.getColor(tv.resourceId) else tv.data
-        } else {
-            activity.getColor(R.color.bg)
-        }
+        val bg = barBackground(activity)
         activity.window.statusBarColor = bg
         activity.window.navigationBarColor = bg
         val lightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(bg) > 0.5
@@ -116,6 +106,20 @@ object ThemeManager {
         )
         controller.isAppearanceLightStatusBars = lightSurface
         controller.isAppearanceLightNavigationBars = lightSurface
+    }
+
+    /** System and preset palettes both supply their own Material surface role. */
+    private fun barBackground(activity: Activity): Int {
+        val tv = android.util.TypedValue()
+        val ok = activity.theme.resolveAttribute(
+            com.google.android.material.R.attr.colorSurface, tv, true,
+        )
+        if (!ok) return activity.getColor(R.color.bg)
+        return if (tv.resourceId != 0) {
+            runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.getColor(R.color.bg))
+        } else {
+            tv.data
+        }
     }
 }
 

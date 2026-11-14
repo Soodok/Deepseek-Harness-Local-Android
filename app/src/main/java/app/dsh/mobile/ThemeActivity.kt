@@ -12,10 +12,7 @@ import com.google.android.material.radiobutton.MaterialRadioButton
  *
  * 严格按 Google 官方 Material 3 用法，见 docs/md3/README.md：
  *   1. 外观模式：MaterialRadioButton 单选，写 [ThemePref]
- *   2. 动态取色：MaterialSwitch，写 [ThemeAccent]，由 Application 里的
- *      DynamicColors 官方 API 在 onActivityPreCreated 生效
- *
- * 本页不生成任何色板、不注入主题属性 —— 那是系统动态取色的职责。
+ *   2. 配色方案：系统动态取色或预设色板，写 [ThemeAccent]
  */
 class ThemeActivity : ThemedActivity() {
 

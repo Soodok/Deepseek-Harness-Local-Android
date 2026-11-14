@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""主题取色不得造成 Activity 重建循环。
+"""主题切换不得造成 Activity 重建循环或错误的动态取色。
 
-真机事故：点「动态取色」后屏幕疯狂闪烁 —— 开关状态、模式写入与 recreate()
-互相触发形成闭环。重做为主题页单选列表后，契约变成：
-  1. 选中项与模式严格对应，模式未变就不重建
-  2. 取色统一由 ThemeEngine 负责，且在 setTheme 之后应用
-  3. 壁纸 Monet 只给 DYNAMIC；预设/自定义走种子色色板
-  4. 系统栏跟随主题 colorSurface
+单选列表替代旧开关后，选中项由偏好决定，只有选择变化才重建。
+官方 Monet 只用于受支持的系统配色，预设配色使用对应主题覆盖层；
+不支持 Monet 时保留选择并使用蓝色色板，系统栏必须跟随实际页面背景。
 """
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 JAVA = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile")
-
 FAILS = []
 
 
@@ -24,45 +21,76 @@ def check(name, ok, detail=""):
         FAILS.append(name)
 
 
-def read(p):
-    with open(p, encoding="utf-8") as f:
+def read(name):
+    with open(os.path.join(JAVA, name), encoding="utf-8") as f:
         return f.read()
 
 
-theme = read(os.path.join(JAVA, "ThemeActivity.kt"))
-themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
-dshapp = read(os.path.join(JAVA, "DshApp.kt"))
+theme = read("ThemeActivity.kt")
+selector = read("ThemePaletteSelector.kt")
+themed = read("ThemedActivity.kt")
+dshapp = read("DshApp.kt")
+accent = read("ThemeAccent.kt")
 
-# 1. 空转保护
-check("切换模式前比较（模式未变不重建）",
-      "ThemePref.get(this) == mode" in theme)
-check("配色未变不重建",
-      "id != ThemeAccent.selected(this)" in theme)
-check("单选状态由偏好唯一决定",
-      theme.count("ThemePref.get(this) == ThemeMode.") >= 2)
+# Both user-driven changes are guarded before persisting and recreating.
+check("unchanged appearance mode does not recreate",
+      re.search(r'if\s*\(ThemePref\.get\(this\)\s*==\s*mode\)\s*return@setOnClickListener\s*'
+                r'ThemePref\.set\(this,\s*mode\)\s*recreate\(\)', theme) is not None)
+check("unchanged palette does not recreate",
+      re.search(r'if\s*\(id\s*!=\s*ThemeAccent\.selected\(this\)\)\s*\{\s*'
+                r'ThemeAccent\.setSelected\(this,\s*id\)\s*recreate\(\)', theme) is not None)
+check("appearance radio state comes from preference",
+      all('ThemePref.get(this) == ThemeMode.' + mode in theme for mode in ('LIGHT', 'DARK', 'SYSTEM')))
+check("palette state comes from preference",
+      'ThemePaletteSelector(' in theme and 'ThemeAccent.selected(this)' in theme
+      and 'paletteSelector.setSelectedId(ThemeAccent.selected(this))' in theme)
+check("palette selection only invokes callback on a changed click",
+      re.search(r'setOnClickListener\s*\{\s*if\s*\(id\s*!=\s*currentId\)\s*\{\s*'
+                r'currentId\s*=\s*id\s*updateChecked\(\)\s*onSelected\(id\)', selector) is not None)
+check("restoring selection does not invoke callback",
+      re.search(r'fun setSelectedId\(selectedId: String\)\s*\{\s*'
+                r'currentId\s*=\s*normalizedId\(selectedId\)\s*updateChecked\(\)\s*\}', selector) is not None)
 
-# 2. 取色统一在 ThemeEngine，且晚于 setTheme
-# 只在「代码行」里找 setTheme，注释里提到不算
-i_theme = -1
-for line in themed.splitlines():
-    code = line.split("//")[0]
-    if "setTheme(" in code:
-        i_theme = 1
-        break
-check("Activity 不调用 setTheme（避免冲掉官方覆盖层）", i_theme < 0,
-      f"setTheme@{i_theme}")
+# DynamicColors is installed once at application level and must not be reset by the activity.
+code_lines = [line.split("//")[0] for line in themed.splitlines()]
+check("activity does not call setTheme", not any('setTheme(' in line for line in code_lines))
+check("application registers official dynamic colors with preference guard",
+      'DynamicColors.applyToActivitiesIfAvailable(' in dshapp
+      and re.search(r'\.setPrecondition\s*\{\s*activity,\s*_\s*->\s*'
+                    r'ThemeAccent\.dynamicEnabled\(activity\)\s*\}', dshapp) is not None)
+check("dynamic colors require system selection and device support",
+      'selected(ctx) == SYSTEM && dynamicSupported' in accent)
+check("unavailable dynamic selection uses blue overlay without changing preference",
+      'if (dynamicSupported) 0 else R.style.ThemeOverlay_Dsh_Palette_Blue' in accent
+      and 'if (stored in paletteIds) return stored!!' in accent)
+check("preset palettes have distinct overlays",
+      all(re.search(r'\b%s\s*->\s*R\.style\.ThemeOverlay_Dsh_Palette_%s\b' % pair, accent)
+          for pair in [('BLUE', 'Blue'), ('TEAL', 'Teal'), ('VIOLET', 'Violet'), ('AMBER', 'Amber')]))
+check("no content-based pseudo dynamic colors",
+      all('setContentBasedSource' not in source for source in (theme, themed, dshapp, accent)))
 
-# 3. Monet 只给 DYNAMIC，预设/自定义走种子色
-check("动态取色在 Application 注册（官方位置）",
-      "DynamicColors.applyToActivitiesIfAvailable" in dshapp)
-check("不自造 content-based 伪动态色",
-      "setContentBasedSource" not in themed and "setContentBasedSource" not in dshapp)
-
-# 4. 系统栏跟随主题属性
-bars = themed.split("fun applyBars")[1][:1400] if "fun applyBars" in themed else ""
-check("系统栏优先跟随主题 colorSurface",
-      "colorSurface" in bars and
-      (bars.find("colorSurface") < bars.find("R.color.bg") if "R.color.bg" in bars else True))
+# Every palette defines the page background as its surface; the bars must follow it.
+bars = themed.split('fun applyBars', 1)[1].split('fun IslandPalette.themed', 1)[0] if 'fun applyBars' in themed else ''
+check("system bars use resolved background",
+      'val bg = barBackground(activity)' in bars
+      and 'activity.window.statusBarColor = bg' in bars and 'activity.window.navigationBarColor = bg' in bars)
+check("all system bars resolve colorSurface with static fallback",
+      re.search(r'private fun barBackground\(activity: Activity\): Int\s*\{\s*'
+                r'val tv = android\.util\.TypedValue\(\)\s*'
+                r'val ok = activity\.theme\.resolveAttribute\(\s*'
+                r'com\.google\.android\.material\.R\.attr\.colorSurface,\s*tv,\s*true,?\s*\)', bars) is not None
+      and 'if (!ok) return activity.getColor(R.color.bg)' in bars
+      and 'runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.getColor(R.color.bg))' in bars
+      and 'tv.data' in bars)
+for loc in ('values', 'values-night'):
+    resources = ET.parse(os.path.join(ROOT, 'app', 'src', 'main', 'res', loc, 'md3_palettes.xml')).getroot()
+    styles = {style.get('name'): {item.get('name'): item.text for item in style.findall('item')}
+              for style in resources.findall('style')}
+    check(loc + ': preset page backgrounds match their surface',
+          all((items := styles.get('ThemeOverlay.Dsh.Palette.' + name, {})).get('colorSurface')
+              and items.get('colorSurface') == items.get('android:colorBackground')
+              and items.get('colorSurface') == items.get('android:windowBackground')
+              for name in ('Blue', 'Teal', 'Violet', 'Amber')))
 
 if FAILS:
     print(f"\nFAILED: {len(FAILS)} check(s)")
