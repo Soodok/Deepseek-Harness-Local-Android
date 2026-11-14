@@ -87,10 +87,21 @@ class ThemeActivity : ThemedActivity() {
             subDynamic.alpha = 0.6f
             return
         }
-        val mode = ThemeAccent.mode(this)
-        swDynamic.isChecked = mode == ThemeAccent.Mode.DYNAMIC
+        val dynamic = ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC
+        swDynamic.isChecked = dynamic
         swDynamic.setOnCheckedChangeListener { _, checked ->
-            if (syncing) return@setOnCheckedChangeListener
+            // ★ v1.7.14（移植 PR #102）：空转保护。
+            //
+            // 真机事故：点「动态取色」后屏幕疯狂闪烁。成因是闭环 ——
+            //   开关变 true → 写偏好 → recreate()
+            //   → restoredInstance 又把开关还原成 true → 回调再触发 → 再 recreate()
+            // 布局里已经加了 saveEnabled=false 断掉还原那一路；这里再补一层：
+            // 只有「偏好真的要变」才写盘并重建，Preferences 里值没变就是空操作。
+            //
+            // 为什么不用原来的 syncing 锁：那个锁只在 setupChips 期间有效，
+            // 覆盖不到 recreate 之后的重建，形同虚设（PR 也是因此才把它换成比对）。
+            val already = ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC
+            if (already == checked) return@setOnCheckedChangeListener
             // 三种来源互斥：打开动态色 = 退出预设/自定义
             ThemeAccent.setMode(
                 this,

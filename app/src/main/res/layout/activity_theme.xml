@@ -88,11 +88,18 @@
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
+                    <!-- ⚠️ saveEnabled=false 是「点动态取色后屏幕疯狂闪烁」的关键一行。
+                         默认的 CompoundButton 会把 checked 存进 onSaveInstanceState，
+                         recreate() 之后 onRestoreInstanceState 把 true 还原回去、
+                         触发一次 setOnCheckedChangeListener → 写偏好 → 再 recreate()，
+                         这就是那个重建闭环。关掉状态保存后，开关状态永远由
+                         ThemeAccent.mode() 在 onCreate 里唯一决定，不会自我触发。 -->
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/swDynamic"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp" />
+                        android:layout_marginStart="8dp"
+                        android:saveEnabled="false" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

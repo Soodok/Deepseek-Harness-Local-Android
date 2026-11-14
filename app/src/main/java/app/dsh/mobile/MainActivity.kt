@@ -1225,7 +1225,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         handle.visibility = if (showHandle) View.VISIBLE else View.GONE
         // 收起态把手的透明度复位：动画收尾失败时它可能停在 0f（同样会「看不见」）
         if (showHandle && handle.alpha < 1f) handle.alpha = 1f
-        if (showHandle) handle.post { applyHandleTouchTarget(handle, handle.width) }
+        if (showHandle) {
+            // ⚠️ GONE 期间设的 layoutParams 不参与布局，可见后必须重算一次 insets
+            // （否则贴顶把手不会重新对齐挖孔 —— v1.4.54 的老约束，重构时不能丢）
+            handle.requestApplyInsets()
+            handle.post { applyHandleTouchTarget(handle, handle.width) }
+        }
     }
 
     /**

@@ -98,6 +98,9 @@ scripts/probes/*.bin
 !/scripts/probes/_test_linux_ext_health.py
 # 引导页 v2 探针：七步结构 / 双形态 / 配色重涂 / 能力开关分组 / 首页按钮不偏右（v1.7.0）
 !/scripts/probes/_test_onboarding_v2.py
+# 主题取色重建闭环探针（v1.7.14，移植 PR #102）：守住「点动态取色不许疯狂闪烁」——
+# 开关不自恢复、模式未变不重建、系统栏按 colorSurface 取色（M1–M4 四个变异都验证过会变红）
+!/scripts/probes/_test_theme_flicker.py
 # 凭据失败判定探针：守住「日志时间戳里的 401 不能触发重新登录」（v1.5.3）
 !/scripts/probes/_test_engine_auth_marker.py
 # 引擎失败归因探针（v1.5.3）：守「失败必须被归类成可判断的原因」

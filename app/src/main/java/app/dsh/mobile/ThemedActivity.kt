@@ -98,7 +98,7 @@ object ThemeManager {
 
     fun applyBars(activity: Activity) {
         val dark = isDark(activity)
-        val bg = activity.getColor(R.color.bg)
+        val bg = barBackground(activity)
         activity.window.statusBarColor = bg
         activity.window.navigationBarColor = bg
         var flags = activity.window.decorView.systemUiVisibility
@@ -110,6 +110,36 @@ object ThemeManager {
                 View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
         activity.window.decorView.systemUiVisibility = flags
+    }
+
+    /**
+     * 系统栏底色：优先跟随主题的 `colorSurface`，取不到时才回落到静态 `@color/bg`。
+     *
+     * 为什么必须这么改（移植 PR #102）：动态取色（Android 12+ Monet）会在运行时
+     * 用壁纸派生色覆盖 `colorSurface`/`colorPrimary`/`colorOnSurface`，而
+     * `@color/bg` 是资源解析期就定型的静态值 —— 用户打开「跟随壁纸」后，
+     * 页面底色变了、系统栏还是旧蓝灰，切页面的瞬间尤其明显（像闪一下旧色）。
+     *
+     * 不能反过来「一律读 colorSurface」：PRESET/CUSTOM 模式下我们刻意不注入
+     * Monet，此时 `colorSurface` 由 themes.xml 映射到 `@color/surface`（卡片色，
+     * 通常比页面底更白/更亮），拿它当系统栏会与页面底产生一条色差。
+     * 所以只在**动态取色真的生效**时才取主题色。
+     */
+    private fun barBackground(activity: Activity): Int {
+        val dynamic = runCatching {
+            ThemeAccent.mode(activity) == ThemeAccent.Mode.DYNAMIC
+        }.getOrDefault(false)
+        if (!dynamic) return activity.getColor(R.color.bg)
+        val tv = android.util.TypedValue()
+        val ok = activity.theme.resolveAttribute(
+            com.google.android.material.R.attr.colorSurface, tv, true,
+        )
+        if (!ok) return activity.getColor(R.color.bg)
+        return if (tv.resourceId != 0) {
+            runCatching { activity.getColor(tv.resourceId) }.getOrDefault(activity.getColor(R.color.bg))
+        } else {
+            tv.data
+        }
     }
 }
 

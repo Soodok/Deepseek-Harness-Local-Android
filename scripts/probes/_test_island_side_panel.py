@@ -73,8 +73,10 @@ check('MainActivity calls setupIslandDock()', 'setupIslandDock()' in main)
 # 分派时允许先关掉运行模式浮层（避免两个浮层叠在一起），所以只锚定调用形态
 check('toggleToolbar dispatches to toggleSidePanel when docked',
       'if (islandDock != IslandDock.TOP) {' in main and 'toggleSidePanel(); return }' in main)
+# v1.7.13 重构：可见性收敛到唯一入口 renderIslandVisibility()，
+# 侧边停靠时 overlay 由 showOverlay = !side && !islandCollapsed 推导为 GONE。
 check('applyDock hides the top XML capsule on side dock',
-      'overlay.visibility = View.GONE' in main)
+      'renderIslandVisibility()' in main and 'showOverlay = !side && !islandCollapsed' in main)
 check('applyDock restores the XML handle gravity for TOP',
       'Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL' in main)
 check('long press cycles TOP -> LEFT -> RIGHT -> TOP',
@@ -85,8 +87,9 @@ check('dock switch is persisted', 'CustomVisualPref.setIslandDock(this, next)' i
 check('pref key island_dock exists', 'KEY_DOCK = "island_dock"' in pref)
 check('pref reader defaults to TOP',
       'getOrDefault(IslandDock.TOP)' in pref)
+# v1.7.13：几何收敛成 IslandChrome.collapsedRect 纯函数，Activity 不再自己乘 density
 check('side handle uses IslandChrome geometry (not hardcoded px)',
-      'IslandChrome.COLLAPSED_W_DP' in main and 'IslandChrome.COLLAPSED_H_DP' in main)
+      'IslandChrome.collapsedRect(' in main)
 check('side panel geometry from IslandChrome.expanded',
       'IslandChrome.expanded(' in main)
 
