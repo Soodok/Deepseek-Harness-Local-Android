@@ -10,6 +10,7 @@ res = root / 'app/src/main/res'
 main = (java / 'MainActivity.kt').read_text(encoding='utf-8')
 controller = (java / 'DshBottomToolbarController.kt').read_text(encoding='utf-8')
 settings = (java / 'AppearanceActivity.kt').read_text(encoding='utf-8')
+dock_settings = (java / 'IslandDockActivity.kt').read_text(encoding='utf-8')
 prefs = (java / 'CustomVisualPref.kt').read_text(encoding='utf-8')
 chrome = (java / 'IslandChrome.kt').read_text(encoding='utf-8')
 layout = ET.parse(res / 'layout/view_dsh_bottom_toolbar.xml').getroot()
@@ -19,7 +20,8 @@ items = {x.get(a + 'id'): x for x in layout.iter() if x.get(a + 'id')}
 bar = items.get('@+id/dsh_bottom_toolbar_expanded')
 checks = {
     'bottom position can be chosen and persisted':
-        'IslandDock.BOTTOM' in settings and 'setIslandDock(this, docks[which])' in settings
+        'IslandDockActivity::class.java' in settings
+        and 'CustomVisualPref.setIslandDock(this, IslandDock.BOTTOM)' in dock_settings
         and 'island_bottom_along_ratio' in prefs and 'BOTTOM' in chrome,
     'official Material docked toolbar handles three actions':
         bar is not None and bar.tag == 'com.google.android.material.dockedtoolbar.DockedToolbarLayout'
