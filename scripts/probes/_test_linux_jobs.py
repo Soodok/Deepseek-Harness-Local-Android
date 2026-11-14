@@ -225,6 +225,35 @@ def main():
        'G8 prune 只删已终态任务')
     ok('MAX_KEPT' in cap and 'deleteRecursively' in cap, 'G9 超出配额删最老的')
 
+    print('\n=== H query 解析（真机踩出来的：第一个参数会丢）===')
+    # AgentBridge 传给 Route 的 query **不含前导 ?**（rawPath.substringAfter('?'))，
+    # 而第一版用 Regex("[?&]id=") 抠字段 → 第一个参数匹配不到。
+    # 真机症状：GET /dev/jobs/log?id=job-xxx 返回 missing id，看着像 id 传错。
+    ok('private fun parseQuery(query: String?)' in cap, 'H1 有统一 query 解析器')
+    # 断言：剥注释后的代码里不许再出现「按 [?&] 抠字段」的正则（注释里提它无害）
+    bad_re = re.findall(r'Regex\("\[\?&\]', cap)
+    ok(len(bad_re) == 0, 'H2 代码里不许再用 [?&] 正则抠字段',
+       f'残留 {len(bad_re)} 处 —— 第一个参数会静默丢')
+    ok(cap.count('parseQuery(query)') >= 4, 'H3 四个 GET 端点都走 parseQuery',
+       f'实际 {cap.count("parseQuery(query)")} 处')
+
+    print('\n=== I 默认工作目录（真机抓出来的两轮）===')
+    # 第一轮：不设 cwd → 容器 cwd 是只读的 `/` → `Read-only file system`
+    # 第二轮：把宿主的 `/data/data/.../jobs/<id>` 传给 runner 的 workdir
+    #         → runner 按 **rootfs 相对路径** 解析（`File(rootfsDir, workdir.trimStart('/'))`）
+    #           → 那目录在 rootfs 里不存在 → 静默不切 → 还是 `/` → 同样报错
+    # 最终方案：cmd 前缀 `cd <容器绝对路径> &&`，不依赖 runner 的路径假设。
+    ok('containerJobDir' in cap, 'I1 有容器视角的任务目录变量')
+    ok('"/data/data/" + ctx.packageName + "/files/jobs/" + id' in cap,
+       'I2 容器目录用绝对路径拼（不是 rootfs 相对路径）')
+    ok('"cd " + containerJobDir + " && " + cmd' in cap,
+       'I3 默认用 cd 前缀切目录', '交给 runner 的 workdir 会被按 rootfs 相对路径解析')
+    ok('runJob(ctx, id, effectiveCmd, userWorkdir' in cap,
+       'I4 用户没给 workdir 时 runner 收 null（cmd 自带 cd）')
+    ok('.put("workdir", userWorkdir ?: containerJobDir)' in cap,
+       'I5 meta 记录实际 cwd')
+    ok('.put("container_dir", containerJobDir)' in cap, 'I6 meta 记录容器目录')
+
     print(f'\nRESULT: {checks} checks, {fails} failed')
     return 0 if fails == 0 else 1
 
