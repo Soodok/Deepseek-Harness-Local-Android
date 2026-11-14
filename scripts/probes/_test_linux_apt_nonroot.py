@@ -88,7 +88,32 @@ if m:
 check("S1 APT_SANDBOX_OFF 常量存在", "APT::Sandbox::User=" in env_mgr)
 check("S2 update 步骤带 sandbox 关断", env_mgr.count("APT_SANDBOX_OFF") >= 3)
 check("S3 装包前重置 partial 目录", "reset apt lists/partial" in env_mgr)
+check("S3b partial 重建走 Java 自建 + 特权兜底两趟",
+      "fun resetAptPartial(" in env_mgr and "dir.deleteRecursively()" in env_mgr and
+      "chmod 0755 " in env_mgr)
+check("S3c partial 不可写时中止安装（不带着坏目录往下跑）",
+      "still not writable; aborting install" in env_mgr)
+check("S9 装包前自愈「dpkg 上次被打断」",
+      "dpkg --configure -a (recover interrupted install)" in env_mgr and
+      '"var/lib/dpkg/updates"' in env_mgr)
+check("S9b 自愈只在上游有 journal 条目时才跑",
+      "updates.listFiles()?.any { it.isFile }" in env_mgr)
 check("S4 remove 也关 sandbox", '"APT::Sandbox::User="' in pkg_mgr)
+
+# 6b) root/CHROOT 身份写过的树：交叉身份写入留下 root:root 0700 + 裸 s0，
+#     使 apt 的 chmod/open 全部 EPERM，只剩 GPG 签名失败的 W: 警告
+#     （真机复现 2026-11-13：lists 一不可写就报
+#      "Splitting up ..._InRelease into data and signature failed"）。
+#     修法是装包前把三棵子树交还给 App uid 并重打 MCS 分类。
+check("S5 装包前交还 apt lists 属主",
+      re.search(r'"var/lib/apt/lists"[^\n]*', env_mgr) is not None and
+      env_mgr.index('"var/lib/apt/lists"') < env_mgr.index("reset apt lists/partial"))
+check("S6 三棵子树都交还（lists / keyring / dpkg）",
+      all(s in env_mgr for s in ('"var/lib/apt/lists"', '"etc/apt/trusted.gpg.d"', '"var/lib/dpkg"')))
+check("S7 交还走 normalizeOwnership（chown+chcon 特权通道）",
+      "Privilege.normalizeOwnership(ctx, d)" in env_mgr)
+check("S8 交还失败不中断装包（只记日志）",
+      "pre-apt normalize failed for " in env_mgr)
 
 # ---- DNS 代理可用性 ----
 check("D1 有 socketsAlive 健康标记", "socketsAlive" in dns)

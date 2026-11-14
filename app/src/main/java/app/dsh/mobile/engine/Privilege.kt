@@ -219,6 +219,69 @@ object Privilege {
         Log.w(TAG, "runPrivileged: neither shizuku nor su available")
         return null
     }
+    /**
+     * 把一棵树的属主交还给本 app（2026-11-13 真机驱动）。
+     *
+     * ## 为什么需要（删除镜像删不干净的根因）
+     *
+     * 容器在两种沙箱下运行，产生两种属主：
+     *   - SECCOMP（默认）→ 容器就是 App 进程，apk add 装出来的文件属主是 app uid；
+     *   - CHROOT（用户开了开关）→ 整条链路经 su 以 root 跑，apk add --no-chown
+     *     不按包声明改属主，于是新装文件的属主都是 root。
+     *
+     * root 属主的目录（实测 usr/include/python3.12 这类 0755 目录）App 域删不掉：
+     * unlink 只看父目录的写权限，而这些目录自己就是 root 的 0755 —— 父目录再归
+     * App 也进不去写，chmod 同样 EPERM（不是自己的）。于是「删除镜像」永远留下
+     * 几千项，用户重装也只能覆盖在脏目录上。
+     *
+     * 拷回属主之后 App 自己就能删（也能正常读，readiness 判定不再假阴性）。
+     *
+     * ## 为什么用 find -exec chown -h 而不是 chown -R
+     *
+     * rootfs 里到处是指到树外的符号链接。chown -R 默认会跟随链接去改目标 ——
+     * 那等于拿用户的一个删除动作去改系统其它位置。-h 只改链接自身，安全。
+     * -xdev 再加一道：不跨进任何挂载点（susfs / 隐藏挂载环境下无界遍历会卡死）。
+     *
+     * @return true 表示命令跑通（不代表树里已经没有别的属主，调用方按需复核）
+     */
+    fun normalizeOwnership(ctx: android.content.Context, dir: java.io.File): Boolean {
+        if (!dir.isDirectory) return false
+        val uid = android.os.Process.myUid()
+        val q = shellQuote(dir.absolutePath)
+        // 基准上下文取父目录（files/linux/distros）：它一定存在于 App 域、
+        // 一定带本机的 MCS 分类（c243,c257,c512,c768 之类因设备而异，不能写死）。
+        val parent = dir.parentFile?.absolutePath.orEmpty()
+        val cmd = buildString {
+            append("find ").append(q).append(" -xdev ! -user ").append(uid)
+            append(" -exec chown -h ").append(uid).append(':').append(uid).append(" {} + 2>/dev/null; ")
+            // ★属主对了还删不掉 —— 还差 SELinux 分类（真机实测，2026-11-13）。
+            //
+            // root 域写出来的条目标签是裸 u:object_r:app_data_file:s0，缺 MCS 分类。
+            // 这种条目即使 chown 回 app uid，App 域依旧 Permission denied：
+            // 域检查用的是「进程类别 ⊇ 文件类别」，文件没有类别时 App 域的类型
+            // 转换规则不让它访问。删、读、stat 全拦。
+            //
+            // 实测对照（同一棵树、同一台设备）：
+            //   chown 后 run-as rm -rf → rc=0 但目录仍在（rm 静默失败）；
+            //   chown + chcon -R -h 后再 rm → 目录真的消失。
+            //
+            // 先算基准再打标：拿不到带分类的基准就不打（打错比不打更糟 ——
+            // 把整棵树改成裸 s0 会让它彻底不可用）。
+            append("CTX=\$(stat -c '%C' ").append(shellQuote(parent))
+            append(" 2>/dev/null); ")
+            append("case \"\$CTX\" in '' | *:s0) CTX= ;; esac; ")
+            append("[ -n \"\$CTX\" ] && chcon -R -h \"\$CTX\" ").append(q).append(" 2>/dev/null; ")
+            append("echo ok")
+        }
+        val out = runPrivileged(ctx, cmd)
+        if (out == null) {
+            Log.w(TAG, "normalizeOwnership: no privileged channel for " + dir.absolutePath)
+            return false
+        }
+        Log.i(TAG, "normalizeOwnership: " + dir.name + " -> uid " + uid +
+            " (out=" + out.trim().take(80) + ")")
+        return out.contains("ok")
+    }
 
     /**
      * 本机桥的请求鉴权（v1.2.100）—— **AgentBridge 与 ShizukuHttpBridge 共用**。

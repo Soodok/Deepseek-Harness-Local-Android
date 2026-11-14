@@ -1184,6 +1184,21 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     // 竖排面板 IslandSidePanel。两者互斥：切到侧边就把 XML 那套藏起来，切回顶部
     // 再按原样恢复，避免两套视图同时出现。
     private var islandDock: IslandDock = IslandDock.TOP
+
+    /**
+     * 灵动岛是否处于「收起态」（只剩下把手的缩小状态）。
+     *
+     * v1.7.13：以前「收起没收起」这件事没有状态，只体现在
+     * `statusBarRow.visibility` 与 `handleBar` 的**动画 withEndAction** 里。
+     * 只要那段 160ms 动画被任何后续 animate() 打断（引擎状态刷新、
+     * onResume 的 applyDock、连续点两下…），withEndAction 就不会执行，
+     * 于是 row 停在 GONE、handle 停在 GONE —— 屏幕上**一个都不剩**，
+     * 这就是群里「点隐藏后缩小态直接消失」的来源。
+     *
+     * 现在把它变成显式状态 + 一个唯一的渲染入口 [renderIslandVisibility]，
+     * 动画只负责观感，可见性一律由状态推导。
+     */
+    private var islandCollapsed = false
     private var sidePanel: IslandSidePanel? = null
     /** 缓存的侧面板是按哪个停靠边构造的；与当前 dock 不一致时必须重建。 */
     private var sidePanelDock: IslandDock? = null
@@ -1224,27 +1239,56 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         if (islandDock == IslandDock.TOP) {
             sideHost?.visibility = View.GONE
-            // 从侧边拖回顶部 = 恢复原本的灵动岛：顶部横向胶囊出现、把手收起。
-            overlay.visibility = View.VISIBLE
-            findViewById<View>(R.id.statusBarRow)?.visibility = View.VISIBLE
-            // 先把把手按顶部长方形摆好（它此刻不可见）：收起工具栏时直接显示成
-            // 圆角长方形，不再回退成原来的圆圈。
-            placeCollapsedHandle(handle, IslandDock.TOP, pw, ph, ratio)
-            handle.visibility = View.GONE
-            return
+        } else {
+            // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
+            // 一条边拖到另一条边之后，缓存里的旧面板仍按旧 dock 绘制 —— 表现就是
+            // 「换到另一边展开，圆角跟着反了」。停靠边一变就丢弃重建。
+            if (sidePanelDock != islandDock) {
+                sidePanel = null
+                sidePanelDock = islandDock
+            }
         }
-
-        // 贴长边：顶部横条收起来，把手做成竖条贴边
-        overlay.visibility = View.GONE
-        // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
-        // 一条边拖到另一条边之后，缓存里的旧面板仍按旧 dock 绘制 —— 表现就是
-        // 「换到另一边展开，圆角跟着反了」。停靠边一变就丢弃重建。
-        if (sidePanelDock != islandDock) {
-            sidePanel = null
-            sidePanelDock = islandDock
-        }
+        // 先把把手按当前停靠边摆好（尺寸/贴边/沿边位置都在 placeCollapsedHandle 里）
         placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
-        handle.visibility = View.VISIBLE
+        // ★ v1.7.13：可见性一律由 renderIslandVisibility() 按状态推导，
+        // 不再在这里「TOP 就无条件 GONE」——
+        // 旧代码在贴顶且已收起时把把手设成 GONE，而 statusBarRow 又是 GONE，
+        // 结果屏幕上两个都没有（用户报的「彻底消失」就是这一条）。
+        renderIslandVisibility()
+    }
+
+    /**
+     * 灵动岛可见性的**唯一入口**（v1.7.13）。
+     *
+     * ## 为什么需要这一层
+     * 旧实现把可见性散在 4 处：applyDock（TOP 时无条件藏把手）、toggleToolbar
+     * （160ms 动画的 withEndAction 里才显示把手）、toggleSidePanel / closeSidePanelNow
+     * （收起面板时显示把手）。它们互相不知道对方，且后两个依赖**动画回调一定会执行**。
+     * 一旦动画被打断（连续点击、引擎状态刷新触发 animate()、onResume 重入），
+     * withEndAction 不跑，View 就停在一个谁都没预料到的状态 —— 表现就是
+     * 「点了隐藏，缩小态把手彻底不见了」。
+     *
+     * ## 规则（只依赖状态，不依赖动画）
+     * · 贴边停靠（LEFT/RIGHT）：顶部胶囊整条隐藏，**把手必须可见**；
+     * · 贴顶 + 已收起：胶囊隐藏，**把手必须可见**；
+     * · 贴顶 + 未收起：胶囊可见，把手隐藏（它此刻没用）。
+     * 这样「合并/展开」只改 [islandCollapsed] 与 [islandDock]，渲染总是收敛。
+     */
+    private fun renderIslandVisibility() {
+        val overlay = findViewById<View>(R.id.statusBarOverlay) ?: return
+        val row = findViewById<View>(R.id.statusBarRow) ?: return
+        val handle = findViewById<View>(R.id.handleBar) ?: return
+        val side = islandDock != IslandDock.TOP
+        // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）
+        val panelOpen = sideHost?.visibility == View.VISIBLE
+        val showOverlay = !side && !islandCollapsed
+        val showHandle = !panelOpen && (side || islandCollapsed)
+        overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE
+        row.visibility = if (showOverlay) View.VISIBLE else View.GONE
+        handle.visibility = if (showHandle) View.VISIBLE else View.GONE
+        // 收起态把手的透明度复位：动画收尾失败时它可能停在 0f（同样会「看不见」）
+        if (showHandle && handle.alpha < 1f) handle.alpha = 1f
+        if (showHandle) handle.post { applyHandleTouchTarget(handle, handle.width) }
     }
 
     /**
@@ -1266,37 +1310,23 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         ratio: Float,
     ) {
         val d = resources.displayMetrics.density
-        val wDp = if (dock == IslandDock.TOP) IslandChrome.COLLAPSED_H_DP else IslandChrome.COLLAPSED_W_DP
-        val hDp = if (dock == IslandDock.TOP) IslandChrome.COLLAPSED_W_DP else IslandChrome.COLLAPSED_H_DP
-        val w = (wDp * d).toInt()
-        val h = (hDp * d).toInt()
-        val safe = (IslandChrome.EDGE_SAFE_DP * d).toInt()
-        // 贴顶时上沿贴到状态栏下方（与原有 10dp 一致），贴边时让出屏幕圆角安全区
-        val topBase = (10 * d).toInt()
-        val x: Int
-        val y: Int
-        when (dock) {
-            IslandDock.TOP -> {
-                x = (ratio * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0))
-                y = topBase
-            }
-            IslandDock.LEFT -> {
-                x = 0
-                val minY = safe
-                y = (minY + ratio * ((parentH - h - safe) - minY).coerceAtLeast(0)).toInt()
-            }
-            IslandDock.RIGHT -> {
-                x = (parentW - w).coerceAtLeast(0)
-                val minY = safe
-                y = (minY + ratio * ((parentH - h - safe) - minY).coerceAtLeast(0)).toInt()
-            }
-        }
+        // ⚠️ v1.7.13：算式收敛到 IslandChrome.collapsedRect（纯函数、可 JVM 断言）。
+        // Activity 只负责套用 —— 之前 applyIslandInsets 会按「挖孔对齐」把同一个
+        // View 改回 26×26 正方形 + 水平居中，一次 insets 回调就能把贴边把手搬走。
+        val m = IslandChrome.collapsedRect(
+            dock = dock,
+            parentW = parentW,
+            parentH = parentH,
+            density = d,
+            ratio = ratio,
+            safeTopPx = islandSafeTopPx,
+        )
         (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
             lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-            lp.leftMargin = x
-            lp.topMargin = y
-            lp.width = w
-            lp.height = h
+            lp.leftMargin = m.x
+            lp.topMargin = m.y
+            lp.width = m.w
+            lp.height = m.h
             handle.layoutParams = lp
         }
         handle.background = collapsedHandleBackground(dock)
@@ -1312,6 +1342,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             setColor(islandPal().handle)
+            // v1.7.13：浅色主题下把手与网页几乎同色（1.02:1），边界靠这条细描边 ——
+            // XML 原始的 bg_dynamic_island_dot.xml 本来就有 0.5dp stroke + 外环，
+            // 代码生成的背景把它丢了，这正是用户说的「缩小之后应该看得到」。
+            // 深色主题 outline=0，不描边，观感与改前完全一致。
+            val outline = islandPal().outline
+            if (outline != 0) {
+                setStroke(Math.max(1, (1.0 * resources.displayMetrics.density).toInt()), outline)
+            }
             cornerRadii = when (dock) {
                 IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
                 IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
@@ -1321,6 +1359,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
+
+    /**
+     * 上一次 insets 回调算出的「顶部安全边」（状态栏 / 挖孔下沿，px）。
+     *
+     * 由 applyIslandInsets 写入、placeCollapsedHandle 读取，让收起态把手的贴顶
+     * 位置在两次 insets 之间也保持一致（v1.7.13）。默认 0 = 贴屏幕最顶。
+     */
+    private var islandSafeTopPx = 0
 
     /** 灵动岛配色（v1.7.11）：跟着 设置→外观 的明暗走，浅色主题下岛也变浅。 */
     private fun islandPal(): IslandPalette.Colors = IslandPalette.themed(this)
@@ -1332,6 +1378,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             setColor(islandPal().handle)
+            val outline = islandPal().outline
+            if (outline != 0) setStroke(Math.max(1, d.toInt()), outline)
             cornerRadii = if (islandDock == IslandDock.LEFT)
                 floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
             else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
@@ -1394,7 +1442,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (h.visibility != View.VISIBLE) return
         h.animate().alpha(0f).setDuration(120L).withEndAction {
             h.visibility = View.GONE
-            findViewById<View>(R.id.handleBar)?.visibility = View.VISIBLE
+            // v1.7.13：可见性统一走唯一入口（不再这里单独点亮把手）
+            renderIslandVisibility()
         }.start()
     }
 
@@ -1405,7 +1454,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (existing != null && existing.visibility == View.VISIBLE) {
             existing.animate().alpha(0f).setDuration(120L).withEndAction {
                 existing.visibility = View.GONE
-                findViewById<View>(R.id.handleBar)?.visibility = View.VISIBLE
+                // v1.7.13：同上，统一走唯一入口
+                renderIslandVisibility()
             }.start()
             return
         }
@@ -1487,7 +1537,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             detail = "",
             dotColor = islandPal().dot,
         )
-        findViewById<View>(R.id.handleBar)?.visibility = View.GONE
+        // v1.7.13：面板展开时把手隐藏 —— 交给唯一渲染入口（它按状态推导）
+        renderIslandVisibility()
     }
 
     private fun toggleToolbar() {
@@ -1495,46 +1546,53 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (islandDock != IslandDock.TOP) { hideRunModeOverlay(); toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
-        if (row.visibility == View.VISIBLE) {
+        if (!islandCollapsed) {
             // 合拢：岛缩小淡出 → 把手淡入（灵动岛收起的观感）
+            //
+            // ★ v1.7.13：**先改状态，再渲染，最后才播动画**。
+            // 旧实现在动画的 withEndAction 里才把 handle 设成 VISIBLE ——
+            // 只要这段 160ms 动画被任何后续 animate()/状态刷新打断（引擎渲染、
+            // onResume 的 applyDock、连点两下），回调就不执行，handle 停在 GONE，
+            // row 又已经淡出，于是屏幕上**两个都没有**（用户报的彻底消失）。
+            // 现在可见性由 islandCollapsed 直接推导，动画只负责 scale/alpha 观感。
+            islandCollapsed = true
             // width 此刻有效（row 可见），但布局未完成时仍可能是 0 —— 兜底居中。
             row.pivotX = if (row.width > 0) row.width / 2f else resources.displayMetrics.widthPixels / 2f
             row.pivotY = 0f
+            // 收起态把手先摆好位置与形状，再让它淡入；顺带把行淡出。
+            placeCollapsedHandle(
+                handle, islandDock,
+                (handle.parent as? View)?.width ?: resources.displayMetrics.widthPixels,
+                (handle.parent as? View)?.height ?: resources.displayMetrics.heightPixels,
+                CustomVisualPref.islandAlongRatio(this),
+            )
+            // ⚠️ v1.4.54：上一次拖拽留下的 translation 会把把手推离边缘，收起时归零
+            handle.translationX = 0f
+            handle.translationY = 0f
+            renderIslandVisibility()
+            handle.alpha = 0f
+            handle.animate().alpha(1f).setDuration(140L).start()
             row.animate().scaleX(0.6f).scaleY(0.2f).alpha(0f).setDuration(160L)
                 .withEndAction {
-                    row.visibility = View.GONE
+                    // 动画收尾只复位「观感属性」，可见性仍然回到唯一入口
                     row.scaleX = 1f; row.scaleY = 1f; row.alpha = 1f
-                    handle.alpha = 0f
-                    // ⚠️ v1.4.54：上一次拖拽留下的 translation 会把圆推离挖孔，
-                    // 收起时归零（拖拽是临时手感，不该影响对齐）
-                    handle.translationX = 0f
-                    handle.translationY = 0f
-                    // 收起后显示的是「圆角长方形」把手（贴边侧平直），不再是圆圈：
-                    // 用户明确反馈顶部模式仍然是圆圈，所以这里按当前停靠边重画。
-                    placeCollapsedHandle(
-                        handle, islandDock,
-                        (handle.parent as? View)?.width ?: resources.displayMetrics.widthPixels,
-                        (handle.parent as? View)?.height ?: resources.displayMetrics.heightPixels,
-                        CustomVisualPref.islandAlongRatio(this),
-                    )
-                    handle.visibility = View.VISIBLE
-                    // GONE → VISIBLE 期间 insets 回调可能已经跑过（那时设的
-                    // layoutParams 对 GONE 视图不生效），这里补一次对齐
-                    handle.requestApplyInsets()
-                    handle.animate().alpha(1f).setDuration(140L).start()
+                    renderIslandVisibility()
                 }.start()
         } else {
             // 展开：从把手位置撑开成岛（灵动岛展开的观感）
+            //
+            // ★ v1.7.13：同样先改状态、先渲染，动画只做观感。
+            islandCollapsed = false
+            renderIslandVisibility()
             handle.animate().scaleX(0.4f).scaleY(0.4f).alpha(0f).setDuration(120L)
                 .withEndAction {
-                    handle.visibility = View.GONE
                     handle.scaleX = 1f; handle.scaleY = 1f; handle.alpha = 1f
                     // 展开态不需要对齐挖孔（全宽胶囊本来就罩住顶部），
                     // 但下次收起要重新按当前挖孔算位置，故清掉临时位移
                     handle.translationX = 0f
                     handle.translationY = 0f
                     row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f
-                    row.visibility = View.VISIBLE
+                    renderIslandVisibility()
                     // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
                     // row.width 还是 0，pivotX 会被算成 0.5px，岛就从左上角展开
                     // 而不是从中心撑开。post 到下一帧即可拿到真实宽度。
@@ -1674,6 +1732,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             setColor(islandPal().handle)
+            val outline = islandPal().outline
+            if (outline != 0) setStroke(Math.max(1, resources.displayMetrics.density.toInt()), outline)
             cornerRadius = r
         }
     }
@@ -2468,7 +2528,26 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // 夹在屏幕内：孔极靠边时（如左上角），圆的左沿不越界
                 else -> (cutCenterX - handleW / 2).coerceIn(0, (screenW - handleW).coerceAtLeast(0))
             }
-            handle.layoutParams?.let { lp ->
+            // ★ v1.7.13：贴顶时给 placeCollapsedHandle 一个可用的顶部安全边
+            islandSafeTopPx = if (immersive) {
+                if (cutTop > 0) cutTop else statusTop
+            } else {
+                statusTop + baseTop
+            }
+            // ⚠️ v1.7.13 关键修复：这段「挖孔对齐」**只能**在贴顶停靠时生效。
+            //
+            // 历史缺陷（用户报「点隐藏后缩小态按钮彻底不见」、他贴的是右边）：
+            // 这里无条件把 handle 的 layoutParams 改成 26×26 正方形 + 居中/贴孔，
+            // 而收起态把手本该是 26×44 且贴在屏幕右边缘。只要一次 insets 回调
+            // （旋屏、状态栏显隐、通知栏下拉、字体缩放…）跑过，把手就被搬到顶部
+            // 中央、尺寸也被压成正方形；此时若 statusBarOverlay 恰好是 GONE
+            // （贴边停靠就是 GONE），屏幕上**什么都没有** —— 这正是「彻底消失」。
+            //
+            // 修正原则：几何只有一个来源。
+            //   · 贴顶（islandDock == TOP）→ 本段负责按挖孔对齐；
+            //   · 贴左/右 → 完全交给 placeCollapsedHandle（applyDock 已经摆好），
+            //     这里一个字段都不许碰。
+            if (islandDock == IslandDock.TOP) handle.layoutParams?.let { lp ->
                 val m = lp as? android.view.ViewGroup.MarginLayoutParams
                 if (m == null) return@let
                 val flp = lp as? android.widget.FrameLayout.LayoutParams

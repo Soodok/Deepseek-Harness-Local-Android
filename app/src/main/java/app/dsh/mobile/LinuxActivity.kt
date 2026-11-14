@@ -2834,39 +2834,102 @@ class LinuxActivity : ThemedActivity() {
             if (dir.canonicalFile.parentFile != root) {
                 return@runAsync "✗ refusing to delete unexpected path: ${dir.absolutePath}"
             }
+            // ── 第一趟：先按当前属主删一遍 ──
+            //
+            // 绝大多数情况这一趟就够了：SECCOMP 沙箱下容器就是 App 进程，一切
+            // 文件本来就归 app uid，deleteTree 能把整棵树清空。
             var failed = deleteTree(dir)
-            // ★删不掉时走特权通道再删一次（2026-11-13 真机）。
+
+            // ── 第二趟：把属主交还给自己，再删一遍 ──
             //
-            // 这一段是 rootfs 里最容易被忽视的一类残留：只要有**任何** root 域
-            // （su / 容器装包 / 手工调试）往镜像里写过文件，那些 inode 的属主就是
-            // root、标签是裸 `u:object_r:app_data_file:s0`（缺 MCS 分类）。App 域
-            // 对它们**既读不到也删不掉**：`rm` 报 Permission denied，目录报
-            // Directory not empty —— 于是「删除镜像」永远留下几项，用户重装也只能
-            // 覆盖在脏目录上。真机实测（PLZ110 / Android 16）：残留是两个 root 所属
-            // 目录 + 两条裸 s0 符号链接，页面显示「6 项没删掉」。
+            // ★这是「删除镜像删不干净」的真正修法（2026-11-13 真机实证）。
             //
-            // 特权通道不可用时不假装成功：failed 原样上报，用户能看到真实数字。
-            if (failed > 0) {
+            // rootfs 里只要有**任何**一次以 root 身份写过盘（CHROOT 沙箱的
+            // `apk add`、`su` 手工装包、root 引擎跑过一次），那些 inode 属主就是
+            // root。App 域**删不掉 root 的目录**：unlink 只看父目录写权限，而那
+            // 些目录自身就是 root 的 0755 —— 父目录归 App 也进不去写，chmod 更是
+            // EPERM。于是删不干净永远留下几千项（真机实测 alpine：2620 项、210 个
+            // 目录），用户重装也只会覆盖在脏目录上。
+            //
+            // 顺序必须是「先删再交还再删」，不能只交还不删：
+            //   · 先删能带走绝大多数条目，交还阶段扫的树就小得多；
+            //   · 交还之后 App 自己就是属主，最终这一趟用纯 File API 完成，
+            //     不依赖特权通道是否可用。
+            if (failed > 0 && dir.exists()) {
+                val normalized = runCatching {
+                    app.dsh.mobile.engine.Privilege.normalizeOwnership(this@LinuxActivity, dir)
+                }.getOrDefault(false)
+                if (normalized) {
+                    val after = deleteTree(dir)
+                    android.util.Log.i(
+                        "LinuxActivity",
+                        "deleteImage: after ownership normalize, " + after + " entries left",
+                    )
+                    failed = after
+                }
+            }
+
+            // ── 第三趟：仍然删不掉时走特权通道整树 rm ──
+            //
+            // 交还属主也可能失败（没 root、没 Shizuku、树里有不可变的挂载点）。
+            // 这时退到「让特权身份直接删」，判据是**目录是否真的消失**。
+            // runPrivileged 返回的是命令输出、不代表退出码，所以不能看返回值 ——
+            // `rm -rf` 对部分失败也常常静默返回空输出，只有目录真的不在了才算成功。
+            if (failed > 0 && dir.exists()) {
                 val pruned = runCatching {
-                    app.dsh.mobile.engine.Privilege.runSu(
-                        "rm -rf " + app.dsh.mobile.engine.Privilege.shellQuoteForContext(dir.absolutePath),
-                        20_000L,
+                    app.dsh.mobile.engine.Privilege.runPrivileged(
+                        this@LinuxActivity,
+                        "rm -rf " + app.dsh.mobile.engine.Privilege.shellQuoteForContext(dir.absolutePath) + " 2>/dev/null; echo ok",
                     )
                 }.getOrNull()
-                // runSu 返回的是命令输出，不代表退出码；以**目录是否真的消失**为准。
-                // 这是唯一可信的判据 —— `rm -rf` 对部分失败也常常静默返回空输出。
                 if (!dir.exists()) {
-                    android.util.Log.i("LinuxActivity", "deleteTree: privileged rm recovered ${dir.absolutePath}")
+                    android.util.Log.i(
+                        "LinuxActivity",
+                        "deleteImage: privileged rm recovered " + dir.absolutePath,
+                    )
                     failed = 0
                 } else {
                     val left = deleteTree(dir)
-                    if (left == 0) failed = 0 else android.util.Log.w("LinuxActivity", "deleteTree: $left entries still undeletable: " + (pruned ?: "no privileged channel"))
+                    failed = left
+                    android.util.Log.w(
+                        "LinuxActivity",
+                        "deleteImage: " + left + " entries still undeletable (privileged=" +
+                            (pruned != null) + ")",
+                    )
                 }
             }
-            // 下载包留着的话，下次再装会直接用缓存，等于没释放这部分空间
+
+            // ── 缓存与状态：这些不在 rootfs 里，deleteTree 从不碰它们 ──
+            //
+            // 下载包留着的话，下次再装会直接用缓存，等于没释放这部分空间。
+            // 命名规则见 downloadRootfs()：cache/linux-rootfs/<family.id>-rootfs.<ext>
+            // （下载中多一个 .part）。
+            val cachePrefix = opt.family.id + "-rootfs."
             File(cacheDir, "linux-rootfs").listFiles().orEmpty()
-                .filter { it.name.startsWith(opt.family.id + "-rootfs.") }
+                .filter { it.name.startsWith(cachePrefix) }
                 .forEach { it.delete() }
+            // Node 官方预编译包（cache/linux-node/node-<ver>-linux-arm64.tar.xz，
+            // 实测 30MB）。只给 OFFICIAL_TARBALL 的发行版下载，与发行版一一对应
+            // （每个发行版的 compatNode 是确定的），随镜像一起清掉。
+            if (opt.nodeStrategy == LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL) {
+                File(cacheDir, "linux-node").listFiles().orEmpty().forEach { it.delete() }
+            }
+            // 装包日志（files/linux/state/apt-last.log）记的是上一次装包的原始输出，
+            // 属于「这个环境」的现场记录。镜像没了，它指向的环境也没了。
+            File(env.stateDir(), "apt-last.log").delete()
+
+            // ── 激活指向：删掉当前用的镜像后必须清掉 ──
+            //
+            // 不清的话 prefs 仍指着一个不存在的目录，active() 照样返回它 ——
+            // 页面显示「使用中」但什么都跑不起来，用户得手工切一次才能恢复。
+            runCatching {
+                if (LinuxRootfsCatalog.active(this@LinuxActivity).family == opt.family) {
+                    LinuxRootfsCatalog.clearActive(this@LinuxActivity)
+                }
+            }.onFailure {
+                android.util.Log.w("LinuxActivity", "deleteImage: clearActive failed: " + it.message)
+            }
+
             if (failed > 0) {
                 "✗ " + getString(R.string.linux_workbench_delete_partial, failed)
             } else {

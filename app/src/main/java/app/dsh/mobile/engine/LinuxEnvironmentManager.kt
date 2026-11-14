@@ -1388,6 +1388,48 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         return LinuxPkgLock.withLock { installPackagesAptLocked(option, packages, timeoutMs, onLine) }
     }
 
+    /**
+     * 把 `/var/lib/apt/lists/partial` 重置成「App uid 可写」。
+     *
+     * ## 为什么单独成一个函数
+     *
+     * 这个目录是 apt 落索引的唯一落点，一旦不可写，后面每一步都会连锁失败，
+     * 而报给用户的往往是最后那句 `W: GPG error: ... invalid signature` ——
+     * 看起来像密钥问题，实际是目录进不去。旧实现把它写成一条 sh 步骤，
+     * 脚本结尾是 `true`，rm/mkdir 被拒也 exit 0（假绿）。
+     *
+     * ## 两趟
+     *
+     * 1. App 域自己删掉重建（绝大多数情况够用，纯 Java + 容器内 sh，零特权）；
+     * 2. 不行就走特权通道：chown 给 App uid、放开 0700，再由 App 重建。
+     *    属主可能被一次 root/CHROOT 装包改掉，而 App 域连穿越都做不到 ——
+     *    这时只能借特权身份改回来。SELinux 分类由 ⓪-1 的
+     *    [Privilege.normalizeOwnership] 统一负责，这里只管 DAC。
+     *
+     * @return 目录存在且 App 可写
+     */
+    private fun resetAptPartial(option: LinuxRootfsCatalog.Option): Boolean {
+        val dir = File(rootfsDir(option), "var/lib/apt/lists/partial")
+        // ① App 域直接重建。用 Java 而不是容器内 sh：容器要起进程，而
+        //    「目录归不归我」在宿主侧 File API 就能判，快且不依赖 rootfs 可执行。
+        val selfService = runCatching {
+            dir.deleteRecursively()
+            dir.mkdirs() && dir.canWrite()
+        }.getOrDefault(false)
+        if (selfService) return true
+
+        // ② 特权通道修 DAC，再让 App 重建一次。
+        val uid = android.os.Process.myUid()
+        val q = Privilege.shellQuoteForContext(dir.absolutePath)
+        val parent = Privilege.shellQuoteForContext(dir.parentFile?.absolutePath.orEmpty())
+        Privilege.runPrivileged(
+            ctx,
+            "rm -rf " + q + " 2>/dev/null; mkdir -p " + q + " 2>/dev/null; " +
+                "chown -R " + uid + ":" + uid + " " + q + " 2>/dev/null; " +
+                "chmod 0755 " + parent + " " + q + " 2>/dev/null; echo ok",
+        )
+        return dir.isDirectory && dir.canWrite()
+    }
     private fun installPackagesAptLocked(
         option: LinuxRootfsCatalog.Option,
         packages: List<String>,
@@ -1426,17 +1468,85 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             return r.ok
         }
 
+        // ⓪-1 ★先把 apt 的 lists 树属于「自己」——否则下面 ⓪ 的 rm 会静默失败
+        //
+        // 真机复现（PLZ110 / Android 16，2026-11-13）：
+        // CHROOT 沙箱跑过一次装包、或用户在终端里 su 装过包之后，
+        // /var/lib/apt/lists（含 partial）属主变 root:root 0700，标签也丢了
+        // MCS 分类（裸 u:object_r:app_data_file:s0）。此时 App 域：
+        //   · 进不去 lists 目录 → ⓪ 的 rm 直接失败（被 2>/dev/null 吞掉），
+        //     mkdir 也失败，partial 仍是 root 的；
+        //   · apt 随后对**每个**索引都报
+        //       W: chmod 0600 of file .../partial/..._InRelease failed
+        //          - 400::URIFailure (1: Operation not permitted)
+        //       E: Could not open file .../partial/..._Packages (13: Permission denied)
+        //     InRelease 读不成 → 只剩 GPG 校验失败的 W: 警告，
+        //     用户看到的就是「apt-get install failed」+ 一堆 Ign/Translation-en。
+        //
+        // 属主与标签都改不了（DAC 被 0700 挡住、MAC 被 MCS 挡住），只能走
+        // 特权通道。normalizeOwnership 就是给这种「root 写过的树」用的：
+        // find -xdev ! -user <uid> → chown -h → chcon -R -h（基准取父目录）。
+        runCatching {
+            // 三棵子树都要交还，缺一棵就还有一处会静默失败：
+            //   var/lib/apt/lists  —— 索引落地（上文的 chmod/open 失败都出自这里）
+            //   etc/apt/trusted.gpg.d —— apt-key 读不到 → NO_PUBKEY，签名验证整段作废
+            //   var/lib/dpkg       —— status/lock 不可写 → dpkg -i 报 requires superuser
+            val root = rootfsDir(option)
+            listOf("var/lib/apt/lists", "etc/apt/trusted.gpg.d", "var/lib/dpkg").forEach { rel ->
+                val d = File(root, rel)
+                if (!d.exists()) return@forEach
+                if (!Privilege.normalizeOwnership(ctx, d)) {
+                    Log.w(TAG, "pre-apt normalize failed for " + rel + "; continuing")
+                }
+            }
+        }.onFailure { Log.w(TAG, "pre-apt normalize threw: " + it.message) }
+
         // ⓪ 先修 partial 目录属主/权限问题（v1.7.13）。
         // 只要有**任何一次** apt 以 root 身份跑过（用户手动在终端里 sudo、或旧版本
         // 的部署流程），/var/lib/apt/lists/partial 就会变成 _apt:root 0700，而容器
         // 全程按 App uid 运行 —— 于是 E: List directory ... is missing /
         // Acquire (13: Permission denied)，且从 UI 上看只是「装包失败」。
         // 这里无条件把这个目录删掉重建：它是纯缓存，删了没有副作用。
-        step(
-            "reset apt lists/partial",
-            "/bin/sh",
-            listOf("-c", "rm -rf /var/lib/apt/lists/partial 2>/dev/null || true; mkdir -p /var/lib/apt/lists/partial 2>/dev/null || true; true"),
-        )
+        // ★判据必须是「目录真的可写」，不是「命令跑完了」。
+        //
+        // 旧脚本结尾是 `true`，于是 rm/mkdir 全被拒时**仍然 exit 0**，
+        // transcript 里写的是 `$ reset apt lists/partial` + `[exit 0]` —— 假绿。
+        // 真机 2026-11-13 就是这样：目录归 root 0700，reset 报成功，
+        // 紧接着 apt 报 `List directory ... partial is missing (13)`。
+        // 结尾改成 `[ -w ... ]`，权限没交还回来时这一步就如实变红。
+        val partialOk = resetAptPartial(option)
+        sb.append("$ reset apt lists/partial\n[ok=").append(partialOk).append("]\n")
+        if (!partialOk) {
+            // 走到这里说明「属主交还 + App 自删建」两条都没救回来。
+            // 不要把失败藏起来往下走：下面每一步都会连锁失败，最终报给用户的是
+            // 一句莫名其妙的 GPG 警告。
+            Log.w(TAG, "apt lists/partial still not writable; aborting install")
+            return AptResult(false, sb.toString())
+        }
+
+        // ⓪-2 ★先收拾「上一次装到一半」的 dpkg 状态。
+        //
+        // 真机 2026-11-13：dependencies 装到 dpkg -i 阶段被打断（进程被杀、
+        // 或用户在终端里 Ctrl-C），/var/lib/dpkg/updates 里留下待处理条目。
+        // 之后**每一步 apt 都会立刻失败**，而且报的是一句误导性的话：
+        //   E: dpkg was interrupted, you must manually run
+        //      dpkg --configure -a to correct the problem.
+        // 界面上只看到「apt-get install failed」，用户不知道该敲什么、也没终端。
+        //
+        // 判据用 updates 目录里有没有条目（dpkg 自己就是这么判的），
+        // 有才跑，避免每次装包都白跑一遍 configure（Alpine 侧没有这回事）。
+        runCatching {
+            val updates = File(rootfsDir(option), "var/lib/dpkg/updates")
+            val pending = updates.listFiles()?.any { it.isFile } == true
+            if (pending) {
+                Log.w(TAG, "dpkg left pending journal entries; running --configure -a")
+                step(
+                    "dpkg --configure -a (recover interrupted install)",
+                    "/usr/bin/dpkg",
+                    listOf("--force-not-root", "--configure", "-a"),
+                )
+            }
+        }.onFailure { Log.w(TAG, "dpkg recovery probe failed: " + it.message) }
 
         // ① 先刷新索引（失败不致命：可能是半成品缓存，先清再试一次）
         if (!step(

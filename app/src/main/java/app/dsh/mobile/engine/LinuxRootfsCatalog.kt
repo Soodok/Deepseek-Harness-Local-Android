@@ -514,6 +514,28 @@ object LinuxRootfsCatalog {
     }
 
     /**
+     * 清掉「当前激活发行版」的记忆（2026-11-13）。
+     *
+     * ## 为什么删镜像必须调它
+     *
+     * 删掉当前激活的镜像后 prefs 里仍留着 active_family=<id>。
+     * active() 走的是 find(prefs[KEY_ACTIVE]) —— family 枚举还在（目录没了，
+     * 选项还在），于是它照样返回那个已被删除的发行版：页面继续把它当
+     * 「使用中」，引擎启动时按它算 rootfs 路径（一个不存在的目录），用户重装
+     * 别的发行版后发现「装好了但页面还显示原来那个 / 启动失败」。
+     *
+     * 清掉两个 key 之后 active() 会走「优先已部署」的回退分支，自动落到还在的
+     * 发行版上，一个都不剩时落到 defaultOption —— 都是可用状态。
+     *
+     * flavor 一起清：同一个 edit() 提交，避免只清一半留下「无 family + 有 flavor」。
+     */
+    fun clearActive(ctx: Context) {
+        prefs(ctx).edit().remove(KEY_ACTIVE).remove(KEY_ACTIVE_FLAVOR).apply()
+        Log.i(TAG, "active rootfs cleared")
+    }
+
+
+    /**
      * **原子**切换 family + flavor。
      *
      * ★为什么需要：`setActive()` 与 `setActiveFlavor()` 各自 `apply()` 是两次独立

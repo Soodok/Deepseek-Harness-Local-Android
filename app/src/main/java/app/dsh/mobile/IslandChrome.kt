@@ -85,6 +85,57 @@ object IslandChrome {
         return Metrics(x, y, w, h)
     }
 
+    /**
+     * 收起态把手的**唯一几何来源**（v1.7.13）。
+     *
+     * 之前这段算式写在 MainActivity.placeCollapsedHandle 里，而 applyIslandInsets
+     * 又会按「挖孔对齐」把同一个 View 的 layoutParams 改回 26×26 正方形 + 水平居中
+     * —— 一次 insets 回调就能把贴边把手从屏幕边上挪到顶部中央、尺寸也从 26×44
+     * 压成正方形。用户看到的就是「缩小之后直接不见了」（他贴的是右边）。
+     *
+     * 把算术收敛到这里有两个好处：Activity 只负责套用，insets 不再有机会改写形状；
+     * 而且它是纯函数，能在宿主 JVM 上断言（真机重现需要特定 insets 时序）。
+     *
+     * @param safeTopPx 顶部安全边（状态栏 / 挖孔下沿）。贴顶时 y 取它和 10dp 的较大值。
+     * @param ratio     沿边位置（0..1）——只影响沿边那一维，另一维贴边为 0。
+     */
+    fun collapsedRect(
+        dock: IslandDock,
+        parentW: Int,
+        parentH: Int,
+        density: Float,
+        ratio: Float,
+        safeTopPx: Int = 0,
+    ): Metrics {
+        val wDp = if (dock == IslandDock.TOP) COLLAPSED_H_DP else COLLAPSED_W_DP
+        val hDp = if (dock == IslandDock.TOP) COLLAPSED_W_DP else COLLAPSED_H_DP
+        val w = px(wDp, density)
+        val h = px(hDp, density)
+        val safe = px(EDGE_SAFE_DP, density)
+        val topBase = maxOf(px(10, density), safeTopPx)
+        val r = ratio.coerceIn(0f, 1f)
+        return when (dock) {
+            IslandDock.TOP -> Metrics(
+                x = (r * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0)),
+                y = topBase,
+                w = w,
+                h = h,
+            )
+            IslandDock.LEFT -> Metrics(
+                x = 0,
+                y = (safe + r * ((parentH - h - safe) - safe).coerceAtLeast(0)).toInt(),
+                w = w,
+                h = h,
+            )
+            IslandDock.RIGHT -> Metrics(
+                x = (parentW - w).coerceAtLeast(0),
+                y = (safe + r * ((parentH - h - safe) - safe).coerceAtLeast(0)).toInt(),
+                w = w,
+                h = h,
+            )
+        }
+    }
+
     /** 展开面板是否被高度上限截断（需要内部滚动）。 */
     fun needsScroll(screenH: Int, density: Float, contentH: Int): Boolean {
         val maxH = (screenH * MAX_HEIGHT_RATIO).roundToInt()
@@ -104,8 +155,13 @@ object IslandChrome {
  *
  * 取值口径：
  *  · 暗色沿用旧值，一个都不改（用户已经看惯）；
- *  · 浅色面板用 #F7F9FC（不是纯白：页面就是纯白，纯白面板没有边界），
- *    把手用 #F1F5F9 —— 比面板再深一点点，压在白色网页上也看得见；
+ *  · 浅色面板用 #F7F9FC（不是纯白：页面就是纯白，纯白面板没有边界）；
+ *  · **把手（handle）两种主题都用深色**（v1.7.13）：把手不等于面板 —— 面板只
+ *    贴在自己的页面上，而把手是压在**任意网页**上的控制物，网页底色不可控。
+ *    v1.7.11 曾把浅色把手配成 #F1F5F9（照"浅色面板"的思路），结果压在
+ *    #F5F7FA 页面上只有 1.02:1、压在纯白上 1.10:1 —— 用户报「点隐藏后
+ *    缩小态按钮不显示」，其实按钮在，只是完全看不见（只剩内部那个 8dp 核心点
+ *    隐约可见）。深色主题没暴露是因为黑把手在白页有 21:1；
  *  · 强调色在浅底上要换深一档（#7DD3FC 在白底上对比度只有 1.6:1，几乎看不见），
  *    取 sky-700 #0369A1；
  *  · 分隔线暗色用 13% 白，浅色用 8% 黑，观感对齐。
@@ -130,6 +186,20 @@ object IslandPalette {
         val okSoft: Int,
         /** 警示文字（容器一个都没下时的提示） */
         val warn: Int,
+        /**
+         * 收起态把手的描边色（v1.7.13）。
+         *
+         * 为什么要描边而不是把底色改深：把手压在**任意网页**上，浅色主题下
+         * 页面底色可能和把手几乎同色（实测 #F1F5F9 对 #F5F7FA 只有 1.02:1，
+         * 对纯白 1.10:1），只靠填充色无论怎么选都会在某种网页上撞色。
+         * 而用户明确不要改填充色（"浅色模式下不要改灵动岛收起态颜色，很难看"），
+         * 所以边界改由一条细描边承担 —— 这也是 XML 原始
+         * drawable/bg_dynamic_island_dot.xml 的做法（0.5dp stroke + 外环），
+         * 代码生成的背景把那一层丢了。
+         *
+         * 取 0 表示不描边（深色主题沿用原来的纯黑，不做任何改动）。
+         */
+        val outline: Int = 0,
     )
 
     val DARK = Colors(
@@ -144,12 +214,19 @@ object IslandPalette {
         ok = 0xFF22A06B.toInt(),
         okSoft = 0x3322A06B,
         warn = 0xFFB45309.toInt(),
+        outline = 0,   // 深色沿用旧观感，一个像素都不改
     )
 
     val LIGHT = Colors(
         // 面板不用纯白：App 页面本身就是纯白，纯白面板在浅色主题下没有边界，
         // 像「内容浮在页面上」。取 surface-container 那一档灰白，既有边界又不脏。
         panel = 0xFFF7F9FC.toInt(),
+        // ⚠️ v1.7.13：把手**不能是浅灰**。它压在任意网页上，#F1F5F9 对
+        // #F5F7FA 页面 1.02:1、对纯白 1.10:1 —— 视觉上就是"消失"（用户报的
+        // 「点隐藏后缩小态按钮不显示」）。取 slate-700，白底 10.35:1、
+        // 浅灰底同量级，任何背景下都有边界；与深色主题观感也一致（都是深色把手）。
+        // ⚠️ v1.7.13：恢复原来的浅色（用户明确"浅色模式下不要改灵动岛收起态颜色，
+        // 很难看"）。它和浅色网页几乎同色，边界改由下面的 outline 承担。
         handle = 0xFFF1F5F9.toInt(),
         title = 0xFF0E1116.toInt(),
         body = 0xFF1B232E.toInt(),
@@ -162,6 +239,8 @@ object IslandPalette {
         okSoft = 0x1F16A34A,
         // 警示色用 amber-800：浅底上 amber-700 偏亮，正文级文字要 4.5:1
         warn = 0xFF92400E.toInt(),
+        // 对 handle 3.29:1、对纯白 3.61:1 —— 满足 UI 元素边界 3:1，又不至于成黑框
+        outline = 0xFF7B8899.toInt(),
     )
 
     fun of(dark: Boolean): Colors = if (dark) DARK else LIGHT

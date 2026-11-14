@@ -51,6 +51,8 @@ def check(name, ok, detail=""):
 
 
 src = open(KT, encoding="utf-8").read()
+_cli_body_m = re.search(r"private fun runDshPluginCli\([\s\S]*?pb\.start\(\)", src)
+_cli_body = _cli_body_m.group(0) if _cli_body_m else ""
 strings = open(STR, encoding="utf-8").read()
 
 # ------------------------------------------------ 问题 1：stderr 截断
@@ -190,6 +192,32 @@ for key in ("plugin_engine_old_why", "plugin_engine_old_req",
             "plugin_engine_old_note", "plugin_engine_old_no_version",
             "plugin_engine_old_exempt_failed"):
     check("i18n：strings.xml 有 %s" % key, 'name="%s"' % key in strings)
+
+# ------------------------------------------------ 回归：旧自愈不能丢
+# ------------------------------------------------ ERR_PNPM_UNEXPECTED_STORE（v1.7.20）
+check("store：有 UNEXPECTED_STORE 判据", "isUnexpectedStoreError" in src)
+check("store：判据认错误码与人话两种形态",
+      "ERR_PNPM_UNEXPECTED_STORE" in src and "Unexpected store location" in src,
+      "pnpm 换版本文案会变，只认错误码会在小版本上失效")
+check("store：自愈改写 .modules.yaml 的 storeDir",
+      "healStoreDirSpelling" in src and
+      "node_modules/.modules.yaml" in src and
+      "storeDir" in src)
+check("store：改写按「本进程 dshHome 拼写」归一，不用 canonicalPath",
+      "normalizedStoreDir(" in src and "dir.canonicalPath" not in src,
+      "/data/data 与 /data/user/0 在本机是两个真目录，canonicalPath 归不了一，判据会假绿")
+check("store：只归一 dshHome 下的 store，外部自配的 store 不碰",
+      "\"/dsh-home/\"" in src and "if (i < 0) return null" in src)
+check("store：记录路径不存在时不动文件",
+      "if (!dir.isDirectory) return@forEach" in src,
+      "store 真没了是另一类故障，改 storeDir 只会掩盖它")
+check("store：只在真失败时自愈并重试一次",
+      "isUnexpectedStoreError(msg)" in _install_body.group(0) and
+      "storeDir spelling normalized, still failing" in _install_body.group(0))
+check("store：调 CLI 之前就主动归一，不等失败",
+      "healStoreDirSpelling(ctx)" in _cli_body and
+      _cli_body.index("healStoreDirSpelling(ctx)") < _cli_body.index("pb.start()"),
+      "只在失败后修 = 用户每次装包都要多等一轮，且第一次必然看见报错")
 
 # ------------------------------------------------ 回归：旧自愈不能丢
 check("keep：pnpm store 锁自愈仍在", "isPnpmStoreLockError" in src and "healPnpmStore" in src,
