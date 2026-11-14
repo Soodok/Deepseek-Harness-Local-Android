@@ -304,6 +304,15 @@ local-overrides/
 # 否则把 val matched = (actual == want) 改成 val matched = true 也能全绿。
 !/scripts/probes/_test_system_toggles.py
 
+# v1.7.14：灵动岛两处观感契约。
+# ① 「收起态展开只撑开一次」——旧代码先 renderIslandVisibility() 再在 120ms 后
+#    压小重撑，屏幕上是满宽亮相→消失→再撑开；探针锚定起点属性必须早于渲染。
+# ② 侧边面板边缘投影 —— setShadowLayer 在硬件画布上**静默失效**（只剩硬边矩形，
+#    正好是用户不要的「描边」），所以必须钉住 LAYER_TYPE_SOFTWARE，不能只看有没有
+#    调用 setShadowLayer。
+!/scripts/probes/_test_island_expand_once.py
+!/scripts/probes/_test_island_panel_shadow.py
+
 # 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
 /tmp/
 

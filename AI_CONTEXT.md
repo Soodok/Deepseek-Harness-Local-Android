@@ -8,7 +8,13 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-14 · `main` HEAD `6781e9b5` · 本轮新增「MD3 全量适配」（见一百二十四节）。
+**最后更新**：2026-11-14 · `main` HEAD `fc0c62fe` · 本轮新增「灵动岛展开两次修复 + 面板边缘投影」（见一百二十五节）。
+本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
+两轮「窄→宽」，根因是 `toggleToolbar()` 先 `renderIslandVisibility()` 再在 120ms 后压小重撑，
+两段动画叠加；把起点 scale/alpha 挪到渲染前、删掉 handle 空转动画即修。② 用户要求侧边面板
+「加边缘阴影、不描边」，新增 `IslandPanelShadowView`（setShadowLayer + 软件层，硬件画布会
+静默丢掉模糊只剩硬边＝描边）。同轮修掉 `toggleSidePanel()` 用 CENTER_VERTICAL 与 clamp 后的
+y 不等价导致的面板错位。两条新探针 + 6 条变异全红，隔离树全量重编 BUILD SUCCESSFUL。详见「一百二十五」。
 本轮：**MD3 全量适配** —— 用户要的是「补上原作者没适配到的页面」，查下来真问题是
 **两套主题画出来一模一样**（Theme.Dsh 与 Theme.Dsh.MD3 唯一差异是一个 colorOnSurfaceInverse，
 21 个 md3_* 色全被回映射到旧冷蓝灰）。落地三层：21 个 `dsh*` 主题令牌、385 处静态色改 `?attr`、
@@ -12983,3 +12989,223 @@ T3 夜间两套齐全 / T4 通知与浮层图标不得含 ?attr / 主题分派�
 `git update-index --add --cacheinfo`，其中 OnboardingActivity.kt / activity_onboarding.xml /
 六个 strings.xml **用手工合成的版本**（`git show HEAD:<path>` 的内容 + 只加我的颜色替换与 5 条字符串），
 避开他人删 `pagePriv` 的在途改动。提交后主 index 同步回 HEAD，工作区 `git status` 干净。
+
+## 一百二十五、灵动岛「展开两次」的真因 + 侧边面板边缘投影（2026-11-14，提交 `fc0c62fe`）
+
+### ① 收起态展开「连续展开两次」——不是代码冲突，是顺序错
+
+用户描述「点主界面上方灵动岛把手，岛会连着撑开两次」，怀疑代码冲突。录屏逐帧量测
+（1216×2640，取 y=259 行的胶囊左右边界，最终态 47..1168 宽 1121）确认是**两轮「窄→宽」**：
+
+| 帧 | 宽度 | 说明 |
+|---|---|---|
+| f001-003 | 237~244 | 收起态把手（26dp） |
+| f004-013 | 1119~1121 | **第一轮已满宽** |
+| f014-015 | — | 整条消失（全白） |
+| f016 | 87 | 被压到很小 |
+| f017 → f021 | 969 → 1101 | 第二轮开始撑开 |
+| f024-026 | 1129~1131 | **比最终态还宽 —— Overshoot 过冲** |
+| f030 之后 | 1121 | 稳定 |
+
+根因在 `MainActivity.kt` 的 `toggleToolbar()` 展开分支，顺序是：
+
+```kotlin
+islandCollapsed = false
+renderIslandVisibility()        // ← 同一帧把 row 设 VISIBLE，
+                                //   此刻 scale/alpha 还是收起收尾复位的 (1f,1f,1f)
+handle.animate()....setDuration(120L).withEndAction {
+    row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f   // ← 120ms 后才压小
+    renderIslandVisibility()
+    row.post { row.animate()...OvershootInterpolator(0.9f).start() }  // ← 第二次撑开
+}
+```
+
+第一帧整条岛就满宽亮相，120ms 后被硬压成 0.7×0.4 / alpha=0，再撑开到过冲 —— 两段
+独立动画叠加，用户看到的就是「展开两次」。
+
+**修法**（保持 v1.7.13「先改状态、再渲染，动画只做观感」的契约）：把起点属性挪到
+渲染之前，并删掉 handle 的 120ms 淡出动画 —— 展开态 handle 恒 GONE，对 GONE 的 View
+animate 只是空转，却把撑开整整推迟了两轮视觉。pivotX 仍在 `post` 里取
+（GONE→VISIBLE 同帧 `row.width` 还是 0），并补了屏宽兜底，与收起分支同一套兜底逻辑。
+
+### ② 侧边面板边缘投影（用户要求「加一层边缘阴影，不描边」）
+
+- 新增 `IslandPanelShadowView.kt`（87 行）：`Paint.setShadowLayer(blur, 0, dy, color)`
+  + 手工 `Path.addRoundRect`（贴屏幕一侧直角、外凸一侧 22dp 圆角）。
+  **强制 `LAYER_TYPE_SOFTWARE`** —— 硬件画布会静默忽略 setShadowLayer 的模糊，
+  只剩一个硬边矩形，那正好是用户不要的「描边」形态，而且不会报错。同
+  `pet/PetBubbleDrawable.kt` 的成因。
+- `IslandPalette.Colors` 新增 `panelShadow: Int = 0`（0 = 不投）：
+  DARK `0x7A000000`（48% 黑；深色面板本身纯黑，24% 几乎看不出）、
+  LIGHT `0x38000000`（22% 黑；浅色面板 #F7F9FC 压纯白只差 3%，再深就像描了一圈粗边）。
+- 接线：加到 `host` 索引 0（垫在 scrim 与面板之下），尺寸 `m.w + extra` × `m.h + extra*2`，
+  `extra = blur + dy + 2dp`（预留边必须 ≥ 模糊半径，否则外沿被 View 边界切出平口）。
+  贴屏幕那一侧 inset 取 0，不画 —— 那里本来就出屏，部分机型还会沿边缘露半像素暗线。
+
+### 同轮修掉的既有布局 bug
+
+`toggleSidePanel()` 给 content 用 `gravity = START/END or CENTER_VERTICAL`，但
+`IslandChrome.expanded()` 的 y 是 `(yCenter - h/2).coerceIn(safe, screenH - h - safe)`
+clamp 出来的 —— 面板被 70% 屏高截断时两者**并不等价**，面板整体偏移、阴影随之错开。
+改为 `TOP|START` / `TOP|END` + `clp.topMargin = m.y` 精确落位。
+
+### 探针与变异反验
+
+新增两条，均已加入 `.gitignore` 白名单：
+
+| 探针 | 断言数 | 锁住什么 |
+|---|---|---|
+| `scripts/probes/_test_island_expand_once.py` | 18 | 起点属性必须早于 `renderIslandVisibility()`；不得用 handle 动画做时序门；整段只渲染一次、只 animate 一次 |
+| `scripts/probes/_test_island_panel_shadow.py` | 22 | 三个色值、软件层、贴边侧不投、索引 0、margin 精确落位、TOP 对齐 |
+
+**两条探针都必须先剥注释再断言**（`strip_comments()`）：这段代码的注释里就写着
+`renderIslandVisibility()` / `setShadowLayer` / `CENTER_VERTICAL`，不剥会把注释当实现，
+位置比较和计数全错 —— `_test_island_expand_once.py` 初版因此假红 8 项。
+分支切片也不能用 `main.find('islandCollapsed = false')`（会命中字段声明），
+要用 `'if (!islandCollapsed) {'` → `'} else {'` → `'\n    }\n'`。
+
+6 条变异全部转红，改完逐文件按字节还原（**RESTORE BYTES IDENTICAL: True**）：
+
+| 变异 | 结果 |
+|---|---|
+| M1 去掉 `LAYER_TYPE_SOFTWARE` | EXIT=1 |
+| M2 面板改回 `CENTER_VERTICAL` | EXIT=1 |
+| M3 深色 panelShadow 降到 24% 黑 | EXIT=1 |
+| M4 `row.alpha` 起点改回 1f（复现原 bug） | EXIT=1 |
+| M5 删掉 `row.scaleX = 0.7f` | EXIT=1 |
+| M6 阴影不加索引 0（浮到面板之上） | EXIT=1 |
+
+### 验证
+
+- 隔离 worktree `/e/tmp/wt-island`（`git worktree add --detach` 从 `c39f5c23` 起），
+  只放本次三个源文件：`compileReleaseKotlin --rerun-tasks` 强制全量重编
+  **BUILD SUCCESSFUL in 1m 46s**；`assembleRelease --offline` BUILD SUCCESSFUL，
+  产物 **43,968,608 B**，核 APK 内 11 个 dex 确实含 `IslandPanelShadowView`
+- 相关探针全绿：`_test_island_side_panel` EXIT=0、`_test_island_expand_once` EXIT=0、
+  `_test_island_panel_shadow` EXIT=0、`_test_glass_effects` checks=32 failed=0、
+  `_test_style_tokens` EXIT=0
+- 真机（OnePlus PLZ110 / Android 16 / 1.6.0-beta.11 · 387）：
+  展开只撑开一次；侧边面板贴右、内容完整不偏移；像素扫描确认面板左边缘
+  x=238→242 有 228,228,228 → 247,249,252 的渐变，顶部 y=498→504 同样有过渡
+
+### 提交
+
+`fc0c62fe`（6 文件 / +456 −27）。范围限定为本轮产物；
+`engine/PluginCenter.kt` 与 `scripts/probes/_test_plugin_install_errors.py` 是并行会话
+在途的 broken-lockfile 自愈改动（`isBrokenLockfileError` / `healBrokenLockfile`
+在仓内尚无定义），按归属避让，未纳入本次提交。
+
+---
+
+## 一百二十六 · 2026-11-14 插件安装失败两起反馈：坏 lockfile 自愈 + 失败按钮摘要
+
+### 两起反馈与归因
+
+用户（m09216）报两个插件装不上：
+
+**A. 插件中心 / dshmarket 1.73.19**（截图 m09212）
+弹窗标题「插件安装失败 / 安装命令失败，原因见安装详情」，正文
+`Error: ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY` +
+`Broken lockfile: no entry for '@x...' in pnpm-lock.yaml`，
+help 行 `pnpm install --fix-lockfile`。
+
+真机取证（PLZ110 / Android 16 / uid 10499，引擎 0.2.2-rc.1，pnpm 12.18.0）：
+失败前 profile `package.json` 的 deps = `@soodok/dsh-remote-hub: file:.../rh.tgz`
++ `@yolk_vat-y/dsh-project-memory: ^0.7.0`，lockfile importers 两者都是 `file:`
+形态（自洽）。
+
+**受控复现**：把 importers 的 remote-hub 改成 `specifier: 0.1.0 / version: 0.1.0`
+（packages/snapshots 仍是 `@soodok/dsh-remote-hub@file:...`）→ `pnpm add dshmarket`
+立刻报**与截图逐字同型**的 `ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY / Broken lockfile`。
+
+成因：v1.5.x 的 `normalizeDependencySpec` 曾把 importers 的 `file:` 改回纯版本号
+却没动 packages/snapshots。代码早已删除，**但设备上的坏 lockfile 会一直留着**，
+于是之后每次装插件都死在同一条错误上。
+
+修法已在真机验证：`pnpm install --fix-lockfile`（310ms，exit 0）后 importers
+自动恢复成 `file:`，再 `pnpm add dshmarket` 成功（`+ dshmarket 1.73.19`）。
+**不要手工改 lockfile** —— 那是 pnpm 的派生结构，猜错的代价是永久坏。
+
+**B. 官方插件页 / dsh-longterm-memory 0.1.4**（截图 m09214）
+按钮文字 `失败：file:///data/user/0/app.dsh.mobile/files/engine/lib/node_mod...`。
+
+- 0.1.4 与 0.1.8 在真机都能装成功（`plugin --profile web add dsh-longterm-memory`
+  → `+ dsh-longterm-memory 0.1.8`；`@0.1.4` → `+ dsh-longterm-memory 0.1.4`）。
+  deps 仅 `yaml ^2.8.0` + `zod ^4.4.3`。
+- 按钮文字是 `summarizeInstallError()` 的产物（当时在 `PluginStoreActivity.kt:1078`）。
+- **未取到用户当时那条错误原文，根因保留为「待原文」**。已核实但排除：
+  - `dsh.client.inject` 声明 `@deepseek-ai/dsh-client-ui-slots`，而引擎
+    `lib/node_modules/@deepseek-ai/` 下 331 个包里**没有** ui-slots
+    （只有 `dsh-client-locale` / `dsh-client-ui-layout`）。
+    但引擎内 73 个 package.json 也把 ui-slots 写进 inject，而 client-modules
+    的 `arriveGraphRow` 找不到行时只是 `continue`（不报错），
+    且插件 client bundle 实际只 `require("react")` —— **inject 是提示性的，
+    缺包不会失败**，故排除。
+  - 插件包内 `lib/client.js` 无任何 `dsh-client-ui-slots` / `dsh-client-locale`
+    的 import，全包只有 package.json 里那条声明。
+
+### 改动（提交 96825f0f，5 文件 / +444 −38）
+
+**1. `engine/PluginCenter.kt` +145** —— `healBrokenLockfile()` + `isBrokenLockfileError()`
+
+- 判据双签名：`ERR_PNPM_LOCKFILE_MISSING_DEPENDENC`（截断容错）+ `Broken lockfile`。
+- 只动 `profiles/web/pnpm-lock.yaml`；改前备份 `pnpm-lock.yaml.broken-<ts>`。
+- 走 `node lib/node_modules/corepack/dist/pnpm.js install --fix-lockfile`
+  （与 `probeIgnoredBuilds` / 其它自愈同一条入口，`engine/bin/pnpm` 只是 175B sh 包装器）。
+- `redirectErrorStream(true)` 避免「先读哪个流」的死锁；120s 超时强杀。
+- 失败时删备份并返回 false，**不谎报修复**。
+- 分支位置在 `isIgnoredBuildsError` **之前** —— 坏 lockfile 时 pnpm 连解析都过不去。
+
+**2. 新增 `engine/InstallErrorSummary.kt`（72 行）** —— 摘要逻辑从 Activity 抽出
+
+原实现第 ④ 步兜底取「首行有效文本」，正好吃中 Node 输出的模块 URL 行。
+现在先 `stripLocationLines()`：只剔「整行就是一个 file:// 路径且不含
+rror / ERR_」的行。判据刻意收紧 —— 真正的错误行里同样有 file://
+（`Cannot find module 'file:///...'`），用 contains 会把线索一起删掉。
+
+**3. `PluginStoreActivity.kt`** —— 委托 `InstallErrorSummary.summarize()`；
+清掉 `forceInstall` 与 `runUninstall` 两处残留的裸 `take(28)`；
+三处失败出口都加长按取完整原文。
+
+**4. 新增 `app/src/test/.../InstallErrorSummaryTest.kt`（128 行 / 10 条）**
+喂真实 Node / pnpm 原文，断言「出来的不是那串路径」。
+
+**5. `scripts/probes/_test_plugin_install_errors.py` +80**（50 → 73 项）
+
+### 验证（全部实跑）
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| JVM 单测 | `gradle -Ppackage=noruntime :app:testDebugUnitTest` | **29/29**，0 failures（InstallErrorSummaryTest 10 条） |
+| 插件探针 | `python scripts/probes/_test_plugin_install_errors.py` | **73 通过 / 0 失败** |
+| Kotlin 编译 | `gradle -Ppackage=noruntime compileDebugKotlin` | BUILD SUCCESSFUL |
+| 提交独立构建 | 在 git worktree 于 96825f0f 检出后重跑单测 | **29/29**，exit 0 |
+
+**变异反验 5 项全部变红，恢复后 md5 逐字节一致**：
+1. 不剔位置行 → `nodeEsmStackHeadIsNotUsedAsSummary` 红
+2. 判据放宽成 `s.contains("file://")` → `errorLineWithFileUrlNotDropped...` 红
+3. 去掉错误码优先 → `pnpmErrorCodeStillWins` 红
+4. 去掉 `dsh:` 分支 → `upstreamDshDiagnosticLineWinsOverCauseChain` 红
+5. `unknown` 兜底改空串 → `emptyOutputGivesUnknown` 红
+
+第 2 项第一版是**假绿**：单行输入下过滤结果为空 → `ifBlank` 回退原文 →
+断言照样通过。补了 `errorLineWithFileUrlNotDroppedEvenWhenOtherLinesRemain`
+（加一行普通文本、断回退不发生）后才能真正变红。**教训：用 ifBlank 兜底的
+函数，单行用例永远测不出过滤判据宽了。**
+
+设备状态：测试期我的 `pnpm add` 写进设备的 `dshmarket` / `dsh-longterm-memory`
+已全部撤销，`package.json` 恢复为 rh.tgz + project-memory 两项，bundles 恢复三项，
+lockfile 内两包出现次数 0，临时目录 `files/fp`、`files/lc` 已删，
+`pnpm-lock.yaml` importers 已核对回 `^0.7.0 / 0.7.0`。
+
+### 未完成（不谎报）
+
+- 官方插件页那条错误的**原始文本**仍未取到，根因待原文。
+  本次改动保证：下次再发生时，按钮上显示的是真因而非路径，长按可取全文。
+
+### 并行会话避让
+
+`app/src/main/java/app/dsh/mobile/LinuxActivity.kt`（framesrv 相关，当时 +24 −4，
+正在被另一会话反复改写，抓取瞬间处于**编译不过**状态，行号随时间漂移不可引用）、
+`engine/RootfsModes.kt`、`RootfsModesTest.kt` 属并行会话在途，本轮未纳入提交。
+本轮验证在 `git worktree` 于提交 96825f0f 独立检出后重跑，不依赖工作区状态。

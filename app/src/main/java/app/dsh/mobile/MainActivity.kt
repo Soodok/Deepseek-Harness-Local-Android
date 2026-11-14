@@ -1611,8 +1611,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
             gravity = if (menuDock == IslandDock.LEFT)
-                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+                android.view.Gravity.START or android.view.Gravity.TOP
+            else android.view.Gravity.END or android.view.Gravity.TOP
         })
         val dm = resources.displayMetrics
         val hostWidth = container.width.takeIf { it > 0 } ?: dm.widthPixels
@@ -1642,7 +1642,47 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 面板内容自己量出来的宽高（m）apply 到 content 上
         (content.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { clp ->
             clp.width = m.w; clp.height = m.h
+            // 纵向位置直接落到 m.y（clamp 后的真实值），不再让 FrameLayout 居中重算
+            clp.topMargin = m.y
             content.layoutParams = clp
+        }
+        // v1.7.14：边缘投影（用户要求「加一层边缘阴影，不描边」）。
+        // 单独一块比面板更大的视图垫在最底层：Drawable 只能画在自身边界内，
+        // 阴影要落到面板外面就必须另起一层，且预留边要 ≥ 模糊半径，否则外沿被切平。
+        // 贴屏幕那一侧不投（inset 取 0），只往屏幕内侧铺 —— 那里本来就出屏，
+        // 画了看不见，还会在部分机型沿边缘露出半像素暗线。
+        val pal = islandPal()
+        if (pal.panelShadow != 0) {
+            val blur = dpV(18).toFloat()
+            val dy = dpV(4).toFloat()
+            val extra = (blur + dy).toInt() + dpV(2)
+            val dockLeft = islandDock == IslandDock.LEFT
+            val shadow = IslandPanelShadowView(
+                this,
+                dockLeft = dockLeft,
+                insetLeft = if (dockLeft) 0 else extra,
+                insetTop = extra,
+                insetRight = if (dockLeft) extra else 0,
+                insetBottom = extra,
+                radiusPx = IslandChrome.outerRadiusPx(expanded = true, density = dm.density).toFloat(),
+                blurPx = blur,
+                dyPx = dy,
+                fillColor = pal.panel,
+                shadowColor = pal.panelShadow,
+            )
+            // 加在索引 0：垫在 scrim 与面板之下，不参与点击。
+            //
+            // ⚠️ 用 margin 精确对齐 m.y - extra，不要用 CENTER_VERTICAL 蒙：
+            //    面板高度被 70% 上限截断或内容较短时，y 是 clamp 出来的，
+            //    不一定垂直居中 —— 那时阴影会和面板错开一条缝。
+            host.addView(shadow, 0, android.widget.FrameLayout.LayoutParams(
+                m.w + extra, m.h + extra * 2,
+            ).apply {
+                gravity = if (dockLeft)
+                    android.view.Gravity.TOP or android.view.Gravity.START
+                else android.view.Gravity.TOP or android.view.Gravity.END
+                topMargin = m.y - extra
+            })
         }
         host.visibility = View.VISIBLE
         host.alpha = 0f
@@ -1705,33 +1745,44 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 展开：从把手位置撑开成岛（灵动岛展开的观感）
             //
             // ★ v1.7.13：同样先改状态、先渲染，动画只做观感。
+            // ★ v1.7.14：渲染**之前**必须先把 row 压回「展开起点」。
+            //   renderIslandVisibility() 会在同一帧把 row 设成 VISIBLE；此时若
+            //   scale/alpha 还留着上一次收起收尾复位的 (1f, 1f, 1f)，岛会先整条
+            //   满宽亮相一次，过一会儿才被压小再撑开 —— 用户报的「连续展开两次」
+            //   就是这两段叠加。把起点属性放到渲染前，第一帧画出来就是小而透明，
+            //   屏幕上只剩一次撑开。
             islandCollapsed = false
+            row.scaleX = 0.7f
+            row.scaleY = 0.4f
+            row.alpha = 0f
+            // 把手的淡出动画不再需要：renderIslandVisibility() 在
+            // islandCollapsed=false 的同一帧就把 handle 设成 GONE（贴顶展开态
+            // handle 恒隐藏），旧代码那 120ms 的 handle 动画在 GONE 的 View 上空转，
+            // 却把岛的撑开整整推迟了两轮视觉。
+            handle.scaleX = 1f
+            handle.scaleY = 1f
+            handle.alpha = 1f
+            handle.translationX = 0f
+            handle.translationY = 0f
             renderIslandVisibility()
-            handle.animate().scaleX(0.4f).scaleY(0.4f).alpha(0f).setDuration(120L)
-                .withEndAction {
-                    handle.scaleX = 1f; handle.scaleY = 1f; handle.alpha = 1f
-                    // 展开态不需要对齐挖孔（全宽胶囊本来就罩住顶部），
-                    // 但下次收起要重新按当前挖孔算位置，故清掉临时位移
-                    handle.translationX = 0f
-                    handle.translationY = 0f
-                    row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f
-                    renderIslandVisibility()
-                    // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
-                    // row.width 还是 0，pivotX 会被算成 0.5px，岛就从左上角展开
-                    // 而不是从中心撑开。post 到下一帧即可拿到真实宽度。
-                    row.post {
-                        row.pivotX = row.width / 2f
-                        row.pivotY = 0f
-                        // ★不能硬用 alpha(1f)：那会把「活跃度透明度」覆盖掉
-                        //   （引擎空闲时岛本应退到 0.55）。用当前状态的目标值收尾，
-                        //   否则每次手动收起再展开，岛都会变回满不透明。
-                        val targetAlpha = islandIdleAlphaFor(lastRenderedState)
-                        row.animate().scaleX(1f).scaleY(1f).alpha(targetAlpha)
-                            .setDuration(180L)
-                            .setInterpolator(android.view.animation.OvershootInterpolator(0.9f))
-                            .start()
-                    }
-                }.start()
+            // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
+            // row.width 还是 0，pivotX 会被算成 0.5px，岛就从左上角展开
+            // 而不是从中心撑开。post 到下一帧即可拿到真实宽度。
+            row.post {
+                // 布局还没跑完时 width 仍是 0，此时按屏宽兜底，避免 pivotX=0
+                // 让岛从左上角展开（收起分支 :1502 用的是同一套兜底）。
+                row.pivotX = if (row.width > 0) row.width / 2f
+                else resources.displayMetrics.widthPixels / 2f
+                row.pivotY = 0f
+                // ★不能硬用 alpha(1f)：那会把「活跃度透明度」覆盖掉
+                //   （引擎空闲时岛本应退到 0.55）。用当前状态的目标值收尾，
+                //   否则每次手动收起再展开，岛都会变回满不透明。
+                val targetAlpha = islandIdleAlphaFor(lastRenderedState)
+                row.animate().scaleX(1f).scaleY(1f).alpha(targetAlpha)
+                    .setDuration(180L)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(0.9f))
+                    .start()
+            }
         }
     }
 

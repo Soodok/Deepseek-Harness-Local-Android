@@ -211,6 +211,17 @@ object IslandPalette {
          * 取 0 表示不描边（深色主题沿用原来的纯黑，不做任何改动）。
          */
         val outline: Int = 0,
+        /**
+         * 侧边展开面板的边缘投影色（v1.7.14）。
+         *
+         * 为什么不用 elevation：系统投影色在浅/深主题下固定偏灰，而面板压在
+         * **任意网页**上，底色不可控（和 [outline] 的成因一样）。这里显式给色，
+         * 浅色用低透明度黑、深色用高一点透明度的黑 —— 深色面板本身全黑，
+         * 投影要更实才看得出「浮起来」。
+         *
+         * 取 0 表示不投阴影。
+         */
+        val panelShadow: Int = 0,
     )
 
     val DARK = Colors(
@@ -226,6 +237,9 @@ object IslandPalette {
         okSoft = 0x3322A06B,
         warn = 0xFFB45309.toInt(),
         outline = 0,   // 深色沿用旧观感，一个像素都不改
+        // 深色面板是纯黑，投 24% 黑在深色页面上几乎看不出；提到 48% 才有
+        // 「浮起来一层」的层次，又不会在浅色网页上变成脏污块。
+        panelShadow = 0x7A000000,
     )
 
     val LIGHT = Colors(
@@ -252,6 +266,10 @@ object IslandPalette {
         warn = 0xFF92400E.toInt(),
         // 对 handle 3.29:1、对纯白 3.61:1 —— 满足 UI 元素边界 3:1，又不至于成黑框
         outline = 0xFF7B8899.toInt(),
+        // 浅色面板 #F7F9FC 压在纯白页上只差 3%，靠投影拉开层次。
+        // 22% 黑（约 #000 的 56 级）在 #F7F9FC 上肉眼可见、不显灰脏；
+        // 再深就会像「描了一圈粗边」，与用户「不描边」的要求相反。
+        panelShadow = 0x38000000,
     )
 
     fun of(dark: Boolean): Colors = if (dark) DARK else LIGHT
