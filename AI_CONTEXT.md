@@ -12482,3 +12482,38 @@ JVM `passed=2386 failed=0`；**128 个探针 0 失败**；i18n / ui-tokens / no-
 - `scripts/probes/_test_device_caps_new.py`（J1~J4）
 
 
+
+## 一百二十、本地 14 提交推送到远端 main（2026-11-14，merge c20555a6）
+
+### 做了什么
+本地 main 领先 origin 13 个提交（删镜像残留、apt lists 失权、UNEXPECTED_STORE、
+灵动岛把手、上游 0.2.2-rc.3 移植等），origin 上次已推进到 `5a31710e`
+（远程访问三处修复 · v1.6.0-beta.11 / 387）。两边都对 `AI_CONTEXT.md` 尾部做追加。
+
+- `git fetch origin`：首次报 `schannel: failed to receive handshake`，重试即通（本机
+  配了 `http.proxy http://127.0.0.1:7892`）。
+- `git merge --no-commit --no-ff origin/main`：唯一冲突 `AI_CONTEXT.md`（:11936）。
+  解法是**保留双方全文** —— 本仓「一百一十一」（:11936）、「一百一十二」（:12285）
+  在前，远端「一百一十九、远程访问三处真缺陷修复 + 截图并发」（:12416）在后。
+- 合并提交 `c20555a6`，随后 `git push origin main` 一次成功：`5a31710e..c20555a6`。
+- 核对：`origin/main` / 本地 `main` / `git ls-remote` 三者均为
+  `c20555a61e8cc67016ef72bf63750acaeb9ee5e1`，`rev-list --left-right --count` = 0 0。
+
+### 解冲突的坑（会重复踩）
+分解决脚本**不能写进 bash heredoc**。`python - <<'PY'` 里的 `'<<<<<<< HEAD'`
+被 shell 层处理后脚本报 `SyntaxError: unterminated string literal`，标记原样留在文件里
+（`git diff --check` 仍报 leftover conflict marker）。改成独立脚本
+`/e/tmp/resolve_ctx.py`（三段 `s.index()` 切分 + `strip('\n')` 拼接）后 0 残留。
+
+### 推送前的隔离验证（worktree `/e/tmp/wt-push`，HEAD c20555a6，0 脏）
+`_test_linux_symlink_drift` 22/0；`_test_runtime_dedupe` 14/0；
+`_test_webview_polyfill_gate` 35/0；`_test_remote_access` 49/0；
+`_test_device_caps_new` 116/0；`check-i18n.py` 0；
+`gradle :app:compileDebugKotlin -Ppackage=noruntime` **BUILD SUCCESSFUL 4m20s**。
+
+### 边界
+- 主工作区仍有 **70 项他人未提交 WIP**（catalog.json、OnboardingActivity.kt、
+  ExtensionLog/ExtensionManager、六套 strings.xml 等），未动、未清场；所有验证都在
+  worktree 里做。
+- CI 结果未看（推送后未轮询 Actions）。
+- `runtime.zip` 仍未重建（Linux/Termux 闭包，本机无 WSL/docker），App 进程内 rc.3 整链未验。
