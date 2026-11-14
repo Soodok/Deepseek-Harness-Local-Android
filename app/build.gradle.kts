@@ -259,15 +259,18 @@ android {
         // TurnWatcher 每 1.5 秒给每次会话写入都整份解压 zstd（29.5 MB 会话 → 233 MB
         // 明文 / 1.8 秒 / 子进程峰值 799 MB），现改为三道闸 + 按帧序号增量，
         // 常态开销降到几百字节；目录遍历也按 5 轮节流。
-        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380 → 381 → 382 → 383。
+        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380 → 381 → 382 → 383 → 384。
         // v1.6.0-beta.8（2026-11-14）：独立 Flutter 原生聊天界面与 Android host bridge。
-        versionCode = 383
+        // v1.6.0-beta.9（2026-11-14）：Claude 风格视觉复做、手机几何与交互回归。
+        // v1.6.0-beta.10（2026-11-14）：极简炭黑对话页面与演示消息身份修复。
+        // v1.6.0-beta.11 / beta.12（2026-11-14 13:40 / 13:45）：模型/文件/权限选择，局部玻璃面板与异步派发修复。
+        versionCode = 387
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.8"
+        versionName = "1.6.0-beta.12"
 
         ndk {
             abiFilters += listOf(targetAbi)

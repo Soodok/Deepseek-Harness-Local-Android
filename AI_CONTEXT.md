@@ -8,6 +8,38 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
+## 输入区控件与局部玻璃面板（2026-11-14 13:45）
+
+- 用户认可炭黑整体氛围；本轮补齐加号文件选择、模型选择、工具权限按钮，输入区与选项底板采用局部裁切模糊、细边缘和悬浮阴影。
+- file_selector 1.1.0 调用系统选择器；真实文件字节进入 PromptSubmission，最多5个文件/总计20MiB，可移除、仅附件发送、取消保留草稿。模型与权限由 ComposerTransport 显式能力提供，未支持的引擎不会静默丢弃参数；fixture标注演示，工具权限不是手机系统权限。
+- 26项flutter test --reporter expanded退出0，flutter analyze退出0（No issues found，4.9s）。新增测试覆盖三档宽360/390/432新控件48dp点按、弹层选择、官方选择器模拟、文件字节及上限、取消/移除/纯附件、排队选项冻结、失败后编辑和重连重试。
+- 独立后台只读审查 a8b7d314-f612-4315-b232-c5c2aadccf3c 的队首异步竞态已先红测（调用次数期望1实际2）再加controller互斥修复；发送失败后输入可编辑并保留显式重连入口。其有界附件副本建议未改：保留20MiB限制和防御性复制，避免调用方修改附件内容。
+- 新测试发现回合结束后旧消息仍isStreaming；先验证断言红（false期望/true实际），再由reducer.turnComplete清理流式标记，恢复26项全绿。
+- 首次浏览器构建退出0（63.4s），真实CDP点按模型/权限面板与加号，通过Page.fileChooserOpened + DOM.setFileInputFiles选入composer-demo.txt并显示文件名；视口432×960、dpr1、bodyWidth432。最终修复后release重建退出0（55.3s）；CDP三档360/390/432×960、dpr1、bodyWidth等于视口宽。六张截图归档docs/reports/assets/2026-11-14-composer/，画廊composer-controls-final.html与六个/files资源鉴权后均HTTP200。主图SHA256 153a00051f471f9a9c0464f3543c4b61e2ac11e9e2904e5ad2e1ae3d3ee7b6fa。
+- 版本声明1.6.0-beta.12/code387；beta.11/code386对应13:40首次控件构建，beta.12对应13:45审查修复后构建。Android APK/真机/真实模型切换仍未验证，默认fixture不变。工作仅在E:/tmp/wt-flutter-native-chat。
+
+## 极简对话已落盘并验证（2026-11-14 13:11）
+
+- 用户最终选择极简 Claude 式对话，取代工作站与蓝图纸胶囊；主代理完成 theme/ui 重做，炭黑 #141414、正文 #ECECEC、用户气泡 #2B2B2B、圆角输入框，无伪附件和启发式结果卡。Claude b87462f5-2937-480c-b4c8-28255f2aa4a0 只返回思考未写文件，主代理接手。
+- 验证：format、analyze（No issues found，13.3s）、完整17项tests通过；360/390/432视口及发送/停止/队首派发48dp均已检查。fixture历史消息ID与新轮消息冲突先被测试打红、改成独立history ID后转绿。
+- 独立后台只读审查 bb136445-4c4a-4c94-a838-e10d3e8caaca 指出队首派发触控过小；实测40dp，修为48dp并补三档回归。其余功能未发现确定性回归。named checker调用超时无报告。
+- 最终Flutter Web构建退出0（60.7s），实际CDP三档宽360/390/432、高960、dpr1、bodyWidth匹配；真实点按输入/发送后出现独立气泡和审批卡。截图 E:/tmp/native-chat-web-preview/minimal-chat-final-432.png（SHA256 87c9f830ab0663a7a42f6e5bea716da8c89d2c30ec31612dfe1b446b1d586ce1）及 minimal-chat-final-action.png（SHA256 7813251d6986f042ab49ab450380e94d2625966cdb97a211622c534fde701654）。
+- 伴侣现展示实际Flutter截图画廊 minimal-chat-final.html；原端口50287保留供用户查看，非可操作Flutter运行实例。版本声明 beta.10/code385；尚未提交、未安装APK、真实引擎仍未接入。
+
+## 方向变更记录（2026-11-14 12:34）
+
+- 用户已否决工作站预览，明确要求回到 Claude 手机对话页的极简布局；此决定取代工作站骨架与蓝色胶囊设计。
+- Claude 任务 b87462f5-2937-480c-b4c8-28255f2aa4a0 独占 theme/ui，目标为炭黑背景、开放正文、简洁顶栏与底部圆角输入框；保留全部功能契约，删除文本猜测结果卡和伪附件入口。主代理仅改测试和预览验证。
+
+## 先前视觉迭代（已被上述方向取代）
+
+- Claude 第二轮视觉任务已完成 theme/ui 写入；改为蓝图纸深蓝主题、会话/主机状态胶囊、自绘 DshMark、结果/工具过程结构和深色 composer。仅改 theme/ui，未提交 APK。
+- 独立验证：dart format lib test、flutter analyze 均退出 0；完整 flutter test --reporter expanded 17 项通过，覆盖 reducer、fixture 生命周期、审批/提问/停止/排队、断线重连和 360/390/432 控件几何。
+- 用户指出前两轮仍是聊天 App 结构，要求重构为 DSH Workstation；已制作完整概念预览 E:/tmp/wt-flutter-native-chat/.superpowers/brainstorm/1440-1794625625/content/workstation-v1.html，包含任务控制台、工作区侧栏、主机与引擎、执行轨迹、文件改动、测试结果、运行模式、手机任务遥控台和命令舱。
+- 视觉伴侣链接仍为 http://localhost:50287/?key=5077b1d83d1db6dc5a7f1c491575eba84017921ff4903f4a3ac3140a57e20b70；Chromium 1424×905 实测 workstation-v1.png 截图 1424×905、SHA-256 e947e8c5353340cf6fe671f7745c203f62a5ddb728364d08fc50b1221d157a9e。
+- 工作站预览是概念页，尚未改 Flutter；下一步待用户确认任务控制台骨架后再让 Claude 按新结构重做，保留现有功能契约。
+- 用户已授权后续视觉设计攻坚和助手不擅长的问题交给 Claude；代理结果仍须主代理独立验证。
+
 ## 当前 Flutter Native Chat worktree（2026-11-14 02:18）
 
 - 工作区：/e/tmp/wt-flutter-native-chat；分支：feat/flutter-native-chat；提交：4599c181728917dddef8dcc1d576f87e043cda7b；基线：99de8534d11702c8dd85d1bf2899ebb9dc816867。main 未改。

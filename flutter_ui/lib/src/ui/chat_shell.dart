@@ -4,10 +4,24 @@ import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
 import '../state/chat_controller.dart';
-
+import '../theme/dsh_theme.dart';
+import 'composer.dart';
 import 'message_list.dart';
 import 'session_drawer.dart';
-import 'composer.dart';
+
+/// Horizontal geometry shared by the message column and the composer so the
+/// reading edge and the input edge line up at every width.
+class ChatLayout {
+  const ChatLayout._();
+
+  static const double maxColumn = 720;
+
+  static double gutter(double width) {
+    if (width < 380) return 14;
+    if (width < 600) return 18;
+    return 28;
+  }
+}
 
 class ChatShell extends StatefulWidget {
   const ChatShell({
@@ -52,13 +66,22 @@ class _ChatShellState extends State<ChatShell> {
       animation: widget.controller,
       builder: (context, _) {
         final state = widget.controller.state;
+        final firstPrompt = state.messages
+            .where((m) => m.role == ChatRole.user)
+            .map((m) => m.text)
+            .firstOrNull;
         return Scaffold(
-          drawer: const SessionDrawer(),
+          backgroundColor: DshPalette.paper,
+          drawer: SessionDrawer(
+            currentTitle: firstPrompt,
+            isFixture: widget.controller.transport.isFixture,
+          ),
           body: SafeArea(
             child: Column(
               children: [
-                _Header(
+                _TopBar(
                   controller: widget.controller,
+                  title: firstPrompt,
                   onOpenWebFallback: widget.onOpenWebFallback,
                 ),
                 if (state.status == ChatStatus.reconnecting ||
@@ -66,6 +89,7 @@ class _ChatShellState extends State<ChatShell> {
                   _ConnectionBanner(
                     controller: widget.controller,
                     status: state.status,
+                    detail: state.error,
                   ),
                 Expanded(child: MessageList(controller: widget.controller)),
                 Composer(controller: widget.controller),
@@ -78,159 +102,132 @@ class _ChatShellState extends State<ChatShell> {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.controller, this.onOpenWebFallback});
-
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.controller,
+    required this.title,
+    this.onOpenWebFallback,
+  });
   final ChatController controller;
+  final String? title;
   final VoidCallback? onOpenWebFallback;
-
   @override
   Widget build(BuildContext context) {
-    final state = controller.state;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8F8FB),
-        border: Border(bottom: BorderSide(color: Color(0xFFE9E7F0))),
-      ),
+    final status = controller.state.status;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
       child: Row(
         children: [
-          Builder(
-            builder: (context) => IconButton(
-              tooltip: '打开会话抽屉',
-              icon: const Icon(Icons.menu_rounded),
-              onPressed: () => Scaffold.of(context).openDrawer(),
+          IconButton(
+            tooltip: '打开会话抽屉',
+            onPressed: () => Scaffold.of(context).openDrawer(),
+            icon: const Icon(
+              Icons.menu_rounded,
+              size: 24,
+              color: DshPalette.inkSoft,
             ),
           ),
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFF6557D8),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: const Icon(
-              Icons.auto_awesome,
-              color: Colors.white,
-              size: 19,
-            ),
+          const SizedBox(width: 12),
+          const Text(
+            'DSH',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'DSH',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                ),
-                Text(
-                  '独立执行工作台 · ' + _statusLabel(state.status),
-                  style: const TextStyle(
-                    color: Color(0xFF757180),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+          const Spacer(),
+          Tooltip(
+            message: controller.transport.isFixture ? 'fixture 模式' : 'engine',
+            child: Text(
+              _statusLabel(status),
+              style: const TextStyle(color: DshPalette.inkSoft, fontSize: 12),
             ),
           ),
-          _StatusChip(status: state.status),
-          const SizedBox(width: 4),
-          Text(
-            controller.transport.isFixture ? 'fixture' : 'engine',
-            style: const TextStyle(color: Color(0xFF757180), fontSize: 11),
-          ),
+          const SizedBox(width: 8),
           IconButton(
             key: const ValueKey('web-fallback'),
             tooltip: '打开 Web 版',
-            icon: const Icon(Icons.open_in_browser_outlined),
             onPressed: onOpenWebFallback,
+            icon: const Icon(
+              Icons.open_in_new_rounded,
+              size: 21,
+              color: DshPalette.inkSoft,
+            ),
           ),
         ],
       ),
     );
   }
 
-  String _statusLabel(ChatStatus status) => switch (status) {
+  static String _statusLabel(ChatStatus status) => switch (status) {
     ChatStatus.connecting => '连接中',
     ChatStatus.ready => '已连接',
-    ChatStatus.streaming => '执行中',
+    ChatStatus.streaming => '正在回复',
     ChatStatus.waitingAction => '等待确认',
     ChatStatus.reconnecting => '重连中',
     ChatStatus.error => '连接异常',
   };
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
-
-  final ChatStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = status == ChatStatus.ready || status == ChatStatus.streaming;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFFE5F3EC) : const Color(0xFFF0EEF6),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(
-              color: active ? const Color(0xFF2B8064) : const Color(0xFF8E889D),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            active ? '在线' : '离线',
-            style: TextStyle(
-              fontSize: 11,
-              color: active ? const Color(0xFF2B8064) : const Color(0xFF757180),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ConnectionBanner extends StatelessWidget {
-  const _ConnectionBanner({required this.controller, required this.status});
+  const _ConnectionBanner({
+    required this.controller,
+    required this.status,
+    this.detail,
+  });
 
   final ChatController controller;
   final ChatStatus status;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFFFF2E7),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+    final isError = status == ChatStatus.error;
+    final tone = isError ? DshPalette.bad : DshPalette.warn;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: tone.withValues(alpha: 0.45)),
+        ),
         child: Row(
           children: [
-            const Icon(
-              Icons.wifi_off_rounded,
-              size: 18,
-              color: Color(0xFF9B5E30),
+            Icon(
+              isError ? Icons.error_outline_rounded : Icons.wifi_off_rounded,
+              size: 15,
+              color: tone,
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                status == ChatStatus.error ? '引擎连接失败' : '连接已中断',
-                style: const TextStyle(color: Color(0xFF75421E), fontSize: 13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isError ? '引擎连接失败' : '连接已中断',
+                    style: const TextStyle(
+                      color: DshPalette.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (isError && detail != null && detail!.isNotEmpty)
+                    Text(
+                      detail!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: DshPalette.inkSoft,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
               ),
             ),
             TextButton(
               key: const ValueKey('connection-retry'),
               onPressed: controller.reconnect,
-              child: const Text('重新连接'),
+              child: const Text('重试'),
             ),
           ],
         ),

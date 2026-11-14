@@ -1,8 +1,28 @@
 import '../model/chat_model.dart';
+import '../model/composer_model.dart';
 import 'dsh_transport.dart';
 
-class FixtureTransport implements DshTransport {
+class FixtureTransport implements DshTransport, ComposerTransport {
   FixtureTransport();
+  @override
+  List<ComposerModel> get models => const [
+    ComposerModel('fixture-balanced', '标准 · 演示', '确定性流程演示，不调用付费模型'),
+    ComposerModel('fixture-fast', '快速 · 演示', '简短回复演示，不调用付费模型'),
+  ];
+  final List<PromptSubmission> _submissions = [];
+  List<PromptSubmission> get submissions => List.unmodifiable(_submissions);
+  bool _autoRead = false;
+  String? _replyOverride;
+  @override
+  Future<void> sendSubmission(PromptSubmission submission) async {
+    _ensureConnected();
+    if (!models.any((m) => m.id == submission.modelId))
+      throw const TransportException('演示模型不可用');
+    _submissions.add(submission);
+    _autoRead = submission.permission == ComposerPermission.readOnly;
+    _replyOverride = submission.modelId == 'fixture-fast' ? '收到，开始只读检查。' : null;
+    await sendPrompt(submission.displayText);
+  }
 
   final EventStreamController _events = EventStreamController();
   int _generation = 1;
@@ -27,12 +47,12 @@ class FixtureTransport implements DshTransport {
         sequence: _sequence,
         messages: const [
           ChatMessage(
-            id: 'fixture-user-1',
+            id: 'fixture-history-user',
             role: ChatRole.user,
             text: '帮我检查一下项目状态，并说明接下来该做什么。',
           ),
           ChatMessage(
-            id: 'fixture-assistant-1',
+            id: 'fixture-history-assistant',
             role: ChatRole.assistant,
             text: '我会先读取工作区状态，再给出下一步建议。',
           ),
@@ -63,7 +83,7 @@ class FixtureTransport implements DshTransport {
         sequence: _sequence,
         messageId: assistantId,
         role: ChatRole.assistant,
-        text: '收到。我先执行一项只读检查。',
+        text: _replyOverride ?? '收到。我先执行一项只读检查。',
         done: false,
       ),
     );
@@ -76,6 +96,11 @@ class FixtureTransport implements DshTransport {
         name: '读取项目状态',
       ),
     );
+    if (_autoRead) {
+      await approve(_lastToolId!);
+      _autoRead = false;
+      return;
+    }
     _lastActionId = 'fixture-approval-' + _sequence.toString();
     _emit(
       ChatEvent.approval(

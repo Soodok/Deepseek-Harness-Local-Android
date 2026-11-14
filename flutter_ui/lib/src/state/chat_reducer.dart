@@ -86,6 +86,9 @@ class ChatReducer {
         );
       case ChatEventKind.turnComplete:
         next = next.copyWith(
+          messages: next.messages
+              .map((m) => m.isStreaming ? m.copyWith(isStreaming: false) : m)
+              .toList(),
           status: ChatStatus.ready,
           clearApproval: true,
           clearQuestion: true,

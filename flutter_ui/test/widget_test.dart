@@ -6,6 +6,6 @@ void main() {
     await tester.pumpWidget(const DshApp());
     await tester.pump();
     expect(find.text('DSH'), findsOneWidget);
-    expect(find.text('fixture'), findsOneWidget);
+    expect(find.byTooltip('fixture 模式'), findsOneWidget);
   });
 }

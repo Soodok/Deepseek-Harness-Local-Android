@@ -1,81 +1,135 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../theme/dsh_theme.dart';
+
+/// Session navigation. Multi-session listing and creation are not wired to a
+/// backend yet, so "新建会话" stays disabled unless [onNewSession] is provided
+/// and only the current session is shown.
 class SessionDrawer extends StatelessWidget {
-  const SessionDrawer({super.key, this.onNewSession});
+  const SessionDrawer({
+    super.key,
+    this.onNewSession,
+    this.currentTitle,
+    this.isFixture = false,
+  });
 
   final VoidCallback? onNewSession;
+  final String? currentTitle;
+  final bool isFixture;
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final title = (currentTitle == null || currentTitle!.trim().isEmpty)
+        ? '新的对话'
+        : currentTitle!.trim();
     return Drawer(
-      backgroundColor: const Color(0xFFF6F5FA),
+      width: width < 420 ? width * 0.84 : 320,
+      backgroundColor: DshPalette.paperDeep,
+      shape: const RoundedRectangleBorder(),
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 20, 16, 16),
+              padding: const EdgeInsets.fromLTRB(20, 16, 8, 6),
               child: Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6557D8),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.auto_awesome, color: Colors.white),
-                  ),
-                  const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
-                      '会话',
+                      'DSH',
                       style: TextStyle(
-                        fontSize: 20,
+                        color: DshPalette.ink,
+                        fontSize: 17,
                         fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
                       ),
                     ),
                   ),
                   IconButton(
                     tooltip: '关闭会话抽屉',
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close_rounded, size: 20),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: FilledButton.tonalIcon(
+              padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
+              child: Text(
+                isFixture ? '本机演示 · 尚未连接真实引擎' : '本机引擎',
+                style: const TextStyle(
+                  color: DshPalette.inkFaint,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: TextButton.icon(
                 onPressed: onNewSession,
-                icon: const Icon(Icons.add),
+                style: TextButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  foregroundColor: DshPalette.ink,
+                  disabledForegroundColor: DshPalette.inkFaint,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                icon: const Icon(Icons.edit_note_rounded, size: 21),
                 label: const Text('新建会话'),
               ),
             ),
-            const SizedBox(height: 24),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 22),
+              padding: EdgeInsets.fromLTRB(22, 18, 22, 8),
               child: Text(
-                '最近使用',
-                style: TextStyle(color: Color(0xFF757180), fontSize: 12),
+                '当前',
+                style: TextStyle(
+                  color: DshPalette.inkFaint,
+                  fontSize: 12,
+                  letterSpacing: 0.4,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            ListTile(
-              selected: true,
-              selectedTileColor: Color(0xFFEAE7FC),
-              leading: Icon(Icons.chat_bubble_outline, size: 20),
-              title: Text('项目状态检查'),
-              subtitle: Text('当前工作区', style: TextStyle(fontSize: 12)),
-              onTap: () => Navigator.of(context).pop(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Material(
+                color: DshPalette.surface,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 11,
+                    ),
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: DshPalette.ink,
+                        fontSize: 14.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
             const Spacer(),
-            const Padding(
-              padding: EdgeInsets.all(22),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
               child: Text(
-                'DSH 独立执行工作台 · fixture 模式可离线体验完整流程',
-                style: TextStyle(
-                  color: Color(0xFF757180),
+                isFixture ? '演示数据 · 尚未连接真实引擎，会话列表暂不可用' : '会话列表暂不可用',
+                style: const TextStyle(
+                  color: DshPalette.inkFaint,
                   fontSize: 12,
                   height: 1.5,
                 ),

@@ -22,8 +22,18 @@ void main() {
     expect(snapshot.messages, hasLength(2));
 
     await transport.sendPrompt('继续检查');
-    expect((await take(iterator)).kind, ChatEventKind.delta);
-    expect((await take(iterator)).kind, ChatEventKind.delta);
+    final userDelta = await take(iterator);
+    final assistantDelta = await take(iterator);
+    expect(userDelta.kind, ChatEventKind.delta);
+    expect(assistantDelta.kind, ChatEventKind.delta);
+    expect(
+      snapshot.messages.map((m) => m.id),
+      isNot(contains(userDelta.messageId)),
+    );
+    expect(
+      snapshot.messages.map((m) => m.id),
+      isNot(contains(assistantDelta.messageId)),
+    );
     expect((await take(iterator)).kind, ChatEventKind.toolStarted);
     final approval = await take(iterator);
     expect(approval.kind, ChatEventKind.approval);

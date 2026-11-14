@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../model/chat_model.dart';
+import '../model/composer_model.dart';
 import '../transport/dsh_transport.dart';
 import 'chat_reducer.dart';
 import 'chat_state.dart';
 
 class ChatController extends ChangeNotifier {
-  ChatController(this.transport);
+  ChatController(this.transport) {
+    if (models.isNotEmpty) _modelId = models.first.id;
+  }
 
   final DshTransport transport;
   ChatState _state = ChatState.empty();
@@ -16,15 +19,64 @@ class ChatController extends ChangeNotifier {
   bool _started = false;
   bool _disposed = false;
   bool _resyncInFlight = false;
+  bool _queuedDispatchInFlight = false;
 
   ChatState get state => _state;
+  final List<PromptAttachment> _attachments = [];
+  final List<PromptSubmission> _queuedSubmissions = [];
+  String? _modelId;
+  ComposerPermission _permission = ComposerPermission.ask;
+  List<ComposerModel> get models => transport is ComposerTransport
+      ? List.unmodifiable((transport as ComposerTransport).models)
+      : const [];
+  bool get supportsComposerOptions => transport is ComposerTransport;
+  String? get selectedModelId => _modelId;
+  String get modelLabel =>
+      models.where((m) => m.id == _modelId).firstOrNull?.label ?? '模型未接入';
+  ComposerPermission get permission => _permission;
+  List<PromptAttachment> get attachments => List.unmodifiable(_attachments);
+  static const maxFiles = 5;
+  static const maxAttachmentBytes = 20 * 1024 * 1024;
+  void selectModel(String id) {
+    if (!models.any((m) => m.id == id)) throw ArgumentError.value(id, 'model');
+    _modelId = id;
+    if (!_disposed) notifyListeners();
+  }
+
+  void selectPermission(ComposerPermission mode) {
+    if (!supportsComposerOptions)
+      throw const TransportException('当前引擎尚未接入权限模式');
+    _permission = mode;
+    if (!_disposed) notifyListeners();
+  }
+
+  void addAttachments(List<PromptAttachment> files) {
+    if (_disposed) return;
+    if (!supportsComposerOptions) throw const TransportException('当前引擎尚未接入附件');
+    final next = [..._attachments, ...files];
+    if (next.length > maxFiles ||
+        next.fold<int>(0, (sum, f) => sum + f.bytes.length) >
+            maxAttachmentBytes) {
+      throw const TransportException('最多选择5个文件，总大小不超过20MB');
+    }
+    if (next.map((f) => f.id).toSet().length != next.length)
+      throw ArgumentError('附件标识重复');
+    _attachments.addAll(files);
+    notifyListeners();
+  }
+
+  void removeAttachment(String id) {
+    _attachments.removeWhere((f) => f.id == id);
+    if (!_disposed) notifyListeners();
+  }
 
   bool get canSend =>
       _state.status == ChatStatus.ready ||
       _state.status == ChatStatus.streaming ||
       _state.status == ChatStatus.waitingAction;
 
-  bool get canDispatchQueued => _state.status == ChatStatus.ready;
+  bool get canDispatchQueued =>
+      !_queuedDispatchInFlight && _state.status == ChatStatus.ready;
 
   Future<void> start() async {
     if (_started || _disposed) return;
@@ -41,34 +93,80 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> sendPrompt(String text) async {
-    final prompt = text.trim();
-    if (prompt.isEmpty || _disposed) return;
-    if (_state.status == ChatStatus.streaming ||
-        _state.status == ChatStatus.waitingAction) {
-      await queuePrompt(prompt);
-      return;
-    }
+  Future<bool> sendPrompt(String text) async {
+    if (!canSend || _disposed) return false;
+    final submission = PromptSubmission(
+      text: text.trim(),
+      modelId: _modelId,
+      permission: _permission,
+      attachments: _attachments,
+    );
+    if (submission.text.isEmpty && submission.attachments.isEmpty) return false;
+    final queued =
+        _queuedDispatchInFlight ||
+        _state.status == ChatStatus.streaming ||
+        _state.status == ChatStatus.waitingAction;
     try {
-      await transport.sendPrompt(prompt);
+      if (queued) {
+        _queuedSubmissions.add(submission);
+        _syncQueue();
+      } else {
+        await _dispatch(submission);
+      }
+      _attachments.removeWhere((f) => submission.attachments.contains(f));
+      if (!_disposed) notifyListeners();
+      return true;
     } on Object catch (error) {
       _setError(error.toString());
+      return false;
     }
   }
 
+  Future<void> _dispatch(PromptSubmission submission) async {
+    if (transport is ComposerTransport) {
+      await (transport as ComposerTransport).sendSubmission(submission);
+    } else {
+      if (submission.attachments.isNotEmpty ||
+          submission.modelId != null ||
+          submission.permission != ComposerPermission.ask) {
+        throw const TransportException('当前引擎不支持模型、附件和权限参数');
+      }
+      await transport.sendPrompt(submission.text);
+    }
+  }
+
+  void _syncQueue() => _setState(
+    _state.copyWith(
+      queuedPrompts: _queuedSubmissions.map((s) => s.displayText).toList(),
+    ),
+  );
   Future<void> queuePrompt(String text) async {
-    final prompt = text.trim();
-    if (prompt.isEmpty || _disposed) return;
-    _setState(
-      _state.copyWith(queuedPrompts: [..._state.queuedPrompts, prompt]),
+    if (text.trim().isEmpty || _disposed) return;
+    _queuedSubmissions.add(
+      PromptSubmission(
+        text: text.trim(),
+        modelId: _modelId,
+        permission: _permission,
+      ),
     );
+    _syncQueue();
   }
 
   Future<void> sendNextQueued() async {
-    if (_state.queuedPrompts.isEmpty || !canDispatchQueued || _disposed) return;
-    final prompt = _state.queuedPrompts.first;
-    _setState(_state.copyWith(queuedPrompts: _state.queuedPrompts.sublist(1)));
-    await sendPrompt(prompt);
+    if (_queuedSubmissions.isEmpty || !canDispatchQueued || _disposed) return;
+    final submission = _queuedSubmissions.first;
+    _queuedDispatchInFlight = true;
+    notifyListeners();
+    try {
+      await _dispatch(submission);
+      _queuedSubmissions.removeAt(0);
+      _syncQueue();
+    } on Object catch (error) {
+      _setError(error.toString());
+    } finally {
+      _queuedDispatchInFlight = false;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   Future<void> stop() async {
