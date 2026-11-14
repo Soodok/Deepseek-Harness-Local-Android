@@ -1931,4 +1931,12 @@
     <string name="style_sub_classic">Classic · cool blue-grey</string>
     <string name="style_classic">Classic</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Developer options</string>
+    <string name="developer_options_sub">Optional tools and advanced controls</string>
+    <string name="developer_options_intro">A small collection of optional tools for curious users and advanced configuration.</string>
+    <string name="developer_options_enabled_sub">Turn off to hide developer options again.</string>
+    <string name="developer_options_security_note">Enabling this menu does not grant Root, Shizuku, or other system permissions. Each operation still requires its own authorization.</string>
+    <string name="developer_options_unlocked">Developer options enabled. Find them under Settings → System.</string>
+    <string name="developer_options_disabled_toast">Developer options hidden. Tap the version information seven times to show them again.</string>
 </resources>

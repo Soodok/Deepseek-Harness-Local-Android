@@ -1934,4 +1934,12 @@
     <string name="style_sub_classic">经典 · 冷蓝灰</string>
     <string name="style_classic">经典</string>
     <string name="style_material">材料 3</string>
+
+    <string name="developer_options_title">开发者选项</string>
+    <string name="developer_options_sub">可选工具与高级控制</string>
+    <string name="developer_options_intro">为喜欢探索和高级配置的用户提供的一组可选工具。</string>
+    <string name="developer_options_enabled_sub">关闭后将再次隐藏开发者选项。</string>
+    <string name="developer_options_security_note">开启此菜单不会自动授予 Root、Shizuku 或其他系统权限。每项操作仍须经过独立授权检查。</string>
+    <string name="developer_options_unlocked">已开启开发者选项，可在「设置 → 系统」中查看。</string>
+    <string name="developer_options_disabled_toast">开发者选项已隐藏。再次点击版本信息 7 次即可开启。</string>
 </resources>

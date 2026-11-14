@@ -1891,4 +1891,12 @@
     <string name="style_sub_classic">Clássico · cinza-azulado frio</string>
     <string name="style_classic">Clássico</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Opções do desenvolvedor</string>
+    <string name="developer_options_sub">Ferramentas opcionais e controles avançados</string>
+    <string name="developer_options_intro">Uma pequena coleção de ferramentas opcionais para usuários curiosos e configurações avançadas.</string>
+    <string name="developer_options_enabled_sub">Desative para ocultar novamente as opções do desenvolvedor.</string>
+    <string name="developer_options_security_note">Ativar este menu não concede Root, Shizuku nem outras permissões do sistema. Cada operação continua exigindo sua própria autorização.</string>
+    <string name="developer_options_unlocked">Opções do desenvolvedor ativadas. Acesse em Configurações → Sistema.</string>
+    <string name="developer_options_disabled_toast">Opções do desenvolvedor ocultadas. Toque sete vezes nas informações da versão para mostrá-las novamente.</string>
 </resources>
