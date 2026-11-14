@@ -109,8 +109,13 @@ def res_path(*parts):
 
 
 bg_card = read(res_path('drawable', 'bg_card.xml'))
+# v1.8.0 把核心语义色从 `@color/*` 升级成 `?attr/dsh*`（两套主题各给一套值），
+# bg_card 随之改成 `?attr/dshStroke`。旧断言只认 `@color/stroke` 字面量，
+# 于是主题改造之后每个 PR 都红在 D1（PR #110、#111 同时中招）。
+# 现在两种写法都算过：描边必须存在、必须是 1dp，颜色来自语义 token。
 check('D1 card token keeps a 1dp stroke (separation must survive dark mode)',
-      '<stroke' in bg_card and '1dp' in bg_card and '@color/stroke' in bg_card)
+      '<stroke' in bg_card and '1dp' in bg_card
+      and ('@color/stroke' in bg_card or 'dshStroke' in bg_card))
 check('D2 group card corners come from md3_card_radius',
       '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
 
