@@ -39,11 +39,11 @@ rows = [node for node in layout.iter() if node.get(android_id) == "@+id/rowDevel
 check("Settings layout: developer row exists and starts hidden",
       len(rows) == 1 and rows[0].get("{http://schemas.android.com/apk/res/android}visibility") == "gone")
 about_rows = [node for node in layout.iter() if node.get(android_id) == "@+id/rowAbout"]
+row_order = [node.get(android_id) for node in layout.iter()
+             if node.get(android_id) in ("@+id/rowDeveloperOptions", "@+id/rowAbout")]
 check("Settings layout: developer row precedes About and uses middle segment styling",
       len(rows) == 1 and len(about_rows) == 1 and
-      list(rows[0].getparent()).index(rows[0]) < list(about_rows[0].getparent()).index(about_rows[0])
-      if hasattr(rows[0], "getparent") else
-      len(rows) == 1 and len(about_rows) == 1 and
+      row_order == ["@+id/rowDeveloperOptions", "@+id/rowAbout"] and
       rows[0].get("{http://schemas.android.com/apk/res/android}background") == "@drawable/bg_md3_seg_mid" and
       rows[0].get("{http://schemas.android.com/apk/res/android}clickable") == "true" and
       rows[0].get("{http://schemas.android.com/apk/res/android}focusable") == "true")
