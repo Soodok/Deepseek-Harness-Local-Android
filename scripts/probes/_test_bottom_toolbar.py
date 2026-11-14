@@ -18,22 +18,31 @@ a = '{http://schemas.android.com/apk/res/android}'
 app = '{http://schemas.android.com/apk/res-auto}'
 items = {x.get(a + 'id'): x for x in layout.iter() if x.get(a + 'id')}
 bar = items.get('@+id/dsh_bottom_toolbar_expanded')
+nav = items.get('@+id/dsh_bottom_navigation')
+menu_root = ET.parse(res / 'menu/bottom_navigation.xml').getroot()
+menu_items = {x.get(a + 'id'): x for x in menu_root.findall('item')}
+gesture = (java / 'DshDockGestureLayout.kt').read_text(encoding='utf-8')
 checks = {
     'bottom position can be chosen and persisted':
         'IslandDockActivity::class.java' in settings
         and 'CustomVisualPref.setIslandDock(this, IslandDock.BOTTOM)' in dock_settings
         and 'island_bottom_along_ratio' in prefs and 'BOTTOM' in chrome,
-    'official Material docked toolbar handles three actions':
+    'official Material expressive navigation bar handles three actions':
         bar is not None and bar.tag == 'com.google.android.material.dockedtoolbar.DockedToolbarLayout'
-        and all('@+id/dsh_bottom_toolbar_' + x in items for x in ('home', 'menu', 'settings')),
-    'home and settings use expressive buttons with icons above labels':
-        all(items['@+id/dsh_bottom_toolbar_' + name].get('style') == '@style/Widget.Material3Expressive.Button.TextButton'
-            and items['@+id/dsh_bottom_toolbar_' + name].get(app + 'iconGravity') == 'textTop'
-            and items['@+id/dsh_bottom_toolbar_' + name].get(a + 'text')
+        and nav is not None and nav.tag == 'com.google.android.material.bottomnavigation.BottomNavigationView'
+        and nav.get('style') == '@style/Widget.Material3Expressive.BottomNavigationView'
+        and nav.get(app + 'itemIconGravity') == 'top'
+        and all('@+id/dsh_bottom_toolbar_' + x in menu_items for x in ('home', 'menu', 'settings')),
+    'home and settings have labels':
+        all(menu_items['@+id/dsh_bottom_toolbar_' + name].get(a + 'title')
             for name in ('home', 'settings')),
     'menu remains icon-only and accessible':
-        items['@+id/dsh_bottom_toolbar_menu'].get(a + 'text') is None
-        and items['@+id/dsh_bottom_toolbar_menu'].get(a + 'contentDescription') == '@string/bottom_toolbar_menu',
+        menu_items['@+id/dsh_bottom_toolbar_menu'].get(a + 'title') == ''
+        and menu_items['@+id/dsh_bottom_toolbar_menu'].get(app + 'contentDescription') == '@string/bottom_toolbar_menu',
+    'toolbar intercepts downswipe but keeps item clicks':
+        'onInterceptTouchEvent' in gesture and 'dy > touchSlop' in gesture
+        and 'root.onCollapse = { collapseFromUser() }' in controller
+        and 'navigation.setOnItemSelectedListener' in controller,
     'system insets are owned by activity':
         bar is not None and bar.get(app + 'paddingBottomSystemWindowInsets') == 'false'
         and 'val viewportBottom = bottomPad + bottomToolbarInset' in main

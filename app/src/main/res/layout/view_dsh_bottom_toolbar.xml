@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<app.dsh.mobile.DshDockGestureLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:contentDescription="@string/menu_hide_toolbar">
 
     <com.google.android.material.dockedtoolbar.DockedToolbarLayout
         android:id="@+id/dsh_bottom_toolbar_expanded"
@@ -31,67 +32,14 @@
                 app:iconGravity="textStart"
                 app:iconSize="20dp" />
 
-            <LinearLayout
+            <com.google.android.material.bottomnavigation.BottomNavigationView
+                android:id="@+id/dsh_bottom_navigation"
+                style="@style/Widget.Material3Expressive.BottomNavigationView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/dsh_bottom_toolbar_home"
-                    style="@style/Widget.Material3Expressive.Button.TextButton"
-                    android:layout_width="0dp"
-                    android:layout_height="72dp"
-                    android:layout_weight="1"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:singleLine="false"
-                    android:maxLines="2"
-                    android:ellipsize="end"
-                    android:text="@string/bottom_toolbar_home"
-                    android:textAllCaps="false"
-                    app:icon="@drawable/ic_bottom_home"
-                    app:iconGravity="textTop"
-                    app:iconPadding="4dp"
-                    app:iconSize="24dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/dsh_bottom_toolbar_menu"
-                    style="@style/Widget.Material3Expressive.Button.TextButton"
-                    android:layout_width="0dp"
-                    android:layout_height="72dp"
-                    android:layout_weight="1"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:contentDescription="@string/bottom_toolbar_menu"
-                    app:icon="@drawable/ic_bottom_menu"
-                    app:iconGravity="textStart"
-                    app:iconSize="24dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/dsh_bottom_toolbar_settings"
-                    style="@style/Widget.Material3Expressive.Button.TextButton"
-                    android:layout_width="0dp"
-                    android:layout_height="72dp"
-                    android:layout_weight="1"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:singleLine="false"
-                    android:maxLines="2"
-                    android:ellipsize="end"
-                    android:text="@string/settings_title"
-                    android:textAllCaps="false"
-                    app:icon="@drawable/ic_settings"
-                    app:iconGravity="textTop"
-                    app:iconPadding="4dp"
-                    app:iconSize="24dp" />
-            </LinearLayout>
+                app:menu="@menu/bottom_navigation"
+                app:itemIconGravity="top"
+                app:labelVisibilityMode="labeled" />
         </LinearLayout>
     </com.google.android.material.dockedtoolbar.DockedToolbarLayout>
 
@@ -109,4 +57,4 @@
         app:icon="@drawable/ic_expand_less"
         app:iconGravity="textStart"
         app:iconSize="20dp" />
-</FrameLayout>
+</app.dsh.mobile.DshDockGestureLayout>

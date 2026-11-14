@@ -7,9 +7,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dockedtoolbar.DockedToolbarLayout
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import androidx.core.view.ViewCompat
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -33,11 +34,12 @@ class DshBottomToolbarController(
         fun onPosition(xRatio: Float, yRatio: Float) {}
     }
 
-    val root: FrameLayout = inflater.inflate(R.layout.view_dsh_bottom_toolbar, parent, false) as FrameLayout
+    val root: DshDockGestureLayout = inflater.inflate(R.layout.view_dsh_bottom_toolbar, parent, false) as DshDockGestureLayout
     val expandedView: DockedToolbarLayout = root.findViewById(R.id.dsh_bottom_toolbar_expanded)
     val collapsedView: MaterialButton = root.findViewById(R.id.dsh_bottom_toolbar_collapsed)
     val floatingView: MaterialButton = collapsedView
     private val collapseButton: MaterialButton = root.findViewById(R.id.dsh_bottom_toolbar_collapse)
+    private val navigation: BottomNavigationView = root.findViewById(R.id.dsh_bottom_navigation)
     private val touchSlop = ViewConfiguration.get(root.context).scaledTouchSlop
     private var yRatio = 1f
     private var insetLeft = 0
@@ -55,13 +57,24 @@ class DshBottomToolbarController(
     init {
         // It must be a direct child of the activity's FrameLayout so its hit area follows it.
         root.removeView(collapsedView)
-        root.findViewById<View>(R.id.dsh_bottom_toolbar_home).setOnClickListener { callbacks.onHome() }
-        root.findViewById<View>(R.id.dsh_bottom_toolbar_menu).setOnClickListener { callbacks.onMenu() }
-        root.findViewById<View>(R.id.dsh_bottom_toolbar_settings).setOnClickListener { callbacks.onSettings() }
+        ViewCompat.setOnApplyWindowInsetsListener(navigation) { _, insets -> insets }
+        navigation.setOnItemSelectedListener { item ->
+            if (!isExpanded || !isShown) return@setOnItemSelectedListener false
+            when (item.itemId) {
+                R.id.dsh_bottom_toolbar_home -> { callbacks.onHome(); true }
+                R.id.dsh_bottom_toolbar_menu -> { callbacks.onMenu(); false }
+                R.id.dsh_bottom_toolbar_settings -> { callbacks.onSettings(); false }
+                else -> false
+            }
+        }
+        navigation.setOnItemReselectedListener { item ->
+            if (isExpanded && isShown && item.itemId == R.id.dsh_bottom_toolbar_home) callbacks.onHome()
+        }
+        root.onCollapse = { collapseFromUser() }
+        root.isBlankPoint = { x, y -> isBlankPoint(x, y) }
         collapseButton.setOnClickListener { collapseFromUser() }
         collapsedView.setOnClickListener { expandFromUser() }
         collapsedView.setOnLongClickListener { callbacks.onMoveDock(); true }
-        installCollapseGesture()
         installDragGesture()
         parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionHandle() }
         collapsedView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionHandle() }
@@ -119,9 +132,8 @@ class DshBottomToolbarController(
         collapsedView.scaleX = 1f
         collapsedView.scaleY = 1f
         expandedView.importantForAccessibility = if (isExpanded) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        for (id in intArrayOf(R.id.dsh_bottom_toolbar_collapse, R.id.dsh_bottom_toolbar_home, R.id.dsh_bottom_toolbar_menu, R.id.dsh_bottom_toolbar_settings)) {
-            root.findViewById<View>(id).isEnabled = isExpanded
-        }
+        collapseButton.isEnabled = isExpanded
+        navigation.isEnabled = isExpanded
         collapsedView.isEnabled = !isExpanded
         collapsedView.importantForAccessibility = if (isExpanded) View.IMPORTANT_FOR_ACCESSIBILITY_NO else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
         if (!isShown) {
@@ -183,45 +195,16 @@ class DshBottomToolbarController(
         callbacks.onExpand()
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun installCollapseGesture() {
-        var downX = 0f
-        var downY = 0f
-        var moved = false
-        collapseButton.setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.rawX
-                    downY = event.rawY
-                    moved = false
-                    view.isPressed = true
-                    view.parent?.requestDisallowInterceptTouchEvent(true)
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (abs(event.rawX - downX) > touchSlop || abs(event.rawY - downY) > touchSlop) {
-                        moved = true
-                        view.isPressed = false
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    val dx = event.rawX - downX
-                    val dy = event.rawY - downY
-                    view.isPressed = false
-                    view.parent?.requestDisallowInterceptTouchEvent(false)
-                    if (dy > touchSlop && dy > abs(dx)) collapseFromUser()
-                    else if (!moved) view.performClick()
-                    true
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    view.isPressed = false
-                    view.parent?.requestDisallowInterceptTouchEvent(false)
-                    true
-                }
-                else -> true
-            }
-        }
+    private fun isBlankPoint(x: Float, y: Float): Boolean {
+        val origin = IntArray(2)
+        root.getLocationOnScreen(origin)
+        val pointX = origin[0] + x
+        val pointY = origin[1] + y
+        val rect = android.graphics.Rect()
+        val targets = listOf(collapseButton) + listOf(
+            R.id.dsh_bottom_toolbar_home, R.id.dsh_bottom_toolbar_menu, R.id.dsh_bottom_toolbar_settings,
+        ).mapNotNull { navigation.findViewById<View>(it) }
+        return targets.none { it.isShown && it.getGlobalVisibleRect(rect) && rect.contains(pointX.toInt(), pointY.toInt()) }
     }
 
     @SuppressLint("ClickableViewAccessibility")
