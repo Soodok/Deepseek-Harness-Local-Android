@@ -3,10 +3,8 @@ package app.dsh.mobile
 import android.content.Context
 import android.os.Bundle
 import android.view.View
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.LinearLayout
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.radiobutton.MaterialRadioButton
 
 /**
@@ -23,8 +21,7 @@ class ThemeActivity : ThemedActivity() {
 
     override val usesSettingsBackground: Boolean get() = true
 
-    private lateinit var swDynamic: MaterialSwitch
-    private lateinit var subDynamic: TextView
+    private lateinit var paletteSelector: ThemePaletteSelector
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -37,11 +34,16 @@ class ThemeActivity : ThemedActivity() {
 
         findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
-        swDynamic = findViewById(R.id.swDynamic)
-        subDynamic = findViewById(R.id.subDynamic)
-
+        paletteSelector = ThemePaletteSelector(
+            this, ThemeAccent.selected(this), ThemeAccent.dynamicSupported,
+        ) { id ->
+            if (id != ThemeAccent.selected(this)) {
+                ThemeAccent.setSelected(this, id)
+                recreate()
+            }
+        }
+        findViewById<LinearLayout>(R.id.paletteContainer).addView(paletteSelector)
         bindModeRows()
-        bindDynamic()
     }
 
     override fun onResume() {
@@ -68,33 +70,10 @@ class ThemeActivity : ThemedActivity() {
         }
     }
 
-    // ---------------------------------------------------------------- 动态取色
-
-    private fun bindDynamic() {
-        if (!ThemeAccent.dynamicSupported) {
-            swDynamic.isEnabled = false
-            swDynamic.isChecked = false
-            subDynamic.setText(R.string.theme_dynamic_unsupported)
-            return
-        }
-        swDynamic.setOnCheckedChangeListener { _, checked ->
-            if (ThemeAccent.dynamicEnabled(this) == checked) return@setOnCheckedChangeListener
-            ThemeAccent.setDynamicEnabled(this, checked)
-            recreate()
-        }
-    }
-
     private fun refresh() {
-        // 单选状态跟随偏好；开关同理，且只在支持时才可操作
         findViewById<MaterialRadioButton>(R.id.rbModeLight).isChecked = ThemePref.get(this) == ThemeMode.LIGHT
         findViewById<MaterialRadioButton>(R.id.rbModeDark).isChecked = ThemePref.get(this) == ThemeMode.DARK
         findViewById<MaterialRadioButton>(R.id.rbModeSystem).isChecked = ThemePref.get(this) == ThemeMode.SYSTEM
-
-        if (ThemeAccent.dynamicSupported) {
-            val on = ThemeAccent.dynamicEnabled(this)
-            swDynamic.setOnCheckedChangeListener(null)
-            swDynamic.isChecked = on
-            bindDynamic()
-        }
+        paletteSelector.setSelectedId(ThemeAccent.selected(this))
     }
 }

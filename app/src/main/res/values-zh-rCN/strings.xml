@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">系统动态配色</string>
+    <string name="theme_palette_blue">蓝色</string>
+    <string name="theme_palette_teal">青绿色</string>
+    <string name="theme_palette_violet">紫色</string>
+    <string name="theme_palette_amber">琥珀色</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s（此设备不支持）</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agent 引擎</string>
     <string name="notif_channel_engine_desc">DeepSeek Harness 本地引擎运行状态</string>
@@ -1548,7 +1554,7 @@
     <string name="theme_current_dynamic">当前：系统动态取色</string>
     <string name="theme_color_dynamic">系统动态取色</string>
 
-    <string name="theme_entry_sub">预设配色、自定义颜色与动态取色</string>
+    <string name="theme_entry_sub">明暗模式、预设配色和系统动态取色</string>
     <string name="ext_cat_lang">语言运行时</string>
     <string name="ext_cat_build">编译构建</string>
     <string name="ext_cat_debug">调试分析</string>

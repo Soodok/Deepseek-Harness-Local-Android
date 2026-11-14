@@ -1,48 +1,76 @@
 package app.dsh.mobile
 
 import android.content.Context
+import android.view.ContextThemeWrapper
 import com.google.android.material.color.DynamicColors
 
-/**
- * 动态取色偏好（v1.6.x）。
- *
- * 按 Google 官方做法，颜色只有两种来源：
- *   · 动态取色（Android 12+ 系统 Monet，跟随壁纸）
- *   · 关闭时使用主题里定义的静态 MD3 色板
- *
- * 参考 https://developer.android.com/develop/ui/views/theming/dynamic-colors
- *
- * 之前这里还有「预设色 / 自定义色」两条分支，它们要用 content-based scheme
- * 覆盖语义色，等于在 MD3 之上再造一套配色，既不符合规范，也容易把
- * surface / onSurface 换成中性色导致卡片和图标失去层次。现已移除。
- */
+/** Colour-source preference shared by onboarding and the theme settings page. */
 object ThemeAccent {
-
     private const val PREFS = "dsh_ui_prefs"
+    private const val KEY_PALETTE = "theme_palette"
     private const val KEY_DYNAMIC = "theme_dynamic_enabled"
 
-    /** 使用 Material 库的设备可用性判断，而非仅检查系统版本。 */
+    const val SYSTEM = "system"
+    const val BLUE = "blue"
+    const val TEAL = "teal"
+    const val VIOLET = "violet"
+    const val AMBER = "amber"
+    val paletteIds = listOf(SYSTEM, BLUE, TEAL, VIOLET, AMBER)
+
     val dynamicSupported: Boolean
         get() = DynamicColors.isDynamicColorAvailable()
 
-    /**
-     * 用户是否打开了动态取色。
-     *
-     * 旧版本存过 `theme_accent_mode`（PRESET/CUSTOM/DYNAMIC），这里兼容迁移：
-     * 存过 DYNAMIC 视为开启，其余视为关闭。
-     */
-    fun dynamicEnabled(ctx: Context): Boolean {
-        if (!dynamicSupported) return false
+    /** Preserve the user's selected ID even on devices where dynamic colour is unavailable. */
+    fun selected(ctx: Context): String {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (prefs.contains(KEY_DYNAMIC)) return prefs.getBoolean(KEY_DYNAMIC, false)
-        val legacy = prefs.getString("theme_accent_mode", null)
-        val on = legacy == "DYNAMIC"
-        prefs.edit().putBoolean(KEY_DYNAMIC, on).apply()
-        return on
+        val stored = prefs.getString(KEY_PALETTE, null)
+        if (stored in paletteIds) return stored!!
+        val legacyDynamic = if (prefs.contains(KEY_DYNAMIC)) {
+            prefs.getBoolean(KEY_DYNAMIC, false)
+        } else {
+            prefs.getString("theme_accent_mode", null) == "DYNAMIC"
+        }
+        val legacyPreset = when (prefs.getString("accent_scheme", null)) {
+            "teal" -> TEAL
+            "violet" -> VIOLET
+            "amber" -> AMBER
+            else -> BLUE
+        }
+        return (if (legacyDynamic) SYSTEM else legacyPreset).also {
+            prefs.edit().putString(KEY_PALETTE, it).apply()
+        }
     }
 
-    fun setDynamicEnabled(ctx: Context, enabled: Boolean) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_DYNAMIC, enabled).apply()
+    fun setSelected(ctx: Context, id: String) {
+        require(id in paletteIds)
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_PALETTE, id)
+            .putBoolean(KEY_DYNAMIC, id == SYSTEM)
+            .apply()
+    }
+
+    fun dynamicEnabled(ctx: Context): Boolean = selected(ctx) == SYSTEM && dynamicSupported
+
+    fun labelRes(ctx: Context): Int = when (selected(ctx)) {
+        SYSTEM -> R.string.theme_palette_dynamic
+        TEAL -> R.string.theme_palette_teal
+        VIOLET -> R.string.theme_palette_violet
+        AMBER -> R.string.theme_palette_amber
+        else -> R.string.theme_palette_blue
+    }
+
+    /** Official DynamicColors handles SYSTEM; other sources use generated Material overlays. */
+    fun overlayRes(ctx: Context): Int = when (selected(ctx)) {
+            TEAL -> R.style.ThemeOverlay_Dsh_Palette_Teal
+            VIOLET -> R.style.ThemeOverlay_Dsh_Palette_Violet
+            AMBER -> R.style.ThemeOverlay_Dsh_Palette_Amber
+            BLUE -> R.style.ThemeOverlay_Dsh_Palette_Blue
+            // Dynamic unavailable uses the blue fallback without changing the stored preference.
+            else -> if (dynamicSupported) 0 else R.style.ThemeOverlay_Dsh_Palette_Blue
+    }
+
+    fun wrap(ctx: Context): Context {
+        val overlay = overlayRes(ctx)
+        return if (overlay == 0) ctx else ContextThemeWrapper(ctx, overlay)
     }
 }

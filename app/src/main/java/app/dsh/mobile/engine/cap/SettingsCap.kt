@@ -9,6 +9,7 @@ import app.dsh.mobile.DshApp
 import app.dsh.mobile.OrientationPrefs
 import app.dsh.mobile.SettingsLayoutMode
 import app.dsh.mobile.ThemePref
+import app.dsh.mobile.ThemeAccent
 import app.dsh.mobile.engine.CapabilityGate
 import org.json.JSONArray
 import org.json.JSONObject
@@ -71,7 +72,8 @@ object SettingsCap {
     private val SPECS: Map<String, Spec> = mapOf(
         // —— 外观：改完要重建当前页才看得到 ——
         "theme_mode" to Spec(Effect.REFRESH, "dark|light|system; rebuilds the current page"),
-        "accent_scheme" to Spec(Effect.REFRESH, "sky|indigo|teal|violet|amber"),
+        "accent_scheme" to Spec(Effect.REFRESH, "legacy: sky|indigo|teal|violet|amber"),
+        "theme_palette" to Spec(Effect.REFRESH, "system|blue|teal|violet|amber"),
         "settings_layout" to Spec(Effect.REFRESH, "list|grid; a legacy 'card' value falls back to list"),
         "settings_layout_expanded" to Spec(Effect.REFRESH, "reserved: expanded section indices (the collapse layout was dropped)"),
         "page_scale" to Spec(Effect.REFRESH, "settings page zoom percentage"),
@@ -222,7 +224,7 @@ object SettingsCap {
         val file = body.optString("file", "").ifBlank { null }
             ?: findFile(ctx, key)
             ?: body.optString("create_in", "").ifBlank { null }
-            ?: "dsh_ui"   // 新键默认落在主 UI 偏好
+            ?: if (key in setOf("theme_palette", "theme_dynamic_enabled", "accent_scheme")) "dsh_ui_prefs" else "dsh_ui"
 
         if (file !in PREFS_FILES && file != "dsh_ui") {
             return err("refusing unknown prefs file: $file (allowed: ${PREFS_FILES.joinToString(",")})")
@@ -232,8 +234,29 @@ object SettingsCap {
         val old = if (prefs.contains(key)) readValue(prefs, key, SPECS[key]) else JSONObject.NULL
         val spec = SPECS[key]
 
+        if (file == "dsh_ui_prefs" && key == "theme_palette") {
+            val requested = body.optString("value", "")
+            if (requested !in ThemeAccent.paletteIds) return err("invalid theme palette")
+        }
         val (written, typeError) = writeValue(prefs, key, body.get("value"))
         if (typeError != null) return err(typeError)
+        if (file == "dsh_ui_prefs") {
+            when (key) {
+                "accent_scheme" -> {
+                    val palette = when (body.optString("value")) {
+                        "teal" -> ThemeAccent.TEAL
+                        "violet" -> ThemeAccent.VIOLET
+                        "amber" -> ThemeAccent.AMBER
+                        else -> ThemeAccent.BLUE
+                    }
+                    ThemeAccent.setSelected(ctx, palette)
+                }
+                "theme_dynamic_enabled" -> ThemeAccent.setSelected(
+                    ctx, if (prefs.getBoolean(key, false)) ThemeAccent.SYSTEM else ThemeAccent.BLUE,
+                )
+                "theme_palette" -> ThemeAccent.setSelected(ctx, prefs.getString(key, ThemeAccent.BLUE) ?: ThemeAccent.BLUE)
+            }
+        }
 
         // 副作用：按等级决定要不要重建当前页面。用户选了「直接生效」。
         val recreated = when (spec?.effect) {

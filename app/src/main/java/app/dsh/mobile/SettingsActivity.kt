@@ -47,7 +47,7 @@ class SettingsActivity : ThemedActivity() {
 
     /** 上次应用的主题/强调色/布局快照：子页改动后回到本页检测重建（v1.4.56） */
     private var appliedTheme: ThemeMode = ThemeMode.DARK
-    private var appliedAccent: Int = 0
+    private var appliedPalette: String = ThemeAccent.BLUE
     private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -240,7 +240,7 @@ class SettingsActivity : ThemedActivity() {
         // —— 个性化入口（v1.4.56）：外观/扩展整组收进子页，主页只留入口 ——
         val savedLayout = SettingsLayoutMode.current(this)
         appliedTheme = ThemePref.get(this)
-        appliedAccent = Accent.current(this).argb
+        appliedPalette = ThemeAccent.selected(this)
         appliedLayout = savedLayout
         findViewById<LinearLayout>(R.id.rowAppearance).setOnClickListener {
             startActivity(Intent(this, AppearanceActivity::class.java))
@@ -452,7 +452,7 @@ class SettingsActivity : ThemedActivity() {
         refreshA11ySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
-            appliedAccent != Accent.current(this).argb ||
+            appliedPalette != ThemeAccent.selected(this) ||
             appliedLayout != SettingsLayoutMode.current(this)
         ) {
             recreate()
@@ -467,7 +467,7 @@ class SettingsActivity : ThemedActivity() {
         findViewById<TextView>(R.id.subAppearanceEntry)?.text = getString(
             R.string.setting_appearance_sub,
             getString(ThemePref.get(this).labelRes),
-            getString(Accent.current(this).labelRes),
+            getString(ThemeAccent.labelRes(this)),
         )
     }
 

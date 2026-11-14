@@ -66,7 +66,7 @@ class OnboardingActivity : ThemedActivity() {
         Step(R.string.ob_wizard_language_title),
         Step(R.string.ob_wizard_orientation_title),
         Step(R.string.ob_wizard_theme_title),
-        Step(R.string.theme_dynamic),
+        Step(R.string.theme_color_section),
         Step(R.string.ob_wizard_screen_title),
         Step(R.string.ob_wizard_priv_title),
         Step(R.string.ob_wizard_done_title),
@@ -691,41 +691,23 @@ class OnboardingActivity : ThemedActivity() {
         ThemeMode.SYSTEM -> getString(R.string.ob_wizard_theme_system_hint)
     }
 
-    /** 系统动态色与主题页共用同一偏好；切换后仅重建当前引导页。 */
+    /** 与主题设置共用同一配色选择和偏好；切换后仅重建当前引导页。 */
     private fun buildDynamicColorOption() {
         val container = findViewById<LinearLayout>(R.id.accentContainer)
         container.removeAllViews()
-        val supported = ThemeAccent.dynamicSupported
-        val toggle = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
-            text = getString(R.string.theme_dynamic)
-            isEnabled = supported
-            isChecked = supported && ThemeAccent.dynamicEnabled(this@OnboardingActivity)
-            isSaveEnabled = false
-        }
-        val description = com.google.android.material.textview.MaterialTextView(this).apply {
-            setText(if (supported) R.string.theme_dynamic_sub else R.string.theme_dynamic_unsupported)
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
-            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            addView(toggle)
-            addView(description)
+        val selector = ThemePaletteSelector(this, ThemeAccent.selected(this), ThemeAccent.dynamicSupported) { id ->
+            if (id != ThemeAccent.selected(this)) {
+                ThemeAccent.setSelected(this, id)
+                recreate()
+            }
         }
         container.addView(MaterialCardView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             )
             setCardBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurfaceContainer))
-            addView(content)
+            addView(selector)
         })
-        toggle.setOnCheckedChangeListener { _, checked ->
-            if (ThemeAccent.dynamicEnabled(this) != checked) {
-                ThemeAccent.setDynamicEnabled(this, checked)
-                recreate()
-            }
-        }
     }
 
     private fun buildScreenCards() {

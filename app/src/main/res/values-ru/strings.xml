@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">Динамические цвета системы</string>
+    <string name="theme_palette_blue">Синий</string>
+    <string name="theme_palette_teal">Бирюзовый</string>
+    <string name="theme_palette_violet">Фиолетовый</string>
+    <string name="theme_palette_amber">Янтарный</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (не поддерживается на этом устройстве)</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Движок агента</string>
     <string name="notif_channel_engine_desc">Состояние локального движка DeepSeek Harness</string>
@@ -1502,7 +1508,7 @@
     <string name="theme_current_dynamic">Сейчас: системный динамический цвет</string>
     <string name="theme_color_dynamic">Системный динамический цвет</string>
 
-    <string name="theme_entry_sub">Готовые цвета, свой цвет и динамическая окраска</string>
+    <string name="theme_entry_sub">Оформление, готовые палитры и динамические цвета системы</string>
     <string name="ext_cat_lang">Языковые среды</string>
     <string name="ext_cat_build">Сборка и инструменты</string>
     <string name="ext_cat_debug">Отладка</string>

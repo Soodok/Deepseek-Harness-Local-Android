@@ -1,7 +1,7 @@
 # Material 3 官方规范（本仓库的强制依据）
 
-这份目录是**从 Google 官方文档原样抓下来的**，不是二手总结。
-凡是本仓库的 UI 改动，一律以这里的内容为准；与本文冲突的代码视为缺陷。
+本目录包含从 Google 官方渠道保存的参考材料；本 README 是项目维护说明，
+不是 Google 官方规范。内容随库版本变化，实际实现应以链接的官方文档和源码为准。
 
 抓取来源：
 
@@ -27,12 +27,14 @@
    `?attr/colorSurface` / `?attr/colorOnSurfaceVariant` 这类语义属性，
    不写死 `#RRGGBB`，也不直接引用 `@color/xxx`（设计令牌除外，且令牌本身要映射进主题）。
 
-3. **动态取色走官方 API。** 唯一正确做法：
+3. **系统动态取色走官方 API。** 本项目在 Application 中注册：
    在 `Application.onCreate()` 里调用
    `DynamicColors.applyToActivitiesIfAvailable(application, options)`，
    由 `onActivityPreCreated` 套用覆盖层。
-   **Activity 不得再调用 `setTheme()`**，否则会把覆盖层冲掉。
-   不允许自己用 `setContentBasedSource` 造「伪动态色」——那不是 Monet。
+   Activity 不应在动态色覆盖层之后重置主题，否则可能抹掉颜色。
+   Google 的 `setContentBasedSource` 是官方支持的内容色 API，但它不是系统壁纸 Monet，
+   且 1.14.0 的公开 DynamicColors API 在 Android 12 以下不可用。本项目为兼容
+   API 26+，用官方 Material Color Utilities 预生成浅/深色预设 overlay。
 
 4. **形状与字号用令牌。** 圆角走 `shapeAppearanceCorner*`，字号走
    `?attr/textAppearance*`（DisplayLarge…LabelSmall）。不手写 `textSize="15sp"`。
@@ -118,7 +120,7 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 |---|---|
 | `Theme.Dsh.MD3` 副本主题 | 漏映射 `colorSurfaceContainer*`，卡片容器色无定义 |
 | 自绘 `bg_md3_seg_*` 分段圆角 | 与 MD3 卡片规范不符，且深浅色难维护 |
-| `setContentBasedSource(种子色)` 当动态色 | 语义色被换成中性灰，卡片「消失」、图标变白 |
+| 将 `setContentBasedSource(种子色)` 宣称为系统壁纸色 | 它生成内容配色而非系统壁纸方案，且公开 API 依赖设备版本 |
 | Activity 里 `setTheme()` + 动态色 | 覆盖层被冲掉，或触发重建闪烁 |
 | `app:tint` 用在框架 `ImageView` | 完全不生效，图标保持原色 |
 | `@color/accent_sky` 只定义了 string | AAPT 直接报错，整包构建失败 |

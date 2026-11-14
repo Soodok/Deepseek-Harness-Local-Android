@@ -130,13 +130,15 @@ open class ThemedActivity : Activity() {
     protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(ThemeManager.wrap(newBase))
+        super.attachBaseContext(ThemeAccent.wrap(ThemeManager.wrap(newBase)))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 保留上游 AppCompat 深浅色同步，避免弹窗把 Activity 的资源配置改回系统模式。
         // 动态色已由 Application 的生命周期回调应用，这里不再覆盖 Activity 主题。
         ThemeManager.syncAppCompatNight(this)
+        val paletteOverlay = ThemeAccent.overlayRes(this)
+        if (paletteOverlay != 0) theme.applyStyle(paletteOverlay, true)
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }

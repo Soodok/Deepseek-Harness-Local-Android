@@ -186,6 +186,7 @@ class MainActivity : ThemedActivity() {
      * 记一个快照，onResume 对不上就重建（与 SettingsActivity 的做法一致）。
      */
     private var appliedAccent: Int = 0
+    private var appliedPalette: String = ThemeAccent.BLUE
     /** 运行时下载面板（v1.6.18）。持有引用判重，同 gateDialog 范式。 */
     private var runtimeSetupDialog: AlertDialog? = null
     /** 预热历史条目是否已清理（幂等标记；clearHistory 只该做一次） */
@@ -200,6 +201,7 @@ class MainActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         appliedTheme = ThemePref.get(this)
         appliedAccent = Accent.current(this).argb
+        appliedPalette = ThemeAccent.selected(this)
         // 用户主动打开了 App → 清除「显式退出」标记，恢复正常保活行为。
         // 与 EngineService.exitCompletely() 的置位成对：退出后不复活，重开即恢复。
         runCatching { DshApp.setUserExitedExplicitly(this, false) }
@@ -450,9 +452,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         runCatching { applyDock() }
         val currentTheme = ThemePref.get(this)
         val currentAccent = Accent.current(this).argb
-        if ((appliedTheme != null && appliedTheme != currentTheme) || appliedAccent != currentAccent) {
+        val currentPalette = ThemeAccent.selected(this)
+        if ((appliedTheme != null && appliedTheme != currentTheme) ||
+            appliedAccent != currentAccent || appliedPalette != currentPalette
+        ) {
             appliedTheme = currentTheme
             appliedAccent = currentAccent
+            appliedPalette = currentPalette
             recreate()
             return
         }

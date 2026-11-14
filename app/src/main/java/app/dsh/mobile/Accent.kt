@@ -90,11 +90,17 @@ enum class Accent(
         /** 旧业务控件跟随主题主色；不支持动态色时保留原预设回退。 */
         internal fun resolve(ctx: Context): AccentColor {
             val preset = currentPreset(ctx)
-            if (!ThemeAccent.dynamicEnabled(ctx)) return preset.toColor()
+            val colorContext = if (ctx is android.app.Activity || ctx is android.view.ContextThemeWrapper) ctx else {
+                val configured = ThemeAccent.wrap(ThemeManager.wrap(ctx))
+                if (ThemeAccent.dynamicEnabled(ctx)) {
+                    com.google.android.material.color.DynamicColors.wrapContextIfAvailable(configured)
+                } else configured
+            }
             val primary = com.google.android.material.color.MaterialColors.getColor(
-                ctx, androidx.appcompat.R.attr.colorPrimary, preset.argb,
+                colorContext, androidx.appcompat.R.attr.colorPrimary, preset.argb,
             )
-            return AccentColor(primary, R.string.theme_color_dynamic, dynamic = true)
+            val dynamic = ThemeAccent.dynamicEnabled(ctx)
+            return AccentColor(primary, ThemeAccent.labelRes(ctx), dynamic = dynamic)
         }
     }
 }

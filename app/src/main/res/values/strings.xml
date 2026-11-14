@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">System dynamic color</string>
+    <string name="theme_palette_blue">Blue</string>
+    <string name="theme_palette_teal">Teal</string>
+    <string name="theme_palette_violet">Violet</string>
+    <string name="theme_palette_amber">Amber</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (not supported on this device)</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agent Engine</string>
     <string name="notif_channel_engine_desc">Status of the DeepSeek Harness local engine</string>
@@ -1541,7 +1547,7 @@ Remove the installed version first, then pick this one?</string>
     <string name="theme_current_dynamic">Current: system dynamic colour</string>
     <string name="theme_color_dynamic">System dynamic colour</string>
 
-    <string name="theme_entry_sub">Preset colours, custom colour and dynamic colouring</string>
+    <string name="theme_entry_sub">Appearance, preset palettes and system dynamic colour</string>
     <string name="ext_cat_lang">Language runtimes</string>
     <string name="ext_cat_build">Build &amp; tooling</string>
     <string name="ext_cat_debug">Debugging</string>

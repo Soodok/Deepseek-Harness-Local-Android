@@ -36,8 +36,8 @@ dshapp = read(os.path.join(JAVA, "DshApp.kt"))
 # 1. 空转保护
 check("切换模式前比较（模式未变不重建）",
       "ThemePref.get(this) == mode" in theme)
-check("动态开关未变不重建",
-      "ThemeAccent.dynamicEnabled(this) == checked" in theme)
+check("配色未变不重建",
+      "id != ThemeAccent.selected(this)" in theme)
 check("单选状态由偏好唯一决定",
       theme.count("ThemePref.get(this) == ThemeMode.") >= 2)
 

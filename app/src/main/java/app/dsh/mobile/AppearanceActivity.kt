@@ -31,6 +31,7 @@ class AppearanceActivity : ThemedActivity() {
 
     /** 本页已应用的外观主题与布局快照；颜色只使用系统动态取色，不显示预设色名。 */
     private var appliedTheme: ThemeMode = ThemeMode.DARK
+    private var appliedPalette: String = ThemeAccent.BLUE
     private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
     override fun attachBaseContext(newBase: Context) {
@@ -46,6 +47,7 @@ class AppearanceActivity : ThemedActivity() {
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
         appliedTheme = ThemePref.get(this)
+        appliedPalette = ThemeAccent.selected(this)
         appliedLayout = SettingsLayoutMode.current(this)
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
@@ -116,9 +118,9 @@ class AppearanceActivity : ThemedActivity() {
                 .show()
         }
 
-        // —— 外观主题（深色/浅色/跟随系统）—— 与引导页写同一份偏好（ThemePref）
+        // 主题页统一管理明暗模式和颜色方案；不再显示旧的预设色名。
         findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
-            showThemeDialog()
+            startActivity(Intent(this, ThemeActivity::class.java))
         }
 
         // —— 设置页布局（v1.4.23）——
@@ -142,9 +144,11 @@ class AppearanceActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         // 从外观子页返回：主题/布局变化时重建，动态色角色由 Application 生命周期回调重新套用。
         val themeNow = ThemePref.get(this)
+        val paletteNow = ThemeAccent.selected(this)
         val layoutNow = SettingsLayoutMode.current(this)
-        val changed = appliedTheme != themeNow || appliedLayout != layoutNow
+        val changed = appliedTheme != themeNow || appliedPalette != paletteNow || appliedLayout != layoutNow
         appliedTheme = themeNow
+        appliedPalette = paletteNow
         appliedLayout = layoutNow
         if (changed) {
             recreate()

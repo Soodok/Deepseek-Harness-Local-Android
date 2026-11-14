@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Português (Brasil). Nomes técnicos e identificadores são preservados. -->
 <resources>
+    <string name="theme_palette_dynamic">Cores dinâmicas do sistema</string>
+    <string name="theme_palette_blue">Azul</string>
+    <string name="theme_palette_teal">Verde-azulado</string>
+    <string name="theme_palette_violet">Violeta</string>
+    <string name="theme_palette_amber">Âmbar</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (não disponível neste dispositivo)</string>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Motor do agente</string>
     <string name="notif_channel_engine_desc">Status do motor local do DeepSeek Harness</string>
@@ -1501,7 +1507,7 @@ Remover a versão instalada primeiro e depois mudar para esta?</string>
     <string name="theme_current_dynamic">Atual: cor dinâmica do sistema</string>
     <string name="theme_color_dynamic">Cor dinâmica do sistema</string>
 
-    <string name="theme_entry_sub">Cores predefinidas, personalizadas e dinâmicas</string>
+    <string name="theme_entry_sub">Aparência, paletas predefinidas e cor dinâmica do sistema</string>
     <string name="ext_cat_lang">Runtimes de linguagem</string>
     <string name="ext_cat_build">Ferramentas de build</string>
     <string name="ext_cat_debug">Depuração</string>

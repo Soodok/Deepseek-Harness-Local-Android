@@ -2,6 +2,12 @@
 <!-- v1.2.120：Deutsch (de) — vollständige Übersetzung, behält alle Keys +
      Platzhalter/Zwischenräume des Default (values/) bei. -->
 <resources>
+    <string name="theme_palette_dynamic">Dynamische Systemfarben</string>
+    <string name="theme_palette_blue">Blau</string>
+    <string name="theme_palette_teal">Blaugrün</string>
+    <string name="theme_palette_violet">Violett</string>
+    <string name="theme_palette_amber">Bernstein</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (auf diesem Gerät nicht unterstützt)</string>
 
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agenten-Engine</string>
@@ -1547,7 +1553,7 @@ Zuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
     <string name="theme_current_dynamic">Aktuell: dynamische Systemfarbe</string>
     <string name="theme_color_dynamic">Dynamische Systemfarbe</string>
 
-    <string name="theme_entry_sub">Voreinstellungen, eigene Farben und dynamische Farben</string>
+    <string name="theme_entry_sub">Darstellung, Farbpaletten und dynamische Systemfarben</string>
     <string name="ext_cat_lang">Sprachlaufzeiten</string>
     <string name="ext_cat_build">Build-Werkzeuge</string>
     <string name="ext_cat_debug">Debugging</string>

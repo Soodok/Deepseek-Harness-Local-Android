@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="theme_palette_dynamic">สีแบบไดนามิกของระบบ</string>
+    <string name="theme_palette_blue">น้ำเงิน</string>
+    <string name="theme_palette_teal">เขียวอมฟ้า</string>
+    <string name="theme_palette_violet">ม่วง</string>
+    <string name="theme_palette_amber">อำพัน</string>
+    <string name="theme_palette_dynamic_unavailable">%1$s (อุปกรณ์นี้ไม่รองรับ)</string>
     <string name="app_name">ดีเอสเอช ไทย</string>
     <string name="notif_channel_engine">เอนจินเอเจนต์</string>
     <string name="notif_channel_engine_desc">สถานะของเอนจินท้องถิ่น DeepSeek Harness</string>
@@ -1488,7 +1494,7 @@
     <string name="theme_current_dynamic">ปัจจุบัน: สีไดนามิกของระบบ</string>
     <string name="theme_color_dynamic">สีไดนามิกของระบบ</string>
 
-    <string name="theme_entry_sub">สีที่ตั้งไว้ สีกำหนดเอง และสีไดนามิก</string>
+    <string name="theme_entry_sub">รูปลักษณ์ ชุดสีที่ตั้งไว้ และสีแบบไดนามิกของระบบ</string>
     <string name="ext_cat_lang">รันไทม์ภาษา</string>
     <string name="ext_cat_build">เครื่องมือบิลด์</string>
     <string name="ext_cat_debug">การดีบัก</string>
