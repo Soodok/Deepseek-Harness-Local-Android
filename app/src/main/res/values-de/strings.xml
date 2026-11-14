@@ -226,10 +226,7 @@
     <string name="plugin_engine_old_title">Plugin benoetigt neuere Engine</string>
     <string name="plugin_engine_old_force">Diese Version erzwingen</string>
     <string name="plugin_build_pending_title">Build-Skripte brauchen Freigabe</string>
-    <string name="plugin_build_pending_body">Diese Pakete wollen Installationsskripte ausführen:
-%s
-
-Installationsskripte führen beliebigen Code aus dem Paket aus. Nur freigeben, wenn du diesem Plugin vertraust.</string>
+    <string name="plugin_build_pending_body">Diese Pakete wollen Installationsskripte ausführen:\n%s\n\nInstallationsskripte führen beliebigen Code aus dem Paket aus. Nur freigeben, wenn du diesem Plugin vertraust.</string>
     <string name="plugin_build_approve">Freigeben und erneut versuchen</string>
     <string name="plugin_build_approve_btn">Builds freigeben</string>
     <string name="plugin_build_approve_failed">Freigabe konnte nicht geschrieben werden</string>
@@ -260,15 +257,9 @@ Installationsskripte führen beliebigen Code aus dem Paket aus. Nur freigeben, w
     <string name="plugin_failed">Fehlgeschlagen: %1$s</string>
     <string name="plugin_checking">Wird geprüft…</string>
     <string name="plugin_native_title">Dieses Plugin benötigt nativen Code</string>
-    <string name="plugin_native_body">Es deklariert Build-Schritte oder native Module:
-
-%1$s
-
-Unter Android lassen sich diese meist nicht kompilieren (fehlende Toolchain-Header), es kann also installiert werden, aber nicht funktionieren. Trotzdem installieren?</string>
+    <string name="plugin_native_body">Es deklariert Build-Schritte oder native Module:\n\n%1$s\n\nUnter Android lassen sich diese meist nicht kompilieren (fehlende Toolchain-Header), es kann also installiert werden, aber nicht funktionieren. Trotzdem installieren?</string>
     <string name="plugin_check_unknown_title">Plugin konnte nicht geprüft werden</string>
-    <string name="plugin_check_unknown_body">Die Registry-Abfrage ist fehlgeschlagen (%1$s), die Kompatibilität ist unbekannt. Falls es native Module braucht, funktioniert es unter Android möglicherweise nicht.
-
-Trotzdem installieren?</string>
+    <string name="plugin_check_unknown_body">Die Registry-Abfrage ist fehlgeschlagen (%1$s), die Kompatibilität ist unbekannt. Falls es native Module braucht, funktioniert es unter Android möglicherweise nicht.\n\nTrotzdem installieren?</string>
     <string name="plugin_install_anyway">Trotzdem installieren</string>
 
     <string name="download_started">Download gestartet: %1$s</string>
@@ -312,23 +303,15 @@ Trotzdem installieren?</string>
     <string name="ext_tool_repair">Reparieren</string>
     <string name="ext_check_title">Gesundheitsprüfung der Erweiterungen</string>
     <string name="ext_check_all_ok">%1$d Erweiterung(en) installiert, alle gesund ✓</string>
-    <string name="ext_check_summary">%1$d installiert: %2$d gesund, %3$d defekt
-
-%4$s</string>
+    <string name="ext_check_summary">%1$d installiert: %2$d gesund, %3$d defekt\n\n%4$s</string>
     <string name="ext_check_none">Noch keine Erweiterungen installiert</string>
     <string name="ext_install_all_title">Alle Erweiterungen installieren</string>
-    <string name="ext_install_all_msg">Lädt und installiert %1$d noch nicht installierte Erweiterung(en) (einschließlich ihrer Abhängigkeits-Closures; Gesamtgröße je Erweiterung unterschiedlich).
-
-Installation läuft im Hintergrund — Sie können diese Seite verlassen. Neue Erweiterungen stehen PATH nach einem Engine-Neustart zur Verfügung.</string>
+    <string name="ext_install_all_msg">Lädt und installiert %1$d noch nicht installierte Erweiterung(en) (einschließlich ihrer Abhängigkeits-Closures; Gesamtgröße je Erweiterung unterschiedlich).\n\nInstallation läuft im Hintergrund — Sie können diese Seite verlassen. Neue Erweiterungen stehen PATH nach einem Engine-Neustart zur Verfügung.</string>
     <string name="ext_install_all_go">Installation starten</string>
     <string name="ext_install_all_none">Nichts zu installieren — alles ist bereits installiert</string>
     <string name="ext_install_all_started">%1$d Erweiterung(en) eingereiht; Download läuft im Hintergrund</string>
     <string name="ext_repair_title">Defekte Erweiterungen reparieren</string>
-    <string name="ext_repair_msg">%1$d defekte Erweiterung(en) gefunden:
-
-%2$s
-
-Sie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures). Falls ein Fehler wegen Berechtigungsrest auftritt, su einmal erlauben und erneut versuchen.</string>
+    <string name="ext_repair_msg">%1$d defekte Erweiterung(en) gefunden:\n\n%2$s\n\nSie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures). Falls ein Fehler wegen Berechtigungsrest auftritt, su einmal erlauben und erneut versuchen.</string>
     <string name="ext_repair_go">Reparieren</string>
     <string name="ext_repair_none">Keine defekten Erweiterungen gefunden ✓</string>
     <string name="ext_repair_started">Reparatur für %1$d Erweiterung(en) eingereiht</string>
@@ -380,11 +363,7 @@ Sie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures).
     <string name="ext_unknown_error">Unbekannter Fehler</string>
     <string name="app_language">App-Sprache</string>
     <string name="webview_gate_title">WebView benötigt ein Update</string>
-    <string name="webview_gate_body">Die Browser-Engine auf diesem Gerät (Chrome %1$s) ist zu alt für diese Anwendung: die KI-Oberfläche benötigt Chrome %2$d+, und das ist eine Anforderung auf Syntaxebene, die kein Polyfill ersetzen kann. Die Seite würde leer rendern.
-
-Aktualisieren Sie das Android System WebView in Ihrem App-Store und öffnen Sie diese App erneut.
-
-Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktioniert, das Rendering macht die Engine, der Browser ist nur die Anzeige), oder trotzdem fortfahren, wenn Sie es versuchen möchten.</string>
+    <string name="webview_gate_body">Die Browser-Engine auf diesem Gerät (Chrome %1$s) ist zu alt für diese Anwendung: die KI-Oberfläche benötigt Chrome %2$d+, und das ist eine Anforderung auf Syntaxebene, die kein Polyfill ersetzen kann. Die Seite würde leer rendern.\n\nAktualisieren Sie das Android System WebView in Ihrem App-Store und öffnen Sie diese App erneut.\n\nZwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktioniert, das Rendering macht die Engine, der Browser ist nur die Anzeige), oder trotzdem fortfahren, wenn Sie es versuchen möchten.</string>
     <string name="webview_gate_update">So aktualisieren Sie</string>
     <string name="webview_gate_continue">Trotzdem fortfahren</string>
     <string name="webview_gate_open_browser">Im Browser öffnen</string>
@@ -503,12 +482,9 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="asr_help_body_2">Android bietet Spracherkennung nur, wenn auf dem Gerät ein Erkenner installiert ist. Viele Telefone (besonders chinesische ROMs) liefern keinen mit, daher scheitert Spracheingabe vollständig.</string>
     <string name="asr_help_body_3">Zwei Wege zur Behebung:</string>
     <string name="asr_help_body_4">A) Eine lokale Erkenner-App installieren — sie registriert sich als System-Erkennungsdienst und diese App nutzt sie automatisch. Hier ist nichts auszufüllen. Empfohlen (alle verifiziert haben android.speech.RecognitionService deklariert):</string>
-    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard
-    F-Droid, aktiv. Importieren Sie vosk-model-cn-0.22 (~1,3 GB) für deutlich besseres Chinesisch.</string>
-    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME
-    F-Droid, aktiv. Mehrsprachiges Whisper (~435 MB), gutes Chinesisch.</string>
-    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus
-    Schnellere ONNX-Version, häufiger aktualisiert.</string>
+    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard\nF-Droid, aktiv. Importieren Sie vosk-model-cn-0.22 (~1,3 GB) für deutlich besseres Chinesisch.</string>
+    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME\nF-Droid, aktiv. Mehrsprachiges Whisper (~435 MB), gutes Chinesisch.</string>
+    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus\nSchnellere ONNX-Version, häufiger aktualisiert.</string>
     <string name="asr_help_body_8">Dann unter Einstellungen &gt; System &gt; Sprachen &amp; Eingabe &gt; Spracheingabe auswählen.</string>
     <string name="asr_help_body_9">B) Einen Cloud-ASR-Dienst nutzen — dort unten seinen OpenAI-kompatiblen Transkriptions-Endpunkt, Modellnamen und API-Schlüssel einfügen. Anbieter mit kostenlosen Kontingenten: SiliconFlow (siliconflow.cn), Groq (groq.com), Alibaba DashScope, Zhipu BigModel, Volcengine Ark oder Ihr eigener Server (whisper.cpp).</string>
     <string name="asr_help_body_10">Felder leer lassen, um nur den System-Erkenner zu nutzen.</string>
@@ -938,9 +914,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="pet_lines_cat_ws_error">Arbeitsstatus · Fehler</string>
     <string name="about_runtime">Runtime</string>
     <string name="runtime_setup_title">Laufzeit erforderlich</string>
-    <string name="runtime_setup_message">Diese Version enthält die Node.js-Laufzeit nicht; ohne sie kann die Engine nicht starten.
-
-%1$s jetzt herunterladen (WLAN empfohlen). Dieser Schritt ist erforderlich und kann nicht übersprungen werden. Spätere App-Updates laden sie nicht erneut.</string>
+    <string name="runtime_setup_message">Diese Version enthält die Node.js-Laufzeit nicht; ohne sie kann die Engine nicht starten.\n\n%1$s jetzt herunterladen (WLAN empfohlen). Dieser Schritt ist erforderlich und kann nicht übersprungen werden. Spätere App-Updates laden sie nicht erneut.</string>
     <string name="runtime_setup_download">Herunterladen und starten</string>
     <string name="runtime_setup_full">Stattdessen Vollpaket</string>
     <string name="about_runtime_idle">Auf Runtime-Updates prüfen</string>
@@ -1247,9 +1221,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="perm_list_granted_one">Erteilt.</string>
     <string name="perm_list_grant_failed">Weiter fehlend — das System verweigert sie.</string>
     <string name="perm_list_revoke_title">Berechtigung entziehen</string>
-    <string name="perm_list_revoke_msg">%1$s entziehen?
-
-Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — das ist normal, kein Absturz.</string>
+    <string name="perm_list_revoke_msg">%1$s entziehen?\n\nDie App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — das ist normal, kein Absturz.</string>
     <string name="perm_list_revoke">Entziehen</string>
     <string name="perm_list_revoked">Entzogen.</string>
     <string name="perm_list_no_channel">Kein privilegierter Kanal — zuerst Shizuku verbinden oder Root gewähren.</string>
@@ -1282,14 +1254,13 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="ob_wizard_accent_title">Akzentfarbe</string>
     <string name="ob_wizard_accent_desc">Für Schaltflächen, Hervorhebungen und Statustext.</string>
     <string name="ob_wizard_priv_title">Ausführungsmodus</string>
-    <string name="ob_wizard_priv_desc">Bestimmt, worauf der Agent zugreifen darf. Normal wird empfohlen.</string>
     <string name="ob_wizard_done_title">Alles bereit</string>
     <string name="ob_wizard_done_desc">Deine Auswahl ist gespeichert. Tippe unten, um zu starten.</string>
     <string name="ob_rt_preparing">Laufzeitumgebung wird entpackt…</string>
     <string name="ob_rt_pct">Laufzeitumgebung wird entpackt… %1$d%%</string>
     <string name="ob_rt_ready">Laufzeitumgebung ist bereit</string>
     <string name="ob_rt_failed">Vorbereitung der Laufzeitumgebung nicht abgeschlossen – nach dem Start unter „Wartung“ erneut versuchen</string>
-    <string name="ob_rt_download">Schlankes Paket: Download der Laufzeitumgebung nach dem Start wählen</string>
+    <string name="ob_rt_download">Schlankes Paket · Laufzeitumgebung nach dem Start laden</string>
     <string name="ob_wizard_back">Zurück</string>
     <string name="ob_wizard_next">Weiter</string>
     <string name="ob_wizard_start">Loslegen</string>
@@ -1327,6 +1298,67 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="ob_wizard_cap_desc">Wählen Sie, worauf die KI zugreifen darf. Jederzeit änderbar unter Einstellungen → Berechtigungen.</string>
     <string name="ob_wizard_cap_recommend">Empfohlen</string>
     <string name="ob_wizard_cap_recommended">Risikoarme Lesezugriffe aktiviert</string>
+    <string name="ob_wizard_welcome_eyebrow">DEEPSEEK HARNESS · VOLLPORTIERUNG</string>
+    <string name="ob_wizard_welcome_title">Das volle DeepSeek Harness\nwohnt jetzt in deinem Handy</string>
+    <string name="ob_wizard_welcome_lede">Repos klonen, Projekte bauen, Tests laufen lassen, Code committen — und Bildschirm lesen, tippen, Text eingeben. Engine und Werkzeuge laufen auf dem Handy.</string>
+    <string name="ob_wizard_welcome_prereq">Die Laufzeit ist im Paket enthalten; Modell und API-Key stellst du in der App ein.</string>
+    <string name="ob_wizard_welcome_cover_label">Willkommen</string>
+    <string name="ob_wizard_mode_title">Ausführungsmodus</string>
+    <string name="ob_wizard_welcome_step_hint">Einrichtung in ca. 30 Sekunden; die Laufzeit entpackt im Hintergrund</string>
+    <string name="ob_wizard_next_keep">Aktuell lassen, weiter</string>
+    <string name="ob_done_summary_scale">Skalierung %1$d%%</string>
+    <string name="ob_wizard_welcome_start">Einrichtung starten · ca. 30 s</string>
+    <string name="ob_wizard_welcome_f1">Gleiche Engine</string>
+    <string name="ob_wizard_welcome_f1_sub">Desktop-DSH-Engine, Werkzeuge und Plugin-Mechanik</string>
+    <string name="ob_wizard_welcome_f2">Workflow wie am Rechner</string>
+    <string name="ob_wizard_welcome_f2_sub">Echtes Node.js und ein echtes Terminal; Befehle laufen auf dem Handy</string>
+    <string name="ob_wizard_welcome_f3">Eigener Linux-Container</string>
+    <string name="ob_wizard_welcome_f3_sub">Alpine-Userland; Linux-Software und Toolchains bei Bedarf installieren</string>
+    <string name="ob_wizard_welcome_f4">Handy-Steuerung</string>
+    <string name="ob_wizard_welcome_f4_sub">Bildschirm lesen, tippen, Text eingeben — jederzeit stoppbar</string>
+    <string name="ob_wizard_welcome_f5">Zusammenarbeit mit dem Rechner</string>
+    <string name="ob_wizard_welcome_f5_sub">Nach dem Koppeln nutzt der Rechner Bildschirm, Kamera und Container dieses Handys</string>
+    <string name="ob_wizard_mode_desc">Wie tief die KI ins System greifen darf. Der normale Modus passt für die meisten.</string>
+    <string name="ob_wizard_mode_footnote">Der Modus ist jederzeit änderbar; Root verlangt zwei Bestätigungen und zeigt den aktiven Modus auf der Über-Seite.</string>
+    <string name="ob_mode_note_normal">Der normale Modus braucht keine Vorbereitung. Root und Shizuku sind fortgeschrittene Optionen für später in den Einstellungen.</string>
+    <string name="ob_mode_note_shizuku_absent">Shizuku läuft nicht: starte zuerst den Dienst. Der normale Modus ist davon nicht betroffen.</string>
+    <string name="ob_mode_note_shizuku_present">Shizuku ist noch nicht autorisiert: im Shizuku-Dialog erlauben. Der normale Modus läuft auch ohne.</string>
+    <string name="ob_mode_note_root_absent">Kein su gefunden, Root ist deshalb nicht verfügbar. Später in den Einstellungen aktivierbar.</string>
+    <string name="ob_mode_note_root_present">su gefunden: Root ist verfügbar. Die ganze Engine startet als root und darf alle Dateien lesen und schreiben.</string>
+    <string name="ob_wizard_caps_title">Worauf die KI zugreifen darf</string>
+    <string name="ob_wizard_caps_desc">Nur was du erlaubst. Auch mit allem aus kann es chatten — es sieht und tippt dann nur nicht.</string>
+    <string name="ob_caps_pos_fmt">Gruppe %1$d von %2$d</string>
+    <string name="ob_caps_total_fmt">%1$d von %2$d erlaubt</string>
+    <string name="ob_caps_chip_fmt">%1$d/%2$d</string>
+    <string name="ob_caps_recommend">Die 6 empfohlenen einschalten</string>
+    <string name="ob_caps_recommend_hint">Empfohlen: Gerätestatus, Sensoren, Zwischenablage, Gerätesteuerung, Erinnerungen, Benachrichtigungen. Fügt nur hinzu, setzt nichts zurück.</string>
+    <string name="ob_caps_note">Sensible Fähigkeiten brauchen eine eigene Freigabe; Bildschirmaufnahme und Installationen fragen jedes Mal das System. Später änderbar unter Einstellungen → Berechtigungen.</string>
+    <string name="ob_caps_recommended_toast">Die 6 empfohlenen Fähigkeiten sind an; deine übrigen Auswahl bleibt</string>
+    <string name="ob_caps_domain_env">Gerät &amp; Umgebung</string>
+    <string name="ob_caps_domain_notify">Mitteilung &amp; Medien</string>
+    <string name="ob_caps_domain_control">Gerätesteuerung</string>
+    <string name="ob_caps_domain_personal">Persönliche Daten</string>
+    <string name="ob_caps_domain_input">Aufnahme &amp; Sensorik</string>
+    <string name="ob_caps_domain_system">Apps &amp; Container</string>
+    <string name="ob_done_head_ready">Alles bereit</string>
+    <string name="ob_done_head_preparing">Wird vorbereitet</string>
+    <string name="ob_done_head_failed">Ein Schritt fehlt</string>
+    <string name="ob_done_head_lite">Einrichtung fertig</string>
+    <string name="ob_done_sub_ready">Gespeichert. Modell und API-Key eintragen, dann kann es chatten.</string>
+    <string name="ob_done_sub_preparing">Du kannst schon stöbern; es läuft von selbst weiter.</string>
+    <string name="ob_done_sub_failed">Du kommst trotzdem rein und wiederholst es unter Wartung; deine Auswahl bleibt.</string>
+    <string name="ob_done_sub_lite">Die Oberfläche ist eingerichtet; im Lite-Paket fehlt die Engine bis zum Download.</string>
+    <string name="ob_done_rt_sub_preparing">Der Fortschritt läuft im Hintergrund weiter</string>
+    <string name="ob_done_rt_sub_ready">Die Engine startet in ca. 2 s</string>
+    <string name="ob_done_rt_sub_failed">Nach dem Start unter Wartung wiederholen</string>
+    <string name="ob_done_rt_sub_lite">Nach dem Start entscheidest du über den Download (ca. 130 MB)</string>
+    <string name="ob_done_next_title">Noch eins: Modell &amp; API-Key</string>
+    <string name="ob_done_next_sub">In der App unter Einstellungen → Modell eintragen. Erst danach ist Chatten möglich.</string>
+    <string name="ob_done_cta_ready">App öffnen, weiter einrichten</string>
+    <string name="ob_done_cta_preparing">Rein, läuft weiter</string>
+    <string name="ob_done_cta_failed">Rein und unter Wartung wiederholen</string>
+    <string name="ob_done_cta_lite">App öffnen · später laden</string>
+    <string name="ob_done_browse">Erst umsehen</string>
     <string name="sensitive_kind_calendar">Kalender</string>
     <string name="sensitive_kind_contacts">Kontakte</string>
     <string name="sensitive_kind_sms">SMS</string>
@@ -1342,8 +1374,7 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="sensitive_audit_title">KI hat auf %1$s zugegriffen</string>
     <string name="sensitive_audit_detail">%1$d %2$s</string>
     <string name="sensitive_audit_detail_plain">Gerade eben</string>
-    <string name="sensitive_audit_body">%1$s
-Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter aus.</string>
+    <string name="sensitive_audit_body">%1$s\nWenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter aus.</string>
     <string name="personal_cap_disabled_hint">Aktiviere diesen Punkt im Berechtigungscenter → KI-Gerätefähigkeiten. Die vier Schalter für persönliche Daten werden getrennt erteilt.</string>
     <string name="setting_bg_control_alpha">Deckkraft der Karten</string>
     <string name="setting_bg_control_alpha_sub">Wie deckend Karten über dem Hintergrundbild liegen</string>
@@ -1418,28 +1449,18 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="ext_linux_installing">Installiere %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Installiere %1$d Pakete…</string>
         <string name="ext_linux_check_none">Noch keine Erweiterungen in diesem Container installiert</string>
-    <string name="ext_linux_check_summary">%1$d im Container installiert: %2$d bereit, %3$d unvollständig
-
-%4$s</string>
+    <string name="ext_linux_check_summary">%1$d im Container installiert: %2$d bereit, %3$d unvollständig\n\n%4$s</string>
     <string name="ext_linux_repair_none">Keine unvollständigen Pakete ✓</string>
-    <string name="ext_linux_partial_note">Diese Pakete gibt es in diesem Container nicht: %1$s.
-
-Trotzdem den Rest installieren?</string>
+    <string name="ext_linux_partial_note">Diese Pakete gibt es in diesem Container nicht: %1$s.\n\nTrotzdem den Rest installieren?</string>
     <string name="ext_linux_partial_tag">fehlt: %1$s</string>
 
     <string name="ext_linux_install_done">%1$s installiert</string>
     <string name="ext_linux_removing">Entferne %1$s…</string>
-    <string name="ext_linux_uninstall_msg">Diese Pakete aus dem Container entfernen?
-
-%1$s</string>
-    <string name="ext_linux_reinstall_msg">%1$s neu installieren?
-
-Pakete: %2$s</string>
+    <string name="ext_linux_uninstall_msg">Diese Pakete aus dem Container entfernen?\n\n%1$s</string>
+    <string name="ext_linux_reinstall_msg">%1$s neu installieren?\n\nPakete: %2$s</string>
 
     <string name="degraded_title">Engine läuft, aber Funktionen fehlen</string>
-    <string name="degraded_body">%1$d Funktion(en) sind nicht verfügbar, weil ihre Plugins nicht geladen wurden:
-
-%2$s</string>
+    <string name="degraded_body">%1$d Funktion(en) sind nicht verfügbar, weil ihre Plugins nicht geladen wurden:\n\n%2$s</string>
     <string name="degraded_open_maintenance">Wartung öffnen</string>
     <string name="status_degraded">Motor eingeschränkt · %1$d nicht verfügbar</string>
 
@@ -1503,12 +1524,7 @@ Pakete: %2$s</string>
     <string name="ext_linux_action_remove">Entfernen</string>
     <string name="ext_linux_action_unavailable">N/V</string>
     <string name="ext_version_default">Standardversion</string>
-    <string name="ext_version_switch_msg">Der Container kann jeweils nur eine Version dieser Erweiterung enthalten.
-
-Installiert: %2$s
-Gewählt: %1$s
-
-Zuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
+    <string name="ext_version_switch_msg">Der Container kann jeweils nur eine Version dieser Erweiterung enthalten.\n\nInstalliert: %2$s\nGewählt: %1$s\n\nZuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
     <string name="ext_version_switch_go">%1$s entfernen</string>
 
     <string name="ext_linux_install_failed">Installation fehlgeschlagen: %1$s</string>
@@ -1687,9 +1703,7 @@ Zuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
     <string name="asr_local_need_install">Bitte zuerst die Erkennung installieren</string>
     <string name="setting_linux_ssh">SSH-Entwicklungsumgebung</string>
     <string name="setting_linux_ssh_sub">Ein PC verbindet sich per Standard-SSH direkt in den Linux-Container</string>
-    <string name="linux_ssh_consent">Dies oeffnet Port 2222 und startet einen SSH-Server in der App. Wer im selben WLAN das Passwort kennt, kann Befehle im Linux-Container ausfuehren.
-
-Nur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</string>
+    <string name="linux_ssh_consent">Dies oeffnet Port 2222 und startet einen SSH-Server in der App. Wer im selben WLAN das Passwort kennt, kann Befehle im Linux-Container ausfuehren.\n\nNur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</string>
     <string name="linux_ssh_need_password">Legen Sie zuerst ein Passwort fest. Ohne Passwort bleibt der Port geschlossen.</string>
     <string name="linux_ssh_set_password">Passwort festlegen</string>
     <string name="linux_ssh_save">Speichern</string>
@@ -1776,11 +1790,7 @@ Nur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</st
     <string name="a11y_voice_sub">Über das Mikrofon im Overlay; System- oder Cloud-Erkennung</string>
     <string name="a11y_row_safety">Sicherheitsgrenzen</string>
     <string name="a11y_safety_sub">Systemseiten schreibgeschützt, Ausweisnummern maskiert, riskante Tipps fragen zuerst</string>
-    <string name="a11y_safety_body">Systemseiten für Berechtigungen und Sicherheit (unbekannte Apps installieren, Bedienungshilfen, Geräteverwaltung) sind schreibgeschützt: lesen ja, tippen nie.
-
-Ausweisnummern und Bankkarten werden maskiert, bevor etwas das Modell erreicht.
-
-Zeilen wie Senden / Bezahlen / Löschen / Autorisieren werden markiert und beim automatischen Tippen immer übersprungen.</string>
+    <string name="a11y_safety_body">Systemseiten für Berechtigungen und Sicherheit (unbekannte Apps installieren, Bedienungshilfen, Geräteverwaltung) sind schreibgeschützt: lesen ja, tippen nie.\n\nAusweisnummern und Bankkarten werden maskiert, bevor etwas das Modell erreicht.\n\nZeilen wie Senden / Bezahlen / Löschen / Autorisieren werden markiert und beim automatischen Tippen immer übersprungen.</string>
     <string name="a11y_need_service">Zuerst den Bedienungshilfen-Dienst aktivieren</string>
     <string name="tts_test_sub">Tippen spricht ein Beispiel; fehlt eine Engine, steht der Grund hier</string>
     <string name="tts_test_sample">Die Sprachausgabe ist bereit.</string>

@@ -225,10 +225,7 @@
     <string name="plugin_engine_old_title">Plugin needs a newer engine</string>
     <string name="plugin_engine_old_force">Force install this version</string>
     <string name="plugin_build_pending_title">Build scripts need approval</string>
-    <string name="plugin_build_pending_body">These packages want to run install scripts:
-%s
-
-Install scripts run arbitrary code from the package. Only approve if you trust this plugin.</string>
+    <string name="plugin_build_pending_body">These packages want to run install scripts:\n%s\n\nInstall scripts run arbitrary code from the package. Only approve if you trust this plugin.</string>
     <string name="plugin_build_approve">Approve and retry</string>
     <string name="plugin_build_approve_btn">Approve builds</string>
     <string name="plugin_build_approve_failed">Could not write build approval</string>
@@ -259,15 +256,9 @@ Install scripts run arbitrary code from the package. Only approve if you trust t
     <string name="plugin_failed">Failed: %1$s</string>
     <string name="plugin_checking">Checking…</string>
     <string name="plugin_native_title">This plugin needs native code</string>
-    <string name="plugin_native_body">It declares build steps or native modules:
-
-%1$s
-
-On Android these usually cannot be compiled (no toolchain headers at the expected paths), so it may install but not work. Install anyway?</string>
+    <string name="plugin_native_body">It declares build steps or native modules:\n\n%1$s\n\nOn Android these usually cannot be compiled (no toolchain headers at the expected paths), so it may install but not work. Install anyway?</string>
     <string name="plugin_check_unknown_title">Could not verify this plugin</string>
-    <string name="plugin_check_unknown_body">The registry lookup failed (%1$s), so compatibility is unknown. If it needs native modules it may not work on Android.
-
-Install anyway?</string>
+    <string name="plugin_check_unknown_body">The registry lookup failed (%1$s), so compatibility is unknown. If it needs native modules it may not work on Android.\n\nInstall anyway?</string>
     <string name="plugin_install_anyway">Install anyway</string>
 
     <string name="download_started">Download started: %1$s</string>
@@ -311,23 +302,15 @@ Install anyway?</string>
     <string name="ext_tool_repair">Repair</string>
     <string name="ext_check_title">Extension health check</string>
     <string name="ext_check_all_ok">%1$d extension(s) installed, all healthy ✓</string>
-    <string name="ext_check_summary">%1$d installed: %2$d healthy, %3$d broken
-
-%4$s</string>
+    <string name="ext_check_summary">%1$d installed: %2$d healthy, %3$d broken\n\n%4$s</string>
     <string name="ext_check_none">No extensions installed yet</string>
     <string name="ext_install_all_title">Install all extensions</string>
-    <string name="ext_install_all_msg">This downloads and installs %1$d extension(s) that aren\'t installed yet (including their dependency closures; total size varies per extension).
-
-Installation runs in the background — you can leave this page. New extensions enter PATH after an engine restart.</string>
+    <string name="ext_install_all_msg">This downloads and installs %1$d extension(s) that aren\'t installed yet (including their dependency closures; total size varies per extension).\n\nInstallation runs in the background — you can leave this page. New extensions enter PATH after an engine restart.</string>
     <string name="ext_install_all_go">Start installing</string>
     <string name="ext_install_all_none">Nothing to install — everything is already installed</string>
     <string name="ext_install_all_started">Queued %1$d extension(s); downloading in the background</string>
     <string name="ext_repair_title">Repair broken extensions</string>
-    <string name="ext_repair_msg">%1$d broken extension(s) found:
-
-%2$s
-
-They will be re-downloaded and reinstalled (with dependency closures). If a "permission leftover" error appears, grant su once and retry.</string>
+    <string name="ext_repair_msg">%1$d broken extension(s) found:\n\n%2$s\n\nThey will be re-downloaded and reinstalled (with dependency closures). If a "permission leftover" error appears, grant su once and retry.</string>
     <string name="ext_repair_go">Repair</string>
     <string name="ext_repair_none">No broken extensions detected ✓</string>
     <string name="ext_repair_started">Queued repair for %1$d extension(s)</string>
@@ -379,11 +362,7 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
     <string name="webview_gate_title">WebView needs an update</string>
-    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface needs Chrome %2$d+ and that is a syntax-level requirement no polyfill can patch. The page would render blank.
-
-Update Android System WebView from your app store, then reopen this app.
-
-Two more options: open the interface in your regular browser (it works, the engine does the rendering and the browser is just a screen), or continue anyway if you want to try.</string>
+    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface needs Chrome %2$d+ and that is a syntax-level requirement no polyfill can patch. The page would render blank.\n\nUpdate Android System WebView from your app store, then reopen this app.\n\nTwo more options: open the interface in your regular browser (it works, the engine does the rendering and the browser is just a screen), or continue anyway if you want to try.</string>
     <string name="webview_gate_update">How to update</string>
     <string name="webview_gate_continue">Continue anyway</string>
     <string name="webview_gate_open_browser">Open in browser</string>
@@ -517,12 +496,9 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="asr_help_body_2">Android only offers speech recognition if the device has a recognizer installed. Many phones (especially Chinese ROMs) ship without one, so voice input fails outright.</string>
     <string name="asr_help_body_3">Two ways to fix it:</string>
     <string name="asr_help_body_4">A) Install a local recognizer app — it registers as a system recognition service, and this app uses it automatically. Nothing to fill in here. Recommended (all verified to declare android.speech.RecognitionService):</string>
-    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard
-    F-Droid, active. Import vosk-model-cn-0.22 (~1.3GB) for much better Chinese.</string>
-    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME
-    F-Droid, active. Multilingual Whisper (~435MB), good Chinese.</string>
-    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus
-    Faster ONNX version, updated more often.</string>
+    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard\nF-Droid, active. Import vosk-model-cn-0.22 (~1.3GB) for much better Chinese.</string>
+    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME\nF-Droid, active. Multilingual Whisper (~435MB), good Chinese.</string>
+    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus\nFaster ONNX version, updated more often.</string>
     <string name="asr_help_body_8">Then pick it under Settings &gt; System &gt; Languages &amp; input &gt; Voice input.</string>
     <string name="asr_help_body_9">B) Use a cloud ASR service — paste its OpenAI-compatible transcription endpoint, model name and API key below. Providers with free tiers: SiliconFlow (siliconflow.cn), Groq (groq.com), Alibaba DashScope, Zhipu BigModel, Volcengine Ark, or your own server (whisper.cpp).</string>
     <string name="asr_help_body_10">Leave the fields empty to use the system recognizer only.</string>
@@ -932,9 +908,7 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="pet_lines_cat_ws_error">Work status · Error</string>
     <string name="about_runtime">Runtime</string>
     <string name="runtime_setup_title">Runtime required to continue</string>
-    <string name="runtime_setup_message">This build does not bundle the Node.js runtime, so the engine cannot start without it.
-
-Download %1$s now (Wi-Fi recommended). This is required — you cannot skip it. Future app updates will not download it again.</string>
+    <string name="runtime_setup_message">This build does not bundle the Node.js runtime, so the engine cannot start without it.\n\nDownload %1$s now (Wi-Fi recommended). This is required — you cannot skip it. Future app updates will not download it again.</string>
     <string name="runtime_setup_download">Download and start</string>
     <string name="runtime_setup_full">Get full package instead</string>
     <string name="about_runtime_idle">Check for runtime updates</string>
@@ -1241,9 +1215,7 @@ Download %1$s now (Wi-Fi recommended). This is required — you cannot skip it. 
     <string name="perm_list_granted_one">Granted. Tap again to inspect.</string>
     <string name="perm_list_grant_failed">Still missing — the system refuses this one.</string>
     <string name="perm_list_revoke_title">Revoke permission</string>
-    <string name="perm_list_revoke_msg">Revoke %1$s?
-
-The app will be restarted by the system to reload its group table — that is normal, not a crash.</string>
+    <string name="perm_list_revoke_msg">Revoke %1$s?\n\nThe app will be restarted by the system to reload its group table — that is normal, not a crash.</string>
     <string name="perm_list_revoke">Revoke</string>
     <string name="perm_list_revoked">Revoked.</string>
     <string name="perm_list_no_channel">No privileged channel — connect Shizuku or grant root first.</string>
@@ -1276,14 +1248,13 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="ob_wizard_accent_title">Accent colour</string>
     <string name="ob_wizard_accent_desc">Used for buttons, highlights and status text.</string>
     <string name="ob_wizard_priv_title">Run mode</string>
-    <string name="ob_wizard_priv_desc">Decides what the agent is allowed to touch. Normal is recommended.</string>
     <string name="ob_wizard_done_title">All set</string>
     <string name="ob_wizard_done_desc">Your choices are saved. Tap below to get started.</string>
     <string name="ob_rt_preparing">Preparing the runtime…</string>
     <string name="ob_rt_pct">Preparing the runtime… %1$d%%</string>
     <string name="ob_rt_ready">Runtime is ready</string>
     <string name="ob_rt_failed">Runtime preparation didn\'t finish — retry from Maintenance after entering</string>
-    <string name="ob_rt_download">Lite package: choose whether to download the runtime after onboarding</string>
+    <string name="ob_rt_download">Lite package · download the runtime after setup</string>
     <string name="ob_wizard_back">Back</string>
     <string name="ob_wizard_next">Next</string>
     <string name="ob_wizard_start">Get started</string>
@@ -1321,6 +1292,67 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="ob_wizard_cap_desc">Pick what the AI may touch. Everything can be changed later in Settings → Permissions.</string>
     <string name="ob_wizard_cap_recommend">Recommended</string>
     <string name="ob_wizard_cap_recommended">Low-risk read-only capabilities turned on</string>
+    <string name="ob_wizard_welcome_eyebrow">DEEPSEEK HARNESS · FULL PORT</string>
+    <string name="ob_wizard_welcome_title">The full DeepSeek Harness\nlives in your phone</string>
+    <string name="ob_wizard_welcome_lede">Clone repos, build projects, run tests, commit code — and read the screen, tap, type. The engine and tools run on the phone.</string>
+    <string name="ob_wizard_welcome_prereq">The runtime ships in the app package; you set up the model and API key inside the app.</string>
+    <string name="ob_wizard_welcome_cover_label">Welcome</string>
+    <string name="ob_wizard_mode_title">Run mode</string>
+    <string name="ob_wizard_welcome_step_hint">About 30 seconds to set up; the runtime extracts in the background</string>
+    <string name="ob_wizard_next_keep">Keep current and continue</string>
+    <string name="ob_done_summary_scale">Scale %1$d%%</string>
+    <string name="ob_wizard_welcome_start">Start setup · about 30 s</string>
+    <string name="ob_wizard_welcome_f1">Same engine</string>
+    <string name="ob_wizard_welcome_f1_sub">Desktop DSH engine, tools and plugin mechanism</string>
+    <string name="ob_wizard_welcome_f2">Desktop-grade workflow</string>
+    <string name="ob_wizard_welcome_f2_sub">Native Node.js and a real terminal; commands run on the phone</string>
+    <string name="ob_wizard_welcome_f3">Our own Linux container</string>
+    <string name="ob_wizard_welcome_f3_sub">Alpine userland; install Linux software and toolchains on demand</string>
+    <string name="ob_wizard_welcome_f4">Phone control</string>
+    <string name="ob_wizard_welcome_f4_sub">Read screen, tap, type — stop anytime</string>
+    <string name="ob_wizard_welcome_f5">Works with your computer</string>
+    <string name="ob_wizard_welcome_f5_sub">Once paired, the computer can use this phone\'s screen, camera and container</string>
+    <string name="ob_wizard_mode_desc">How deep the AI may reach into the system. Normal mode suits most people.</string>
+    <string name="ob_wizard_mode_footnote">Mode can be changed anytime; Root takes two confirmations and shows the active mode on the About page.</string>
+    <string name="ob_mode_note_normal">Normal mode needs no setup. Root and Shizuku are advanced options you can enable later in Settings.</string>
+    <string name="ob_mode_note_shizuku_absent">Shizuku isn\'t running: start its service first. Normal mode is unaffected.</string>
+    <string name="ob_mode_note_shizuku_present">Shizuku isn\'t authorized yet: allow it in the Shizuku prompt. Normal mode keeps working without it.</string>
+    <string name="ob_mode_note_root_absent">No su detected, so Root is unavailable. You can enable it later in Settings.</string>
+    <string name="ob_mode_note_root_present">su detected: Root is available. The whole engine starts as root and can read/write every file.</string>
+    <string name="ob_wizard_caps_title">What the AI may touch</string>
+    <string name="ob_wizard_caps_desc">Only what you allow. With everything off it can still chat — it just can\'t see or tap.</string>
+    <string name="ob_caps_pos_fmt">Group %1$d of %2$d</string>
+    <string name="ob_caps_total_fmt">%1$d of %2$d allowed</string>
+    <string name="ob_caps_chip_fmt">%1$d/%2$d</string>
+    <string name="ob_caps_recommend">Turn on the 6 recommended</string>
+    <string name="ob_caps_recommend_hint">Recommended: device status, sensors, clipboard, device control, reminders, notifications. Only adds permissions, never resets your choices.</string>
+    <string name="ob_caps_note">Sensitive capabilities need a separate opt-in; screen recording and installs still ask the system each time. Change any of these later in Settings → Permissions.</string>
+    <string name="ob_caps_recommended_toast">The 6 recommended capabilities are on; your other choices were kept</string>
+    <string name="ob_caps_domain_env">Device &amp; env</string>
+    <string name="ob_caps_domain_notify">Notify &amp; media</string>
+    <string name="ob_caps_domain_control">Device control</string>
+    <string name="ob_caps_domain_personal">Personal data</string>
+    <string name="ob_caps_domain_input">Capture &amp; senses</string>
+    <string name="ob_caps_domain_system">Apps &amp; container</string>
+    <string name="ob_done_head_ready">All set</string>
+    <string name="ob_done_head_preparing">Getting ready</string>
+    <string name="ob_done_head_failed">One step left</string>
+    <string name="ob_done_head_lite">Setup complete</string>
+    <string name="ob_done_sub_ready">Saved. Add a model and API key, then you can start chatting.</string>
+    <string name="ob_done_sub_preparing">You can look around meanwhile; it finishes on its own.</string>
+    <string name="ob_done_sub_failed">You can still go in and retry from Maintenance; your choices are kept.</string>
+    <string name="ob_done_sub_lite">Interface setup is done; the lite build has no engine until you download it.</string>
+    <string name="ob_done_rt_sub_preparing">Progress continues in the background</string>
+    <string name="ob_done_rt_sub_ready">Engine starts in about 2 s</string>
+    <string name="ob_done_rt_sub_failed">Retry from Maintenance after entering</string>
+    <string name="ob_done_rt_sub_lite">Choose whether to download (about 130 MB) after entering</string>
+    <string name="ob_done_next_title">One more thing: model &amp; API key</string>
+    <string name="ob_done_next_sub">Inside the app, fill it in at Settings → Model. Chatting unlocks only after that.</string>
+    <string name="ob_done_cta_ready">Enter app, continue setup</string>
+    <string name="ob_done_cta_preparing">Go in, keep preparing</string>
+    <string name="ob_done_cta_failed">Enter and retry in Maintenance</string>
+    <string name="ob_done_cta_lite">Enter app · download later</string>
+    <string name="ob_done_browse">Look around first</string>
     <string name="sensitive_kind_calendar">calendar</string>
     <string name="sensitive_kind_contacts">contacts</string>
     <string name="sensitive_kind_sms">text messages</string>
@@ -1336,8 +1368,7 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="sensitive_audit_title">AI read your %1$s</string>
     <string name="sensitive_audit_detail">%1$d %2$s</string>
     <string name="sensitive_audit_detail_plain">Just now</string>
-    <string name="sensitive_audit_body">%1$s
-If this is not what you want, turn off the %2$s switch in Permission center.</string>
+    <string name="sensitive_audit_body">%1$s\nIf this is not what you want, turn off the %2$s switch in Permission center.</string>
     <string name="personal_cap_disabled_hint">Turn this item on in Permission center → AI device capabilities. The four personal-data switches are granted separately.</string>
     <string name="setting_bg_control_alpha">Control opacity</string>
     <string name="setting_bg_control_alpha_sub">How solid cards look over the background image</string>
@@ -1412,28 +1443,18 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="ext_linux_installing">Installing %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Installing %1$d packages…</string>
     <string name="ext_linux_check_none">No extensions installed in this container yet</string>
-    <string name="ext_linux_check_summary">%1$d installed in the container: %2$d ready, %3$d partial
-
-%4$s</string>
+    <string name="ext_linux_check_summary">%1$d installed in the container: %2$d ready, %3$d partial\n\n%4$s</string>
     <string name="ext_linux_repair_none">No partially installed packages ✓</string>
-    <string name="ext_linux_partial_note">Not available in this container: %1$s.
-
-Install the rest anyway?</string>
+    <string name="ext_linux_partial_note">Not available in this container: %1$s.\n\nInstall the rest anyway?</string>
     <string name="ext_linux_partial_tag">missing: %1$s</string>
 
     <string name="ext_linux_install_done">%1$s installed</string>
     <string name="ext_linux_removing">Removing %1$s…</string>
-    <string name="ext_linux_uninstall_msg">Remove these packages from the container?
-
-%1$s</string>
-    <string name="ext_linux_reinstall_msg">Reinstall %1$s?
-
-Packages: %2$s</string>
+    <string name="ext_linux_uninstall_msg">Remove these packages from the container?\n\n%1$s</string>
+    <string name="ext_linux_reinstall_msg">Reinstall %1$s?\n\nPackages: %2$s</string>
 
     <string name="degraded_title">Engine is running, but some capabilities are missing</string>
-    <string name="degraded_body">%1$d capability(ies) are unavailable because their plugins did not load:
-
-%2$s</string>
+    <string name="degraded_body">%1$d capability(ies) are unavailable because their plugins did not load:\n\n%2$s</string>
     <string name="degraded_open_maintenance">Open maintenance</string>
     <string name="status_degraded">Engine degraded · %1$d unavailable</string>
 
@@ -1497,12 +1518,7 @@ Packages: %2$s</string>
     <string name="ext_linux_action_remove">Remove</string>
     <string name="ext_linux_action_unavailable">N/A</string>
     <string name="ext_version_default">Default version</string>
-    <string name="ext_version_switch_msg">The container can only carry one version of this extension at a time.
-
-Installed now: %2$s
-You picked: %1$s
-
-Remove the installed version first, then pick this one?</string>
+    <string name="ext_version_switch_msg">The container can only carry one version of this extension at a time.\n\nInstalled now: %2$s\nYou picked: %1$s\n\nRemove the installed version first, then pick this one?</string>
     <string name="ext_version_switch_go">Remove %1$s</string>
 
     <string name="ext_linux_install_failed">Install failed: %1$s</string>
@@ -1681,9 +1697,7 @@ Remove the installed version first, then pick this one?</string>
     <string name="asr_local_need_install">Install the speech recognizer first</string>
     <string name="setting_linux_ssh">SSH dev environment</string>
     <string name="setting_linux_ssh_sub">Let a PC connect straight into the Linux container over standard SSH</string>
-    <string name="linux_ssh_consent">This opens port 2222 on your local network and runs an SSH server inside the app. Anyone on the same Wi-Fi who knows the password can run commands in the Linux container.
-
-Only turn it on on networks you trust, and turn it off when you are done.</string>
+    <string name="linux_ssh_consent">This opens port 2222 on your local network and runs an SSH server inside the app. Anyone on the same Wi-Fi who knows the password can run commands in the Linux container.\n\nOnly turn it on on networks you trust, and turn it off when you are done.</string>
     <string name="linux_ssh_need_password">Set a login password first. The port stays closed until there is one.</string>
     <string name="linux_ssh_set_password">Set password</string>
     <string name="linux_ssh_save">Save</string>
@@ -1770,11 +1784,7 @@ Only turn it on on networks you trust, and turn it off when you are done.</strin
     <string name="a11y_voice_sub">Triggered from the overlay mic; system or cloud recognition</string>
     <string name="a11y_row_safety">Safety boundaries</string>
     <string name="a11y_safety_sub">System pages are read-only, ID numbers masked, risky taps ask first</string>
-    <string name="a11y_safety_body">System permission and security pages (install unknown apps, accessibility, device admin) are read-only: the agent may read them but never taps.
-
-ID numbers and bank cards are masked before anything reaches the model.
-
-Rows like send / pay / delete / authorise are flagged, and auto-tap always skips them.</string>
+    <string name="a11y_safety_body">System permission and security pages (install unknown apps, accessibility, device admin) are read-only: the agent may read them but never taps.\n\nID numbers and bank cards are masked before anything reaches the model.\n\nRows like send / pay / delete / authorise are flagged, and auto-tap always skips them.</string>
     <string name="a11y_need_service">Enable the accessibility service first</string>
     <string name="tts_test_sub">Tap to speak a sample; if no engine is installed the reason shows here</string>
     <string name="tts_test_sample">Speech synthesis is ready.</string>

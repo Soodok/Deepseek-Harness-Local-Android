@@ -116,6 +116,46 @@
                     android:layout_marginTop="10dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
+
+                <!-- 运行环境实时状态（v2）：解压进度 / 已就绪 / 失败 / 需下载。
+                     放在 topBlock 而不是欢迎页内容里：欢迎页正文高度已经顶满
+                     pageHost 视口（实测边界 1988px），塞进正文的小胶囊会被整块裁掉，
+                     截图和 uiautomator 里都看不到，后台解压就等于没有反馈。
+                     只在封面页显示，由 goTo() 与 renderRuntime() 一起管显隐。 -->
+                <LinearLayout
+                    android:id="@+id/welcomePill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_ob_pill"
+                    android:layout_gravity="center_horizontal"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="7dp"
+                    android:visibility="gone">
+
+                    <!-- 解压进行中才有转圈。纯百分比数字在 10 秒没变化时会被当成卡死，
+                         一点守恒的转动就是「还活着」的证据（原型里也是这颗点）。 -->
+                    <!-- 16dp 是实测下限：12dp 时默认弧形指示器只剩一根短线，
+                         看着像渲染残迹而不是转圈。 -->
+                    <ProgressBar
+                        android:id="@+id/pbWelcomePill"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginEnd="8dp"
+                        android:importantForAccessibility="no"
+                        android:indeterminate="true"
+                        android:indeterminateTint="@color/accent"
+                        android:indeterminateTintMode="src_in" />
+
+                    <TextView
+                        android:id="@+id/txtWelcomePill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- ===== 内容区：七页叠放，只显示当前页 ===== -->
@@ -124,6 +164,88 @@
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1">
+
+                <!-- 0. 欢迎（v2 新增，不计入 8 步） -->
+                <ScrollView
+                    android:id="@+id/pageWelcome"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center_horizontal"
+                        android:paddingHorizontal="24dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="18dp">
+
+                        <ImageView
+                            android:layout_width="56dp"
+                            android:layout_height="56dp"
+                            android:layout_marginTop="6dp"
+                            android:src="@drawable/ic_launcher_foreground"
+                            android:tint="@color/onboarding_logo_tint" />
+
+                        <TextView
+                            android:id="@+id/welcomeEyebrow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:letterSpacing="0.16"
+                            android:text="@string/ob_wizard_welcome_eyebrow"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:gravity="center"
+                            android:lineSpacingExtra="2dp"
+                            android:text="@string/ob_wizard_welcome_title"
+                            android:textColor="@color/text_primary"
+                            android:textSize="26sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:gravity="center"
+                            android:lineSpacingExtra="4dp"
+                            android:text="@string/ob_wizard_welcome_lede"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+
+                        <LinearLayout
+                            android:id="@+id/welcomeRows"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical"
+                            android:paddingVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/welcomePrereq"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/ob_wizard_welcome_prereq"
+                            android:textColor="@color/text_muted"
+                            android:textSize="10.5sp" />
+
+
+                    </LinearLayout>
+                </ScrollView>
 
                 <!-- 1. 语言 -->
                 <ScrollView
@@ -496,9 +618,9 @@
                     </LinearLayout>
                 </ScrollView>
 
-                <!-- 6. 运行模式与能力（模式单选 + 能力多选） -->
+                <!-- 6. 运行模式（v2：从 pagePriv 拆出，只管模式与前置条件） -->
                 <ScrollView
-                    android:id="@+id/pagePriv"
+                    android:id="@+id/pageMode"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:fillViewport="true"
@@ -517,7 +639,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/ob_wizard_priv_title"
+                            android:text="@string/ob_wizard_mode_title"
                             android:textColor="@color/text_primary"
                             android:textSize="26sp"
                             android:textStyle="bold" />
@@ -526,7 +648,8 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
-                            android:text="@string/ob_wizard_priv_desc"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/ob_wizard_mode_desc"
                             android:textColor="@color/text_secondary"
                             android:textSize="13sp" />
 
@@ -537,8 +660,10 @@
                             android:layout_marginTop="16dp"
                             android:orientation="vertical" />
 
-                        <!-- 能力检测结果（Root 用 su 实测；Shizuku 用 binder ping） -->
+                        <!-- 前置条件：只有选中 Shizuku / Root 时才转成警示色，
+                             普通模式下是中性说明（否则正常用户会以为自己配错了） -->
                         <LinearLayout
+                            android:id="@+id/modePrereqCard"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
@@ -560,136 +685,303 @@
                                 android:layout_marginTop="6dp"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="12sp" />
-                        </LinearLayout>
-
-                        <!-- 能力开关区 -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="20dp"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
 
                             <TextView
-                                android:layout_width="0dp"
+                                android:id="@+id/txtModeNote"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="@string/ob_wizard_cap_title"
-                                android:textColor="@color/text_primary"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:id="@+id/btnCapRecommend"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_ob_pill"
-                                android:clickable="true"
-                                android:focusable="true"
-                                android:gravity="center"
-                                android:minHeight="32dp"
-                                android:paddingHorizontal="14dp"
-                                android:text="@string/ob_wizard_cap_recommend"
-                                android:textColor="@color/accent"
+                                android:layout_marginTop="8dp"
+                                android:lineSpacingExtra="3dp"
+                                android:textColor="@color/text_secondary"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="@string/ob_wizard_cap_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:lineSpacingExtra="3dp" />
-
-                        <LinearLayout
-                            android:id="@+id/capabilityContainer"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:orientation="vertical" />
+                            android:layout_marginTop="12dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/ob_wizard_mode_footnote"
+                            android:textColor="@color/text_muted"
+                            android:textSize="12sp" />
                     </LinearLayout>
                 </ScrollView>
 
-                <!-- 7. 完成（设计保持 v1.5.x：光晕 + 白鲸 + 呼吸循环）。
-                     2026-11-11 只修了两处让这个设计没按原意呈现的缺陷：光晕半径按 px
-                     解析（见 bg_onboarding_glow.xml）、呼吸只跑一个来回。
-                     clipChildren=false：呼吸放大到 1.12 倍会超出下面 200dp 的
-                     FrameLayout，父级裁剪会把光晕切出一圈方边。 -->
-                <LinearLayout
+                <!-- 7. 能力（v2：按域横向分组，只渲染当前域，页面高度不随能力总数增长） -->
+                <ScrollView
+                    android:id="@+id/pageCaps"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="24dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="18dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ob_wizard_caps_title"
+                            android:textColor="@color/text_primary"
+                            android:textSize="26sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/ob_wizard_caps_desc"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <HorizontalScrollView
+                                android:id="@+id/capGroupsScroll"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:clipToPadding="false"
+                                android:scrollbars="none">
+
+                                <LinearLayout
+                                    android:id="@+id/capGroups"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal" />
+                            </HorizontalScrollView>
+
+                            <TextView
+                                android:id="@+id/capArrow"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="4dp"
+                                android:text="\u203A"
+                                android:textColor="@color/text_muted"
+                                android:textSize="18sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:id="@+id/capPos"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:textColor="@color/text_muted"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/capTotal"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/text_muted"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/capPanels"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical"
+                            android:paddingHorizontal="14dp"
+                            android:paddingVertical="4dp" />
+
+                        <TextView
+                            android:id="@+id/capRecommendHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:lineSpacingExtra="3dp"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/btnCapRecommend"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="8dp"
+                            android:background="@drawable/bg_btn_outline_ripple"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:text="@string/ob_caps_recommend"
+                            android:textColor="@color/accent"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/capNote"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/ob_caps_note"
+                            android:textColor="@color/text_muted"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </ScrollView>
+
+                <!-- 8. 完成（v2：可滚动；四态标题/说明/CTA 由代码按运行环境状态渲染） -->
+                <ScrollView
                     android:id="@+id/pageDone"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:clipChildren="false"
-                    android:orientation="vertical"
-                    android:gravity="center_horizontal"
-                    android:paddingHorizontal="32dp"
+                    android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
                     android:visibility="gone">
 
-                    <FrameLayout
-                        android:layout_width="200dp"
-                        android:layout_height="200dp"
-                        android:layout_marginTop="24dp">
-
-                        <View
-                            android:id="@+id/doneGlow"
-                            android:layout_width="200dp"
-                            android:layout_height="200dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_onboarding_glow" />
-
-                        <ImageView
-                            android:id="@+id/doneLogo"
-                            android:layout_width="84dp"
-                            android:layout_height="84dp"
-                            android:layout_gravity="center"
-                            android:src="@drawable/ic_launcher_foreground"
-                            android:tint="@color/onboarding_logo_tint" />
-                    </FrameLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/ob_wizard_done_title"
-                        android:textColor="@color/text_primary"
-                        android:textSize="26sp"
-                        android:textStyle="bold" />
-
-                    <TextView
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/ob_wizard_done_desc"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="14sp"
-                        android:gravity="center" />
+                        android:orientation="vertical"
+                        android:gravity="center_horizontal"
+                        android:paddingHorizontal="24dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="18dp">
 
-                    <!-- v1.7.10：运行环境预取状态。用户还在挑语言/主题时，后台已在解压；
-                         这里显示「正在解压 42% / 已就绪 / 准备未完成」，完成页不再是空半屏。 -->
-                    <TextView
-                        android:id="@+id/txtDoneRuntime"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="18dp"
-                        android:gravity="center"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp"
-                        android:visibility="gone" />
+                        <!-- 光晕 180dp -> 120dp：原尺寸会压过正文。clipChildren=false
+                             让呼吸放大不被父级裁出方边。 -->
+                        <FrameLayout
+                            android:layout_width="120dp"
+                            android:layout_height="120dp"
+                            android:layout_marginTop="10dp"
+                            android:clipChildren="false">
 
-                    <ProgressBar
-                        android:id="@+id/pbDoneRuntime"
-                        style="?android:attr/progressBarStyleHorizontal"
-                        android:layout_width="180dp"
-                        android:layout_height="4dp"
-                        android:layout_marginTop="10dp"
-                        android:max="100"
-                        android:progress="0"
-                        android:progressTint="@color/accent"
-                        android:visibility="gone" />
-                </LinearLayout>
+                            <View
+                                android:id="@+id/doneGlow"
+                                android:layout_width="120dp"
+                                android:layout_height="120dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_onboarding_glow" />
+
+                            <ImageView
+                                android:id="@+id/doneLogo"
+                                android:layout_width="60dp"
+                                android:layout_height="60dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_launcher_foreground"
+                                android:tint="@color/onboarding_logo_tint" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:id="@+id/doneTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="@string/ob_done_head_ready"
+                            android:textColor="@color/text_primary"
+                            android:textSize="26sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/doneSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:gravity="center"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/ob_done_sub_ready"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <!-- 运行环境状态卡：四态唯一权威来源（txtDoneRuntime 文案由代码给） -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/txtDoneRuntime"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/txtDoneRuntimeSub"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:lineSpacingExtra="3dp"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="12sp" />
+
+                            <ProgressBar
+                                android:id="@+id/pbDoneRuntime"
+                                style="?android:attr/progressBarStyleHorizontal"
+                                android:layout_width="match_parent"
+                                android:layout_height="4dp"
+                                android:layout_marginTop="10dp"
+                                android:max="100"
+                                android:progress="0"
+                                android:progressTint="@color/accent"
+                                android:visibility="gone" />
+                        </LinearLayout>
+
+                        <!-- 下一步只留一条：模型与 API Key（端侧检查、远程主机放到应用内指引） -->
+                        <LinearLayout
+                            android:id="@+id/doneNextCard"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/ob_done_next_title"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:lineSpacingExtra="3dp"
+                                android:text="@string/ob_done_next_sub"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <!-- 选择回顾：五枚 chip，由 refreshDoneSummary() 按状态函数生成，不写死 -->
+                        <LinearLayout
+                            android:id="@+id/doneSummary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            android:orientation="horizontal" />
+                    </LinearLayout>
+                </ScrollView>
             </FrameLayout>
+
                 <!-- ===== 底部按钮 =====
                      放在 MaxWidthLinearLayout 内部（而不是根容器末尾）：这样平板上
                      它会自动落在右侧内容列下方、与卡片同宽，不会横跨左侧步骤栏。 -->

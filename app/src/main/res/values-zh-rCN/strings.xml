@@ -224,10 +224,7 @@
     <string name="plugin_engine_old_title">插件需要更新的引擎</string>
     <string name="plugin_engine_old_force">强制安装此版本</string>
     <string name="plugin_build_pending_title">需要批准构建脚本</string>
-    <string name="plugin_build_pending_body">这些依赖要执行安装脚本：
-%s
-
-安装脚本会运行来自该包的任意代码，只在你信任这个插件时才批准。</string>
+    <string name="plugin_build_pending_body">这些依赖要执行安装脚本：\n%s\n\n安装脚本会运行来自该包的任意代码，只在你信任这个插件时才批准。</string>
     <string name="plugin_build_approve">批准并重试</string>
     <string name="plugin_build_approve_btn">批准构建</string>
     <string name="plugin_build_approve_failed">写入构建批准失败</string>
@@ -258,15 +255,9 @@
     <string name="plugin_failed">失败：%1$s</string>
     <string name="plugin_checking">检查中…</string>
     <string name="plugin_native_title">这个插件需要原生代码</string>
-    <string name="plugin_native_body">它声明了构建步骤或原生模块：
-
-%1$s
-
-在 Android 上这些通常编译不出来（缺少编译工具链头文件），可能会装成功但用不了。仍要安装吗？</string>
+    <string name="plugin_native_body">它声明了构建步骤或原生模块：\n\n%1$s\n\n在 Android 上这些通常编译不出来（缺少编译工具链头文件），可能会装成功但用不了。仍要安装吗？</string>
     <string name="plugin_check_unknown_title">无法确认这个插件</string>
-    <string name="plugin_check_unknown_body">查询插件源失败（%1$s），因此兼容性未知。如果它需要原生模块，可能在 Android 上不可用。
-
-仍要安装吗？</string>
+    <string name="plugin_check_unknown_body">查询插件源失败（%1$s），因此兼容性未知。如果它需要原生模块，可能在 Android 上不可用。\n\n仍要安装吗？</string>
     <string name="plugin_install_anyway">仍然安装</string>
 
     <string name="download_started">开始下载：%1$s</string>
@@ -310,23 +301,15 @@
     <string name="ext_tool_repair">修复损坏</string>
     <string name="ext_check_title">扩展健康检查</string>
     <string name="ext_check_all_ok">已装 %1$d 个扩展，全部正常 ✓</string>
-    <string name="ext_check_summary">已装 %1$d 个：健康 %2$d，异常 %3$d
-
-%4$s</string>
+    <string name="ext_check_summary">已装 %1$d 个：健康 %2$d，异常 %3$d\n\n%4$s</string>
     <string name="ext_check_none">尚未安装任何扩展</string>
     <string name="ext_install_all_title">一键安装全部</string>
-    <string name="ext_install_all_msg">将下载并安装 %1$d 个尚未安装的扩展（含各自依赖闭包，总体积视扩展而定）。
-
-安装过程在后台进行，可离开本页；新扩展需要重启引擎后进入 PATH。</string>
+    <string name="ext_install_all_msg">将下载并安装 %1$d 个尚未安装的扩展（含各自依赖闭包，总体积视扩展而定）。\n\n安装过程在后台进行，可离开本页；新扩展需要重启引擎后进入 PATH。</string>
     <string name="ext_install_all_go">开始安装</string>
     <string name="ext_install_all_none">没有需要安装的扩展（都已装好）</string>
     <string name="ext_install_all_started">已排队 %1$d 个扩展，后台开始下载安装</string>
     <string name="ext_repair_title">修复损坏的扩展</string>
-    <string name="ext_repair_msg">检测到 %1$d 个异常扩展：
-
-%2$s
-
-将强制重新下载并覆盖安装（含依赖闭包）。若报"权限残留"，请给一次 su 授权后重试。</string>
+    <string name="ext_repair_msg">检测到 %1$d 个异常扩展：\n\n%2$s\n\n将强制重新下载并覆盖安装（含依赖闭包）。若报"权限残留"，请给一次 su 授权后重试。</string>
     <string name="ext_repair_go">一键修复</string>
     <string name="ext_repair_none">未检测到损坏的扩展 ✓</string>
     <string name="ext_repair_started">已排队修复 %1$d 个扩展</string>
@@ -378,11 +361,7 @@
     <string name="ext_unknown_error">未知错误</string>
     <string name="app_language">应用语言</string>
     <string name="webview_gate_title">WebView 版本过低</string>
-    <string name="webview_gate_body">本设备的浏览器内核（Chrome %1$s）低于应用所需的 Chrome %2$d：AI 界面使用了新的语言语法，这类语法在解析期就失败，补丁无法弥补，继续启动将只看到空白页面。
-
-请到应用商店更新「Android System WebView」后重新打开本应用。
-
-还有两条路：直接用系统浏览器打开界面（能正常用，渲染在引擎里做，浏览器只负责显示）；或者坚持继续启动试一下。</string>
+    <string name="webview_gate_body">本设备的浏览器内核（Chrome %1$s）低于应用所需的 Chrome %2$d：AI 界面使用了新的语言语法，这类语法在解析期就失败，补丁无法弥补，继续启动将只看到空白页面。\n\n请到应用商店更新「Android System WebView」后重新打开本应用。\n\n还有两条路：直接用系统浏览器打开界面（能正常用，渲染在引擎里做，浏览器只负责显示）；或者坚持继续启动试一下。</string>
     <string name="webview_gate_update">去更新</string>
     <string name="webview_gate_continue">仍然继续</string>
     <string name="webview_gate_open_browser">用浏览器打开</string>
@@ -516,12 +495,9 @@
     <string name="asr_help_body_2">Android 的语音识别依赖设备上已安装的识别服务。很多手机（尤其国内 ROM）出厂不带，语音输入会直接失败。</string>
     <string name="asr_help_body_3">两种解决办法：</string>
     <string name="asr_help_body_4">A) 装一个本地识别应用 —— 它会注册成系统识别服务，本应用自动使用它，这里不用填任何东西。推荐以下（均已核实声明了 RecognitionService）：</string>
-    <string name="asr_help_body_5">  · Sayboard（Vosk）— github.com/ElishaAz/Sayboard
-    F-Droid 可装，活跃。导入 vosk-model-cn-0.22（约 1.3GB），中文好得多。</string>
-    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME
-    F-Droid 可装，活跃。多语言 Whisper（约 435MB），中文效果好。</string>
-    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus
-    更快的 ONNX 版本，更新更勤。</string>
+    <string name="asr_help_body_5">  · Sayboard（Vosk）— github.com/ElishaAz/Sayboard\nF-Droid 可装，活跃。导入 vosk-model-cn-0.22（约 1.3GB），中文好得多。</string>
+    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME\nF-Droid 可装，活跃。多语言 Whisper（约 435MB），中文效果好。</string>
+    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus\n更快的 ONNX 版本，更新更勤。</string>
     <string name="asr_help_body_8">装好后到「系统设置 → 语言和输入法 → 语音输入」里选它。</string>
     <string name="asr_help_body_9">B) 用云端识别服务 —— 在下面填入它的 OpenAI 兼容转写地址、模型名和 API Key。有免费额度的服务商：硅基流动 siliconflow.cn、Groq groq.com、阿里 DashScope、智谱 BigModel、火山方舟，或你自己的服务器（whisper.cpp 自建）。</string>
     <string name="asr_help_body_10">留空则只使用系统识别。</string>
@@ -931,9 +907,7 @@
     <string name="pet_lines_cat_ws_error">工作状态 · 出错</string>
     <string name="about_runtime">运行时</string>
     <string name="runtime_setup_title">必须下载运行时才能继续</string>
-    <string name="runtime_setup_message">这个安装包没有内置 Node.js 运行时，缺少它引擎无法启动。
-
-现在下载 %1$s（建议连 Wi-Fi）。这一步是必选项，不能跳过；后续 App 升级不会重复下载。</string>
+    <string name="runtime_setup_message">这个安装包没有内置 Node.js 运行时，缺少它引擎无法启动。\n\n现在下载 %1$s（建议连 Wi-Fi）。这一步是必选项，不能跳过；后续 App 升级不会重复下载。</string>
     <string name="runtime_setup_download">下载并启动</string>
     <string name="runtime_setup_full">改用完整安装包</string>
     <string name="about_runtime_idle">检查运行时更新</string>
@@ -1116,25 +1090,17 @@
     <string name="action_reset">重置</string>
     <string name="action_choose_backup">备份并继续</string>
     <string name="action_restart_now">重启引擎</string>
-    <string name="deep_clean_confirm_body">将删除 %1$s 的缓存与插件残留，下次启动自动重建。
-
-保留：API 凭证、会话、工作区、插件配置、SSH 密钥。</string>
+    <string name="deep_clean_confirm_body">将删除 %1$s 的缓存与插件残留，下次启动自动重建。\n\n保留：API 凭证、会话、工作区、插件配置、SSH 密钥。</string>
     <string name="reset_home_confirm_body">将删除 dsh-home 里的全部内容（%1$s）：&#10;&#10;- API 凭证（需要重新登录）&#10;- 全部会话与工作区&#10;- 插件配置&#10;- SSH 密钥&#10;&#10;App 与引擎运行时保留，不需要重新下载。&#10;删除前会先备份。</string>
     <string name="reset_final_title">最后确认</string>
-    <string name="reset_final_body">除从备份 zip 恢复外，此操作不可撤销。
-
-请输入 RESET 继续。</string>
+    <string name="reset_final_body">除从备份 zip 恢复外，此操作不可撤销。\n\n请输入 RESET 继续。</string>
     <string name="reset_type_hint">RESET</string>
     <string name="reset_wrong_word">与 RESET 不符，未删除任何内容。</string>
     <string name="backup_running">正在备份…</string>
     <string name="backup_progress">正在备份：已写入 %1$s</string>
     <string name="backup_unavailable">无法打开保存位置：%1$s</string>
     <string name="backup_failed_title">备份失败</string>
-    <string name="backup_failed_body">未删除任何内容。
-
-%1$s
-
-请选本地文件夹（不要选云盘）后重试。</string>
+    <string name="backup_failed_body">未删除任何内容。\n\n%1$s\n\n请选本地文件夹（不要选云盘）后重试。</string>
     <string name="clean_running">正在清理…</string>
     <string name="clean_done_title">清理完成</string>
     <string name="clean_partial_title">清理完成，但有遗留</string>
@@ -1248,9 +1214,7 @@
     <string name="perm_list_granted_one">已授予。</string>
     <string name="perm_list_grant_failed">仍然拿不到 —— 系统不批准这个权限。</string>
     <string name="perm_list_revoke_title">撤销权限</string>
-    <string name="perm_list_revoke_msg">撤销 %1$s？
-
-系统会重启 App 以重载权限组表 —— 这是正常行为，不是崩溃。</string>
+    <string name="perm_list_revoke_msg">撤销 %1$s？\n\n系统会重启 App 以重载权限组表 —— 这是正常行为，不是崩溃。</string>
     <string name="perm_list_revoke">撤销</string>
     <string name="perm_list_revoked">已撤销。</string>
     <string name="perm_list_no_channel">没有特权通道 —— 先连 Shizuku 或授权 root。</string>
@@ -1283,14 +1247,13 @@
     <string name="ob_wizard_accent_title">配色方案</string>
     <string name="ob_wizard_accent_desc">用于按钮、高亮与状态文字。</string>
     <string name="ob_wizard_priv_title">运行模式</string>
-    <string name="ob_wizard_priv_desc">决定 AI 能触及的范围，推荐普通模式。</string>
     <string name="ob_wizard_done_title">准备就绪</string>
     <string name="ob_wizard_done_desc">你的选择已保存，点击下方开始使用。</string>
     <string name="ob_rt_preparing">正在解压运行环境…</string>
     <string name="ob_rt_pct">正在解压运行环境… %1$d%%</string>
     <string name="ob_rt_ready">运行环境已就绪</string>
     <string name="ob_rt_failed">运行环境准备未完成，进入后可在「维护」中重试</string>
-    <string name="ob_rt_download">精简包：完成引导后再选择是否下载运行环境</string>
+    <string name="ob_rt_download">精简包 · 进入后再下载运行环境</string>
     <string name="ob_wizard_back">上一步</string>
     <string name="ob_wizard_next">下一步</string>
     <string name="ob_wizard_start">开始使用</string>
@@ -1328,6 +1291,67 @@
     <string name="ob_wizard_cap_desc">选择允许 AI 触及的范围。之后随时可在「设置 → 权限中心」更改。</string>
     <string name="ob_wizard_cap_recommend">推荐配置</string>
     <string name="ob_wizard_cap_recommended">已开启低风险只读能力</string>
+    <string name="ob_wizard_welcome_eyebrow">DEEPSEEK HARNESS · 完整移植</string>
+    <string name="ob_wizard_welcome_title">完整的 DeepSeek Harness\n住进了你的手机</string>
+    <string name="ob_wizard_welcome_lede">克隆仓库、编译项目、运行测试、提交代码，也能读屏、点按、输入。引擎与工具在手机本地执行。</string>
+    <string name="ob_wizard_welcome_prereq">运行环境随安装包自带；模型与 API Key 进入后单独配置。</string>
+    <string name="ob_wizard_welcome_cover_label">欢迎</string>
+    <string name="ob_wizard_mode_title">运行模式</string>
+    <string name="ob_wizard_welcome_step_hint">约 30 秒完成设置；运行环境在后台解压</string>
+    <string name="ob_wizard_next_keep">保留当前设置并继续</string>
+    <string name="ob_done_summary_scale">缩放 %1$d%%</string>
+    <string name="ob_wizard_welcome_start">开始设置 · 约 30 秒</string>
+    <string name="ob_wizard_welcome_f1">同源引擎</string>
+    <string name="ob_wizard_welcome_f1_sub">沿用桌面端 DSH 的引擎、工具与插件机制</string>
+    <string name="ob_wizard_welcome_f2">电脑级工作流</string>
+    <string name="ob_wizard_welcome_f2_sub">原生 Node.js 与真实终端，命令在手机执行</string>
+    <string name="ob_wizard_welcome_f3">自研 Linux 容器</string>
+    <string name="ob_wizard_welcome_f3_sub">Alpine 用户态，按需安装 Linux 软件与编译工具链</string>
+    <string name="ob_wizard_welcome_f4">手机操控</string>
+    <string name="ob_wizard_welcome_f4_sub">读屏、点按、输入，随时可停</string>
+    <string name="ob_wizard_welcome_f5">与电脑协同</string>
+    <string name="ob_wizard_welcome_f5_sub">配对后，电脑可调用这台手机的读屏、相机、容器等能力</string>
+    <string name="ob_wizard_mode_desc">决定 AI 能碰到系统多深。普通模式适合大多数人。</string>
+    <string name="ob_wizard_mode_footnote">模式随时可改；Root 需要两次确认，并会在关于页显示当前模式。</string>
+    <string name="ob_mode_note_normal">普通模式无需额外准备。Root / Shizuku 属进阶选项，需要时可在设置里再开。</string>
+    <string name="ob_mode_note_shizuku_absent">Shizuku 未运行：先在 Shizuku 应用里启动服务；普通模式不受影响。</string>
+    <string name="ob_mode_note_shizuku_present">Shizuku 尚未授权：在 Shizuku 弹窗里允许即可；不给也不影响普通模式。</string>
+    <string name="ob_mode_note_root_absent">未检测到 su，Root 暂时不可用；需要时可在设置里再开。</string>
+    <string name="ob_mode_note_root_present">已检测到 su：Root 可用。开启后整个引擎以 root 启动，可读写全盘。</string>
+    <string name="ob_wizard_caps_title">给 AI 的能力</string>
+    <string name="ob_wizard_caps_desc">只开你愿意的。不开也能正常聊天，只是它看不到、点不了。</string>
+    <string name="ob_caps_pos_fmt">第 %1$d / %2$d 组</string>
+    <string name="ob_caps_total_fmt">已允许 %1$d / %2$d 项</string>
+    <string name="ob_caps_chip_fmt">已允许 %1$d/%2$d</string>
+    <string name="ob_caps_recommend">开启推荐的 6 项</string>
+    <string name="ob_caps_recommend_hint">推荐只开：设备状态、传感器、剪贴板、设备控制、定时提醒、发送通知。只新增允许，不重置你已选的。</string>
+    <string name="ob_caps_note">敏感能力需单独开启；录屏、安装等个别操作还要系统确认。以后可在「设置 → 权限」逐项修改。</string>
+    <string name="ob_caps_recommended_toast">已开启推荐的 6 项，其他选择保持不变</string>
+    <string name="ob_caps_domain_env">设备环境</string>
+    <string name="ob_caps_domain_notify">通知媒体</string>
+    <string name="ob_caps_domain_control">设备控制</string>
+    <string name="ob_caps_domain_personal">个人数据</string>
+    <string name="ob_caps_domain_input">录屏感知</string>
+    <string name="ob_caps_domain_system">应用容器</string>
+    <string name="ob_done_head_ready">准备就绪</string>
+    <string name="ob_done_head_preparing">正在准备</string>
+    <string name="ob_done_head_failed">还差一步</string>
+    <string name="ob_done_head_lite">界面设置已完成</string>
+    <string name="ob_done_sub_ready">设置已保存，配置模型后即可开始对话。</string>
+    <string name="ob_done_sub_preparing">期间可以先看看下面的内容，完成后自动就绪。</string>
+    <string name="ob_done_sub_failed">环境没装好也能进，进去后在「维护」里重试；已选设置会保留。</string>
+    <string name="ob_done_sub_lite">界面设置已完成；精简包不含引擎，需要时再下载。</string>
+    <string name="ob_done_rt_sub_preparing">进度会在后台继续，完成后自动就绪</string>
+    <string name="ob_done_rt_sub_ready">引擎启动只需约 2 秒</string>
+    <string name="ob_done_rt_sub_failed">进入后可在「维护」里重试</string>
+    <string name="ob_done_rt_sub_lite">进入后选择是否下载（约 130 MB）</string>
+    <string name="ob_done_next_title">还需配置模型与 API Key</string>
+    <string name="ob_done_next_sub">进入后在「设置 → 模型」填写，之后才能发起对话。</string>
+    <string name="ob_done_cta_ready">进入应用，继续配置模型</string>
+    <string name="ob_done_cta_preparing">先进去，后台继续</string>
+    <string name="ob_done_cta_failed">进入维护里重试</string>
+    <string name="ob_done_cta_lite">进入应用 · 需要时下载</string>
+    <string name="ob_done_browse">先浏览应用</string>
     <string name="sensitive_kind_calendar">日历</string>
     <string name="sensitive_kind_contacts">联系人</string>
     <string name="sensitive_kind_sms">短信</string>
@@ -1343,8 +1367,7 @@
     <string name="sensitive_audit_title">AI 读取了你的%1$s</string>
     <string name="sensitive_audit_detail">%1$d %2$s</string>
     <string name="sensitive_audit_detail_plain">刚刚有一次读取</string>
-    <string name="sensitive_audit_body">%1$s
-如果这不是你想要的，去「权限中心」关掉%2$s开关。</string>
+    <string name="sensitive_audit_body">%1$s\n如果这不是你想要的，去「权限中心」关掉%2$s开关。</string>
     <string name="personal_cap_disabled_hint">在「权限中心 → AI 设备能力」单独打开这一项；四项个人数据是分开授权的。</string>
     <string name="setting_bg_control_alpha">控件不透明度</string>
     <string name="setting_bg_control_alpha_sub">卡片压在背景图上的底色浓度，越高字越清楚</string>
@@ -1419,28 +1442,18 @@
     <string name="ext_linux_installing">正在安装 %1$s（%2$s）…</string>
     <string name="ext_linux_installing_all">正在安装 %1$d 个软件包…</string>
         <string name="ext_linux_check_none">容器里还没有装任何扩展</string>
-    <string name="ext_linux_check_summary">已装 %1$d 个：%2$d 个可用，%3$d 个不完整
-
-%4$s</string>
+    <string name="ext_linux_check_summary">已装 %1$d 个：%2$d 个可用，%3$d 个不完整\n\n%4$s</string>
     <string name="ext_linux_repair_none">没有不完整的包 ✓</string>
-    <string name="ext_linux_partial_note">这些包在当前容器里没有，安装时会跳过：%1$s。
-
-仍要继续安装其余的吗？</string>
+    <string name="ext_linux_partial_note">这些包在当前容器里没有，安装时会跳过：%1$s。\n\n仍要继续安装其余的吗？</string>
     <string name="ext_linux_partial_tag">缺 %1$s</string>
 
     <string name="ext_linux_install_done">%1$s 已安装</string>
     <string name="ext_linux_removing">正在卸载 %1$s…</string>
-    <string name="ext_linux_uninstall_msg">从容器中移除这些软件包？
-
-%1$s</string>
-    <string name="ext_linux_reinstall_msg">重新安装 %1$s？
-
-软件包：%2$s</string>
+    <string name="ext_linux_uninstall_msg">从容器中移除这些软件包？\n\n%1$s</string>
+    <string name="ext_linux_reinstall_msg">重新安装 %1$s？\n\n软件包：%2$s</string>
 
     <string name="degraded_title">引擎可用，但部分能力缺失</string>
-    <string name="degraded_body">有 %1$d 项能力不可用，因为对应插件没有加载成功：
-
-%2$s</string>
+    <string name="degraded_body">有 %1$d 项能力不可用，因为对应插件没有加载成功：\n\n%2$s</string>
     <string name="degraded_open_maintenance">打开维护中心</string>
     <string name="status_degraded">引擎降级 · %1$d 项不可用</string>
 
@@ -1504,12 +1517,7 @@
     <string name="ext_linux_action_remove">移除</string>
     <string name="ext_linux_action_unavailable">无</string>
     <string name="ext_version_default">默认版本</string>
-    <string name="ext_version_switch_msg">容器里同时只能装这一个扩展的一个版本。
-
-当前装着：%2$s
-你选的是：%1$s
-
-先卸载当前版本，再切到这一版？</string>
+    <string name="ext_version_switch_msg">容器里同时只能装这一个扩展的一个版本。\n\n当前装着：%2$s\n你选的是：%1$s\n\n先卸载当前版本，再切到这一版？</string>
     <string name="ext_version_switch_go">卸载 %1$s</string>
 
     <string name="ext_linux_install_failed">安装失败：%1$s</string>
@@ -1692,9 +1700,7 @@
     <string name="asr_local_need_install">请先安装语音识别服务</string>
     <string name="setting_linux_ssh">SSH 开发环境</string>
     <string name="setting_linux_ssh_sub">让电脑用标准 SSH 直接连进 Linux 容器</string>
-    <string name="linux_ssh_consent">这会开启 2222 端口，在应用内跑一个 SSH 服务端。同一个 Wi-Fi 下知道密码的人就能在 Linux 容器里执行命令。
-
-只在你信任的网络里开，用完请关掉。</string>
+    <string name="linux_ssh_consent">这会开启 2222 端口，在应用内跑一个 SSH 服务端。同一个 Wi-Fi 下知道密码的人就能在 Linux 容器里执行命令。\n\n只在你信任的网络里开，用完请关掉。</string>
     <string name="linux_ssh_need_password">请先设置登录密码。没有密码时端口不会开启。</string>
     <string name="linux_ssh_set_password">设置密码</string>
     <string name="linux_ssh_save">保存</string>
@@ -1781,11 +1787,7 @@
     <string name="a11y_voice_sub">由悬浮窗麦克风触发，支持系统识别与云端识别</string>
     <string name="a11y_row_safety">安全边界</string>
     <string name="a11y_safety_sub">系统权限页只读、证件号脱敏、危险操作先问</string>
-    <string name="a11y_safety_body">系统权限与安全页面（安装未知应用、无障碍、设备管理）只读不可点——能读，但不会去点。
-
-身份证号与银行卡号在发给模型之前就已打码。
-
-「发送 / 支付 / 删除 / 授权」这类按钮行首会标 ⚠，自动点击一律跳过。</string>
+    <string name="a11y_safety_body">系统权限与安全页面（安装未知应用、无障碍、设备管理）只读不可点——能读，但不会去点。\n\n身份证号与银行卡号在发给模型之前就已打码。\n\n「发送 / 支付 / 删除 / 授权」这类按钮行首会标 ⚠，自动点击一律跳过。</string>
     <string name="a11y_need_service">需要先开启无障碍服务</string>
     <string name="tts_test_sub">点一下用当前语音通道念一句示例；引擎缺失时把原因显示在这里</string>
     <string name="tts_test_sample">语音合成已就绪。</string>
