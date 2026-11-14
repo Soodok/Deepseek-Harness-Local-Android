@@ -357,32 +357,30 @@ class SettingsActivity : ThemedActivity() {
             )
         }
         refreshLangSub()
-        findViewById<LinearLayout>(R.id.rowLanguage).setOnClickListener {
-            val choices = arrayOf(
-                getString(R.string.lang_en),
-                getString(R.string.lang_de),
-                getString(R.string.lang_zh),
-                getString(R.string.lang_pt),
-                getString(R.string.lang_th),
-                getString(R.string.lang_ru),
-            )
-            AlertDialog.Builder(this)
-                .setTitle(getString(R.string.app_language))
-                .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
-                    val code = langCodes[which]
-                    if (code == LocaleHelper.get(this)) { dlg.dismiss(); return@setSingleChoiceItems }
+        // 语言不再弹选择框：点行就地展开一组单选项，选完即生效。
+        // 弹窗的问题不只是多一次点击 —— 它会把「当前是哪个语言」挡住，
+        // 而语言是那种「必须看见全部候选」才好比较的设置。
+        val languagePanel = attachInlinePanel(findViewById(R.id.rowLanguage))
+        fun renderLanguagePanel() {
+            languagePanel.removeAllViews()
+            val current = LocaleHelper.get(this)
+            for (code in langCodes) {
+                languagePanel.addView(buildRadioRow(
+                    label = langLabel(code),
+                    selected = code == current,
+                ) {
+                    if (code == current) return@buildRadioRow
                     LocaleHelper.set(this, code)
-                    dlg.dismiss()
-                    // 立即生效：本页原地重建（recreate 会重走 attachBaseContext →
-                    // 按新语言重新 inflate 布局），用户马上看到文案变化。
-                    //
-                    // 旧实现是「清任务栈 + 重新拉起 Launcher」——那是跨进程重建，
-                    // 用户实测「切换后 UI 不能及时响应」（要等整个应用重开）。
-                    // 现在只重建当前页；MainActivity 在 onResume 会检测到语言变化
-                    // 并自行重建，返回主界面时也是新语言。
+                    // 立即生效：本页原地重建（recreate 走 attachBaseContext → 按新语言
+                    // 重新 inflate）。旧实现清任务栈重拉 Launcher，用户要等整个应用重开。
                     recreate()
-                }
-                .showStyled()
+                })
+            }
+        }
+        findViewById<LinearLayout>(R.id.rowLanguage).setOnClickListener {
+            val opening = languagePanel.visibility != View.VISIBLE
+            if (opening) renderLanguagePanel()
+            toggleInlinePanel(findViewById(R.id.rowLanguage), languagePanel)
         }
 
         // —— 其他：关于 ——
@@ -689,6 +687,15 @@ class SettingsActivity : ThemedActivity() {
      * 国内网络不用先等一轮直连超时。用户可换自建镜像，或留空直连。
      */
     private fun showRuntimeProxyDialog() {
+        val row = findViewById<LinearLayout>(R.id.rowRuntimeProxy)
+        val existing = inlinePanels[row.id]
+        val panel = existing ?: attachInlinePanel(row).also { inlinePanels[row.id] = it }
+        if (panel.visibility == View.VISIBLE) {
+            toggleInlinePanel(row, panel)
+            return
+        }
+
+        panel.removeAllViews()
         val current = RuntimeDownloadConfig.proxy(this)
         val input = EditText(this).apply {
             setText(current)
@@ -704,50 +711,112 @@ class SettingsActivity : ThemedActivity() {
             )
             textSize = 12f
             setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(8), 0, dp(8))
             setLineSpacing(dp(2).toFloat(), 1f)
         }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(12), dp(24), dp(4))
-            addView(input)
-            addView(tip)
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.END
         }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.setting_runtime_proxy)
-            .setView(box)
-            .setPositiveButton(android.R.string.ok, null)
-            .setNeutralButton(R.string.setting_runtime_proxy_reset, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val reset = android.widget.Button(this).apply {
+            text = getString(R.string.setting_runtime_proxy_reset)
+            setOnClickListener {
+                RuntimeDownloadConfig.setProxy(this@SettingsActivity, null)
+                refreshRuntimeProxyRow()
+                Toast.makeText(
+                    this@SettingsActivity,
+                    getString(R.string.setting_runtime_proxy_reset_done),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                toggleInlinePanel(row, panel)
+            }
+        }
+        val save = android.widget.Button(this).apply {
+            text = getString(android.R.string.ok)
+            setOnClickListener {
                 val raw = input.text.toString()
                 if (!RuntimeDownloadConfig.isValid(raw)) {
                     input.error = getString(R.string.setting_runtime_proxy_invalid)
                     return@setOnClickListener
                 }
-                RuntimeDownloadConfig.setProxy(this, raw)
+                RuntimeDownloadConfig.setProxy(this@SettingsActivity, raw)
                 refreshRuntimeProxyRow()
                 Toast.makeText(
-                    this, getString(R.string.setting_runtime_proxy_saved), Toast.LENGTH_SHORT,
+                    this@SettingsActivity,
+                    getString(R.string.setting_runtime_proxy_saved),
+                    Toast.LENGTH_SHORT,
                 ).show()
-                dialog.dismiss()
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                RuntimeDownloadConfig.setProxy(this, null)
-                refreshRuntimeProxyRow()
-                Toast.makeText(
-                    this, getString(R.string.setting_runtime_proxy_reset_done), Toast.LENGTH_SHORT,
-                ).show()
-                dialog.dismiss()
+                toggleInlinePanel(row, panel)
             }
         }
-        dialog.show()
+        actions.addView(reset)
+        actions.addView(save)
+
+        panel.addView(input)
+        panel.addView(tip)
+        panel.addView(actions)
+        toggleInlinePanel(row, panel)
     }
+
+    // ── 内联展开面板（替代弹窗）──────────────────────────────────────────
+    /** 已经挂过的面板，按行 id 复用，避免每次点击都往树里塞新视图。 */
+    private val inlinePanels = HashMap<Int, LinearLayout>()
+
+    /**
+     * 在某一行**正下方**插入一个默认隐藏的面板。
+     *
+     * 为什么用内联而不是 Dialog：设置项里大量是「几选一」或「填一个值」，
+     * 弹窗会把当前值和上下文一起遮住；内联展开能同时看见「我选了什么、还有哪些」。
+     */
+    private fun attachInlinePanel(row: View): LinearLayout {
+        val parent = row.parent as LinearLayout
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(dp(20), 0, dp(20), dp(4))
+        }
+        val divider = View(this).apply {
+            setBackgroundColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+            alpha = 0.2f
+        }
+        panel.addView(divider, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)))
+        parent.addView(panel, parent.indexOfChild(row) + 1)
+        return panel
+    }
+
+    /** 展开/收起 + 行状态提示（无障碍读屏也能知道当前是展开还是收起）。 */
+    private fun toggleInlinePanel(row: View, panel: LinearLayout) {
+        val opening = panel.visibility != View.VISIBLE
+        panel.visibility = if (opening) View.VISIBLE else View.GONE
+        row.isSelected = opening
+    }
+
+    /** 一行单选项：左标题、右勾选。选中的用主色 + ✓，未选中留白。 */
+    private fun buildRadioRow(label: String, selected: Boolean, onClick: () -> Unit): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, dp(12))
+            isClickable = true
+            isFocusable = true
+            addView(
+                TextView(this@SettingsActivity).apply {
+                    text = label
+                    textSize = 15f
+                    setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                    if (selected) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                },
+            )
+            addView(
+                TextView(this@SettingsActivity).apply {
+                    text = if (selected) "✓" else ""
+                    textSize = 16f
+                    setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                },
+            )
+            setOnClickListener { onClick() }
+        }
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
