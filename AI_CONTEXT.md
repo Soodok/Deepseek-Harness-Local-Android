@@ -1,5 +1,14 @@
 # DSH Android · 交接文档
 
+## 蓝色深浅主题（2026-11-14，已验证并归档）
+
+- 本轮仅隔离目录E:/tmp/wt-flutter-native-chat，基线67e838d4caf4c09697ae96b364098a68bd80897c。蓝色深浅两套、双人轮廓子智能体图标；抽屉“外观”可选浅色、深色、跟随系统。
+- UI颜色通过DshPalette.of(context)依赖当前Material主题，弹层、工具记录、差异、子会话与GlassPanel统一适配；浅色阴影减淡。未重建聊天控制器，切换保留草稿与原ChatShell状态。
+- 新测试首先复现Brightness.dark和缺失外观入口；当前3项新主题测试及全部220项回归通过（55s），analyze无问题（2.6s），job bash-e7953a6261a04d3e退出0。跟随系统在已打开的运行环境弹层内也由浅切深验证通过。
+- 独立只读复核a70ad8f5-8b79-4c11-ab27-468fcd19360b结束，无P0/P1；已修正浅色小字和禁用子会话发送图标对比，实际比值4.91:1/4.95:1及3.46:1。最后3项主题测试与22项主题/子会话测试均通过，analyze分别2.9s/4.1s无问题，之后Dart未改动。
+- beta.25/code400最终Web release退出0（78.4s），bundle SHA256 d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e。8张同bundle真实PNG及CDP旁证、哈希清单、画廊和日志归档docs/reports/assets/2026-11-14-blue-themes；画廊+8图片HTTP200。报告docs/reports/2026-11-14-blue-themes-validation.md。
+- 当前外观选择仅保留于本次应用运行中，重启恢复默认深色；未新增存储依赖。Android、APK与在线引擎既有未验收边界不变，本轮不继续其排障。
+
 ## 顶栏与执行过程修正（2026-11-14，已验证并归档）
 
 - 本轮只在 E:/tmp/wt-flutter-native-chat 修改UI与相关测试，基线3f605591846e089a331b2eb300d8e876cd6de885；未扩展协议或Android排障。

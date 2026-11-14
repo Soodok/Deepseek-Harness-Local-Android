@@ -1,0 +1,29 @@
+Formatted lib/src/ui/subagent_panel.dart
+Formatted 1 file (1 changed) in 0.02 seconds.
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart: system appearance updates an already open runtime panel
+00:01 +1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart: light theme uses real light material surfaces
+00:02 +2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart: appearance switch repaints the chat without losing an edited draft
+00:02 +3: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart
+00:03 +3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: fixture 目录实时聚合、按 id 与父子地址去重并可展开
+00:04 +4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 不支持子会话时入口直接显示原因并禁用
+00:04 +5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 可用入口真实订阅子会话，返回直接回到母会话
+00:05 +6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 缺少地址时列表说明不可用，不读取也不发送
+00:05 +7: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 同一更新同时连接已有 id 和地址时只保留最新一条
+00:05 +8: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 读取期间显示 loading，正文只来自 read 结果
+00:05 +9: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: continuable 只发送一次，排队回执独立显示且不伪造回复
+00:05 +10: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 一次性、未知模式只读；缺地址和空地址不可用；均不发送
+00:05 +11: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 发送失败保留草稿并可重发
+00:05 +12: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 发送中编辑过的草稿不被成功结果清空，即使改回原文
+00:05 +13: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 读取失败可重试并重新订阅，退出页面取消订阅
+00:06 +14: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 退出后晚到的发送结果安全丢弃
+00:06 +15: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 退出后晚到的真实挂起读取安全丢弃
+00:06 +16: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 同地址元数据更新保留草稿且不重复读取
+00:06 +17: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 切换子会话清旧稿，旧发送完成不影响新稿
+00:06 +18: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: watch 的真实增量显示为助手正文
+00:06 +19: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 未知送达状态不会显示为已送达
+00:06 +20: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 空白草稿不可发送
+00:06 +21: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 360 宽、两倍文字与键盘弹出时可滚动且无溢出
+00:06 +22: All tests passed!
+Analyzing flutter_ui...
+No issues found! (ran in 4.1s)

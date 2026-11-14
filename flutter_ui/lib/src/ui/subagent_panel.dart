@@ -9,8 +9,13 @@ import '../state/subagent_controller.dart';
 import '../theme/dsh_theme.dart';
 import '../transport/dsh_transport.dart';
 
-const _meta = TextStyle(color: DshPalette.inkSoft, fontSize: 12.5, height: 1.4);
-const _body = TextStyle(color: DshPalette.ink, fontSize: 15, height: 1.55);
+TextStyle _meta(BuildContext context) => TextStyle(
+  color: DshPalette.of(context).inkSoft,
+  fontSize: 12.5,
+  height: 1.4,
+);
+TextStyle _body(BuildContext context) =>
+    TextStyle(color: DshPalette.of(context).ink, fontSize: 15, height: 1.55);
 
 /// Opens the subagent catalog observed by the parent conversation.
 ///
@@ -26,7 +31,7 @@ Future<void> showSubagentPanel(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: DshPalette.paperDeep,
+    backgroundColor: DshPalette.of(context).paperDeep,
     constraints: BoxConstraints(
       maxHeight: MediaQuery.sizeOf(context).height * 0.85,
     ),
@@ -113,7 +118,7 @@ class _SubagentSheet extends StatelessWidget {
                       controller.transport.isFixture
                           ? 'fixture 演示：以下是演示子会话，不连接真实子智能体。'
                           : '查看工作进展，或进入独立对话。',
-                      style: _meta,
+                      style: _meta(context),
                     ),
                     const SizedBox(height: 12),
                     if (agents.isEmpty)
@@ -121,7 +126,7 @@ class _SubagentSheet extends StatelessWidget {
                         controller.transport.isFixture
                             ? '演示：当前会话还没有子智能体'
                             : '当前会话还没有子智能体',
-                        style: _body,
+                        style: _body(context),
                       ),
                   ],
                 );
@@ -185,38 +190,39 @@ class _AgentRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(agent.name, style: Theme.of(context).textTheme.titleMedium),
-          Text(_statusLabel(agent.status), style: _meta),
+          Text(_statusLabel(agent.status), style: _meta(context)),
           const SizedBox(height: 4),
           Text(
             agent.task,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: _body,
+            style: _body(context),
           ),
           if (agent.detail.isNotEmpty)
             Text(
               agent.detail,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: _meta,
+              style: _meta(context),
             ),
           ExpansionTile(
             key: ValueKey('subagent-expand-' + agent.id),
             tilePadding: EdgeInsets.zero,
             shape: const Border(),
             collapsedShape: const Border(),
-            title: const Text('工作详情', style: _meta),
+            title: Text('工作详情', style: _meta(context)),
             childrenPadding: const EdgeInsets.only(bottom: 8),
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(agent.task, style: _body),
+              Text(agent.task, style: _body(context)),
               if (agent.detail.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Text(agent.detail, style: _body),
+                Text(agent.detail, style: _body(context)),
               ],
             ],
           ),
-          if (unavailableReason != null) Text(unavailableReason!, style: _meta),
+          if (unavailableReason != null)
+            Text(unavailableReason!, style: _meta(context)),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -253,7 +259,7 @@ PreferredSizeWidget _bar(
   String title, {
   bool busy = false,
 }) => AppBar(
-  backgroundColor: DshPalette.paperDeep,
+  backgroundColor: DshPalette.of(context).paperDeep,
   leading: IconButton(
     key: const ValueKey('subagent-back'),
     tooltip: '返回母会话',
@@ -399,7 +405,7 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
         (child.loading || child.sending || child.conversation?.running == true);
     final maxBubble = MediaQuery.sizeOf(context).width * 0.82;
     final header = <Widget>[
-      if (fixture) const Text('fixture 演示：以下为演示子会话内容。', style: _meta),
+      if (fixture) Text('fixture 演示：以下为演示子会话内容。', style: _meta(context)),
       Text(
         child?.conversation == null
             ? _statusLabel(widget.agent.status)
@@ -408,18 +414,18 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
             : restriction == null
             ? '可继续对话'
             : '历史对话',
-        style: _meta,
+        style: _meta(context),
       ),
       if (restriction != null)
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: Text(restriction, style: _body),
+          child: Text(restriction, style: _body(context)),
         ),
       if (child != null && child.loading && child.conversation == null)
-        const Padding(
+        Padding(
           key: ValueKey('subagent-loading'),
           padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('正在读取子会话…', style: _meta),
+          child: Text('正在读取子会话…', style: _meta(context)),
         ),
       if (child?.error != null)
         Padding(
@@ -430,7 +436,7 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
             children: [
               Text(
                 child!.error!,
-                style: const TextStyle(color: DshPalette.bad),
+                style: TextStyle(color: DshPalette.of(context).bad),
               ),
               TextButton(
                 key: const ValueKey('subagent-retry'),
@@ -445,7 +451,7 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
     final receipt = child?.lastReceipt;
     final tail = receipt == null ? 0 : 1;
     return Scaffold(
-      backgroundColor: DshPalette.paper,
+      backgroundColor: DshPalette.of(context).paper,
       appBar: _bar(context, widget.agent.name, busy: busy),
       body: Column(
         children: [
@@ -467,7 +473,10 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                 return Padding(
                   key: const ValueKey('subagent-receipt'),
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(_receiptLabel(receipt!.delivery), style: _meta),
+                  child: Text(
+                    _receiptLabel(receipt!.delivery),
+                    style: _meta(context),
+                  ),
                 );
               },
             ),
@@ -487,11 +496,11 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                         minLines: 1,
                         maxLines: 5,
                         keyboardType: TextInputType.multiline,
-                        style: _body,
+                        style: _body(context),
                         decoration: InputDecoration(
                           hintText: '发给' + widget.agent.name,
                           filled: true,
-                          fillColor: DshPalette.surface,
+                          fillColor: DshPalette.of(context).surface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(20),
                             borderSide: BorderSide.none,
@@ -511,13 +520,14 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                             ? _send
                             : null,
                         style: IconButton.styleFrom(
-                          backgroundColor: DshPalette.sendBlue,
-                          disabledBackgroundColor: DshPalette.sendBlueMuted,
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: DshPalette.of(context)
+                              .inkFaint,
+                          backgroundColor: DshPalette.of(context).sendBlue,
+                          disabledBackgroundColor: DshPalette.of(context)
+                              .sendBlueMuted,
                         ),
-                        icon: const Icon(
-                          Icons.arrow_upward,
-                          color: Colors.white,
-                        ),
+                        icon: const Icon(Icons.arrow_upward),
                       ),
                     ),
                   ],
@@ -539,7 +549,7 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mine = message.role == 'user';
-    final text = Text(message.text, style: _body);
+    final text = Text(message.text, style: _body(context));
     if (!mine) {
       return Padding(padding: const EdgeInsets.only(top: 12), child: text);
     }
@@ -550,7 +560,7 @@ class _MessageBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         constraints: BoxConstraints(maxWidth: maxWidth),
         decoration: BoxDecoration(
-          color: DshPalette.userWash,
+          color: DshPalette.of(context).userWash,
           borderRadius: BorderRadius.circular(16),
         ),
         child: text,

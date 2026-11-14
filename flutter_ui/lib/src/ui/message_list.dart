@@ -67,8 +67,8 @@ class _MessageListState extends State<MessageList> {
       key: ValueKey('row-tool-' + tool.id),
       padding: const EdgeInsets.only(left: 8),
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: DshPalette.line)),
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: DshPalette.of(context).line)),
         ),
         child: Padding(
           padding: const EdgeInsets.only(left: 8),
@@ -109,11 +109,14 @@ class _MessageListState extends State<MessageList> {
 
     if (state.needsResync) {
       children.add(
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(top: 16),
           child: Text(
             '正在重新同步消息…',
-            style: TextStyle(color: DshPalette.inkSoft, fontSize: 13),
+            style: TextStyle(
+              color: DshPalette.of(context).inkSoft,
+              fontSize: 13,
+            ),
           ),
         ),
       );
@@ -142,7 +145,7 @@ class _MessageListState extends State<MessageList> {
 class _EmptyConversation extends StatelessWidget {
   const _EmptyConversation();
   @override
-  Widget build(BuildContext context) => const Center(
+  Widget build(BuildContext context) => Center(
     child: Padding(
       padding: EdgeInsets.all(28),
       child: Text(
@@ -152,7 +155,7 @@ class _EmptyConversation extends StatelessWidget {
           fontSize: 28,
           height: 1.4,
           fontWeight: FontWeight.w400,
-          color: DshPalette.ink,
+          color: DshPalette.of(context).ink,
         ),
       ),
     ),
@@ -172,13 +175,13 @@ class _MessageBlock extends StatelessWidget {
           margin: const EdgeInsets.only(top: 18, bottom: 6, left: 32),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            color: DshPalette.userWash,
+            color: DshPalette.of(context).userWash,
             borderRadius: BorderRadius.circular(20),
           ),
           child: SelectableText(
             message.text,
-            style: const TextStyle(
-              color: DshPalette.ink,
+            style: TextStyle(
+              color: DshPalette.of(context).ink,
               fontSize: 16.5,
               height: 1.55,
             ),
@@ -193,8 +196,8 @@ class _MessageBlock extends StatelessWidget {
         children: [
           SelectableText(
             message.text.isEmpty && message.isStreaming ? '…' : message.text,
-            style: const TextStyle(
-              color: DshPalette.ink,
+            style: TextStyle(
+              color: DshPalette.of(context).ink,
               fontSize: 17,
               height: 1.7,
             ),
@@ -215,10 +218,13 @@ class _StreamingMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: 11,
       height: 11,
-      child: CircularProgressIndicator(strokeWidth: 1.4, color: DshPalette.ice),
+      child: CircularProgressIndicator(
+        strokeWidth: 1.4,
+        color: DshPalette.of(context).ice,
+      ),
     );
   }
 }

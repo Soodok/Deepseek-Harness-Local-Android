@@ -89,7 +89,7 @@ class _RuntimePanelState extends State<_RuntimePanel> {
                       height: 4,
                       margin: const EdgeInsets.only(top: 4, bottom: 8),
                       decoration: BoxDecoration(
-                        color: DshPalette.inkFaint,
+                        color: DshPalette.of(context).inkFaint,
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -121,8 +121,8 @@ class _RuntimePanelState extends State<_RuntimePanel> {
                       '当前环境：' +
                           host.runtimeLabel +
                           (widget.isFixture ? ' · 对话演示' : ''),
-                      style: const TextStyle(
-                        color: DshPalette.inkSoft,
+                      style: TextStyle(
+                        color: DshPalette.of(context).inkSoft,
                         fontSize: 13,
                       ),
                     ),
@@ -132,8 +132,8 @@ class _RuntimePanelState extends State<_RuntimePanel> {
                       padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                       child: Text(
                         host.runtimeDetail,
-                        style: const TextStyle(
-                          color: DshPalette.inkSoft,
+                        style: TextStyle(
+                          color: DshPalette.of(context).inkSoft,
                           fontSize: 13,
                         ),
                       ),
@@ -185,8 +185,8 @@ class _RuntimePanelState extends State<_RuntimePanel> {
                       padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
                       child: Text(
                         _feedback!,
-                        style: const TextStyle(
-                          color: DshPalette.inkSoft,
+                        style: TextStyle(
+                          color: DshPalette.of(context).inkSoft,
                           fontSize: 13,
                         ),
                       ),
@@ -226,7 +226,7 @@ class _RuntimePanelState extends State<_RuntimePanel> {
     padding: const EdgeInsets.only(bottom: 4),
     child: Material(
       color: current
-          ? DshPalette.ink.withValues(alpha: .07)
+          ? DshPalette.of(context).ink.withValues(alpha: .07)
           : Colors.transparent,
       borderRadius: BorderRadius.circular(16),
       child: ListTile(
@@ -235,19 +235,19 @@ class _RuntimePanelState extends State<_RuntimePanel> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         onTap: onTap,
-        leading: Icon(icon, size: 22, color: DshPalette.inkSoft),
+        leading: Icon(icon, size: 22, color: DshPalette.of(context).inkSoft),
         title: Text(
           title,
-          style: const TextStyle(fontSize: 16, color: DshPalette.ink),
+          style: TextStyle(fontSize: 16, color: DshPalette.of(context).ink),
         ),
         subtitle: Text(
           detail,
-          style: const TextStyle(fontSize: 12, color: DshPalette.inkSoft),
+          style: TextStyle(fontSize: 12, color: DshPalette.of(context).inkSoft),
         ),
         trailing: Icon(
           current ? Icons.check_rounded : Icons.chevron_right_rounded,
           size: 20,
-          color: DshPalette.inkSoft,
+          color: DshPalette.of(context).inkSoft,
         ),
       ),
     ),
@@ -262,7 +262,7 @@ class _Section extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(10, 12, 10, 6),
     child: Text(
       label,
-      style: const TextStyle(color: DshPalette.inkFaint, fontSize: 12),
+      style: TextStyle(color: DshPalette.of(context).inkFaint, fontSize: 12),
     ),
   );
 }

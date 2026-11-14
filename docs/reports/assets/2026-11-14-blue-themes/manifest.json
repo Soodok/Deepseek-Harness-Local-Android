@@ -1,0 +1,180 @@
+{
+  "version": "1.6.0-beta.25",
+  "versionCode": 400,
+  "baseCommit": "67e838d4caf4c09697ae96b364098a68bd80897c",
+  "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+  "source": "Real Flutter Web release and appearance menu actions; fixture only",
+  "screenshots": [
+    {
+      "file": "blue-dark-main-432.png",
+      "bytes": 59642,
+      "width": 432,
+      "height": 960,
+      "sha256": "25f38602dcf2e1dc984f25f36a9a80c241016291b1b8b4aca7c26d450e13162b",
+      "args": [
+        "--width=432",
+        "--draft"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-light-main-432.png",
+      "bytes": 59903,
+      "width": 432,
+      "height": 960,
+      "sha256": "3c31d15a249c2416a62db55c3beca19e7f4b1a3a3d3d58ff4f48a091ea0091dc",
+      "args": [
+        "--width=432",
+        "--light",
+        "--draft",
+        "--semantics"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-dark-process-432.png",
+      "bytes": 98709,
+      "width": 432,
+      "height": 960,
+      "sha256": "c4ccbeab59673257a3c8e8954bef5d2022a07fb365509f5b652f0d985539055c",
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--execution",
+        "--semantics"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-light-process-432.png",
+      "bytes": 98355,
+      "width": 432,
+      "height": 960,
+      "sha256": "acdf38ef6b672faab17e0ac70fe42255e489ab0cc1ca8eec5031918b762140b8",
+      "args": [
+        "--width=432",
+        "--light",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--execution",
+        "--semantics"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-light-permissions-432.png",
+      "bytes": 113072,
+      "width": 432,
+      "height": 960,
+      "sha256": "f434d8453114a91970c8a254ffdcea0a0c93e68ca214f108518383f8bb15f4a8",
+      "args": [
+        "--width=432",
+        "--light",
+        "--permissions"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-light-runtime-432.png",
+      "bytes": 133429,
+      "width": 432,
+      "height": 960,
+      "sha256": "a1c2fbc299e4e9426df5076dd99fbe2ca97a54bdc0feeadfeff1e97689aaa4a0",
+      "args": [
+        "--width=432",
+        "--light",
+        "--runtime"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-light-child-432.png",
+      "bytes": 29455,
+      "width": 432,
+      "height": 960,
+      "sha256": "9c160a8f6c9c55abcb5ad8439f0b26ae299ca2a2c58f4efc3704f665b3bab9de",
+      "args": [
+        "--width=432",
+        "--light",
+        "--showcase",
+        "--settled",
+        "--subagents",
+        "--child-chat",
+        "--semantics"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      }
+    },
+    {
+      "file": "blue-light-main-360.png",
+      "bytes": 56111,
+      "width": 360,
+      "height": 960,
+      "sha256": "ac48a1c427a676bad66bda06e0c3fd92f56476308c13a51c97cbe0a60a941305",
+      "args": [
+        "--width=360",
+        "--light",
+        "--draft"
+      ],
+      "bundleSha256": "d4d623bd57e43e119698a2fc0750b29ab1679d2962e827ea70c50a2cd0bb9b8e",
+      "viewport": {
+        "width": 360,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 360,
+        "bodyWidth": 360
+      }
+    }
+  ]
+}

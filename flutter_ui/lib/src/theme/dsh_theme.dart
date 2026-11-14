@@ -1,52 +1,124 @@
 import 'package:material_ui/material_ui.dart';
 
-/// Neutral reading palette for the minimal conversation surface.
+class DshColors {
+  const DshColors({
+    required this.ink,
+    required this.inkSoft,
+    required this.inkFaint,
+    required this.paper,
+    required this.paperDeep,
+    required this.surface,
+    required this.surfaceRaised,
+    required this.line,
+    required this.ice,
+    required this.sendBlue,
+    required this.sendBlueMuted,
+    required this.iceDeep,
+    required this.userWash,
+    required this.good,
+    required this.warn,
+    required this.bad,
+    required this.thought,
+    required this.terminal,
+    required this.edit,
+  });
+  final Color ink;
+  final Color inkSoft;
+  final Color inkFaint;
+  final Color paper;
+  final Color paperDeep;
+  final Color surface;
+  final Color surfaceRaised;
+  final Color line;
+  final Color ice;
+  final Color sendBlue;
+  final Color sendBlueMuted;
+  final Color iceDeep;
+  final Color userWash;
+  final Color good;
+  final Color warn;
+  final Color bad;
+  final Color thought;
+  final Color terminal;
+  final Color edit;
+}
+
+/// Blue surfaces selected from the inherited Material theme.
 class DshPalette {
   const DshPalette._();
-
-  static const ink = Color(0xFFE3ECEA);
-  static const inkSoft = Color(0xFFA8B8B8);
-  static const inkFaint = Color(0xFF93A4A6);
-  static const paper = Color(0xFF0F1517);
-  static const paperDeep = Color(0xFF0B1012);
-  static const surface = Color(0xFF172023);
-  static const surfaceRaised = Color(0xFF1E2A2D);
-  static const line = Color(0xFF2A383C);
-  static const ice = Color(0xFF7DB6D6);
-  static const sendBlue = Color(0xFF3B82F6);
-  static const sendBlueMuted = Color(0xFF203B62);
-  static const iceDeep = Color(0xFF7DB6D6);
-  static const userWash = Color(0xFF1A2B2E);
-  static const good = Color(0xFF6FCB9A);
-  static const warn = Color(0xFFE6B45A);
-  static const bad = Color(0xFFE6877D);
+  static const dark = DshColors(
+    ink: Color(0xFFEAF1FF),
+    inkSoft: Color(0xFFB6C6E3),
+    inkFaint: Color(0xFF94A9C9),
+    paper: Color(0xFF0C1528),
+    paperDeep: Color(0xFF080F1D),
+    surface: Color(0xFF142440),
+    surfaceRaised: Color(0xFF1D3357),
+    line: Color(0xFF304D78),
+    ice: Color(0xFF8AB6FF),
+    sendBlue: Color(0xFF3B82F6),
+    sendBlueMuted: Color(0xFF234777),
+    iceDeep: Color(0xFF8AB6FF),
+    userWash: Color(0xFF1B3865),
+    good: Color(0xFF6FD3A0),
+    warn: Color(0xFFF0BE62),
+    bad: Color(0xFFFF978F),
+    thought: Color(0xFFB8B3FF),
+    terminal: Color(0xFF9ABDEB),
+    edit: Color(0xFF95C9B1),
+  );
+  static const light = DshColors(
+    ink: Color(0xFF182D4C),
+    inkSoft: Color(0xFF445F83),
+    inkFaint: Color(0xFF4E698E),
+    paper: Color(0xFFF6F9FF),
+    paperDeep: Color(0xFFEAF1FC),
+    surface: Color(0xFFFFFFFF),
+    surfaceRaised: Color(0xFFE8F0FF),
+    line: Color(0xFFC1D1E9),
+    ice: Color(0xFF235AC1),
+    sendBlue: Color(0xFF2563D9),
+    sendBlueMuted: Color(0xFFB8CCEF),
+    iceDeep: Color(0xFF235AC1),
+    userWash: Color(0xFFDFEAFF),
+    good: Color(0xFF216B4A),
+    warn: Color(0xFF875800),
+    bad: Color(0xFFAE313F),
+    thought: Color(0xFF6250A6),
+    terminal: Color(0xFF285D9B),
+    edit: Color(0xFF286B50),
+  );
+  static DshColors of(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.light ? light : dark;
 }
 
 class DshTheme {
   const DshTheme._();
 
-  static ThemeData light() {
-    const ink = DshPalette.ink;
-    const paper = DshPalette.paper;
+  static ThemeData light() => _build(DshPalette.light, Brightness.light);
+  static ThemeData dark() => _build(DshPalette.dark, Brightness.dark);
+  static ThemeData _build(DshColors colors, Brightness brightness) {
+    final ink = colors.ink;
+    final paper = colors.paper;
     final scheme =
         ColorScheme.fromSeed(
-          seedColor: DshPalette.ice,
-          brightness: Brightness.dark,
+          seedColor: colors.ice,
+          brightness: brightness,
         ).copyWith(
-          primary: DshPalette.ice,
-          onPrimary: const Color(0xFF0F1517),
+          primary: colors.ice,
+          onPrimary: colors.paperDeep,
           surface: paper,
           onSurface: ink,
         );
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: paper,
       splashFactory: InkRipple.splashFactory,
       highlightColor: Colors.transparent,
-      dividerColor: DshPalette.line,
-      textTheme: const TextTheme(
+      dividerColor: colors.line,
+      textTheme: TextTheme(
         bodyLarge: TextStyle(
           color: ink,
           fontSize: 16.5,
@@ -61,13 +133,13 @@ class DshTheme {
           letterSpacing: -0.1,
         ),
         labelMedium: TextStyle(
-          color: DshPalette.inkSoft,
+          color: colors.inkSoft,
           fontSize: 12.5,
           letterSpacing: 0.1,
         ),
       ),
-      dividerTheme: const DividerThemeData(
-        color: DshPalette.line,
+      dividerTheme: DividerThemeData(
+        color: colors.line,
         thickness: 0.6,
         space: 0.6,
       ),
@@ -79,8 +151,8 @@ class DshTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: DshPalette.ice,
-          foregroundColor: const Color(0xFF0F1517),
+          backgroundColor: colors.ice,
+          foregroundColor: colors.paperDeep,
           minimumSize: const Size(64, 48),
           padding: const EdgeInsets.symmetric(horizontal: 18),
           textStyle: const TextStyle(
@@ -96,7 +168,7 @@ class DshTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: ink,
           minimumSize: const Size(64, 48),
-          side: const BorderSide(color: DshPalette.line),
+          side: BorderSide(color: colors.line),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           textStyle: const TextStyle(
             fontSize: 14.5,
@@ -109,30 +181,30 @@ class DshTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: DshPalette.ice,
+          foregroundColor: colors.ice,
           minimumSize: const Size(64, 48),
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
-      snackBarTheme: const SnackBarThemeData(
-        backgroundColor: DshPalette.surfaceRaised,
-        contentTextStyle: TextStyle(color: DshPalette.ink, fontSize: 14),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: colors.surfaceRaised,
+        contentTextStyle: TextStyle(color: colors.ink, fontSize: 14),
         behavior: SnackBarBehavior.floating,
       ),
-      inputDecorationTheme: const InputDecorationTheme(
+      inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: DshPalette.paperDeep,
+        fillColor: colors.paperDeep,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(14)),
-          borderSide: BorderSide(color: DshPalette.line),
+          borderSide: BorderSide(color: colors.line),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(14)),
-          borderSide: BorderSide(color: DshPalette.line),
+          borderSide: BorderSide(color: colors.line),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(14)),
-          borderSide: BorderSide(color: DshPalette.ice, width: 1.2),
+          borderSide: BorderSide(color: colors.ice, width: 1.2),
         ),
         contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       ),
@@ -151,26 +223,27 @@ class DshMark extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomPaint(
       size: Size.square(size),
-      painter: _DshMarkPainter(dim: dim),
+      painter: _DshMarkPainter(dim: dim, colors: DshPalette.of(context)),
     );
   }
 }
 
 class _DshMarkPainter extends CustomPainter {
-  const _DshMarkPainter({required this.dim});
+  const _DshMarkPainter({required this.dim, required this.colors});
 
   final bool dim;
+  final DshColors colors;
 
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.shortestSide;
     final body = Paint()
-      ..color = (dim ? DshPalette.inkFaint : DshPalette.ice).withValues(
+      ..color = (dim ? colors.inkFaint : colors.ice).withValues(
         alpha: dim ? 0.7 : 1,
       )
       ..style = PaintingStyle.fill;
     final fin = Paint()
-      ..color = DshPalette.iceDeep.withValues(alpha: dim ? 0.45 : 0.9)
+      ..color = colors.iceDeep.withValues(alpha: dim ? 0.45 : 0.9)
       ..style = PaintingStyle.fill;
 
     final spine = Path()
@@ -192,11 +265,26 @@ class _DshMarkPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(s * 0.66, s * 0.45),
       s * 0.035,
-      Paint()..color = const Color(0xFF0F1517),
+      Paint()..color = colors.paperDeep,
     );
   }
 
   @override
   bool shouldRepaint(covariant _DshMarkPainter oldDelegate) =>
-      oldDelegate.dim != dim;
+      oldDelegate.dim != dim || oldDelegate.colors != colors;
+}
+
+class DshAppearance extends InheritedWidget {
+  const DshAppearance({
+    super.key,
+    required this.mode,
+    required this.onChanged,
+    required super.child,
+  });
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode> onChanged;
+  static DshAppearance? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DshAppearance>();
+  @override
+  bool updateShouldNotify(DshAppearance oldWidget) => mode != oldWidget.mode;
 }

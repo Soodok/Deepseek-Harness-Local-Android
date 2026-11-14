@@ -131,13 +131,15 @@ class _ComposerState extends State<Composer> {
                                             maxWidth: 250,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: DshPalette.paperDeep
+                                            color: DshPalette.of(context)
+                                                .paperDeep
                                                 .withValues(alpha: .65),
                                             borderRadius: BorderRadius.circular(
                                               14,
                                             ),
                                             border: Border.all(
-                                              color: DshPalette.line,
+                                              color: DshPalette.of(context)
+                                                  .line,
                                             ),
                                           ),
                                           child: Row(
@@ -195,16 +197,16 @@ class _ComposerState extends State<Composer> {
                               enabled: true,
                               minLines: 1,
                               maxLines: 6,
-                              cursorColor: DshPalette.ink,
-                              style: const TextStyle(
+                              cursorColor: DshPalette.of(context).ink,
+                              style: TextStyle(
                                 fontSize: 17,
                                 height: 1.5,
-                                color: DshPalette.ink,
+                                color: DshPalette.of(context).ink,
                               ),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 hintText: '给 DSH 发消息',
                                 hintStyle: TextStyle(
-                                  color: DshPalette.inkFaint,
+                                  color: DshPalette.of(context).inkFaint,
                                 ),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
@@ -230,9 +232,8 @@ class _ComposerState extends State<Composer> {
                                       ? null
                                       : _pick,
                                   style: IconButton.styleFrom(
-                                    backgroundColor: DshPalette.ink.withValues(
-                                      alpha: .06,
-                                    ),
+                                    backgroundColor: DshPalette.of(context).ink
+                                        .withValues(alpha: .06),
                                   ),
                                   icon: Icon(
                                     _picking
@@ -252,12 +253,12 @@ class _ComposerState extends State<Composer> {
                                         controller,
                                       ),
                                       style: TextButton.styleFrom(
-                                        backgroundColor: DshPalette.ink
+                                        backgroundColor: DshPalette.of(context)
+                                            .ink
                                             .withValues(alpha: .06),
                                         side: BorderSide(
-                                          color: DshPalette.ink.withValues(
-                                            alpha: .13,
-                                          ),
+                                          color: DshPalette.of(context).ink
+                                              .withValues(alpha: .13),
                                         ),
                                         shape: const StadiumBorder(),
                                         padding: const EdgeInsets.symmetric(
@@ -273,18 +274,20 @@ class _ComposerState extends State<Composer> {
                                               controller.modelLabel,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 13,
-                                                color: DshPalette.ink,
+                                                color: DshPalette.of(context)
+                                                    .ink,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
                                           ),
                                           const SizedBox(width: 4),
-                                          const Icon(
+                                          Icon(
                                             Icons.expand_more_rounded,
                                             size: 16,
-                                            color: DshPalette.inkSoft,
+                                            color: DshPalette.of(context)
+                                                .inkSoft,
                                           ),
                                         ],
                                       ),
@@ -301,9 +304,8 @@ class _ComposerState extends State<Composer> {
                                     controller,
                                   ),
                                   style: IconButton.styleFrom(
-                                    backgroundColor: DshPalette.ink.withValues(
-                                      alpha: .06,
-                                    ),
+                                    backgroundColor: DshPalette.of(context).ink
+                                        .withValues(alpha: .06),
                                   ),
                                   icon: DshPermissionIcon(
                                     glyph: switch (controller.permission) {
@@ -337,10 +339,13 @@ class _ComposerState extends State<Composer> {
                                         key: const ValueKey('composer-send'),
                                         tooltip: busy ? '排队到下一轮' : '发送',
                                         style: IconButton.styleFrom(
-                                          backgroundColor: DshPalette.sendBlue,
+                                          backgroundColor: DshPalette.of(
+                                            context,
+                                          ).sendBlue,
                                           foregroundColor: Colors.white,
                                           disabledBackgroundColor:
-                                              DshPalette.sendBlueMuted,
+                                              DshPalette.of(context)
+                                                  .sendBlueMuted,
                                           disabledForegroundColor: const Color(
                                             0xFF84A5D0,
                                           ),
@@ -392,13 +397,13 @@ class _QueueTray extends StatelessWidget {
       key: const ValueKey('queue-card'),
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 0),
       padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
-      decoration: const BoxDecoration(
-        color: DshPalette.paperDeep,
+      decoration: BoxDecoration(
+        color: DshPalette.of(context).paperDeep,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         border: Border(
-          top: BorderSide(color: DshPalette.line),
-          left: BorderSide(color: DshPalette.line),
-          right: BorderSide(color: DshPalette.line),
+          top: BorderSide(color: DshPalette.of(context).line),
+          left: BorderSide(color: DshPalette.of(context).line),
+          right: BorderSide(color: DshPalette.of(context).line),
         ),
       ),
       child: Row(
@@ -410,8 +415,8 @@ class _QueueTray extends StatelessWidget {
               children: [
                 Text(
                   '排队中 ' + prompts.length.toString() + ' 条',
-                  style: const TextStyle(
-                    color: DshPalette.inkSoft,
+                  style: TextStyle(
+                    color: DshPalette.of(context).inkSoft,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.2,
@@ -425,8 +430,8 @@ class _QueueTray extends StatelessWidget {
                       prompt,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: DshPalette.ink,
+                      style: TextStyle(
+                        color: DshPalette.of(context).ink,
                         fontSize: 13.5,
                         height: 1.35,
                       ),
@@ -437,8 +442,8 @@ class _QueueTray extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       '另有 ' + hidden.toString() + ' 条',
-                      style: const TextStyle(
-                        color: DshPalette.inkFaint,
+                      style: TextStyle(
+                        color: DshPalette.of(context).inkFaint,
                         fontSize: 12,
                       ),
                     ),

@@ -50,10 +50,10 @@ class _ToolRunCardState extends State<ToolRunCard> {
       );
     final running = tool.status == ToolStatus.running;
     final color = switch (tool.status) {
-      ToolStatus.running => DshPalette.ice,
-      ToolStatus.complete => DshPalette.good,
-      ToolStatus.failed => DshPalette.bad,
-      ToolStatus.cancelled => DshPalette.inkFaint,
+      ToolStatus.running => DshPalette.of(context).ice,
+      ToolStatus.complete => DshPalette.of(context).good,
+      ToolStatus.failed => DshPalette.of(context).bad,
+      ToolStatus.cancelled => DshPalette.of(context).inkFaint,
     };
     final detail = tool.detail;
     return Theme(
@@ -82,8 +82,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
                 tool.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: DshPalette.inkSoft,
+                style: TextStyle(
+                  color: DshPalette.of(context).inkSoft,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w400,
                 ),
@@ -106,7 +106,10 @@ class _ToolRunCardState extends State<ToolRunCard> {
                 _meta(tool),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: DshPalette.inkSoft, fontSize: 12),
+                style: TextStyle(
+                  color: DshPalette.of(context).inkSoft,
+                  fontSize: 12,
+                ),
               ),
         children: !_expanded
             ? const []
@@ -125,8 +128,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
                       detail.length > 1600
                           ? detail.substring(0, 1600) + '…'
                           : detail,
-                      style: const TextStyle(
-                        color: DshPalette.inkSoft,
+                      style: TextStyle(
+                        color: DshPalette.of(context).inkSoft,
                         fontSize: 13,
                         height: 1.5,
                       ),
@@ -148,8 +151,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
                 if (detail.isEmpty && tool.content == null)
                   Text(
                     running ? '等待结果…' : '没有附加输出',
-                    style: const TextStyle(
-                      color: DshPalette.inkSoft,
+                    style: TextStyle(
+                      color: DshPalette.of(context).inkSoft,
                       fontSize: 13,
                     ),
                   ),

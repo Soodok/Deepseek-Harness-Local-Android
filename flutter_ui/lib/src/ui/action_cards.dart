@@ -23,17 +23,17 @@ class ApprovalCard extends StatelessWidget {
       key: const ValueKey('approval-card'),
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       decoration: BoxDecoration(
-        color: DshPalette.surface,
+        color: DshPalette.of(context).surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '需要你确认',
             style: TextStyle(
-              color: DshPalette.ice,
+              color: DshPalette.of(context).ice,
               fontSize: 12,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.6,
@@ -42,8 +42,8 @@ class ApprovalCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             request.title,
-            style: const TextStyle(
-              color: DshPalette.ink,
+            style: TextStyle(
+              color: DshPalette.of(context).ink,
               fontSize: 14.5,
               fontWeight: FontWeight.w600,
               height: 1.35,
@@ -53,8 +53,8 @@ class ApprovalCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               request.detail,
-              style: const TextStyle(
-                color: DshPalette.inkSoft,
+              style: TextStyle(
+                color: DshPalette.of(context).inkSoft,
                 fontSize: 13,
                 height: 1.45,
               ),
@@ -220,12 +220,14 @@ class _QuestionCardState extends State<QuestionCard>
               minimumSize: const Size(48, 48),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               alignment: Alignment.centerLeft,
-              foregroundColor: DshPalette.ink,
+              foregroundColor: DshPalette.of(context).ink,
               backgroundColor: selected
-                  ? DshPalette.surfaceRaised
+                  ? DshPalette.of(context).surfaceRaised
                   : Colors.transparent,
               side: BorderSide(
-                color: selected ? DshPalette.iceDeep : DshPalette.line,
+                color: selected
+                    ? DshPalette.of(context).iceDeep
+                    : DshPalette.of(context).line,
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -260,7 +262,7 @@ class _QuestionCardState extends State<QuestionCard>
       key: const ValueKey('question-card'),
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       decoration: BoxDecoration(
-        color: DshPalette.surface,
+        color: DshPalette.of(context).surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -271,8 +273,8 @@ class _QuestionCardState extends State<QuestionCard>
             widget.request.multiSelect && widget.request.choices.isNotEmpty
                 ? '想确认一下 · 可多选'
                 : '想确认一下',
-            style: const TextStyle(
-              color: DshPalette.ice,
+            style: TextStyle(
+              color: DshPalette.of(context).ice,
               fontSize: 12,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.6,
@@ -281,8 +283,8 @@ class _QuestionCardState extends State<QuestionCard>
           const SizedBox(height: 6),
           Text(
             widget.request.title,
-            style: const TextStyle(
-              color: DshPalette.ink,
+            style: TextStyle(
+              color: DshPalette.of(context).ink,
               fontSize: 14.5,
               fontWeight: FontWeight.w600,
               height: 1.35,
@@ -292,8 +294,8 @@ class _QuestionCardState extends State<QuestionCard>
             const SizedBox(height: 6),
             Text(
               widget.request.detail,
-              style: const TextStyle(
-                color: DshPalette.inkSoft,
+              style: TextStyle(
+                color: DshPalette.of(context).inkSoft,
                 fontSize: 13,
                 height: 1.45,
               ),
@@ -314,8 +316,11 @@ class _QuestionCardState extends State<QuestionCard>
                     enabled: !widget.busy,
                     minLines: 1,
                     maxLines: 3,
-                    cursorColor: DshPalette.ice,
-                    style: const TextStyle(fontSize: 15, color: DshPalette.ink),
+                    cursorColor: DshPalette.of(context).ice,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: DshPalette.of(context).ink,
+                    ),
                     decoration: InputDecoration(
                       hintText: widget.request.choices.isEmpty
                           ? '写下你的回答'
@@ -338,10 +343,10 @@ class _QuestionCardState extends State<QuestionCard>
                 key: const ValueKey('question-submit'),
                 tooltip: '提交回答',
                 style: IconButton.styleFrom(
-                  backgroundColor: DshPalette.ice,
-                  foregroundColor: DshPalette.paper,
-                  disabledBackgroundColor: DshPalette.surfaceRaised,
-                  disabledForegroundColor: DshPalette.inkFaint,
+                  backgroundColor: DshPalette.of(context).ice,
+                  foregroundColor: DshPalette.of(context).paper,
+                  disabledBackgroundColor: DshPalette.of(context).surfaceRaised,
+                  disabledForegroundColor: DshPalette.of(context).inkFaint,
                   minimumSize: const Size(48, 48),
                 ),
                 onPressed: widget.busy || _answer.isEmpty ? null : _submit,

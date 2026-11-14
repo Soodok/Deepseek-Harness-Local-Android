@@ -236,7 +236,7 @@ class _ComposerDockState extends State<ComposerDock> {
       key: ValueKey((_generation, tool.id)),
       child: Material(
         key: const ValueKey('dock-plan'),
-        color: DshPalette.surfaceRaised,
+        color: DshPalette.of(context).surfaceRaised,
         borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -309,12 +309,12 @@ class _DockHeader extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              Icon(icon, size: 17, color: DshPalette.inkSoft),
+              Icon(icon, size: 17, color: DshPalette.of(context).inkSoft),
               const SizedBox(width: 8),
               Text(
                 label,
-                style: const TextStyle(
-                  color: DshPalette.ink,
+                style: TextStyle(
+                  color: DshPalette.of(context).ink,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -323,8 +323,8 @@ class _DockHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   count!,
-                  style: const TextStyle(
-                    color: DshPalette.inkSoft,
+                  style: TextStyle(
+                    color: DshPalette.of(context).inkSoft,
                     fontSize: 12,
                   ),
                 ),
@@ -335,8 +335,8 @@ class _DockHeader extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: DshPalette.inkSoft,
+                  style: TextStyle(
+                    color: DshPalette.of(context).inkSoft,
                     fontSize: 12,
                   ),
                 ),
@@ -347,7 +347,7 @@ class _DockHeader extends StatelessWidget {
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
                 size: 18,
-                color: DshPalette.inkSoft,
+                color: DshPalette.of(context).inkSoft,
               ),
             ],
           ),
@@ -365,10 +365,11 @@ class _PlanRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (step.status) {
-      StepState.completed => DshPalette.good,
-      StepState.running => DshPalette.ink,
-      StepState.failed => DshPalette.bad,
-      StepState.pending || StepState.cancelled => DshPalette.inkFaint,
+      StepState.completed => DshPalette.of(context).good,
+      StepState.running => DshPalette.of(context).ink,
+      StepState.failed => DshPalette.of(context).bad,
+      StepState.pending ||
+      StepState.cancelled => DshPalette.of(context).inkFaint,
     };
     final icon = switch (step.status) {
       StepState.completed => Icons.check_rounded,
@@ -392,8 +393,8 @@ class _PlanRow extends StatelessWidget {
             child: Text(
               step.title,
               softWrap: true,
-              style: const TextStyle(
-                color: DshPalette.ink,
+              style: TextStyle(
+                color: DshPalette.of(context).ink,
                 fontSize: 13,
                 height: 1.45,
               ),
@@ -432,7 +433,7 @@ class _RequestDisclosureState extends State<_RequestDisclosure> {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: DshPalette.surface,
+    color: DshPalette.of(context).surface,
     borderRadius: BorderRadius.circular(12),
     clipBehavior: Clip.antiAlias,
     child: Column(

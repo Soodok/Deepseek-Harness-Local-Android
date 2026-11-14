@@ -49,7 +49,7 @@ class ExecutionGroupHeader extends StatelessWidget {
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(vertical: 8),
           minimumSize: const Size(0, 48),
-          foregroundColor: DshPalette.inkSoft,
+          foregroundColor: DshPalette.of(context).inkSoft,
         ),
         child: Row(
           children: [
@@ -69,7 +69,9 @@ class ExecutionGroupHeader extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w400,
-                  color: failed ? DshPalette.bad : DshPalette.inkSoft,
+                  color: failed
+                      ? DshPalette.of(context).bad
+                      : DshPalette.of(context).inkSoft,
                 ),
               ),
             ),

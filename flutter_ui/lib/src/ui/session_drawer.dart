@@ -29,7 +29,7 @@ class SessionDrawer extends StatelessWidget {
         : currentTitle!.trim();
     return Drawer(
       width: width < 420 ? width * 0.84 : 320,
-      backgroundColor: DshPalette.paperDeep,
+      backgroundColor: DshPalette.of(context).paperDeep,
       shape: const RoundedRectangleBorder(),
       child: SafeArea(
         child: Column(
@@ -39,11 +39,11 @@ class SessionDrawer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 6),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'DSH',
                       style: TextStyle(
-                        color: DshPalette.ink,
+                        color: DshPalette.of(context).ink,
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
@@ -62,8 +62,8 @@ class SessionDrawer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
               child: Text(
                 isFixture ? '本机演示 · 尚未连接真实引擎' : '本机引擎',
-                style: const TextStyle(
-                  color: DshPalette.inkFaint,
+                style: TextStyle(
+                  color: DshPalette.of(context).inkFaint,
                   fontSize: 12,
                 ),
               ),
@@ -74,8 +74,8 @@ class SessionDrawer extends StatelessWidget {
                 onPressed: onNewSession,
                 style: TextButton.styleFrom(
                   alignment: Alignment.centerLeft,
-                  foregroundColor: DshPalette.ink,
-                  disabledForegroundColor: DshPalette.inkFaint,
+                  foregroundColor: DshPalette.of(context).ink,
+                  disabledForegroundColor: DshPalette.of(context).inkFaint,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 12,
@@ -89,12 +89,12 @@ class SessionDrawer extends StatelessWidget {
                 label: const Text('新建会话'),
               ),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(22, 18, 22, 8),
               child: Text(
                 '当前',
                 style: TextStyle(
-                  color: DshPalette.inkFaint,
+                  color: DshPalette.of(context).inkFaint,
                   fontSize: 12,
                   letterSpacing: 0.4,
                 ),
@@ -103,7 +103,7 @@ class SessionDrawer extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Material(
-                color: DshPalette.surface,
+                color: DshPalette.of(context).surface,
                 borderRadius: BorderRadius.circular(10),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(10),
@@ -117,8 +117,8 @@ class SessionDrawer extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: DshPalette.ink,
+                      style: TextStyle(
+                        color: DshPalette.of(context).ink,
                         fontSize: 14.5,
                       ),
                     ),
@@ -147,13 +147,49 @@ class SessionDrawer extends StatelessWidget {
                 },
               ),
             const Spacer(),
+            if (DshAppearance.maybeOf(context) case final appearance?)
+              PopupMenuButton<ThemeMode>(
+                key: const ValueKey('theme-selector'),
+                tooltip: '外观',
+                onSelected: appearance.onChanged,
+                itemBuilder: (context) => [
+                  for (final mode in ThemeMode.values)
+                    PopupMenuItem<ThemeMode>(
+                      key: ValueKey('theme-' + mode.name),
+                      value: mode,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(switch (mode) {
+                              ThemeMode.light => '浅色',
+                              ThemeMode.dark => '深色',
+                              ThemeMode.system => '跟随系统',
+                            }),
+                          ),
+                          if (appearance.mode == mode)
+                            const Icon(Icons.check_rounded, size: 18),
+                        ],
+                      ),
+                    ),
+                ],
+                child: ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('外观'),
+                  subtitle: Text(switch (appearance.mode) {
+                    ThemeMode.light => '浅色',
+                    ThemeMode.dark => '深色',
+                    ThemeMode.system => '跟随系统',
+                  }),
+                  trailing: const Icon(Icons.unfold_more_rounded, size: 18),
+                ),
+              ),
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
               child: Text(
                 isFixture ? '演示数据 · 尚未连接真实引擎，会话列表暂不可用' : '会话列表暂不可用',
-                style: const TextStyle(
-                  color: DshPalette.inkFaint,
+                style: TextStyle(
+                  color: DshPalette.of(context).inkFaint,
                   fontSize: 12,
                   height: 1.5,
                 ),

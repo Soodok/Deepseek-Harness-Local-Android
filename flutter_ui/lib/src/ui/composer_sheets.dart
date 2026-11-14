@@ -44,7 +44,7 @@ Future<void> _show(
                       height: 4,
                       margin: const EdgeInsets.only(top: 4, bottom: 8),
                       decoration: BoxDecoration(
-                        color: DshPalette.inkFaint,
+                        color: DshPalette.of(context).inkFaint,
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -78,8 +78,8 @@ Future<void> _show(
                                 ? '当前为演示模式，以下选项不会调用在线模型。'
                                 : '仅影响当前对话的演示工具，不修改手机系统权限。')
                           : '使用引擎提供的可用选项。',
-                      style: const TextStyle(
-                        color: DshPalette.inkSoft,
+                      style: TextStyle(
+                        color: DshPalette.of(context).inkSoft,
                         fontSize: 13,
                         height: 1.6,
                       ),
@@ -159,27 +159,27 @@ class _Choice extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 4),
     child: Material(
       color: selected
-          ? DshPalette.ink.withValues(alpha: .08)
+          ? DshPalette.of(context).ink.withValues(alpha: .08)
           : Colors.transparent,
       borderRadius: BorderRadius.circular(16),
       child: ListTile(
         selected: selected,
         enabled: onTap != null,
         leading: leading,
-        selectedColor: DshPalette.ink,
+        selectedColor: DshPalette.of(context).ink,
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         title: Text(
           title,
-          style: const TextStyle(fontSize: 17, color: DshPalette.ink),
+          style: TextStyle(fontSize: 17, color: DshPalette.of(context).ink),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 3),
           child: Text(
             detail,
-            style: const TextStyle(
-              color: DshPalette.inkSoft,
+            style: TextStyle(
+              color: DshPalette.of(context).inkSoft,
               fontSize: 13,
               height: 1.5,
             ),
@@ -188,7 +188,9 @@ class _Choice extends StatelessWidget {
         trailing: Icon(
           selected ? Icons.check_rounded : Icons.circle_outlined,
           size: selected ? 22 : 17,
-          color: selected ? DshPalette.ink : DshPalette.inkFaint,
+          color: selected
+              ? DshPalette.of(context).ink
+              : DshPalette.of(context).inkFaint,
         ),
       ),
     ),

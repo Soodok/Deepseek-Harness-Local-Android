@@ -9,16 +9,13 @@ Duration _motionFor(BuildContext context) =>
     MediaQuery.disableAnimationsOf(context)
     ? Duration.zero
     : const Duration(milliseconds: 200);
-const _thought = Color(0xFFB8A6D2);
-const _terminal = Color(0xFFA4B8C8);
-const _edit = Color(0xFFA4BDAA);
-const _bodyStyle = TextStyle(
-  color: DshPalette.inkSoft,
+TextStyle _bodyStyle(BuildContext context) => TextStyle(
+  color: DshPalette.of(context).inkSoft,
   fontSize: 13,
   height: 1.55,
 );
-const _codeStyle = TextStyle(
-  color: DshPalette.ink,
+TextStyle _codeStyle(BuildContext context) => TextStyle(
+  color: DshPalette.of(context).ink,
   fontFamily: 'monospace',
   fontSize: 13,
   height: 1.55,
@@ -56,10 +53,10 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
     final command = content?.command;
     final running = tool.status == ToolStatus.running;
     final statusColor = switch (tool.status) {
-      ToolStatus.running => DshPalette.inkSoft,
-      ToolStatus.complete => DshPalette.good,
-      ToolStatus.failed => DshPalette.bad,
-      ToolStatus.cancelled => DshPalette.inkFaint,
+      ToolStatus.running => DshPalette.of(context).inkSoft,
+      ToolStatus.complete => DshPalette.of(context).good,
+      ToolStatus.failed => DshPalette.of(context).bad,
+      ToolStatus.cancelled => DshPalette.of(context).inkFaint,
     };
     final statusLabel = switch (tool.status) {
       ToolStatus.running => '执行中',
@@ -81,8 +78,8 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                     tool.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: DshPalette.ink,
+                    style: TextStyle(
+                      color: DshPalette.of(context).ink,
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -108,8 +105,8 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                           1,
                         ) +
                         ' 秒',
-                    style: const TextStyle(
-                      color: DshPalette.inkFaint,
+                    style: TextStyle(
+                      color: DshPalette.of(context).inkFaint,
                       fontSize: 12.5,
                     ),
                   ),
@@ -126,15 +123,17 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                 ? ''
                 : _summary(content.reasoning),
             icon: Icons.auto_awesome_outlined,
-            accent: _thought,
+            accent: DshPalette.of(context).thought,
             expanded: _expanded.contains('reasoning'),
-            trailing: running ? const _RunningMark(color: _thought) : null,
+            trailing: running
+                ? _RunningMark(color: DshPalette.of(context).thought)
+                : null,
             onToggle: () => _toggle('reasoning'),
             body: () => _TextOutput(
               id: tool.id + '-reasoning',
               label: '思考过程',
               text: content.reasoning,
-              accent: _thought,
+              accent: DshPalette.of(context).thought,
               monospace: false,
             ),
           ),
@@ -145,18 +144,18 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
             label: '命令',
             summary: _summary(command.command),
             icon: Icons.terminal_rounded,
-            accent: _terminal,
+            accent: DshPalette.of(context).terminal,
             expanded: _expanded.contains('command'),
             trailing: command.exitCode != null
                 ? Text(
                     '退出码 ' + command.exitCode.toString(),
-                    style: const TextStyle(
-                      color: DshPalette.inkSoft,
+                    style: TextStyle(
+                      color: DshPalette.of(context).inkSoft,
                       fontSize: 12.5,
                     ),
                   )
                 : running
-                ? const _RunningMark(color: _terminal)
+                ? _RunningMark(color: DshPalette.of(context).terminal)
                 : null,
             onToggle: () => _toggle('command'),
             body: () => Column(
@@ -166,33 +165,33 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                   id: tool.id + '-command',
                   label: 'command',
                   text: command.command,
-                  accent: _terminal,
+                  accent: DshPalette.of(context).terminal,
                 ),
                 if (command.cwd.isNotEmpty)
                   _TextOutput(
                     id: tool.id + '-cwd',
                     label: 'cwd',
                     text: command.cwd,
-                    accent: _terminal,
+                    accent: DshPalette.of(context).terminal,
                   ),
                 if (command.stdout.isNotEmpty)
                   _TextOutput(
                     id: tool.id + '-stdout',
                     label: 'stdout',
                     text: command.stdout,
-                    accent: _terminal,
+                    accent: DshPalette.of(context).terminal,
                   ),
                 if (command.stderr.isNotEmpty)
                   _TextOutput(
                     id: tool.id + '-stderr',
                     label: 'stderr',
                     text: command.stderr,
-                    accent: DshPalette.bad,
+                    accent: DshPalette.of(context).bad,
                   ),
                 if (command.stdout.isEmpty && command.stderr.isEmpty)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('暂无输出', style: _bodyStyle),
+                    child: Text('暂无输出', style: _bodyStyle(context)),
                   ),
               ],
             ),
@@ -290,8 +289,8 @@ class _ProcessSection extends StatelessWidget {
                               label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: DshPalette.inkSoft,
+                              style: TextStyle(
+                                color: DshPalette.of(context).inkSoft,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -304,8 +303,8 @@ class _ProcessSection extends StatelessWidget {
                                 summary,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: DshPalette.inkFaint,
+                                style: TextStyle(
+                                  color: DshPalette.of(context).inkFaint,
                                   fontFamily: 'monospace',
                                   fontSize: 12.5,
                                 ),
@@ -323,10 +322,10 @@ class _ProcessSection extends StatelessWidget {
                     AnimatedRotation(
                       turns: expanded ? .25 : 0,
                       duration: _motionFor(context),
-                      child: const Icon(
+                      child: Icon(
                         Icons.chevron_right_rounded,
                         size: 17,
-                        color: DshPalette.inkFaint,
+                        color: DshPalette.of(context).inkFaint,
                       ),
                     ),
                   ],
@@ -397,18 +396,18 @@ class _TextOutput extends StatelessWidget {
           SelectableText(
             preview,
             key: ValueKey('process-output-' + id),
-            style: monospace ? _codeStyle : _bodyStyle,
+            style: monospace ? _codeStyle(context) : _bodyStyle(context),
           ),
           if (preview.length < text.length) ...[
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 6),
-              child: Text('预览已截断 · 完整内容仍可查看或复制', style: _bodyStyle),
+              child: Text('预览已截断 · 完整内容仍可查看或复制', style: _bodyStyle(context)),
             ),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
                 key: ValueKey('process-full-' + id),
-                style: _actionStyle,
+                style: _actionStyle(context),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => _FullTextPage(
@@ -430,10 +429,10 @@ class _TextOutput extends StatelessWidget {
   }
 }
 
-final _actionStyle = TextButton.styleFrom(
+ButtonStyle _actionStyle(BuildContext context) => TextButton.styleFrom(
   minimumSize: const Size(48, 48),
   padding: const EdgeInsets.symmetric(horizontal: 8),
-  foregroundColor: DshPalette.inkSoft,
+  foregroundColor: DshPalette.of(context).inkSoft,
   textStyle: const TextStyle(fontSize: 12.5),
 );
 
@@ -495,7 +494,7 @@ class _CopyActionState extends State<_CopyAction> {
   @override
   Widget build(BuildContext context) => TextButton.icon(
     key: ValueKey('process-copy-' + widget.id),
-    style: _actionStyle,
+    style: _actionStyle(context),
     onPressed: _busy ? null : _copy,
     icon: const Icon(Icons.copy_outlined, size: 15),
     label: Text(widget.label),
@@ -582,7 +581,7 @@ class _FullTextPageState extends State<_FullTextPage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Text(widget.label, style: _bodyStyle),
+          child: Text(widget.label, style: _bodyStyle(context)),
         ),
         Expanded(
           child: Scrollbar(
@@ -595,7 +594,9 @@ class _FullTextPageState extends State<_FullTextPage> {
                 itemCount: _slices.ranges.length,
                 itemBuilder: (context, index) => Text(
                   _slices.at(index),
-                  style: widget.monospace ? _codeStyle : _bodyStyle,
+                  style: widget.monospace
+                      ? _codeStyle(context)
+                      : _bodyStyle(context),
                 ),
               ),
             ),
@@ -646,7 +647,7 @@ class _EditSectionState extends State<_EditSection> {
       headerKey: widget.headerKey,
       label: edit.path,
       icon: Icons.code_rounded,
-      accent: _edit,
+      accent: DshPalette.of(context).edit,
       expanded: widget.expanded,
       onToggle: widget.onToggle,
       trailing: document == null
@@ -656,20 +657,23 @@ class _EditSectionState extends State<_EditSection> {
               children: [
                 Text(
                   '+' + document.added.toString(),
-                  style: const TextStyle(
-                    color: DshPalette.good,
+                  style: TextStyle(
+                    color: DshPalette.of(context).good,
                     fontSize: 12.5,
                   ),
                 ),
                 const SizedBox(width: 6),
                 Text(
                   '-' + document.removed.toString(),
-                  style: const TextStyle(color: DshPalette.bad, fontSize: 12.5),
+                  style: TextStyle(
+                    color: DshPalette.of(context).bad,
+                    fontSize: 12.5,
+                  ),
                 ),
               ],
             ),
       body: () {
-        if (document == null) return const Text('尚无改动内容', style: _bodyStyle);
+        if (document == null) return Text('尚无改动内容', style: _bodyStyle(context));
         final preview = document.preview;
         final truncated =
             preview.length < document.lines.length ||
@@ -681,7 +685,7 @@ class _EditSectionState extends State<_EditSection> {
             if (edit.language.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Text(edit.language, style: _bodyStyle),
+                child: Text(edit.language, style: _bodyStyle(context)),
               ),
             SelectionArea(
               child: Column(
@@ -690,15 +694,18 @@ class _EditSectionState extends State<_EditSection> {
               ),
             ),
             if (truncated) ...[
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 8),
-                child: Text('差异预览已截断 · 完整改动仍可查看或复制', style: _bodyStyle),
+                child: Text(
+                  '差异预览已截断 · 完整改动仍可查看或复制',
+                  style: _bodyStyle(context),
+                ),
               ),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
                   key: ValueKey('process-full-diff-' + widget.id),
-                  style: _actionStyle,
+                  style: _actionStyle(context),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => _FullDiffPage(
@@ -887,12 +894,12 @@ class _DiffRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = line.kind == 1
-        ? DshPalette.good
+        ? DshPalette.of(context).good
         : line.kind == -1
-        ? DshPalette.bad
+        ? DshPalette.of(context).bad
         : line.kind == 2
-        ? _terminal
-        : DshPalette.inkSoft;
+        ? DshPalette.of(context).terminal
+        : DshPalette.of(context).inkSoft;
     return ColoredBox(
       color: line.kind == 1 || line.kind == -1
           ? color.withValues(alpha: .065)
@@ -907,8 +914,8 @@ class _DiffRow extends StatelessWidget {
               child: Text(
                 line.oldLine?.toString() ?? '',
                 textAlign: TextAlign.right,
-                style: _codeStyle.copyWith(
-                  color: DshPalette.inkFaint,
+                style: _codeStyle(context).copyWith(
+                  color: DshPalette.of(context).inkFaint,
                   fontSize: 12.5,
                 ),
               ),
@@ -919,8 +926,8 @@ class _DiffRow extends StatelessWidget {
               child: Text(
                 line.newLine?.toString() ?? '',
                 textAlign: TextAlign.right,
-                style: _codeStyle.copyWith(
-                  color: DshPalette.inkFaint,
+                style: _codeStyle(context).copyWith(
+                  color: DshPalette.of(context).inkFaint,
                   fontSize: 12.5,
                 ),
               ),
@@ -934,7 +941,7 @@ class _DiffRow extends StatelessWidget {
                         ? '- '
                         : '') +
                     line.text,
-                style: _codeStyle.copyWith(color: color),
+                style: _codeStyle(context).copyWith(color: color),
               ),
             ),
           ],
@@ -975,7 +982,7 @@ class _FullDiffPageState extends State<_FullDiffPage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: SelectableText(widget.edit.path, style: _bodyStyle),
+          child: SelectableText(widget.edit.path, style: _bodyStyle(context)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),

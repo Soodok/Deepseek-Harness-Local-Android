@@ -20,6 +20,7 @@ class DshApp extends StatefulWidget {
 class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
   late ChatController _controller;
   HostInfo? _hostInfo;
+  ThemeMode _themeMode = ThemeMode.dark;
 
   @override
   void initState() {
@@ -51,27 +52,33 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DSH',
-      theme: DshTheme.light(),
-      debugShowCheckedModeBanner: false,
-      home: Builder(
-        builder: (context) => ChatShell(
-          controller: _controller,
-          hostInfo: _hostInfo,
-          onOpenEngineSessions: _hostInfo?.available == true
-              ? () => showEngineSessions(context, _hostInfo!)
-              : null,
-          onOpenWebFallback: () async {
-            final opened = await HostBridge.openWebFallback();
-            if (!opened && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Web 版入口由 Android HostBridge 提供。'),
-                ),
-              );
-            }
-          },
+    return DshAppearance(
+      mode: _themeMode,
+      onChanged: (mode) => setState(() => _themeMode = mode),
+      child: MaterialApp(
+        title: 'DSH',
+        theme: DshTheme.light(),
+        darkTheme: DshTheme.dark(),
+        themeMode: _themeMode,
+        debugShowCheckedModeBanner: false,
+        home: Builder(
+          builder: (context) => ChatShell(
+            controller: _controller,
+            hostInfo: _hostInfo,
+            onOpenEngineSessions: _hostInfo?.available == true
+                ? () => showEngineSessions(context, _hostInfo!)
+                : null,
+            onOpenWebFallback: () async {
+              final opened = await HostBridge.openWebFallback();
+              if (!opened && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Web 版入口由 Android HostBridge 提供。'),
+                  ),
+                );
+              }
+            },
+          ),
         ),
       ),
     );

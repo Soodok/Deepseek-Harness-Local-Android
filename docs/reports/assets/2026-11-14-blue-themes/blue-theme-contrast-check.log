@@ -1,0 +1,9 @@
+Formatted test/theme_modes_test.dart
+Formatted 2 files (1 changed) in 0.02 seconds.
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart
+00:00 +0: system appearance updates an already open runtime panel
+00:01 +1: light theme uses real light material surfaces
+00:01 +2: appearance switch repaints the chat without losing an edited draft
+00:02 +3: All tests passed!
+Analyzing flutter_ui...
+No issues found! (ran in 2.9s)

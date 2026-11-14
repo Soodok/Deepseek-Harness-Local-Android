@@ -30,7 +30,7 @@ class ToolContentView extends StatelessWidget {
           if (content.title.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text(content.title, style: _titleStyle),
+              child: Text(content.title, style: _titleStyle(context)),
             ),
           if (showPlan && content.steps.isNotEmpty)
             _PlanView(steps: content.steps),
@@ -48,19 +48,16 @@ class ToolContentView extends StatelessWidget {
   }
 }
 
-const _titleStyle = TextStyle(
-  color: DshPalette.ink,
+TextStyle _titleStyle(BuildContext context) => TextStyle(
+  color: DshPalette.of(context).ink,
   fontSize: 13.5,
   fontWeight: FontWeight.w600,
   height: 1.5,
 );
-const _bodyStyle = TextStyle(
-  color: DshPalette.inkSoft,
-  fontSize: 13,
-  height: 1.5,
-);
-const _metaStyle = TextStyle(
-  color: DshPalette.inkFaint,
+TextStyle _bodyStyle(BuildContext context) =>
+    TextStyle(color: DshPalette.of(context).inkSoft, fontSize: 13, height: 1.5);
+TextStyle _metaStyle(BuildContext context) => TextStyle(
+  color: DshPalette.of(context).inkFaint,
   fontSize: 12,
   height: 1.5,
 );
@@ -85,7 +82,7 @@ class _PlanView extends StatelessWidget {
       childrenPadding: const EdgeInsets.only(left: 4, bottom: 8),
       title: Text(
         '计划 · ' + completed.toString() + '/' + steps.length.toString() + ' 已完成',
-        style: _titleStyle,
+        style: _titleStyle(context),
       ),
       subtitle: Text(
         current != null
@@ -95,7 +92,7 @@ class _PlanView extends StatelessWidget {
             : '展开查看完整计划',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: _metaStyle,
+        style: _metaStyle(context),
       ),
       children: [
         for (final step in steps)
@@ -105,14 +102,17 @@ class _PlanView extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _StatusIcon(presentation: _stepState(step.status)),
+                _StatusIcon(presentation: _stepState(context, step.status)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(step.title, style: _bodyStyle),
-                      Text(_stepState(step.status).label, style: _metaStyle),
+                      Text(step.title, style: _bodyStyle(context)),
+                      Text(
+                        _stepState(context, step.status).label,
+                        style: _metaStyle(context),
+                      ),
                     ],
                   ),
                 ),
@@ -130,7 +130,7 @@ class _AgentView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final presentation = _agentState(agent.status);
+    final presentation = _agentState(context, agent.status);
     return ExpansionTile(
       key: ValueKey('tool-agent-' + agent.id),
       tilePadding: EdgeInsets.zero,
@@ -140,21 +140,21 @@ class _AgentView extends StatelessWidget {
         agent.name,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: _titleStyle,
+        style: _titleStyle(context),
       ),
-      subtitle: Text(presentation.label, style: _metaStyle),
+      subtitle: Text(presentation.label, style: _metaStyle(context)),
       children: [
         Align(
           alignment: Alignment.centerLeft,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('任务', style: _metaStyle),
-              SelectableText(agent.task, style: _bodyStyle),
+              Text('任务', style: _metaStyle(context)),
+              SelectableText(agent.task, style: _bodyStyle(context)),
               if (agent.detail.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                const Text('结果', style: _metaStyle),
-                SelectableText(agent.detail, style: _bodyStyle),
+                Text('结果', style: _metaStyle(context)),
+                SelectableText(agent.detail, style: _bodyStyle(context)),
               ],
             ],
           ),
@@ -278,7 +278,7 @@ class _ResourceViewState extends State<_ResourceView> {
                     ResourceKind.file => Icons.insert_drive_file_outlined,
                   },
                   size: 18,
-                  color: DshPalette.inkSoft,
+                  color: DshPalette.of(context).inkSoft,
                 ),
               ),
               const SizedBox(width: 10),
@@ -290,11 +290,11 @@ class _ResourceViewState extends State<_ResourceView> {
                       resource.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: _titleStyle,
+                      style: _titleStyle(context),
                     ),
                     Text(
                       _resourceMeta(resource, assetPath != null),
-                      style: _metaStyle,
+                      style: _metaStyle(context),
                     ),
                   ],
                 ),
@@ -307,6 +307,7 @@ class _ResourceViewState extends State<_ResourceView> {
             children: [
               if (resource.kind == ResourceKind.image)
                 _action(
+                  context,
                   key: 'resource-preview-' + resource.id,
                   label: _previewing ? '预览中' : '预览',
                   icon: Icons.zoom_in,
@@ -315,6 +316,7 @@ class _ResourceViewState extends State<_ResourceView> {
                       : null,
                 ),
               _action(
+                context,
                 key: 'resource-open-' + resource.id,
                 label: _opening ? '打开中…' : '打开',
                 icon: Icons.open_in_new,
@@ -324,6 +326,7 @@ class _ResourceViewState extends State<_ResourceView> {
                     : null,
               ),
               _action(
+                context,
                 key: 'resource-copy-' + resource.id,
                 label: _copied ? '已复制' : '复制链接',
                 icon: Icons.copy_outlined,
@@ -332,9 +335,9 @@ class _ResourceViewState extends State<_ResourceView> {
             ],
           ),
           if (uri == null && assetPath == null)
-            const Text('链接不可用', style: _metaStyle),
+            Text('链接不可用', style: _metaStyle(context)),
           if (uri != null && widget.onOpenResource == null)
-            const Text('此环境暂不支持打开，请复制链接。', style: _metaStyle),
+            Text('此环境暂不支持打开，请复制链接。', style: _metaStyle(context)),
           if (_openError != null) _FailureText(_openError!),
           if (_copyError != null) _FailureText(_copyError!),
           if (_previewing && canPreview) ...[
@@ -380,6 +383,7 @@ class _ResourceViewState extends State<_ResourceView> {
             Align(
               alignment: Alignment.centerLeft,
               child: _action(
+                context,
                 key: 'resource-preview-close-' + resource.id,
                 label: '关闭预览',
                 icon: Icons.close,
@@ -393,7 +397,8 @@ class _ResourceViewState extends State<_ResourceView> {
   }
 }
 
-Widget _action({
+Widget _action(
+  BuildContext context, {
   required String key,
   required String label,
   required IconData icon,
@@ -405,7 +410,7 @@ Widget _action({
     style: TextButton.styleFrom(
       minimumSize: const Size(48, 48),
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      foregroundColor: DshPalette.inkSoft,
+      foregroundColor: DshPalette.of(context).inkSoft,
       textStyle: const TextStyle(fontSize: 12.5),
     ),
     icon: Icon(icon, size: 16),
@@ -434,7 +439,11 @@ class _ImageNotice extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: Padding(
       padding: const EdgeInsets.all(12),
-      child: Text(text, textAlign: TextAlign.center, style: _bodyStyle),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: _bodyStyle(context),
+      ),
     ),
   );
 }
@@ -446,7 +455,10 @@ class _FailureText extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     liveRegion: true,
-    child: Text(text, style: _metaStyle.copyWith(color: DshPalette.bad)),
+    child: Text(
+      text,
+      style: _metaStyle(context).copyWith(color: DshPalette.of(context).bad),
+    ),
   );
 }
 
@@ -500,61 +512,63 @@ class _StatusPresentation {
   final Color color;
 }
 
-_StatusPresentation _stepState(StepState state) => switch (state) {
-  StepState.pending => const _StatusPresentation(
-    Icons.radio_button_unchecked,
-    '待处理',
-    DshPalette.inkFaint,
-  ),
-  StepState.running => const _StatusPresentation(
-    Icons.more_horiz,
-    '进行中',
-    DshPalette.inkSoft,
-  ),
-  StepState.completed => const _StatusPresentation(
-    Icons.check_circle_outline,
-    '已完成',
-    DshPalette.good,
-  ),
-  StepState.failed => const _StatusPresentation(
-    Icons.error_outline,
-    '失败',
-    DshPalette.bad,
-  ),
-  StepState.cancelled => const _StatusPresentation(
-    Icons.cancel_outlined,
-    '已取消',
-    DshPalette.inkFaint,
-  ),
-};
+_StatusPresentation _stepState(BuildContext context, StepState state) =>
+    switch (state) {
+      StepState.pending => _StatusPresentation(
+        Icons.radio_button_unchecked,
+        '待处理',
+        DshPalette.of(context).inkFaint,
+      ),
+      StepState.running => _StatusPresentation(
+        Icons.more_horiz,
+        '进行中',
+        DshPalette.of(context).inkSoft,
+      ),
+      StepState.completed => _StatusPresentation(
+        Icons.check_circle_outline,
+        '已完成',
+        DshPalette.of(context).good,
+      ),
+      StepState.failed => _StatusPresentation(
+        Icons.error_outline,
+        '失败',
+        DshPalette.of(context).bad,
+      ),
+      StepState.cancelled => _StatusPresentation(
+        Icons.cancel_outlined,
+        '已取消',
+        DshPalette.of(context).inkFaint,
+      ),
+    };
 
-_StatusPresentation _agentState(AgentState state) => switch (state) {
-  AgentState.running => const _StatusPresentation(
-    Icons.more_horiz,
-    '运行中',
-    DshPalette.inkSoft,
-  ),
-  AgentState.waiting => const _StatusPresentation(
-    Icons.schedule,
-    '等待中',
-    DshPalette.inkFaint,
-  ),
-  AgentState.completed => const _StatusPresentation(
-    Icons.check_circle_outline,
-    '已完成',
-    DshPalette.good,
-  ),
-  AgentState.failed => const _StatusPresentation(
-    Icons.error_outline,
-    '失败',
-    DshPalette.bad,
-  ),
-  AgentState.cancelled => const _StatusPresentation(
-    Icons.cancel_outlined,
-    '已取消',
-    DshPalette.inkFaint,
-  ),
-};
+_StatusPresentation _agentState(BuildContext context, AgentState state) =>
+    switch (state) {
+      AgentState.running => _StatusPresentation(
+        Icons.more_horiz,
+        '运行中',
+        DshPalette.of(context).inkSoft,
+      ),
+      AgentState.waiting => _StatusPresentation(
+        Icons.schedule,
+        '等待中',
+        DshPalette.of(context).inkFaint,
+      ),
+      AgentState.completed => _StatusPresentation(
+        Icons.check_circle_outline,
+        '已完成',
+        DshPalette.of(context).good,
+      ),
+      AgentState.failed => _StatusPresentation(
+        Icons.error_outline,
+        '失败',
+        DshPalette.of(context).bad,
+      ),
+      AgentState.cancelled => _StatusPresentation(
+        Icons.cancel_outlined,
+        '已取消',
+        DshPalette.of(context).inkFaint,
+      ),
+    };
 
 class _StatusIcon extends StatelessWidget {
   const _StatusIcon({required this.presentation});

@@ -13,9 +13,11 @@ class GlassPanel extends StatelessWidget {
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(radius),
-      boxShadow: const [
+      boxShadow: [
         BoxShadow(
-          color: Color(0x55000000),
+          color: Theme.of(context).brightness == Brightness.light
+              ? const Color(0x14182D4C)
+              : const Color(0x55000000),
           blurRadius: 24,
           offset: Offset(0, 8),
         ),
@@ -28,14 +30,17 @@ class GlassPanel extends StatelessWidget {
         enabled: !MediaQuery.of(context).disableAnimations,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xEC263337), Color(0xF2172023)],
+              colors: [
+                DshPalette.of(context).surfaceRaised.withValues(alpha: .94),
+                DshPalette.of(context).surface.withValues(alpha: .97),
+              ],
             ),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(
-              color: DshPalette.ink.withValues(alpha: .16),
+              color: DshPalette.of(context).ink.withValues(alpha: .16),
               width: .8,
             ),
           ),

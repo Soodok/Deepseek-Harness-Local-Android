@@ -82,7 +82,7 @@ class _ChatShellState extends State<ChatShell> {
             .map((m) => m.text)
             .firstOrNull;
         return Scaffold(
-          backgroundColor: DshPalette.paper,
+          backgroundColor: DshPalette.of(context).paper,
           drawer: SessionDrawer(
             currentTitle: firstPrompt,
             onOpenEngineSessions: widget.onOpenEngineSessions,
@@ -170,7 +170,7 @@ class _TopBar extends StatelessWidget {
                           ? Icons.menu_rounded
                           : Icons.arrow_back_rounded,
                       size: 23,
-                      color: DshPalette.inkSoft,
+                      color: DshPalette.of(context).inkSoft,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -189,10 +189,10 @@ class _TopBar extends StatelessWidget {
                     tooltip: '子代理',
                     onPressed: () =>
                         showSubagentPanel(context, controller: controller),
-                    icon: const Icon(
-                      Icons.forum_outlined,
+                    icon: Icon(
+                      Icons.people_alt_outlined,
                       size: 21,
-                      color: DshPalette.ice,
+                      color: DshPalette.of(context).ice,
                     ),
                   ),
                   ConstrainedBox(
@@ -225,7 +225,7 @@ class _TopBar extends StatelessWidget {
                                     ? Icons.dns_outlined
                                     : Icons.terminal_rounded,
                                 size: 18,
-                                color: DshPalette.inkSoft,
+                                color: DshPalette.of(context).inkSoft,
                               ),
                               const SizedBox(width: 8),
                               Flexible(
@@ -239,9 +239,9 @@ class _TopBar extends StatelessWidget {
                                           TextWidthBasis.longestLine,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
-                                        color: DshPalette.ink,
+                                        color: DshPalette.of(context).ink,
                                       ),
                                     ),
                                     Text(
@@ -251,19 +251,19 @@ class _TopBar extends StatelessWidget {
                                           _statusLabel(controller.state.status),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 10,
-                                        color: DshPalette.inkFaint,
+                                        color: DshPalette.of(context).inkFaint,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                               const SizedBox(width: 5),
-                              const Icon(
+                              Icon(
                                 Icons.expand_more_rounded,
                                 size: 15,
-                                color: DshPalette.inkSoft,
+                                color: DshPalette.of(context).inkSoft,
                               ),
                             ],
                           ),
@@ -304,7 +304,9 @@ class _ConnectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isError = status == ChatStatus.error;
-    final tone = isError ? DshPalette.bad : DshPalette.warn;
+    final tone = isError
+        ? DshPalette.of(context).bad
+        : DshPalette.of(context).warn;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
       child: Container(
@@ -329,8 +331,8 @@ class _ConnectionBanner extends StatelessWidget {
                 children: [
                   Text(
                     isError ? '引擎连接失败' : '连接已中断',
-                    style: const TextStyle(
-                      color: DshPalette.ink,
+                    style: TextStyle(
+                      color: DshPalette.of(context).ink,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -340,8 +342,8 @@ class _ConnectionBanner extends StatelessWidget {
                       detail!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: DshPalette.inkSoft,
+                      style: TextStyle(
+                        color: DshPalette.of(context).inkSoft,
                         fontSize: 12,
                       ),
                     ),
