@@ -1,4 +1,5 @@
 import '../model/chat_model.dart';
+import '../model/tool_content.dart';
 import '../model/composer_model.dart';
 import 'dsh_transport.dart';
 
@@ -176,6 +177,125 @@ class FixtureTransport implements DshTransport, ComposerTransport {
     await _events.close();
   }
 
+  /// Deterministic, explicitly labeled UI coverage. No real work is executed.
+  void emitShowcase() {
+    _ensureConnected();
+    final messageId = 'fixture-showcase-' + _sequence.toString();
+    _emit(
+      ChatEvent.delta(
+        generation: _generation,
+        sequence: _sequence,
+        messageId: messageId,
+        role: ChatRole.assistant,
+        text: '工具展示演示。计划、协作进度和交付物可按需展开；此处没有执行真实任务。',
+        done: true,
+      ),
+    );
+    final outputs = <(String, String, ToolContent)>[
+      (
+        'plan',
+        '检查计划',
+        ToolContent(
+          title: '整理工作区',
+          steps: const [
+            PlanStep(id: 'read', title: '读取项目状态', status: StepState.completed),
+            PlanStep(id: 'check', title: '核对关键配置', status: StepState.completed),
+            PlanStep(
+              id: 'summarize',
+              title: '整理验证报告',
+              status: StepState.completed,
+            ),
+          ],
+        ),
+      ),
+      (
+        'agents',
+        '子智能体 · 2 项已完成',
+        ToolContent(
+          title: '协作结果',
+          agents: const [
+            AgentTask(
+              id: 'review',
+              name: '代码检查',
+              task: '检查变更的边界与回归风险',
+              status: AgentState.completed,
+              detail: '演示结果：保留已有接口，未发现阻塞项。',
+            ),
+            AgentTask(
+              id: 'docs',
+              name: '文档整理',
+              task: '整理本轮验证证据',
+              status: AgentState.completed,
+              detail: '演示报告与图片已列为结构化交付物。',
+            ),
+          ],
+        ),
+      ),
+      (
+        'resources',
+        '交付物 · 图片 / 文件 / 链接',
+        ToolContent(
+          title: '输出文件',
+          resources: [
+            OutputResource(
+              id: 'preview',
+              title: '界面预览.png',
+              uri: Uri.base
+                  .resolve(
+                    'assets/packages/dsh_native_chat/assets/tool-demo.png',
+                  )
+                  .toString(),
+              kind: ResourceKind.image,
+              mediaType: 'image/png',
+              assetPath: 'assets/tool-demo.png',
+            ),
+            OutputResource(
+              id: 'report',
+              title: '验证报告.md',
+              uri: Uri.base
+                  .resolve(
+                    'assets/packages/dsh_native_chat/assets/tool-report.md',
+                  )
+                  .toString(),
+              kind: ResourceKind.file,
+              mediaType: 'text/markdown',
+              description: '演示交付物，可在浏览器打开',
+            ),
+            const OutputResource(
+              id: 'docs',
+              title: 'Flutter 官方文档',
+              uri: 'https://docs.flutter.dev/',
+              kind: ResourceKind.link,
+            ),
+          ],
+        ),
+      ),
+    ];
+    for (final item in outputs) {
+      final id = 'showcase-' + item.$1 + '-' + _sequence.toString();
+      _emit(
+        ChatEvent.toolStarted(
+          generation: _generation,
+          sequence: _sequence,
+          toolId: id,
+          name: item.$2,
+          messageId: messageId,
+          content: item.$3,
+        ),
+      );
+      _emit(
+        ChatEvent.toolFinished(
+          generation: _generation,
+          sequence: _sequence,
+          toolId: id,
+          status: ToolStatus.complete,
+          elapsedMs: 0,
+        ),
+      );
+    }
+    emitQuestion();
+  }
+
   void emitQuestion() {
     _ensureConnected();
     _lastActionId = 'fixture-question-' + _sequence.toString();
@@ -184,8 +304,10 @@ class FixtureTransport implements DshTransport, ComposerTransport {
         generation: _generation,
         sequence: _sequence,
         requestId: _lastActionId!,
-        title: '下一步怎么做？',
-        detail: '选择继续读取，或先停下来查看当前结果。',
+        title: '接下来想看什么？',
+        detail: '可多选，也可以补充说明。',
+        choices: const ['查看验证报告', '继续检查项目'],
+        multiSelect: true,
       ),
     );
   }

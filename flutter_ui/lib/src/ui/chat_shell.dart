@@ -3,11 +3,15 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
+import '../bridge/host_bridge.dart';
+import 'glass_panel.dart';
+import 'runtime_panel.dart';
 import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
 import 'composer.dart';
 import 'message_list.dart';
 import 'session_drawer.dart';
+import '../transport/fixture_transport.dart';
 
 /// Horizontal geometry shared by the message column and the composer so the
 /// reading edge and the input edge line up at every width.
@@ -28,12 +32,14 @@ class ChatShell extends StatefulWidget {
     super.key,
     required this.controller,
     this.onOpenWebFallback,
+    this.hostInfo,
     this.disposeController = false,
   });
 
   final ChatController controller;
   final VoidCallback? onOpenWebFallback;
   final bool disposeController;
+  final HostInfo? hostInfo;
 
   @override
   State<ChatShell> createState() => _ChatShellState();
@@ -74,6 +80,11 @@ class _ChatShellState extends State<ChatShell> {
           backgroundColor: DshPalette.paper,
           drawer: SessionDrawer(
             currentTitle: firstPrompt,
+            onShowcase:
+                widget.controller.transport is FixtureTransport &&
+                    state.status == ChatStatus.ready
+                ? (widget.controller.transport as FixtureTransport).emitShowcase
+                : null,
             isFixture: widget.controller.transport.isFixture,
           ),
           body: SafeArea(
@@ -81,7 +92,7 @@ class _ChatShellState extends State<ChatShell> {
               children: [
                 _TopBar(
                   controller: widget.controller,
-                  title: firstPrompt,
+                  hostInfo: widget.hostInfo,
                   onOpenWebFallback: widget.onOpenWebFallback,
                 ),
                 if (state.status == ChatStatus.reconnecting ||
@@ -105,53 +116,115 @@ class _ChatShellState extends State<ChatShell> {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.controller,
-    required this.title,
+    this.hostInfo,
     this.onOpenWebFallback,
   });
   final ChatController controller;
-  final String? title;
+  final HostInfo? hostInfo;
   final VoidCallback? onOpenWebFallback;
   @override
   Widget build(BuildContext context) {
-    final status = controller.state.status;
+    final host = hostInfo ?? HostInfo.preview;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: '打开会话抽屉',
-            onPressed: () => Scaffold.of(context).openDrawer(),
-            icon: const Icon(
-              Icons.menu_rounded,
-              size: 24,
-              color: DshPalette.inkSoft,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: ChatLayout.maxColumn),
+          child: GlassPanel(
+            key: const ValueKey('floating-header'),
+            radius: 30,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: '打开会话抽屉',
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                    icon: const Icon(
+                      Icons.menu_rounded,
+                      size: 23,
+                      color: DshPalette.inkSoft,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Expanded(
+                    child: Text(
+                      'DSH',
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Tooltip(
+                    message: controller.transport.isFixture
+                        ? 'fixture 模式'
+                        : 'engine',
+                    child: KeyedSubtree(
+                      key: const ValueKey('web-fallback'),
+                      child: TextButton(
+                        key: const ValueKey('runtime-selector'),
+                        onPressed: () => showRuntimePanel(
+                          context,
+                          hostInfo: hostInfo,
+                          isFixture: controller.transport.isFixture,
+                          onOpenWebFallback: onOpenWebFallback,
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          minimumSize: const Size(0, 48),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              host.runtimeMode.startsWith('ssh_')
+                                  ? Icons.dns_outlined
+                                  : Icons.terminal_rounded,
+                              size: 18,
+                              color: DshPalette.inkSoft,
+                            ),
+                            const SizedBox(width: 8),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  host.runtimeLabel,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: DshPalette.ink,
+                                  ),
+                                ),
+                                Text(
+                                  (controller.transport.isFixture
+                                          ? '演示 · '
+                                          : '') +
+                                      _statusLabel(controller.state.status),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: DshPalette.inkFaint,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 5),
+                            const Icon(
+                              Icons.expand_more_rounded,
+                              size: 15,
+                              color: DshPalette.inkSoft,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          const Text(
-            'DSH',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-          ),
-          const Spacer(),
-          Tooltip(
-            message: controller.transport.isFixture ? 'fixture 模式' : 'engine',
-            child: Text(
-              _statusLabel(status),
-              style: const TextStyle(color: DshPalette.inkSoft, fontSize: 12),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            key: const ValueKey('web-fallback'),
-            tooltip: '打开 Web 版',
-            onPressed: onOpenWebFallback,
-            icon: const Icon(
-              Icons.open_in_new_rounded,
-              size: 21,
-              color: DshPalette.inkSoft,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

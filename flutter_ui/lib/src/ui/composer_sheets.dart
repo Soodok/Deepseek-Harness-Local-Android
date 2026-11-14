@@ -4,6 +4,7 @@ import '../model/composer_model.dart';
 import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
 import 'glass_panel.dart';
+import 'permission_icon.dart';
 
 Future<void> showModelSelector(
   BuildContext context,
@@ -106,6 +107,12 @@ Future<void> _show(
                     ...ComposerPermission.values.map(
                       (mode) => _Choice(
                         key: ValueKey('permission-option-' + mode.name),
+                        leading: DshPermissionIcon(
+                          glyph: mode == ComposerPermission.readOnly
+                              ? DshPermissionGlyph.readOnly
+                              : DshPermissionGlyph.fullAccess,
+                          size: 20,
+                        ),
                         title: mode.label,
                         detail: mode.description,
                         selected: controller.permission == mode,
@@ -132,10 +139,12 @@ class _Choice extends StatelessWidget {
     required this.detail,
     required this.selected,
     required this.onTap,
+    this.leading,
   });
   final String title, detail;
   final bool selected;
   final VoidCallback onTap;
+  final Widget? leading;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
@@ -146,6 +155,7 @@ class _Choice extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: ListTile(
         selected: selected,
+        leading: leading,
         selectedColor: DshPalette.ink,
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

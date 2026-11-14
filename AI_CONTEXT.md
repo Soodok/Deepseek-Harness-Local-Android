@@ -1,5 +1,17 @@
 # DSH Android · 交接文档
 
+## 当前隔离 Flutter 迭代（2026-11-14 16:12）
+
+- 工作范围 E:/tmp/wt-flutter-native-chat，分支 feat/flutter-native-chat，起始 HEAD 545f2a130d1ee1c45eb7aa7400eeb154814728f9。当前声明 beta.16/code391，未安装或发布 APK。
+- 保留极简炭黑对话与悬浮顶栏；补齐结构化计划、子智能体状态、单/多选加自填问题、审批、图片预览、文件/链接打开和复制。入口位于 fixture 抽屉“工具展示演示”，明确不执行真实工作。
+- 长对话逐行按需构建；工具按 messageId 绑定原消息；日志1600字符预览加完整分块查看。当前问题离屏保活，重复动作由 controller 阻挡。图片点预览才加载，两个分支均用 ResizeImagePolicy.fit，解码宽高各不超过1600，原图仍可显式打开。
+- 代码审查发现的离屏草稿丢失已先红测（期望保留草稿，实际空串）再修复；超限图片变异测试以8640大于1600按预期失败，恢复后完整66项测试通过。最终 format/test/analyze 均退出0，analyze No issues found（18.8s）。
+- 运行环境面板成功导航后关闭旧快照，发行版读取启动 resolve 的 lastDistro；从原生管理页返回仍有 resumed 刷新。以上 Android 路径只静态核对，未真机验证。
+- 用户16:16追加蓝色发送按钮与DSH原权限图标：已采用#3B82F6/白箭头，权限原SVG坐标来自DSH自身frontend包并保留MIT许可。保留已接入的ask/readOnly语义，未伪造workspace/fullAccess接线。此样式增量14项既有交互/几何测试通过，analyze退出0。
+- beta.15审查修复版Web构建退出0（64.3s）；beta.16样式增量Web构建退出0（101.3s），最终11张截图与CDP旁证及哈希已归档docs/reports/assets/2026-11-14-tool-ui；实际图片预览HTTP200，文件按钮创建报告新标签；三档视口360/390/432×960、DPR1均无横向溢出；报告 docs/reports/2026-11-14-tool-ui-validation.md。Android/真实引擎接线仍未验证，历史 Gradle/Maven阻塞见旧报告，不能把 fixture Web 通过视为真机通过。
+
+
+
 > **只写当前有效的事实。** 历史流水已归档：`docs/history/AI_CONTEXT-archive-20261031.md`
 > （4070 行，含 2026-10-11 ~ 10-31 每轮交付细节）。本文超过 300 行就该把旧段归档。
 >

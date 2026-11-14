@@ -20,6 +20,10 @@ class ChatController extends ChangeNotifier {
   bool _disposed = false;
   bool _resyncInFlight = false;
   bool _queuedDispatchInFlight = false;
+  String? _pendingAction;
+  bool _stopInFlight = false;
+  bool actionBusy(String requestId) =>
+      _pendingAction == requestId || _stopInFlight;
 
   ChatState get state => _state;
   final List<PromptAttachment> _attachments = [];
@@ -170,31 +174,47 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    if (_disposed) return;
+    if (_disposed || _stopInFlight) return;
+    _stopInFlight = true;
+    notifyListeners();
     try {
       await transport.stop();
     } on Object catch (error) {
       _setError(error.toString());
+    } finally {
+      _stopInFlight = false;
+      if (!_disposed) notifyListeners();
     }
   }
 
   Future<void> approve(String requestId) async {
-    if (_disposed) return;
-    try {
-      await transport.approve(requestId);
-    } on Object catch (error) {
-      _setError(error.toString());
-    }
+    if (_state.approval?.requestId != requestId) return;
+    await _submitAction(requestId, () => transport.approve(requestId));
   }
 
   Future<void> answer(String requestId, String answer) async {
-    if (_disposed) return;
     final value = answer.trim();
-    if (value.isEmpty) return;
+    if (value.isEmpty || _state.question?.requestId != requestId) return;
+    await _submitAction(requestId, () => transport.answer(requestId, value));
+  }
+
+  Future<void> _submitAction(
+    String requestId,
+    Future<void> Function() action,
+  ) async {
+    if (_disposed || _pendingAction != null || _stopInFlight) return;
+    final generation = _state.generation;
+    _pendingAction = requestId;
+    notifyListeners();
     try {
-      await transport.answer(requestId, value);
+      await action();
     } on Object catch (error) {
-      _setError(error.toString());
+      if (!_disposed &&
+          generation == _state.generation &&
+          _pendingAction == requestId) {
+        _pendingAction = null;
+        _setError(error.toString());
+      }
     }
   }
 
@@ -235,6 +255,10 @@ class ChatController extends ChangeNotifier {
 
   void _setState(ChatState next) {
     if (_disposed) return;
+    if (next.generation != _state.generation ||
+        (_pendingAction != next.approval?.requestId &&
+            _pendingAction != next.question?.requestId))
+      _pendingAction = null;
     _state = next;
     notifyListeners();
   }

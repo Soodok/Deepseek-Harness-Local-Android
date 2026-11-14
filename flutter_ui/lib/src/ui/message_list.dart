@@ -27,32 +27,38 @@ class MessageList extends StatelessWidget {
       return const _EmptyConversation();
     }
 
-    // ChatState keeps tools and messages in separate lists with no link
-    // between them. Reading order heuristic: when the latest turn already has
-    // an acknowledgement and a later reply, the process sits between them;
-    // otherwise it follows the conversation.
     final messages = state.messages;
-    final lastUser = messages.lastIndexWhere((m) => m.role == ChatRole.user);
-    final replies = <int>[
-      for (var i = lastUser + 1; i < messages.length; i++)
-        if (messages[i].role == ChatRole.assistant) i,
-    ];
-    final processAfter = state.tools.isEmpty
-        ? -2
-        : (lastUser >= 0 && replies.length >= 2
-              ? replies.first
-              : messages.length - 1);
-    final process = _ProcessSection(tools: state.tools);
-    if (processAfter == -1) children.add(process);
-    for (var i = 0; i < messages.length; i++) {
-      children.add(_MessageBlock(message: messages[i]));
-      if (i == processAfter) children.add(process);
+    final byMessage = <String, List<ToolRun>>{};
+    final unbound = <ToolRun>[];
+    final ids = messages.map((m) => m.id).toSet();
+    for (final tool in state.tools) {
+      if (tool.messageId != null && ids.contains(tool.messageId)) {
+        byMessage.putIfAbsent(tool.messageId!, () => []).add(tool);
+      } else {
+        unbound.add(tool);
+      }
     }
+    Widget toolRow(ToolRun tool) => Padding(
+      key: ValueKey('row-tool-' + tool.id),
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: ToolRunCard(tool: tool),
+    );
+    for (final message in messages) {
+      children.add(
+        _MessageBlock(key: ValueKey('message-' + message.id), message: message),
+      );
+      children.addAll(
+        (byMessage[message.id] ?? const <ToolRun>[]).map(toolRow),
+      );
+    }
+    children.addAll(unbound.map(toolRow));
 
     if (state.approval != null) {
       children.add(
         ApprovalCard(
+          key: ValueKey('approval-' + state.approval!.requestId),
           request: state.approval!,
+          busy: controller.actionBusy(state.approval!.requestId),
           onApprove: () => controller.approve(state.approval!.requestId),
           onStop: controller.stop,
         ),
@@ -61,7 +67,9 @@ class MessageList extends StatelessWidget {
     if (state.question != null) {
       children.add(
         QuestionCard(
+          key: ValueKey('question-' + state.question!.requestId),
           request: state.question!,
+          busy: controller.actionBusy(state.question!.requestId),
           onSubmit: (answer) =>
               controller.answer(state.question!.requestId, answer),
         ),
@@ -79,19 +87,22 @@ class MessageList extends StatelessWidget {
       );
     }
 
-    return ListView(
+    final indices = <Key, int>{
+      for (var i = 0; i < children.length; i++)
+        if (children[i].key != null) children[i].key!: i,
+    };
+    return ListView.builder(
+      key: const ValueKey('conversation-list'),
       padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
-      children: [
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: ChatLayout.maxColumn),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
-            ),
-          ),
+      itemCount: children.length,
+      findChildIndexCallback: (key) => indices[key],
+      itemBuilder: (context, index) => Center(
+        key: children[index].key,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: ChatLayout.maxColumn),
+          child: SizedBox(width: double.infinity, child: children[index]),
         ),
-      ],
+      ),
     );
   }
 }
@@ -117,7 +128,7 @@ class _EmptyConversation extends StatelessWidget {
 }
 
 class _MessageBlock extends StatelessWidget {
-  const _MessageBlock({required this.message});
+  const _MessageBlock({super.key, required this.message});
   final ChatMessage message;
   @override
   Widget build(BuildContext context) {
@@ -176,47 +187,6 @@ class _StreamingMark extends StatelessWidget {
       width: 11,
       height: 11,
       child: CircularProgressIndicator(strokeWidth: 1.4, color: DshPalette.ice),
-    );
-  }
-}
-
-/// Tool activity is one quiet section under the conversation, not a stack of
-/// independent cards fighting the prose for attention.
-class _ProcessSection extends StatelessWidget {
-  const _ProcessSection({required this.tools});
-
-  final List<ToolRun> tools;
-
-  @override
-  Widget build(BuildContext context) {
-    final running = tools.where((t) => t.status == ToolStatus.running).length;
-    final heading = running > 0
-        ? '进行中 · ' + running.toString() + ' / ' + tools.length.toString()
-        : '过程 · ' + tools.length.toString() + ' 步';
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 2, bottom: 6),
-            child: Text(
-              heading,
-              style: const TextStyle(
-                color: DshPalette.inkFaint,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-              ),
-            ),
-          ),
-          for (final tool in tools)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: ToolRunCard(tool: tool),
-            ),
-        ],
-      ),
     );
   }
 }

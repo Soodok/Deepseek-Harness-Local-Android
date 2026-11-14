@@ -22,6 +22,16 @@ class NativeChatActivity : FlutterActivity() {
                     "engineInfo" -> result.success(engineInfo())
                     "webUrl" -> result.success(supervisorOrNull()?.webUrl().orEmpty())
                     "engineState" -> result.success(engineState())
+                    "openRuntimeSettings" -> {
+                        openRuntimeSettings(call.argument<String>("target"))
+                        result.success(true)
+                    }
+                    "openSshManager" -> { openSshManager(call.argument<String>("platform")); result.success(true) }
+                    "openResource" -> {
+                        val uri = call.argument<String>("uri")?.let { android.net.Uri.parse(it) }
+                        val allowed = uri != null && uri.scheme in setOf("http", "https") && !uri.host.isNullOrEmpty() && uri.userInfo.isNullOrEmpty()
+                        result.success(allowed && runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }.isSuccess)
+                    }
                     "openWebFallback" -> {
                         openWebFallback()
                         result.success(true)
@@ -45,15 +55,46 @@ class NativeChatActivity : FlutterActivity() {
 
     private fun engineInfo(): Map<String, Any> {
         val supervisor = supervisorOrNull()
+        val mode = app.dsh.mobile.engine.EngineModeSelector.lastMode
+        val resolved = app.dsh.mobile.engine.EngineModeSelector.resolved
+        val runtimeMode = if (!resolved) "unknown" else when (mode) {
+            app.dsh.mobile.engine.EngineModeSelector.Mode.NATIVE -> "native"
+            app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX -> "linux"
+            app.dsh.mobile.engine.EngineModeSelector.Mode.NATIVE_FALLBACK -> "native_fallback"
+        }
+        val distro = app.dsh.mobile.engine.EngineModeSelector.lastDistro
         return mapOf(
             "webUrl" to (supervisor?.webUrl().orEmpty()),
             "available" to (supervisor?.hasLoadableUrl() == true),
             "state" to engineState(supervisor),
+            "runtimeMode" to runtimeMode,
+            "runtimeResolved" to resolved,
+            "runtimeReason" to app.dsh.mobile.engine.EngineModeSelector.lastReason,
+            "distro" to distro,
         )
     }
 
     private fun engineState(supervisor: app.dsh.mobile.engine.EngineSupervisor? = supervisorOrNull()): String =
         supervisor?.state?.value?.let { it::class.simpleName ?: "unknown" } ?: "uninitialized"
+
+    private fun openRuntimeSettings(target: String? = null) {
+        val destination = target ?: when (app.dsh.mobile.engine.EngineModeSelector.lastMode) {
+            app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX -> "linux"
+            else -> "native"
+        }
+        when (destination) {
+            "linux" ->
+                startActivity(Intent(this, LinuxActivity::class.java))
+            else -> startActivity(Intent(this, PermissionCenterActivity::class.java).apply {
+                putExtra(PermissionCenterActivity.EXTRA_GROUP, PermissionCenterActivity.GROUP_ENGINE)
+            })
+        }
+    }
+
+    /** SSH workspace routing is owned by the Web shell; no native deep link is verified. */
+    private fun openSshManager(@Suppress("UNUSED_PARAMETER") platform: String?) {
+        openWebFallback()
+    }
 
     private fun openWebFallback() {
         startActivity(

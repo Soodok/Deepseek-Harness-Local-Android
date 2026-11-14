@@ -13,6 +13,8 @@ class DshPalette {
   static const surfaceRaised = Color(0xFF292929);
   static const line = Color(0xFF414141);
   static const ice = Color(0xFFECECEC);
+  static const sendBlue = Color(0xFF3B82F6);
+  static const sendBlueMuted = Color(0xFF203B62);
   static const iceDeep = Color(0xFFC5C5C5);
   static const userWash = Color(0xFF2B2B2B);
   static const good = Color(0xFF6FCB9A);

@@ -8,6 +8,7 @@ import '../theme/dsh_theme.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'composer_sheets.dart';
 import 'glass_panel.dart';
+import 'permission_icon.dart';
 
 class Composer extends StatefulWidget {
   const Composer({super.key, required this.controller});
@@ -208,42 +209,56 @@ class _ComposerState extends State<Composer> {
                                 size: 27,
                               ),
                             ),
+                            const SizedBox(width: 6),
                             Expanded(
-                              child: TextButton(
-                                key: const ValueKey('composer-model'),
-                                onPressed: () =>
-                                    showModelSelector(context, controller),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  minimumSize: const Size(0, 48),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        controller.modelLabel,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: DshPalette.ink,
-                                          fontWeight: FontWeight.w500,
-                                        ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                  key: const ValueKey('composer-model'),
+                                  onPressed: () =>
+                                      showModelSelector(context, controller),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: DshPalette.ink.withValues(
+                                      alpha: .06,
+                                    ),
+                                    side: BorderSide(
+                                      color: DshPalette.ink.withValues(
+                                        alpha: .13,
                                       ),
                                     ),
-                                    const SizedBox(width: 3),
-                                    const Icon(
-                                      Icons.expand_more_rounded,
-                                      size: 16,
-                                      color: DshPalette.inkSoft,
+                                    shape: const StadiumBorder(),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
                                     ),
-                                  ],
+                                    minimumSize: const Size(0, 48),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          controller.modelLabel,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: DshPalette.ink,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.expand_more_rounded,
+                                        size: 16,
+                                        color: DshPalette.inkSoft,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
                             IconButton(
                               key: const ValueKey('composer-permission'),
                               tooltip: '工具权限：' + controller.permission.label,
@@ -254,15 +269,17 @@ class _ComposerState extends State<Composer> {
                                   alpha: .06,
                                 ),
                               ),
-                              icon: Icon(
-                                controller.permission ==
+                              icon: DshPermissionIcon(
+                                glyph:
+                                    controller.permission ==
                                         ComposerPermission.readOnly
-                                    ? Icons.lock_outline_rounded
-                                    : Icons.tune_rounded,
+                                    ? DshPermissionGlyph.readOnly
+                                    : DshPermissionGlyph.fullAccess,
                                 size: 22,
                               ),
                             ),
-                            if (busy)
+                            if (busy) ...[
+                              const SizedBox(width: 8),
                               IconButton(
                                 key: const ValueKey('composer-stop'),
                                 tooltip: '停止执行',
@@ -272,17 +289,21 @@ class _ComposerState extends State<Composer> {
                                   size: 28,
                                 ),
                               ),
+                            ],
+                            const SizedBox(width: 8),
                             ValueListenableBuilder<TextEditingValue>(
                               valueListenable: _textController,
                               builder: (context, value, _) => IconButton.filled(
                                 key: const ValueKey('composer-send'),
                                 tooltip: busy ? '排队到下一轮' : '发送',
                                 style: IconButton.styleFrom(
-                                  backgroundColor: DshPalette.ink,
-                                  foregroundColor: DshPalette.paper,
+                                  backgroundColor: DshPalette.sendBlue,
+                                  foregroundColor: Colors.white,
                                   disabledBackgroundColor:
-                                      DshPalette.surfaceRaised,
-                                  disabledForegroundColor: DshPalette.inkFaint,
+                                      DshPalette.sendBlueMuted,
+                                  disabledForegroundColor: const Color(
+                                    0xFF84A5D0,
+                                  ),
                                   minimumSize: const Size(48, 48),
                                 ),
                                 onPressed:

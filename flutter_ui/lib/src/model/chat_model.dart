@@ -1,3 +1,5 @@
+import 'tool_content.dart';
+
 enum ChatRole { user, assistant, system }
 
 enum ToolStatus { running, complete, failed, cancelled }
@@ -16,6 +18,7 @@ enum ChatEventKind {
   delta,
   toolStarted,
   toolFinished,
+  toolUpdated,
   approval,
   question,
   turnComplete,
@@ -62,6 +65,8 @@ class ToolRun {
     this.status = ToolStatus.running,
     this.detail = '',
     this.elapsedMs,
+    this.messageId,
+    this.content,
   });
 
   final String id;
@@ -69,15 +74,23 @@ class ToolRun {
   final ToolStatus status;
   final String detail;
   final int? elapsedMs;
+  final String? messageId;
+  final ToolContent? content;
 
-  ToolRun copyWith({ToolStatus? status, String? detail, int? elapsedMs}) =>
-      ToolRun(
-        id: id,
-        name: name,
-        status: status ?? this.status,
-        detail: detail ?? this.detail,
-        elapsedMs: elapsedMs ?? this.elapsedMs,
-      );
+  ToolRun copyWith({
+    ToolStatus? status,
+    String? detail,
+    int? elapsedMs,
+    ToolContent? content,
+  }) => ToolRun(
+    id: id,
+    name: name,
+    status: status ?? this.status,
+    detail: detail ?? this.detail,
+    elapsedMs: elapsedMs ?? this.elapsedMs,
+    messageId: messageId,
+    content: content ?? this.content,
+  );
 }
 
 class ActionRequest {
@@ -85,11 +98,15 @@ class ActionRequest {
     required this.requestId,
     required this.title,
     required this.detail,
+    this.choices = const [],
+    this.multiSelect = false,
   });
 
   final String requestId;
   final String title;
   final String detail;
+  final List<String> choices;
+  final bool multiSelect;
 }
 
 class ChatEvent {
@@ -109,6 +126,9 @@ class ChatEvent {
     this.requestId,
     this.title,
     this.detail,
+    this.content,
+    this.choices = const [],
+    this.multiSelect = false,
   });
 
   const ChatEvent.snapshot({
@@ -144,12 +164,29 @@ class ChatEvent {
     required int sequence,
     required String toolId,
     required String name,
+    String? messageId,
+    ToolContent? content,
   }) : this._(
          kind: ChatEventKind.toolStarted,
          generation: generation,
          sequence: sequence,
          toolId: toolId,
          toolName: name,
+         messageId: messageId,
+         content: content,
+       );
+
+  const ChatEvent.toolUpdated({
+    required int generation,
+    required int sequence,
+    required String toolId,
+    required ToolContent content,
+  }) : this._(
+         kind: ChatEventKind.toolUpdated,
+         generation: generation,
+         sequence: sequence,
+         toolId: toolId,
+         content: content,
        );
 
   const ChatEvent.toolFinished({
@@ -159,6 +196,7 @@ class ChatEvent {
     required ToolStatus status,
     String detail = '',
     int? elapsedMs,
+    ToolContent? content,
   }) : this._(
          kind: ChatEventKind.toolFinished,
          generation: generation,
@@ -167,6 +205,7 @@ class ChatEvent {
          toolStatus: status,
          detail: detail,
          elapsedMs: elapsedMs,
+         content: content,
        );
 
   const ChatEvent.approval({
@@ -190,8 +229,12 @@ class ChatEvent {
     required String requestId,
     required String title,
     required String detail,
+    List<String> choices = const [],
+    bool multiSelect = false,
   }) : this._(
          kind: ChatEventKind.question,
+         choices: choices,
+         multiSelect: multiSelect,
          generation: generation,
          sequence: sequence,
          requestId: requestId,
@@ -239,4 +282,7 @@ class ChatEvent {
   final String? requestId;
   final String? title;
   final String? detail;
+  final ToolContent? content;
+  final List<String> choices;
+  final bool multiSelect;
 }

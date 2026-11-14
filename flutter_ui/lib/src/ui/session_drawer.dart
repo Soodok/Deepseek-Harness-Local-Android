@@ -9,11 +9,13 @@ class SessionDrawer extends StatelessWidget {
   const SessionDrawer({
     super.key,
     this.onNewSession,
+    this.onShowcase,
     this.currentTitle,
     this.isFixture = false,
   });
 
   final VoidCallback? onNewSession;
+  final VoidCallback? onShowcase;
   final String? currentTitle;
   final bool isFixture;
 
@@ -122,6 +124,16 @@ class SessionDrawer extends StatelessWidget {
                 ),
               ),
             ),
+            if (onShowcase != null)
+              ListTile(
+                key: const ValueKey('tool-showcase'),
+                leading: const Icon(Icons.widgets_outlined, size: 20),
+                title: const Text('工具展示演示', style: TextStyle(fontSize: 14)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onShowcase!();
+                },
+              ),
             const Spacer(),
             const Divider(height: 1),
             Padding(

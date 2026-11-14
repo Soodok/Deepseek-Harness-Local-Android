@@ -46,8 +46,23 @@ class ChatReducer {
           status: ChatStatus.streaming,
           tools: [
             ...next.tools,
-            ToolRun(id: event.toolId!, name: event.toolName!),
+            ToolRun(
+              id: event.toolId!,
+              name: event.toolName!,
+              content: event.content,
+              messageId: event.messageId ?? next.messages.lastOrNull?.id,
+            ),
           ],
+        );
+      case ChatEventKind.toolUpdated:
+        next = next.copyWith(
+          tools: next.tools
+              .map(
+                (tool) => tool.id == event.toolId
+                    ? tool.copyWith(content: event.content)
+                    : tool,
+              )
+              .toList(),
         );
       case ChatEventKind.toolFinished:
         next = next.copyWith(
@@ -59,6 +74,7 @@ class ChatReducer {
                         status: event.toolStatus,
                         detail: event.detail,
                         elapsedMs: event.elapsedMs,
+                        content: event.content,
                       )
                     : tool,
               )
@@ -81,6 +97,8 @@ class ChatReducer {
             requestId: event.requestId!,
             title: event.title!,
             detail: event.detail!,
+            choices: List.unmodifiable(event.choices),
+            multiSelect: event.multiSelect,
           ),
           clearApproval: true,
         );

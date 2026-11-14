@@ -1,0 +1,17 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 360,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 360,
+    "bodyWidth": 360
+  },
+  "url": "http://127.0.0.1:50500/",
+  "output": "E:\\tmp\\native-chat-web-preview\\tool-ui-main-360.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data"
+}

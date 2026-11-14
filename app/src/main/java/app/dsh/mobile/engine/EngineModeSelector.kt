@@ -57,6 +57,11 @@ object EngineModeSelector {
     var lastReason: String = ""
         private set
 
+    /** Startup snapshot; UI preferences may change before the engine restarts. */
+    @Volatile
+    var lastDistro: String = ""
+        private set
+
     /**
      * [resolve] 是否已经跑过一次。
      *
@@ -93,6 +98,7 @@ object EngineModeSelector {
         val launcher = LinuxEngineLauncher.get(ctx)
         return when (val r = launcher.readiness()) {
             is LinuxEngineLauncher.Readiness.Ready -> {
+                lastDistro = runCatching { LinuxEnvironmentManager.get(ctx).activeOption().displayName }.getOrDefault("")
                 lastMode = Mode.LINUX
                 lastReason = ""
                 resolved = true

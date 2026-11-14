@@ -15,19 +15,34 @@ class DshApp extends StatefulWidget {
   State<DshApp> createState() => _DshAppState();
 }
 
-class _DshAppState extends State<DshApp> {
+class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
   late ChatController _controller;
+  HostInfo? _hostInfo;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // The real engine event schema is not captured yet. Keep fixture mode explicit
     // until snapshot, delta, tool, and action frames are verified against a live host.
     _controller = ChatController(FixtureTransport());
+    _refreshHostInfo();
+  }
+
+  void _refreshHostInfo() {
+    HostBridge.readEngineInfo().then((info) {
+      if (mounted) setState(() => _hostInfo = info);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshHostInfo();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }
@@ -40,6 +55,7 @@ class _DshAppState extends State<DshApp> {
       debugShowCheckedModeBanner: false,
       home: ChatShell(
         controller: _controller,
+        hostInfo: _hostInfo,
         onOpenWebFallback: () async {
           final opened = await HostBridge.openWebFallback();
           if (!opened && context.mounted) {

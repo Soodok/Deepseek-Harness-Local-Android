@@ -34,6 +34,16 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('composer-send')));
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('approval-approve')),
+      180,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('conversation-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(find.text('允许继续读取吗？'), findsOneWidget);
     expect(find.text('读取项目状态'), findsOneWidget);
     expect(find.byKey(const ValueKey('approval-approve')), findsOneWidget);
@@ -56,7 +66,17 @@ void main() {
 
     transport.emitQuestion();
     await tester.pump();
-    expect(find.text('下一步怎么做？'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('question-input')),
+      180,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('conversation-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(find.text('接下来想看什么？'), findsOneWidget);
     expect(find.byKey(const ValueKey('question-input')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const ValueKey('question-input')));
     await tester.enterText(find.byKey(const ValueKey('question-input')), '继续');
@@ -92,7 +112,12 @@ void main() {
     expect(find.textContaining('已连接'), findsOneWidget);
 
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('web-fallback')));
+    await tester.tap(find.byKey(const ValueKey('runtime-selector')));
+    await tester.pumpAndSettle();
+    final webFallback = find.byKey(const ValueKey('runtime-web-fallback'));
+    await tester.ensureVisible(webFallback);
+    await tester.tap(webFallback);
+    await tester.pump();
     expect(fallbackOpened, 1);
     controller.dispose();
   });

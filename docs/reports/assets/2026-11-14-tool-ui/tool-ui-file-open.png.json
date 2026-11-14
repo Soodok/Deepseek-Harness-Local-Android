@@ -1,0 +1,17 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 432,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 432,
+    "bodyWidth": 432
+  },
+  "url": "http://127.0.0.1:62041/",
+  "output": "E:\\tmp\\native-chat-web-preview\\tool-ui-file-open.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data"
+}
