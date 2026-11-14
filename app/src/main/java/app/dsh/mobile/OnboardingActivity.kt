@@ -392,11 +392,10 @@ class OnboardingActivity : ThemedActivity() {
         val stepCount = steps.size - 1
         progress.progress = stepNo
         progress.visibility = if (index == 0) View.INVISIBLE else View.VISIBLE
-        stepHint.text = if (index == 0) {
-            getString(R.string.ob_wizard_welcome_step_hint)
-        } else {
-            getString(R.string.ob_wizard_step_fmt, stepNo, stepCount)
-        }
+        // 封面不再显示页眉提示：那一行「约 30 秒、环境在后台解压」与胶囊
+        // 说的是同一件事，用户明确要求去掉（截图里顶部那行灰字）。
+        // 其余页照旧显示「第 n / 8 步」，显隐由 syncCoverStatus() 统一管。
+        if (index != 0) stepHint.text = getString(R.string.ob_wizard_step_fmt, stepNo, stepCount)
 
         // 首页不显示「上一步」：用 GONE 而不是 INVISIBLE，否则它仍占着
         // layout_weight 的宽度，右侧按钮会被挤到屏幕中间（v1.5.x 实测偏右 400px）。
@@ -1090,7 +1089,7 @@ class OnboardingActivity : ThemedActivity() {
             row.addView(col)
             box.addView(row)
         }
-        findViewById<TextView>(R.id.welcomeEyebrow).setTextColor(Accent.current(this).argb)
+        // 封面眉标已按需求移除（与胶囊重复的那行小字），这里不再重涂颜色。
     }
 
     // ================= 完成页 =================
