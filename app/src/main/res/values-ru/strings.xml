@@ -1931,4 +1931,12 @@
     <string name="style_sub_classic">Классический · холодный сине-серый</string>
     <string name="style_classic">Классический</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Параметры разработчика</string>
+    <string name="developer_options_sub">Дополнительные инструменты и расширенные настройки</string>
+    <string name="developer_options_intro">Небольшой набор дополнительных инструментов для любознательных пользователей и расширенной настройки.</string>
+    <string name="developer_options_enabled_sub">Отключите, чтобы снова скрыть параметры разработчика.</string>
+    <string name="developer_options_security_note">Включение этого меню не предоставляет Root, Shizuku или другие системные разрешения. Для каждой операции по-прежнему требуется отдельная проверка авторизации.</string>
+    <string name="developer_options_unlocked">Параметры разработчика включены. Они доступны в разделе Настройки → Система.</string>
+    <string name="developer_options_disabled_toast">Параметры разработчика скрыты. Чтобы снова открыть их, коснитесь сведений о версии семь раз.</string>
 </resources>

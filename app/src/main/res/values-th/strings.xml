@@ -1881,4 +1881,12 @@
     <string name="style_sub_classic">คลาสสิก · เทาฟ้าโทนเย็น</string>
     <string name="style_classic">คลาสสิก</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">ตัวเลือกสำหรับนักพัฒนา</string>
+    <string name="developer_options_sub">เครื่องมือเสริมและการควบคุมขั้นสูง</string>
+    <string name="developer_options_intro">ชุดเครื่องมือเสริมสำหรับผู้ที่สนใจและการตั้งค่าขั้นสูง</string>
+    <string name="developer_options_enabled_sub">ปิดเพื่อซ่อนตัวเลือกสำหรับนักพัฒนาอีกครั้ง</string>
+    <string name="developer_options_security_note">การเปิดเมนูนี้ไม่ได้ให้สิทธิ์ Root, Shizuku หรือสิทธิ์ระบบอื่น ๆ แต่ละการดำเนินการยังต้องตรวจสอบการอนุญาตแยกต่างหาก</string>
+    <string name="developer_options_unlocked">เปิดตัวเลือกสำหรับนักพัฒนาแล้ว ดูได้ที่ การตั้งค่า → ระบบ</string>
+    <string name="developer_options_disabled_toast">ซ่อนตัวเลือกสำหรับนักพัฒนาแล้ว แตะข้อมูลเวอร์ชัน 7 ครั้งเพื่อเปิดอีกครั้ง</string>
 </resources>

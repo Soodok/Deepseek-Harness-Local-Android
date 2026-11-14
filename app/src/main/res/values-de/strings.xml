@@ -1937,4 +1937,12 @@
     <string name="style_sub_classic">Klassisch · kühles Blaugrau</string>
     <string name="style_classic">Klassisch</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Entwickleroptionen</string>
+    <string name="developer_options_sub">Optionale Werkzeuge und erweiterte Steuerung</string>
+    <string name="developer_options_intro">Eine kleine Sammlung optionaler Werkzeuge für neugierige Nutzer und erweiterte Einstellungen.</string>
+    <string name="developer_options_enabled_sub">Deaktivieren, um die Entwickleroptionen wieder auszublenden.</string>
+    <string name="developer_options_security_note">Dieses Menü gewährt keinen Root-, Shizuku- oder anderen Systemzugriff. Jede Aktion benötigt weiterhin eine eigene Berechtigungsprüfung.</string>
+    <string name="developer_options_unlocked">Entwickleroptionen aktiviert. Sie finden sie unter Einstellungen → System.</string>
+    <string name="developer_options_disabled_toast">Entwickleroptionen ausgeblendet. Tippen Sie siebenmal auf die Versionsinformation, um sie erneut anzuzeigen.</string>
 </resources>
