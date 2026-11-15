@@ -50,6 +50,8 @@ object FullBackup {
     private const val MAX_MANIFEST_BYTES = 16L * 1024 * 1024
     private const val MAX_DEPTH = 128
 
+    private fun restoreSafetyReady(): Boolean = false
+
 
     private data class Source(val name: String, val file: File, val root: File, val directory: Boolean)
     private data class Staged(val name: String, val file: File, val size: Long)
@@ -169,7 +171,7 @@ object FullBackup {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Result {
         val app = ctx.applicationContext as? DshApp ?: throw IOException("supervisor unavailable")
-        app.supervisor.stopForMaintenance()
+        if (!restoreSafetyReady()) throw IOException("import unavailable: safe restoration is still in development")
         val base = ctx.filesDir.parentFile.canonicalFile
         val stage = Files.createTempDirectory(ctx.cacheDir.toPath(), "full-backup-").toFile()
         val rollback = Files.createTempDirectory(ctx.cacheDir.toPath(), "full-backup-rollback-").toFile()
