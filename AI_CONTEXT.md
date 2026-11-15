@@ -13765,3 +13765,167 @@ SET_DEFAULT + CHECK），设备装的是 0.7.4 —— 三个能力全无。
 三份 README 的「20 套工具链」需同步核对（当前 catalog 的 Build & tooling 14 + Language runtimes 10
 + Cross compiling 2 = 26 项编译相关，与"20 套工具链"的旧分法不一致，需按 README 原文口径确认后再改）。
 
+
+
+## 第一百三十二章（v1.6.0-beta.15 · 2026-11-16）扩展「下载失败」误报：落点守卫基准错 + binutils 声明名不符
+
+> 关联合并前一轮插件安装失败（第一二九章）之后的又一次「用户看到 A，真实原因是 B」。
+> 本次对应 GitHub issue **#115（Zig 反复下载失败）** 与 **#116（Binutils / APK reverse
+> 健康检查异常、一键修复无效）**，作者 nuolinuoyi，2026-11-15 提交。
+
+### 现象（用户侧）
+- #115 Zig 0.17.1 在 Termux 原生模式装两次都弹「Extension verification failed:
+  none of the executables declared by Zig (zig) were installed (dir has 19526
+  file(s))」，但 `lib/zig/zig` 存在 171,704,376 字节、可直接运行、`find -type f`
+  数出 19523 个文件 —— 与提示里的 19526 吻合，说明**负载是完整的**。
+  用户的临时绕过：手工 `ln -sfn ../lib/zig/zig $PREFIX/extensions/zig/bin/zig`。
+- #116 Binutils 报 `Main executables missing (5): ld, ar, nm, objdump, strip`；
+  APK reverse 报 `Main executables missing (1): d2j-dex2jar`（脚本明明在
+  `opt/dex2jar/d2j-dex2jar.sh`）。用户点「一键修复」无效 —— 因为修复只是把
+  「已装但不健康」的条目重新 enqueue，装出来的东西还是同一个残缺结果。
+
+### 根因（两个独立缺陷，被同一个用户误当成一个问题）
+**其一：落点守卫的相对基准写反（#115 与 #116 的 dex2jar 部分）**
+`ab785000`（2026-11-13，标 v1.7.12）加的「symlink 目标必须落在扩展根内」守卫：
+
+```kotlin
+// ExtensionManager.kt 原 isInExtensionRoot
+val root = finalDir.canonicalFile.toPath()
+val p = java.nio.file.Paths.get(target)
+val abs = if (p.isAbsolute) p else root.resolve(p)   // ← 以扩展根为基准
+abs.normalize().startsWith(root.normalize())
+```
+
+与它自己 KDoc 写的「相对 target 以链接父目录为基准解析」相反。于是 deb 里最常见的
+上级相对链被解析成 `<ext>/../lib/zig/zig` → 越界 → 静默跳过：
+
+| 包 | 上游 deb 里的链 | 判成什么 |
+|---|---|---|
+| zig 0.17.1 | `usr/bin/zig -> ../lib/zig/zig` | `<ext>/../lib/zig/zig` 越界 |
+| golang 1.27.3 | `bin/go -> ../lib/go/bin/go` | 越界 |
+| dex2jar 2.4-1 | `bin/d2j-* -> ../opt/dex2jar/*.sh`（18 条） | 越界 |
+| binwalk 等 | `share/doc/*/copyright -> ../../LICENSES/*.txt` | 越界 |
+
+**取证证据**：从清华 termux 镜像逐个下 deb 解 `data.tar.xz`，确认这三条链**上游本来
+就有**（不是打包缺失）。反向对照：11-12 装的 binwalk 里那 26 条上级相对链还在（守卫
+引入前装的），而 11-13 之后装的扩展里上级相对链全为 0 —— 同一台设备上两种时间点的
+目录同时存在，直接锁定是时间点而非包的问题。
+
+**其二：binutils 的 catalog 声明名与上游产物名不一致（#116 的 binutils 部分）**
+`catalog.json` 按 GCC 语义声明 `["as","ld","ar","nm","objdump","strip"]`，但 Termux
+为了不与基线 llvm 冲突，产物带 g 前缀：`gar/gnm/gobjdump/gstrip/ld.bfd` 等 15 个
+**普通文件**，`ar/nm/objdump/strip/ld` 这五个名字上游根本不提供。这不是链接问题，
+修守卫也救不了 —— 必须补别名。
+
+### 修法
+1. **判定基准改为链接父目录**，抽成纯 JVM 的 `ExtensionLinkPolicy`
+   （`app/src/main/java/app/dsh/mobile/engine/ExtensionLinkPolicy.kt`）：
+   相对 target 用 `File(root, linkRel).parent` 解析；再叠一层 canonicalFile 兜中间
+   软链；拒绝多级 `../`、`/system/bin/env`、前缀相似的兄弟目录（`<ext>-evil/bin/bash`）。
+2. **落链前剥 `usr/` 前缀**再判定 —— `flattenUsrLayout` 已把 `usr/*` 提升到扩展根，
+   不剥就会拿扁平化后的相对位置去算，仍可能判错（golang bin/go 实测事故的同一坑）。
+3. **安装期写链接清单** `.links.tsv`（TSV：`linkRel<TAB>target<TAB>s|h`），启动期
+   重放。存量用户的 deb 早被 cacheDir 清了，无法从原始载荷重建，只能靠清单。
+4. **没清单的历史安装按上游已知布局兜底**（`ExtensionLinkRepair.candidateTargets`）：
+   `lib/<名>/<名>`（zig）、`lib/<名>/bin/<名>`（golang）、`opt/<名>/<名>.sh`、
+   `opt/<去掉 d2j- 前缀>/<名>.sh`（dex2jar）、`lib/<stripped>/bin/<名>`。
+   只认这五种，不做全树模糊搜索 —— 猜错会把链指到无关文件上。
+5. **binutils 补别名链**（`ExtensionBinAliases`），**不改 catalog 声明**：
+   改声明等于假装 GCC 不需要 `ld`/`ar` 这些名字。gcc/clang 驱动按裸名调用
+   `ld`，缺了就链接阶段找不到链接器。别名表 12 条（ld/ar/nm/objdump/strip/
+   objcopy/readelf/ranlib/size/strings/addr2line/c++filt）。
+
+**执行顺序很关键**：别名必须在「`missingBins` 全缺 → 删 MARKER 抛错」之前跑，
+否则 binutils 仍被判装失败并删掉标记（连重试机会都没了）。
+
+### 关键文件
+- 新增 `app/src/main/java/app/dsh/mobile/engine/ExtensionLinkPolicy.kt`（59 行）
+- 新增 `app/src/main/java/app/dsh/mobile/engine/ExtensionLinkRepair.kt`（136 行）
+- 新增 `app/src/main/java/app/dsh/mobile/engine/ExtensionBinAliases.kt`（88 行）
+- 改 `app/src/main/java/app/dsh/mobile/engine/ExtensionManager.kt`（+74 −16）：
+  `createLinks` 的 `linkRel` 剥前缀 + 走 policy；末尾写 `.links.tsv`；
+  `installPhase` 插 `ExtensionBinAliases.apply`；`init` 启动迁移块加
+  「别名 → 清单重放 → 布局兜底」三步，missing 判据从 `File(dir,"bin/$it").exists()`
+  改成 `binExists(dir, it)`（否则 openjdk 这类把 java 放 lib/jvm 的包会假报缺）。
+- 新增测试 `ExtensionLinkPolicyTest.kt`（10 条）、`ExtensionLinkRepairTest.kt`（12 条）
+- 新增探针 `scripts/probes/_test_ext_link_guard.py`（149 行，6 组 A–F），
+  并加进 `.gitignore` 的 `!/scripts/probes/` 白名单。
+
+### 验证（分层，逐级给证据）
+**JVM 单测 64/64**（`:app:testDebugUnitTest --rerun-tasks`，BUILD SUCCESSFUL）：
+`EndpointCatalogSearchTest` 19 + `ExtensionLinkPolicyTest` 10 +
+`ExtensionLinkRepairTest` 12 + `InstallErrorSummaryTest` 10 + `RootfsModesTest` 13。
+
+**变异反验 7 组全红**（改坏后必须能被单测抓出来）：
+
+| 变异 | 失败用例数 |
+|---|---|
+| policy 恢复旧根基准 | 4 |
+| policy 恒 true | 5 |
+| policy 恒 false | 6 |
+| repair 去掉目标存在检查 | 3 |
+| alias 去掉上游检查 | 1 |
+| alias 覆盖已存在链接 | 1 |
+| 候选布局塌缩成一种 | 2 |
+
+恢复后逐文件 md5 一致。**最关键的用例是 `same target is judged by link depth`** ——
+同一 target 在不同深度链接下结果必须不同，旧实现（两个都拒）和恒 false 实现都过不了，
+这条专治「断言比被测对象宽」。
+
+**探针反向验证**：删掉 `removePrefix("usr/")` → 报 `[caller-strips-usr-prefix] FAILED`，
+恢复 → PASSED；`_test_rev_extensions.py` 129 checks 仍 0 failed。
+
+**真机端到端（PLZ110 / Android 16 / KernelSU，v391 / 1.6.0-beta.15，正式签名安装，数据保留）**：
+- zig 0.17.1 原生模式安装 → `bin/zig -> ../lib/zig/zig` 落地，
+  `./bin/zig version` → `0.17.1`；`.links.tsv` 2 行（含两级上级文档链
+  `share/doc/resolv-conf/LICENSE -> ../../LICENSES/Public Domain.txt`，说明多级 `../`
+  也能正确判根内）。
+- binutils 2.47 → `ld/ar/nm/objdump/strip` 五个别名全部落地，加
+  `LD_LIBRARY_PATH` 后分别输出 `GNU ld (GNU Binutils) 2.47` 等；
+  `/ext/check` 状态从 `Main executables missing (5)` 变 `Healthy`。
+  注意：不加 `LD_LIBRARY_PATH` 时 `./bin/ld` 报 `library "libbfd-2.47.so" not found`
+  —— 那是调用方环境问题（引擎拼 PATH/LD_LIBRARY_PATH 会带上），**不是别名没落地**；
+  对照组 `./bin/gar`（上游原名）不加也是同样的错，说明与别名无关。
+- apk-reverse → `bin/d2j-dex2jar -> ../opt/dex2jar/d2j-dex2jar.sh` 落地，
+  `.links.tsv` 292 行；`/ext/check` → `Healthy`。
+- **存量补链**：手工造一个「`lib/zig/zig` 有本体、`bin/` 只有三条 shim」的残缺目录，
+  冷启动后日志 `ext zig: healed missing bins zig -> lib/zig/zig`，`bin/zig` 出现
+  且可执行 —— 这正是 #115 用户手里的目录形态。
+
+### 顺带发现与处理（不在本 issue 范围，但影响验证）
+1. **设备当前跑的是 Linux 模式**（`dsh_ui.xml` 里 `engine_linux_mode=true`），此时引擎在
+   `dsh_alpine` 容器里、扩展由 Alpine 的 apk 管理，`extensions/` 目录**不参与**。
+   在该模式下验证 Termux 链接逻辑会全程看不到扩展目录 —— 必须先切原生模式。
+   两者状态语义不同：Linux 模式 `green` 表示 rootfs 里有包，原生模式 `green` 表示
+   `extensions/<id>/bin` 有可执行入口。
+2. **`/data/user/0/app.dsh.mobile/package.json` 是一个 0 字节空文件**（2026-11-14 14:52
+   产生），导致原生模式引擎启动即崩：
+   `Error: Invalid package config /data/user/0/app.dsh.mobile/package.json`
+   （node 的 `getNearestParentPackageJSON` 往上找到它）。已改名隔离为
+   `package.json.bak-20261116`。**未查清是谁写的**，推测与某次 pnpm/npm 在错误 cwd
+   下执行有关（未验证）。若再出现要顺着写入方查。
+3. `ExtensionStoreActivity` 未导出，`am start` 报 `not exported from uid 10499`，
+   `run-as ... am start` 报 `package=com.android.shell does not belong to uid` ——
+   只能用 `monkey -p app.dsh.mobile -c android.intent.category.LAUNCHER 1` 启动。
+4. 设备亮屏状态会影响 bridge 可连通性：`mScreenState=OFF` 时 `nc 127.0.0.1 3083`
+   无响应（超时无输出），`input keyevent 224` 唤醒后正常。取证脚本要先唤醒。
+
+### 版本
+`app/build.gradle.kts`：versionCode 390 → **391**，versionName 1.6.0-beta.14 →
+**1.6.0-beta.15**。产物 `app/build/outputs/apk/debug/app-debug.apk` 43,809,985 B；
+用 `keystore/dsh-release.keystore`（`CN=DSH Mobile`，SHA-256
+`d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8`）重签后
+`adb install -r` 成功，用户数据保留。
+
+### 提交
+`bd1eb72f` fix(ext): 扩展入口软链被落点守卫误拦，zig/binutils 装完报「下载失败」
+（9 文件 +806 −16），已推送 `origin/main`（`b98e1104..bd1eb72f`，
+`rev-list --left-right --count` = 0 0）。
+
+### 遗留
+- 三份 README 与 dshm.soodok.cn 宣传页的「57 个条目」应为 58（catalog 实际 58 项），
+  「20 套工具链」口径也需按现分类重核 —— 上一章已记录，本次未动。
+- #115/#116 的 issue 回复待发（含升级到 beta.15 后已有安装能否自愈的说明：
+  zig/dex2jar 类**能**（启动期按布局兜底补链），binutils 类**也能**（启动期补别名），
+  但都不需要重装；只有 `.ext-version` 被删（安装判失败时会发生）才必须重装。
+
