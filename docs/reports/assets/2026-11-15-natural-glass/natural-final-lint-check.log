@@ -1,0 +1,13 @@
+Formatted 1 file (0 changed) in 0.03 seconds.
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a committed receipt for a user event
+00:00 +1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard keeps live text for an unrelated durable assistant and rejects its receipt
+00:00 +2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a second start before the active attempt ends
+00:00 +3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard preserves baseline and incremental code as assistant content
+00:00 +4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects an empty nonempty-cursor history while allowing bounded suffixes
+00:00 +5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard refuses a self-address before sending
+00:00 +6: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart
+00:00 +6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child guard hides input for a self-address
+00:01 +7: All tests passed!
+Analyzing flutter_ui...
+No issues found! (ran in 1.2s)

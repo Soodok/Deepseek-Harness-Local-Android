@@ -1,0 +1,32 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart
+00:00 +0: shared disabled send icon stays visible in every palette
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: a value greater than or equal to <3>
+  Actual: <1.53985971312807>
+   Which: is not a value greater than or equal to <3>
+DshMood.mist Brightness.light disabled send
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart:28:4)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1968:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart line 28
+The test description was:
+  shared disabled send icon stays visible in every palette
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: shared disabled send icon stays visible in every palette [E]
+  Test failed. See exception logs above.
+  The test description was: shared disabled send icon stays visible in every palette
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: shared disabled send icon stays visible in every palette

@@ -43,44 +43,75 @@ class DshColors {
   final Color edit;
 }
 
-/// Blue surfaces selected from the inherited Material theme.
+enum DshMood {
+  mist('雾灰'),
+  sand('暖砂'),
+  sage('鼠尾草'),
+  plum('暮紫');
+
+  const DshMood(this.label);
+  final String label;
+}
+
+class DshColorTheme extends ThemeExtension<DshColorTheme> {
+  const DshColorTheme(this.colors);
+  final DshColors colors;
+  @override
+  DshColorTheme copyWith({DshColors? colors}) =>
+      DshColorTheme(colors ?? this.colors);
+  @override
+  DshColorTheme lerp(covariant DshColorTheme? other, double t) {
+    if (other == null) return this;
+    return DshColorTheme(
+      DshColors(
+        ink: Color.lerp(colors.ink, other.colors.ink, t)!,
+        inkSoft: Color.lerp(colors.inkSoft, other.colors.inkSoft, t)!,
+        inkFaint: Color.lerp(colors.inkFaint, other.colors.inkFaint, t)!,
+        paper: Color.lerp(colors.paper, other.colors.paper, t)!,
+        paperDeep: Color.lerp(colors.paperDeep, other.colors.paperDeep, t)!,
+        surface: Color.lerp(colors.surface, other.colors.surface, t)!,
+        surfaceRaised: Color.lerp(
+          colors.surfaceRaised,
+          other.colors.surfaceRaised,
+          t,
+        )!,
+        line: Color.lerp(colors.line, other.colors.line, t)!,
+        ice: Color.lerp(colors.ice, other.colors.ice, t)!,
+        sendBlue: Color.lerp(colors.sendBlue, other.colors.sendBlue, t)!,
+        sendBlueMuted: Color.lerp(
+          colors.sendBlueMuted,
+          other.colors.sendBlueMuted,
+          t,
+        )!,
+        iceDeep: Color.lerp(colors.iceDeep, other.colors.iceDeep, t)!,
+        userWash: Color.lerp(colors.userWash, other.colors.userWash, t)!,
+        good: Color.lerp(colors.good, other.colors.good, t)!,
+        warn: Color.lerp(colors.warn, other.colors.warn, t)!,
+        bad: Color.lerp(colors.bad, other.colors.bad, t)!,
+        thought: Color.lerp(colors.thought, other.colors.thought, t)!,
+        terminal: Color.lerp(colors.terminal, other.colors.terminal, t)!,
+        edit: Color.lerp(colors.edit, other.colors.edit, t)!,
+      ),
+    );
+  }
+}
+
 class DshPalette {
   const DshPalette._();
-  static const dark = DshColors(
-    ink: Color(0xFFEAF1FF),
-    inkSoft: Color(0xFFB6C6E3),
-    inkFaint: Color(0xFF94A9C9),
-    paper: Color(0xFF0C1528),
-    paperDeep: Color(0xFF080F1D),
-    surface: Color(0xFF142440),
-    surfaceRaised: Color(0xFF1D3357),
-    line: Color(0xFF304D78),
-    ice: Color(0xFF8AB6FF),
-    sendBlue: Color(0xFF3B82F6),
-    sendBlueMuted: Color(0xFF234777),
-    iceDeep: Color(0xFF8AB6FF),
-    userWash: Color(0xFF1B3865),
-    good: Color(0xFF6FD3A0),
-    warn: Color(0xFFF0BE62),
-    bad: Color(0xFFFF978F),
-    thought: Color(0xFFB8B3FF),
-    terminal: Color(0xFF9ABDEB),
-    edit: Color(0xFF95C9B1),
-  );
   static const light = DshColors(
-    ink: Color(0xFF182D4C),
-    inkSoft: Color(0xFF445F83),
-    inkFaint: Color(0xFF4E698E),
-    paper: Color(0xFFF6F9FF),
-    paperDeep: Color(0xFFEAF1FC),
-    surface: Color(0xFFFFFFFF),
-    surfaceRaised: Color(0xFFE8F0FF),
-    line: Color(0xFFC1D1E9),
-    ice: Color(0xFF235AC1),
+    ink: Color(0xFF242E2C),
+    inkSoft: Color(0xFF4D5E59),
+    inkFaint: Color(0xFF52665E),
+    paper: Color(0xFFF5F5F2),
+    paperDeep: Color(0xFFEBEEEA),
+    surface: Color(0xFFFEFFFD),
+    surfaceRaised: Color(0xFFE8ECE8),
+    line: Color(0xFFC9D1CC),
+    ice: Color(0xFF356B59),
     sendBlue: Color(0xFF2563D9),
-    sendBlueMuted: Color(0xFFB8CCEF),
-    iceDeep: Color(0xFF235AC1),
-    userWash: Color(0xFFDFEAFF),
+    sendBlueMuted: Color(0xFFB8CCDF),
+    iceDeep: Color(0xFF356B59),
+    userWash: Color(0xFFE3E8E4),
     good: Color(0xFF216B4A),
     warn: Color(0xFF875800),
     bad: Color(0xFFAE313F),
@@ -88,15 +119,175 @@ class DshPalette {
     terminal: Color(0xFF285D9B),
     edit: Color(0xFF286B50),
   );
+  static const dark = DshColors(
+    ink: Color(0xFFE7EEE9),
+    inkSoft: Color(0xFFB7C6BC),
+    inkFaint: Color(0xFF9BB1A3),
+    paper: Color(0xFF151A19),
+    paperDeep: Color(0xFF101413),
+    surface: Color(0xFF202725),
+    surfaceRaised: Color(0xFF2B3531),
+    line: Color(0xFF3A4941),
+    ice: Color(0xFF93C8AE),
+    sendBlue: Color(0xFF3B82F6),
+    sendBlueMuted: Color(0xFF294C66),
+    iceDeep: Color(0xFF93C8AE),
+    userWash: Color(0xFF2C3B35),
+    good: Color(0xFF6FD3A0),
+    warn: Color(0xFFF0BE62),
+    bad: Color(0xFFFF978F),
+    thought: Color(0xFFC7AEE3),
+    terminal: Color(0xFF9ABDEB),
+    edit: Color(0xFF95C9B1),
+  );
+  static const sandLight = DshColors(
+    ink: Color(0xFF332D26),
+    inkSoft: Color(0xFF685A49),
+    inkFaint: Color(0xFF715D47),
+    paper: Color(0xFFF8F5EF),
+    paperDeep: Color(0xFFF0EBE2),
+    surface: Color(0xFFFFFCF5),
+    surfaceRaised: Color(0xFFF0E9DE),
+    line: Color(0xFFD6CBBB),
+    ice: Color(0xFF8B5B31),
+    sendBlue: Color(0xFF2563D9),
+    sendBlueMuted: Color(0xFFC7C9CC),
+    iceDeep: Color(0xFF8B5B31),
+    userWash: Color(0xFFEBE2D5),
+    good: Color(0xFF216B4A),
+    warn: Color(0xFF875800),
+    bad: Color(0xFFAE313F),
+    thought: Color(0xFF6250A6),
+    terminal: Color(0xFF285D9B),
+    edit: Color(0xFF286B50),
+  );
+  static const sandDark = DshColors(
+    ink: Color(0xFFF2E9DC),
+    inkSoft: Color(0xFFD0BEA6),
+    inkFaint: Color(0xFFBAA58A),
+    paper: Color(0xFF1D1A17),
+    paperDeep: Color(0xFF161310),
+    surface: Color(0xFF29241F),
+    surfaceRaised: Color(0xFF363028),
+    line: Color(0xFF4C4135),
+    ice: Color(0xFFE1B27C),
+    sendBlue: Color(0xFF3B82F6),
+    sendBlueMuted: Color(0xFF344653),
+    iceDeep: Color(0xFFE1B27C),
+    userWash: Color(0xFF3D3127),
+    good: Color(0xFF6FD3A0),
+    warn: Color(0xFFF0BE62),
+    bad: Color(0xFFFF978F),
+    thought: Color(0xFFC7AEE3),
+    terminal: Color(0xFF9ABDEB),
+    edit: Color(0xFF95C9B1),
+  );
+  static const sageLight = DshColors(
+    ink: Color(0xFF233329),
+    inkSoft: Color(0xFF4C604E),
+    inkFaint: Color(0xFF50674E),
+    paper: Color(0xFFF1F5EF),
+    paperDeep: Color(0xFFE6EDE2),
+    surface: Color(0xFFFAFDF7),
+    surfaceRaised: Color(0xFFE3ECDF),
+    line: Color(0xFFC3D1BC),
+    ice: Color(0xFF346344),
+    sendBlue: Color(0xFF2563D9),
+    sendBlueMuted: Color(0xFFB9CDCF),
+    iceDeep: Color(0xFF346344),
+    userWash: Color(0xFFDDE8D8),
+    good: Color(0xFF216B4A),
+    warn: Color(0xFF875800),
+    bad: Color(0xFFAE313F),
+    thought: Color(0xFF6250A6),
+    terminal: Color(0xFF285D9B),
+    edit: Color(0xFF286B50),
+  );
+  static const sageDark = DshColors(
+    ink: Color(0xFFE5EFE3),
+    inkSoft: Color(0xFFB6CBB2),
+    inkFaint: Color(0xFFA0B69B),
+    paper: Color(0xFF151D18),
+    paperDeep: Color(0xFF101612),
+    surface: Color(0xFF202C24),
+    surfaceRaised: Color(0xFF2C3B30),
+    line: Color(0xFF3D5140),
+    ice: Color(0xFF9ACB91),
+    sendBlue: Color(0xFF3B82F6),
+    sendBlueMuted: Color(0xFF2B4C5B),
+    iceDeep: Color(0xFF9ACB91),
+    userWash: Color(0xFF2D4031),
+    good: Color(0xFF6FD3A0),
+    warn: Color(0xFFF0BE62),
+    bad: Color(0xFFFF978F),
+    thought: Color(0xFFC7AEE3),
+    terminal: Color(0xFF9ABDEB),
+    edit: Color(0xFF95C9B1),
+  );
+  static const plumLight = DshColors(
+    ink: Color(0xFF352A39),
+    inkSoft: Color(0xFF645269),
+    inkFaint: Color(0xFF705775),
+    paper: Color(0xFFF6F2F7),
+    paperDeep: Color(0xFFEEE6F0),
+    surface: Color(0xFFFFFAFF),
+    surfaceRaised: Color(0xFFEDE3EF),
+    line: Color(0xFFD4C2D8),
+    ice: Color(0xFF795086),
+    sendBlue: Color(0xFF2563D9),
+    sendBlueMuted: Color(0xFFC3C5E0),
+    iceDeep: Color(0xFF795086),
+    userWash: Color(0xFFE8DCEC),
+    good: Color(0xFF216B4A),
+    warn: Color(0xFF875800),
+    bad: Color(0xFFAE313F),
+    thought: Color(0xFF6250A6),
+    terminal: Color(0xFF285D9B),
+    edit: Color(0xFF286B50),
+  );
+  static const plumDark = DshColors(
+    ink: Color(0xFFF0E6F3),
+    inkSoft: Color(0xFFCDB7D4),
+    inkFaint: Color(0xFFB7A0BF),
+    paper: Color(0xFF1C1820),
+    paperDeep: Color(0xFF141017),
+    surface: Color(0xFF29222F),
+    surfaceRaised: Color(0xFF372D3F),
+    line: Color(0xFF514058),
+    ice: Color(0xFFCFA8DE),
+    sendBlue: Color(0xFF3B82F6),
+    sendBlueMuted: Color(0xFF394562),
+    iceDeep: Color(0xFFCFA8DE),
+    userWash: Color(0xFF3E2F46),
+    good: Color(0xFF6FD3A0),
+    warn: Color(0xFFF0BE62),
+    bad: Color(0xFFFF978F),
+    thought: Color(0xFFC7AEE3),
+    terminal: Color(0xFF9ABDEB),
+    edit: Color(0xFF95C9B1),
+  );
+  static DshColors colorsFor(DshMood mood, Brightness brightness) {
+    final lightMode = brightness == Brightness.light;
+    return switch (mood) {
+      DshMood.mist => lightMode ? light : dark,
+      DshMood.sand => lightMode ? sandLight : sandDark,
+      DshMood.sage => lightMode ? sageLight : sageDark,
+      DshMood.plum => lightMode ? plumLight : plumDark,
+    };
+  }
+
   static DshColors of(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.light ? light : dark;
+      Theme.of(context).extension<DshColorTheme>()?.colors ??
+      (Theme.of(context).brightness == Brightness.light ? light : dark);
 }
 
 class DshTheme {
   const DshTheme._();
 
-  static ThemeData light() => _build(DshPalette.light, Brightness.light);
-  static ThemeData dark() => _build(DshPalette.dark, Brightness.dark);
+  static ThemeData light({DshMood mood = DshMood.mist}) =>
+      _build(DshPalette.colorsFor(mood, Brightness.light), Brightness.light);
+  static ThemeData dark({DshMood mood = DshMood.mist}) =>
+      _build(DshPalette.colorsFor(mood, Brightness.dark), Brightness.dark);
   static ThemeData _build(DshColors colors, Brightness brightness) {
     final ink = colors.ink;
     final paper = colors.paper;
@@ -112,6 +303,7 @@ class DshTheme {
         );
     return ThemeData(
       useMaterial3: true,
+      extensions: [DshColorTheme(colors)],
       brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: paper,
@@ -279,12 +471,17 @@ class DshAppearance extends InheritedWidget {
     super.key,
     required this.mode,
     required this.onChanged,
+    this.mood = DshMood.mist,
+    this.onMoodChanged,
     required super.child,
   });
   final ThemeMode mode;
+  final DshMood mood;
+  final ValueChanged<DshMood>? onMoodChanged;
   final ValueChanged<ThemeMode> onChanged;
   static DshAppearance? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<DshAppearance>();
   @override
-  bool updateShouldNotify(DshAppearance oldWidget) => mode != oldWidget.mode;
+  bool updateShouldNotify(DshAppearance oldWidget) =>
+      mode != oldWidget.mode || mood != oldWidget.mood;
 }

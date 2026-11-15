@@ -1,0 +1,11 @@
+{
+  "comparison": "same page; 3200 ms between screenshots",
+  "changedDrawerPixelsAbove8": 2695,
+  "titleRegion": [
+    0,
+    90,
+    290,
+    600
+  ],
+  "source": "pixel difference; animation behavior separately covered by 15 widget tests"
+}

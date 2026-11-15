@@ -118,7 +118,10 @@ void main() {
           findsOneWidget,
         );
         await tester.tap(find.byTooltip('打开会话抽屉'));
-        await tester.pumpAndSettle();
+        // The drawer session title may deliberately scroll continuously.
+        for (var i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
         expect(find.byType(Drawer), findsOneWidget);
         Navigator.of(tester.element(find.byType(Drawer))).pop();
         await tester.pumpAndSettle();

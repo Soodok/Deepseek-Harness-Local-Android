@@ -21,7 +21,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('DSH'), findsOneWidget);
+    expect(find.text('DSH', findRichText: true), findsOneWidget);
     expect(find.text('帮我检查一下项目状态，并说明接下来该做什么。'), findsOneWidget);
     expect(find.byKey(const ValueKey('composer-input')), findsOneWidget);
     expect(find.byTooltip('fixture 模式'), findsOneWidget);

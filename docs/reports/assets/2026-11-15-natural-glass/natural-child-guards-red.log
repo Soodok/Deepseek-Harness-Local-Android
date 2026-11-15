@@ -1,0 +1,125 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a committed receipt for a user event
+00:00 +0 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a committed receipt for a user event [E]
+  Expected: throws <Instance of 'DshRpcException'> with `code`: 'subagent/sequence-gap'
+    Actual: <Instance of 'Future<bool>'>
+     Which: emitted <true>
+
+  package:matcher                                    expectLater
+  package:flutter_test/src/widget_tester.dart 507:8  expectLater
+  test\native_subagent_transport_test.dart 102:22    main.<fn>.<fn>
+  test\native_subagent_transport_test.dart 97:28     main.withActive
+  ===== asynchronous gap ===========================
+  dart:async                                         Zone.registerUnaryCallback
+  test\native_subagent_transport_test.dart 95:48     main.withActive
+  test\native_subagent_transport_test.dart 101:11    main.<fn>
+
+00:00 +0 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard keeps live text for an unrelated durable assistant and rejects its receipt
+00:00 +0 -2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard keeps live text for an unrelated durable assistant and rejects its receipt [E]
+  Expected: contains 'LIVE'
+    Actual: MappedListIterable<SubagentMessage, String>:['question', 'OTHER']
+     Which: does not contain 'LIVE'
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test\native_subagent_transport_test.dart 109:33     main.<fn>.<fn>
+
+00:00 +0 -2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a second start before the active attempt ends
+00:00 +0 -3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a second start before the active attempt ends [E]
+  Expected: throws <Instance of 'DshRpcException'> with `code`: 'subagent/sequence-gap'
+    Actual: <Instance of 'Future<bool>'>
+     Which: emitted <true>
+
+  package:matcher                                    expectLater
+  package:flutter_test/src/widget_tester.dart 507:8  expectLater
+  test\native_subagent_transport_test.dart 116:22    main.<fn>.<fn>
+  test\native_subagent_transport_test.dart 97:28     main.withActive
+  ===== asynchronous gap ===========================
+  dart:async                                         Zone.registerUnaryCallback
+  test\native_subagent_transport_test.dart 95:48     main.withActive
+  test\native_subagent_transport_test.dart 115:11    main.<fn>
+
+00:00 +0 -3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard preserves baseline and incremental code as assistant content
+00:00 +0 -4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard preserves baseline and incremental code as assistant content [E]
+  DshRpcException(subagent/protocol): Invalid child session response
+  package:dsh_native_chat/src/transport/native_subagent_transport.dart 769:9   new _LiveAttempt.baseline
+  package:dsh_native_chat/src/transport/native_subagent_transport.dart 279:57  _ChildJournal.accept
+  package:dsh_native_chat/src/transport/native_subagent_transport.dart 125:19  NativeSubagentTransport.watchSubagent
+  ===== asynchronous gap ===========================
+  dart:async                                                                   Zone.registerUnaryCallback
+  package:dsh_native_chat/src/transport/native_subagent_transport.dart 114:22  NativeSubagentTransport.watchSubagent
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _StreamIterator.moveNext
+  test\native_subagent_transport_test.dart 95:26                               main.withActive
+  test\native_subagent_transport_test.dart 121:11                              main.<fn>
+
+00:00 +0 -4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects an empty nonempty-cursor history while allowing bounded suffixes
+00:00 +0 -5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects an empty nonempty-cursor history while allowing bounded suffixes [E]
+  Expected: throws <Instance of 'DshRpcException'> with `code`: 'subagent/sequence-gap'
+    Actual: <Instance of 'Future<SubagentConversation>'>
+     Which: emitted <Instance of 'SubagentConversation'>
+
+  package:matcher                                    expectLater
+  package:flutter_test/src/widget_tester.dart 507:8  expectLater
+  test\native_subagent_transport_test.dart 131:11    main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                         Zone.registerUnaryCallback
+  test\native_subagent_transport_test.dart 129:13    main.<fn>
+
+00:00 +0 -5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard refuses a self-address before sending
+00:00 +0 -6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard refuses a self-address before sending [E]
+  Expected: false
+    Actual: <true>
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test\native_subagent_transport_test.dart 134:5      main.<fn>
+
+00:00 +0 -6: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart
+00:01 +0 -6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child guard hides input for a self-address
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: no matching candidates
+  Actual: _KeyWidgetFinder:<Found 1 widget with key [<'subagent-input'>]: [
+            TextField-[<'subagent-input'>](controller:
+TextEditingController#103f4(TextEditingValue(text: ┤├, selection: TextSelection.invalid, composing:
+TextRange(start: -1, end: -1))), enabled: true, decoration: InputDecoration(hintText: "发给invalid",
+isDense: true, contentPadding: EdgeInsets.all(4.0), focusedBorder: _NoInputBorder(), disabledBorder:
+_NoInputBorder(), enabledBorder: _NoInputBorder(), border: _NoInputBorder()), keyboardType:
+TextInputType(name: TextInputType.multiline, signed: null, decimal: null, password: null), style:
+TextStyle(inherit: true, color: Color(alpha: 1.0000, red: 0.1412, green: 0.1804, blue: 0.1725,
+colorSpace: ColorSpace.sRGB), size: 17.0, height: 1.5x), maxLines: 6, minLines: 1, cursorColor:
+Color(alpha: 1.0000, red: 0.1412, green: 0.1804, blue: 0.1725, colorSpace: ColorSpace.sRGB),
+dependencies: [DefaultSelectionStyle, InheritedCupertinoTheme, MediaQuery,
+UnmanagedRestorationScope, _InheritedTheme, _LocalizationsScope-[GlobalKey#f9daa]], state:
+_TextFieldState#41ffa),
+          ]>
+   Which: means one was found but none were expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart:238:45)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1968:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart line 238
+The test description was:
+  child guard hides input for a self-address
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:02 +0 -7: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child guard hides input for a self-address [E]
+  Test failed. See exception logs above.
+  The test description was: child guard hides input for a self-address
+
+00:02 +0 -7: Some tests failed.
+
+Failing tests:
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard keeps live text for an unrelated durable assistant and rejects its receipt
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard preserves baseline and incremental code as assistant content
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard refuses a self-address before sending
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a committed receipt for a user event
+  ... and 3 more

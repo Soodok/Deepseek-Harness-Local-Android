@@ -90,18 +90,26 @@ void main() {
           home: ChatShell(controller: c),
         ),
       );
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       f.emitShowcase();
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       await tester.enterText(
         find.byKey(const ValueKey('composer-input')),
         '保留输入草稿\n第二行\n第三行\n第四行\n第五行\n第六行',
       );
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       expect(tester.takeException(), isNull);
       for (final fault in [f.emitError, f.emitDisconnect]) {
         fault();
-        await tester.pumpAndSettle();
+        for (var i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
         expect(tester.takeException(), isNull);
         expect(
           find.byKey(const ValueKey('connection-retry')).hitTestable(),
@@ -109,7 +117,9 @@ void main() {
         );
       }
       await tester.ensureVisible(find.byKey(const ValueKey('composer-send')));
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       expect(
         find.byKey(const ValueKey('composer-send')).hitTestable(),
         findsOneWidget,

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/dsh_theme.dart';
+import 'overflow_title.dart';
 
 /// Session navigation. Multi-session listing and creation are not wired to a
 /// backend yet, so "新建会话" stays disabled unless [onNewSession] is provided
@@ -113,10 +114,8 @@ class SessionDrawer extends StatelessWidget {
                       horizontal: 12,
                       vertical: 11,
                     ),
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: OverflowTitle(
+                      text: title,
                       style: TextStyle(
                         color: DshPalette.of(context).ink,
                         fontSize: 14.5,
@@ -180,6 +179,50 @@ class SessionDrawer extends StatelessWidget {
                     ThemeMode.dark => '深色',
                     ThemeMode.system => '跟随系统',
                   }),
+                  trailing: const Icon(Icons.unfold_more_rounded, size: 18),
+                ),
+              ),
+            if (DshAppearance.maybeOf(context) case final appearance?)
+              PopupMenuButton<DshMood>(
+                key: const ValueKey('mood-selector'),
+                tooltip: '配色',
+                onSelected: appearance.onMoodChanged,
+                itemBuilder: (context) => [
+                  for (final mood in DshMood.values)
+                    PopupMenuItem<DshMood>(
+                      key: ValueKey('mood-' + mood.name),
+                      value: mood,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: DshPalette.colorsFor(
+                                mood,
+                                Theme.of(context).brightness,
+                              ).userWash,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: DshPalette.colorsFor(
+                                  mood,
+                                  Theme.of(context).brightness,
+                                ).ice,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(mood.label)),
+                          if (appearance.mood == mood)
+                            const Icon(Icons.check_rounded, size: 18),
+                        ],
+                      ),
+                    ),
+                ],
+                child: ListTile(
+                  leading: const Icon(Icons.color_lens_outlined),
+                  title: const Text('自然配色'),
+                  subtitle: Text(appearance.mood.label),
                   trailing: const Icon(Icons.unfold_more_rounded, size: 18),
                 ),
               ),

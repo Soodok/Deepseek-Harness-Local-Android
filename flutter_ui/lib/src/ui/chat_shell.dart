@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../model/chat_model.dart';
 import '../bridge/host_bridge.dart';
 import 'glass_panel.dart';
+import 'overflow_title.dart';
 import 'runtime_panel.dart';
 import 'subagent_panel.dart';
 import '../state/chat_controller.dart';
@@ -175,9 +176,8 @@ class _TopBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   const Expanded(
-                    child: Text(
-                      'DSH',
-                      maxLines: 1,
+                    child: OverflowTitle(
+                      text: 'DSH',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,

@@ -1,3 +1,5 @@
+import 'chat_model.dart';
+
 enum SubagentMode { oneShot, continuable, unknown }
 
 class SubagentAddress {
@@ -11,7 +13,8 @@ class SubagentAddress {
   bool get canSend =>
       mode == SubagentMode.continuable &&
       parentSessionId.isNotEmpty &&
-      childSessionId.isNotEmpty;
+      childSessionId.isNotEmpty &&
+      parentSessionId != childSessionId;
   String get wireMode => switch (mode) {
     SubagentMode.oneShot => 'one-shot',
     SubagentMode.continuable => 'continuable',
@@ -38,19 +41,24 @@ class SubagentMessage {
     required this.id,
     required this.role,
     required this.text,
+    this.isStreaming = false,
   });
   final String id, role, text;
+  final bool isStreaming;
 }
 
 class SubagentConversation {
   SubagentConversation({
     required this.address,
     required List<SubagentMessage> messages,
+    List<ToolRun> tools = const [],
     required this.revision,
     this.running = false,
-  }) : messages = List.unmodifiable(messages);
+  }) : messages = List.unmodifiable(messages),
+       tools = List.unmodifiable(tools);
   final SubagentAddress address;
   final List<SubagentMessage> messages;
+  final List<ToolRun> tools;
   final int revision;
   final bool running;
 }

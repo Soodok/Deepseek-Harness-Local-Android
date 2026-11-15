@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import '../model/chat_model.dart';
 import '../model/subagent_model.dart';
 import '../model/tool_content.dart';
 import 'dsh_rpc_connection.dart';
@@ -95,9 +96,11 @@ class NativeSubagentTransport implements SubagentTransport {
     if (journal.cursor < currentCursor ||
         (currentRevision > revisionAtStart &&
             journal.cursor <= currentCursor)) {
+      final view = journal.project();
       return SubagentConversation(
         address: address,
-        messages: journal.messages(),
+        messages: view.messages,
+        tools: view.tools,
         revision: math.min(revisionAtStart, currentRevision - 1),
         running: journal.running,
       );
@@ -196,9 +199,11 @@ class NativeSubagentTransport implements SubagentTransport {
     );
     _revisions[journal.address] = revision;
     _cursors[journal.address] = journal.cursor;
+    final view = journal.project();
     return SubagentConversation(
       address: journal.address,
-      messages: journal.messages(),
+      messages: view.messages,
+      tools: view.tools,
       revision: revision,
       running: journal.running,
     );
@@ -318,7 +323,9 @@ class _ChildJournal {
       _events[seq] = event;
       _runningEvent(event);
     }
-    if (previous != null && previous != cursor) throw _gap;
+    if ((previous != null && previous != cursor) ||
+        (previous == null && cursor != -1))
+      throw _gap;
   }
 
   void _runningEvent(Map<String, Object?> event) {
@@ -336,12 +343,15 @@ class _ChildJournal {
     if (revision != previous + 1) throw _gap;
     _assistantRevision = revision;
     if (frame['type'] == 'start') {
+      if (_attempt != null && _attempt!.committedSeq == null) throw _gap;
       _attempt = _LiveAttempt.start(frame);
       return true;
     }
     final attempt = _attempt;
     if (attempt == null || frame['attemptId'] != attempt.id) throw _invalid;
-    if (_integer(frame['index']) != attempt.nextIndex) throw _gap;
+    if (attempt.committedSeq != null ||
+        _integer(frame['index']) != attempt.nextIndex)
+      throw _gap;
     if (frame['type'] == 'chunk') {
       attempt.nextIndex++;
       attempt.chunk(frame['chunk']);
@@ -349,9 +359,15 @@ class _ChildJournal {
       final outcome = _object(frame['outcome']);
       if (outcome?['kind'] == 'abandoned')
         _attempt = null;
-      else if (outcome?['kind'] == 'committed')
-        attempt.committedSeq = _integer(outcome?['seq']);
-      else
+      else if (outcome?['kind'] == 'committed') {
+        final seq = _integer(outcome?['seq']);
+        final settlement = _events[seq];
+        if (settlement == null ||
+            !attempt.matches(settlement) ||
+            settlement['type'] != outcome?['eventType'])
+          throw _gap;
+        attempt.committedSeq = seq;
+      } else
         throw _invalid;
     } else {
       throw _invalid;
@@ -359,8 +375,10 @@ class _ChildJournal {
     return true;
   }
 
-  List<SubagentMessage> messages() {
-    final visible = <int, List<SubagentMessage>>{};
+  ({List<SubagentMessage> messages, List<ToolRun> tools}) project() {
+    // Replace the durable surface before folding so replaced calls/results and
+    // their owners disappear together, rather than surviving in a side cache.
+    final visible = <int, Map<String, Object?>>{};
     final seqs = _events.keys.toList()..sort();
     for (final seq in seqs) {
       final event = _events[seq]!;
@@ -370,28 +388,98 @@ class _ChildJournal {
         if (start > end || end >= seq) throw _invalid;
         visible.removeWhere((key, _) => key >= start && key <= end);
       }
-      visible[seq] = _eventMessages(event);
+      visible[seq] = event;
     }
-    final result = visible.values.expand((messages) => messages).toList();
+    final result = <SubagentMessage>[];
+    final tools = <String, ToolRun>{};
+    final calls = <String, Map<String, Object?>>{};
+    final times = <String, int>{};
+    String? messageId;
+    for (final event in visible.values) {
+      final data = _object(event['data']);
+      if (event['type'] == 'user/message') {
+        messageId = _string(data?['id']) ?? messageId;
+      } else if (event['type'] == 'assistant/message' ||
+          event['type'] == 'developer/message') {
+        messageId = _string(_object(data?['message'])?['id']) ?? messageId;
+      }
+      if (!_foldTool(event, messageId, tools, calls, times)) {
+        result.addAll(_eventMessages(event, tools, calls));
+      }
+    }
     final attempt = _attempt;
     if (attempt != null) {
-      final settled =
-          attempt.committedSeq != null &&
-              _events.containsKey(attempt.committedSeq) ||
-          _events.values.any(
-            (event) =>
-                event['type'] == 'assistant/message' &&
-                (event['seq'] as int) > attempt.startedAfterSeq,
-          );
-      if (!settled)
+      final settled = _events.values.any(attempt.matches);
+      if (!settled) {
         result.addAll(
-          _content('stream:' + attempt.id, 'assistant', attempt.content),
+          _content(
+            'stream:' + attempt.id,
+            'assistant',
+            attempt.content,
+            tools,
+            isStreaming: attempt.committedSeq == null,
+          ),
         );
+      }
     }
-    return result;
+    return (messages: result, tools: tools.values.toList(growable: false));
   }
 
-  List<SubagentMessage> _eventMessages(Map<String, Object?> event) {
+  bool _foldTool(
+    Map<String, Object?> event,
+    String? messageId,
+    Map<String, ToolRun> tools,
+    Map<String, Map<String, Object?>> calls,
+    Map<String, int> times,
+  ) {
+    final data = _object(event['data']);
+    if (data == null) return false;
+    if (event['type'] == 'tool/call') {
+      final id = _string(data['callId']), name = _string(data['name']);
+      if (id == null || name == null || data['arguments'] is! String)
+        return false;
+      calls[id] = data;
+      if (event['time'] is int) times[id] = event['time'] as int;
+      final previous = tools[id];
+      tools[id] = ToolRun(
+        id: id,
+        name: name,
+        messageId: previous == null ? messageId : previous.messageId,
+        content: _childToolContent(name, data, null),
+      );
+      return true;
+    }
+    if (event['type'] == 'tool/result') {
+      final message = _object(data['message']);
+      final id = _string(_object(message?['source'])?['callId']);
+      if (message == null || id == null) return false;
+      final previous = tools[id];
+      final name = previous?.name ?? '未知工具';
+      final start = times[id], end = event['time'];
+      final elapsed = start != null && end is int && end >= start
+          ? end - start
+          : null;
+      tools[id] = ToolRun(
+        id: id,
+        name: name,
+        messageId: previous == null ? messageId : previous.messageId,
+        status: message['isError'] == true
+            ? ToolStatus.failed
+            : ToolStatus.complete,
+        detail: _childResultDetail(data),
+        elapsedMs: elapsed,
+        content: _childToolContent(name, calls[id], data),
+      );
+      return true;
+    }
+    return false;
+  }
+
+  List<SubagentMessage> _eventMessages(
+    Map<String, Object?> event,
+    Map<String, ToolRun> tools,
+    Map<String, Map<String, Object?>> calls,
+  ) {
     final data = _object(event['data']);
     final fallbackId = 'event:' + event['seq'].toString();
     switch (event['type']) {
@@ -403,18 +491,28 @@ class _ChildJournal {
           id,
           source?['kind'] == 'user' ? 'user' : 'context',
           data?['content'],
+          tools,
+          callData: calls,
         );
       case 'assistant/message':
         final message = _object(data?['message']);
         final id = _string(message?['id']);
         if (id == null) break;
-        return _content(id, 'assistant', message?['content']);
+        return _content(
+          id,
+          'assistant',
+          message?['content'],
+          tools,
+          callData: calls,
+        );
       case 'developer/message':
         final message = _object(data?['message']);
         return _content(
           _string(message?['id']) ?? fallbackId,
           'context',
           message?['content'],
+          tools,
+          callData: calls,
         );
       case 'turn/start':
       case 'turn/end':
@@ -428,7 +526,14 @@ class _ChildJournal {
   }
 }
 
-List<SubagentMessage> _content(String id, String role, Object? raw) {
+List<SubagentMessage> _content(
+  String id,
+  String role,
+  Object? raw,
+  Map<String, ToolRun> tools, {
+  Map<String, Map<String, Object?>>? callData,
+  bool isStreaming = false,
+}) {
   if (raw is! List)
     return [SubagentMessage(id: id, role: 'event', text: jsonEncode(raw))];
   final text = <String>[];
@@ -437,12 +542,34 @@ List<SubagentMessage> _content(String id, String role, Object? raw) {
     final block = _object(raw[index]);
     if (block?['type'] == 'text' && block?['text'] is String) {
       text.add(block!['text'] as String);
+    } else if (block?['type'] == 'code') {
+      text.add(_childBlocksText([raw[index]]));
     } else if (block?['type'] == 'reasoning' && block?['text'] is String) {
-      extra.add(
-        SubagentMessage(
-          id: id + ':reasoning:' + index.toString(),
-          role: 'reasoning',
-          text: block!['text'] as String,
+      final toolId = id + ':reasoning:' + index.toString();
+      tools[toolId] = ToolRun(
+        id: toolId,
+        name: '思考过程',
+        messageId: id,
+        status: isStreaming ? ToolStatus.running : ToolStatus.complete,
+        content: ToolContent(
+          title: '思考过程',
+          reasoning: block!['text'] as String,
+        ),
+      );
+    } else if (block?['type'] == 'tool-call' &&
+        _string(block?['id']) != null &&
+        _string(block?['name']) != null &&
+        block?['arguments'] is String) {
+      final call = block!;
+      final toolId = call['id'] as String;
+      callData?.putIfAbsent(toolId, () => call);
+      tools.putIfAbsent(
+        toolId,
+        () => ToolRun(
+          id: toolId,
+          name: call['name'] as String,
+          messageId: id,
+          content: _childToolContent(call['name'] as String, call, null),
         ),
       );
     } else {
@@ -456,16 +583,155 @@ List<SubagentMessage> _content(String id, String role, Object? raw) {
     }
   }
   return [
-    if (text.isNotEmpty)
-      SubagentMessage(id: id, role: role, text: text.join('')),
+    if (text.isNotEmpty || isStreaming)
+      SubagentMessage(
+        id: id,
+        role: role,
+        text: text.join(''),
+        isStreaming: isStreaming,
+      ),
     ...extra,
   ];
 }
 
+String _childBlocksText(Object? raw) {
+  if (raw is! List) return raw == null ? '' : jsonEncode(raw);
+  final parts = <String>[];
+  final fence = String.fromCharCode(96) * 3;
+  for (final value in raw) {
+    final block = _object(value);
+    if (block?['type'] == 'text' && block?['text'] is String) {
+      parts.add(block!['text'] as String);
+    } else if (block?['type'] == 'reasoning' && block?['text'] is String) {
+      parts.add('思考：\n' + (block!['text'] as String) + '\n\n');
+    } else if (block?['type'] == 'code') {
+      final text = block?['code'] ?? block?['text'];
+      if (text is String)
+        parts.add(
+          '\n' +
+              fence +
+              (_string(block?['language']) ?? '') +
+              '\n' +
+              text +
+              '\n' +
+              fence +
+              '\n',
+        );
+      else {
+        parts.add(jsonEncode(value));
+      }
+    } else {
+      parts.add('\n' + jsonEncode(value) + '\n');
+    }
+  }
+  return parts.join('');
+}
+
+String _childResultDetail(Map<String, Object?> data) {
+  final error = _object(data['error']);
+  return _string(error?['reason']) ??
+      _childBlocksText(_object(data['message'])?['content']);
+}
+
+ToolContent _childToolContent(
+  String name,
+  Map<String, Object?>? call,
+  Map<String, Object?>? result,
+) {
+  Map<String, Object?>? arguments;
+  final rawArguments = call?['arguments'];
+  if (rawArguments is String) {
+    try {
+      arguments = _object(jsonDecode(rawArguments));
+    } on FormatException {
+      /* Original text remains visible below. */
+    }
+  }
+  final message = _object(result?['message']);
+  final meta = _object(result?['meta']);
+  final text = _childBlocksText(message?['content']);
+  final reasoning = [
+    if (rawArguments is String) '参数\n' + rawArguments,
+    if (text.isNotEmpty) '结果\n' + text,
+    if (result?['error'] != null) '错误\n' + jsonEncode(result!['error']),
+    if (result?['meta'] != null) '元数据\n' + jsonEncode(result!['meta']),
+  ].join('\n\n');
+  final commandText = _string(arguments?['command']);
+  final command = commandText == null
+      ? null
+      : CommandResult(
+          command: commandText,
+          cwd:
+              _string(arguments?['workdir']) ??
+              _string(arguments?['cwd']) ??
+              '',
+          stdout: meta?['stdout'] is String ? meta!['stdout'] as String : '',
+          stderr: meta?['stderr'] is String ? meta!['stderr'] as String : '',
+          exitCode: meta?['exitCode'] is int ? meta!['exitCode'] as int : null,
+        );
+  final edits = <CodeEdit>[];
+  final path = _string(arguments?['file_path']) ?? _string(arguments?['path']);
+  if (path != null &&
+      (arguments?['old_string'] is String ||
+          arguments?['new_string'] is String)) {
+    edits.add(
+      CodeEdit(
+        path: path,
+        before: arguments?['old_string'] as String? ?? '',
+        after: arguments?['new_string'] as String? ?? '',
+      ),
+    );
+  }
+  final resources = <OutputResource>[];
+  final content = message?['content'];
+  if (content is List) {
+    for (var i = 0; i < content.length; i++) {
+      final block = _object(content[i]);
+      final kind = switch (block?['type']) {
+        'image' => ResourceKind.image,
+        'file' => ResourceKind.file,
+        'link' => ResourceKind.link,
+        _ => null,
+      };
+      if (kind == null) continue;
+      final attachment = _object(block?['attachment']);
+      final uri =
+          _string(block?['url']) ??
+          _string(block?['uri']) ??
+          _string(attachment?['url']) ??
+          _string(attachment?['path']);
+      if (uri == null) continue;
+      resources.add(
+        OutputResource(
+          id: i.toString(),
+          title:
+              _string(block?['title']) ?? _string(attachment?['name']) ?? uri,
+          uri: uri,
+          kind: kind,
+          mediaType: _string(attachment?['mediaType']) ?? '',
+        ),
+      );
+    }
+  }
+  return ToolContent(
+    title: name,
+    reasoning: reasoning,
+    command: command,
+    edits: edits,
+    resources: resources,
+  );
+}
+
 class _LiveAttempt {
-  _LiveAttempt(this.id, this.startedAfterSeq, this.nextIndex);
+  _LiveAttempt(
+    this.id,
+    this.startedAfterSeq,
+    this.nextIndex,
+    this.turn,
+    this.step,
+  );
   final String id;
-  final int startedAfterSeq;
+  final int startedAfterSeq, turn, step;
   int nextIndex;
   int? committedSeq;
   final _blocks = <int, Map<String, Object?>>{};
@@ -473,7 +739,22 @@ class _LiveAttempt {
   factory _LiveAttempt.start(Map<String, Object?> frame) {
     final id = _string(frame['attemptId']);
     if (id == null) throw _invalid;
-    return _LiveAttempt(id, _cursor(frame['startedAfterSeq']), 0);
+    return _LiveAttempt(
+      id,
+      _cursor(frame['startedAfterSeq']),
+      0,
+      _integer(frame['turn']),
+      _integer(frame['step']),
+    );
+  }
+
+  bool matches(Map<String, Object?> event) {
+    final data = _object(event['data']);
+    return (event['type'] == 'assistant/message' ||
+            event['type'] == 'assistant/attempt') &&
+        (event['seq'] as int) > startedAfterSeq &&
+        data?['turn'] == turn &&
+        data?['step'] == step;
   }
 
   factory _LiveAttempt.baseline(Map<String, Object?> frame) {
@@ -488,14 +769,18 @@ class _LiveAttempt {
         attempt.chunk(record['chunk']);
         count++;
       } else if (record['type'] == 'text-chunks' ||
-          record['type'] == 'reasoning-chunks') {
+          record['type'] == 'reasoning-chunks' ||
+          record['type'] == 'code-chunks') {
         final texts = record['texts'];
         if (texts is! List || texts.any((text) => text is! String))
           throw _invalid;
         attempt.chunk({
           'type': record['type'] == 'text-chunks'
               ? 'text-delta'
-              : 'reasoning-delta',
+              : record['type'] == 'reasoning-chunks'
+              ? 'reasoning-delta'
+              : 'code-delta',
+          if (record['language'] != null) 'language': record['language'],
           'index': record['index'],
           'text': texts.join(''),
         });
@@ -508,7 +793,7 @@ class _LiveAttempt {
           'index': record['index'],
           'id': record['id'],
           'name': record['name'],
-          'arguments': args.join(''),
+          'argumentsDelta': args.join(''),
         });
         count += args.length;
       } else {
@@ -534,15 +819,37 @@ class _LiveAttempt {
         };
       case 'text-delta':
       case 'reasoning-delta':
-        final type = value['type'] == 'text-delta' ? 'text' : 'reasoning';
-        if (value['text'] is! String) throw _invalid;
+      case 'code-delta':
+        final type = value['type'] == 'text-delta'
+            ? 'text'
+            : value['type'] == 'reasoning-delta'
+            ? 'reasoning'
+            : 'code';
+        final text = value['text'] ?? value['code'];
+        if (text is! String) throw _invalid;
         final previous = _blocks[index];
         final prefix = previous?['type'] == type && previous?['text'] is String
             ? previous!['text'] as String
             : '';
         _blocks[index] = {
           'type': type,
-          'text': prefix + (value['text'] as String),
+          'text': prefix + text,
+          if (value['language'] != null || previous?['language'] != null)
+            'language': value['language'] ?? previous?['language'],
+        };
+      case 'tool-call-delta':
+        final delta = value['argumentsDelta'];
+        if (delta is! String) throw _invalid;
+        final previous = _blocks[index];
+        _blocks[index] = {
+          'type': 'tool-call',
+          'id': value['id'] ?? previous?['id'],
+          'name': value['name'] ?? previous?['name'],
+          'arguments':
+              (previous?['arguments'] is String
+                  ? previous!['arguments'] as String
+                  : '') +
+              delta,
         };
       case 'block-end':
         final block = _object(value['block']);

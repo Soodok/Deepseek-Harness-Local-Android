@@ -5,10 +5,9 @@ import '../model/composer_model.dart';
 import '../state/chat_controller.dart';
 import '../bridge/attachment_picker.dart';
 import '../theme/dsh_theme.dart';
-import 'chat_shell.dart' show ChatLayout;
+import 'composer_surface.dart';
 import 'composer_sheets.dart';
 import 'composer_dock.dart';
-import 'glass_panel.dart';
 import 'permission_icon.dart';
 
 class Composer extends StatefulWidget {
@@ -73,310 +72,203 @@ class _ComposerState extends State<Composer> {
       final busy =
           state.status == ChatStatus.streaming ||
           state.status == ChatStatus.waitingAction;
-      final gutter = ChatLayout.gutter(MediaQuery.sizeOf(context).width);
-      return ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight:
-              (widget.availableHeight ?? MediaQuery.sizeOf(context).height) *
-              .75,
-        ),
-        child: SingleChildScrollView(
-          key: const ValueKey('composer-scroll'),
-          reverse: true,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(gutter - 2, 8, gutter - 2, 12),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: ChatLayout.maxColumn,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ComposerDock(
-                      controller: controller,
-                      availableHeight: widget.availableHeight,
-                    ),
-                    const SizedBox(height: 6),
-                    if (state.queuedPrompts.isNotEmpty)
-                      _QueueTray(
-                        prompts: state.queuedPrompts,
-                        onSend: controller.canDispatchQueued
-                            ? controller.sendNextQueued
-                            : null,
-                      ),
-                    GlassPanel(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (controller.attachments.isNotEmpty)
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxHeight: 130,
-                                ),
-                                child: SingleChildScrollView(
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: 6,
-                                    children: [
-                                      for (final file in controller.attachments)
-                                        Container(
-                                          key: ValueKey(
-                                            'attachment-' + file.id,
-                                          ),
-                                          constraints: const BoxConstraints(
-                                            maxWidth: 250,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: DshPalette.of(context)
-                                                .paperDeep
-                                                .withValues(alpha: .65),
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            border: Border.all(
-                                              color: DshPalette.of(context)
-                                                  .line,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Padding(
-                                                padding: EdgeInsets.only(
-                                                  left: 10,
-                                                ),
-                                                child: Icon(
-                                                  Icons
-                                                      .insert_drive_file_outlined,
-                                                  size: 18,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Flexible(
-                                                child: Tooltip(
-                                                  message: file.name,
-                                                  child: Text(
-                                                    file.name,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              IconButton(
-                                                key: ValueKey(
-                                                  'attachment-remove-' +
-                                                      file.id,
-                                                ),
-                                                tooltip: '移除 ' + file.name,
-                                                onPressed: () => controller
-                                                    .removeAttachment(file.id),
-                                                icon: const Icon(
-                                                  Icons.close_rounded,
-                                                  size: 16,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
+      return ComposerViewport(
+        availableHeight: widget.availableHeight,
+        scrollKey: const ValueKey('composer-scroll'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ComposerDock(
+              controller: controller,
+              availableHeight: widget.availableHeight,
+            ),
+            const SizedBox(height: 6),
+            if (state.queuedPrompts.isNotEmpty)
+              _QueueTray(
+                prompts: state.queuedPrompts,
+                onSend: controller.canDispatchQueued
+                    ? controller.sendNextQueued
+                    : null,
+              ),
+            ComposerSurface(
+              textController: _textController,
+              focusNode: _focusNode,
+              inputKey: const ValueKey('composer-input'),
+              hintText: '给 DSH 发消息',
+              onSubmitted: _send,
+              leading: [
+                if (controller.attachments.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 130),
+                    child: SingleChildScrollView(
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final file in controller.attachments)
+                            Container(
+                              key: ValueKey('attachment-' + file.id),
+                              constraints: const BoxConstraints(maxWidth: 250),
+                              decoration: BoxDecoration(
+                                color: DshPalette.of(context).paperDeep
+                                    .withValues(alpha: .65),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: DshPalette.of(context).line,
                                 ),
                               ),
-                            TextField(
-                              key: const ValueKey('composer-input'),
-                              controller: _textController,
-                              focusNode: _focusNode,
-                              enabled: true,
-                              minLines: 1,
-                              maxLines: 6,
-                              cursorColor: DshPalette.of(context).ink,
-                              style: TextStyle(
-                                fontSize: 17,
-                                height: 1.5,
-                                color: DshPalette.of(context).ink,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: '给 DSH 发消息',
-                                hintStyle: TextStyle(
-                                  color: DshPalette.of(context).inkFaint,
-                                ),
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                disabledBorder: InputBorder.none,
-                                filled: false,
-                                isDense: true,
-                                contentPadding: EdgeInsets.fromLTRB(4, 4, 4, 4),
-                              ),
-                              onSubmitted: (_) => _send(),
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                IconButton(
-                                  key: const ValueKey('composer-attach'),
-                                  tooltip: !controller.supportsAttachments
-                                      ? '当前引擎尚未接入附件'
-                                      : (_picking ? '正在选择文件' : '添加文件'),
-                                  onPressed:
-                                      _picking ||
-                                          !controller.supportsAttachments
-                                      ? null
-                                      : _pick,
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: DshPalette.of(context).ink
-                                        .withValues(alpha: .06),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.only(left: 10),
+                                    child: Icon(
+                                      Icons.insert_drive_file_outlined,
+                                      size: 18,
+                                    ),
                                   ),
-                                  icon: Icon(
-                                    _picking
-                                        ? Icons.more_horiz_rounded
-                                        : Icons.add_rounded,
-                                    size: 27,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: TextButton(
-                                      key: const ValueKey('composer-model'),
-                                      onPressed: () => showModelSelector(
-                                        context,
-                                        controller,
-                                      ),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: DshPalette.of(context)
-                                            .ink
-                                            .withValues(alpha: .06),
-                                        side: BorderSide(
-                                          color: DshPalette.of(context).ink
-                                              .withValues(alpha: .13),
-                                        ),
-                                        shape: const StadiumBorder(),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                        ),
-                                        minimumSize: const Size(0, 48),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              controller.modelLabel,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: DshPalette.of(context)
-                                                    .ink,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Icon(
-                                            Icons.expand_more_rounded,
-                                            size: 16,
-                                            color: DshPalette.of(context)
-                                                .inkSoft,
-                                          ),
-                                        ],
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Tooltip(
+                                      message: file.name,
+                                      child: Text(
+                                        file.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 13),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  key: const ValueKey('composer-permission'),
-                                  tooltip:
-                                      '工具权限：' + controller.permission.label,
-                                  onPressed: () => showPermissionSelector(
-                                    context,
-                                    controller,
-                                  ),
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: DshPalette.of(context).ink
-                                        .withValues(alpha: .06),
-                                  ),
-                                  icon: DshPermissionIcon(
-                                    glyph: switch (controller.permission) {
-                                      ComposerPermission.readOnly =>
-                                        DshPermissionGlyph.readOnly,
-                                      ComposerPermission.workspaceWrite =>
-                                        DshPermissionGlyph.workspaceWrite,
-                                      ComposerPermission.fullAccess =>
-                                        DshPermissionGlyph.fullAccess,
-                                    },
-                                    size: 22,
-                                  ),
-                                ),
-                                if (busy) ...[
-                                  const SizedBox(width: 8),
                                   IconButton(
-                                    key: const ValueKey('composer-stop'),
-                                    tooltip: '停止执行',
-                                    onPressed: controller.stop,
+                                    key: ValueKey(
+                                      'attachment-remove-' + file.id,
+                                    ),
+                                    tooltip: '移除 ' + file.name,
+                                    onPressed: () =>
+                                        controller.removeAttachment(file.id),
                                     icon: const Icon(
-                                      Icons.stop_circle_outlined,
-                                      size: 28,
+                                      Icons.close_rounded,
+                                      size: 16,
                                     ),
                                   ),
                                 ],
-                                const SizedBox(width: 8),
-                                ValueListenableBuilder<TextEditingValue>(
-                                  valueListenable: _textController,
-                                  builder: (context, value, _) =>
-                                      IconButton.filled(
-                                        key: const ValueKey('composer-send'),
-                                        tooltip: busy ? '排队到下一轮' : '发送',
-                                        style: IconButton.styleFrom(
-                                          backgroundColor: DshPalette.of(
-                                            context,
-                                          ).sendBlue,
-                                          foregroundColor: Colors.white,
-                                          disabledBackgroundColor:
-                                              DshPalette.of(context)
-                                                  .sendBlueMuted,
-                                          disabledForegroundColor: const Color(
-                                            0xFF84A5D0,
-                                          ),
-                                          minimumSize: const Size(48, 48),
-                                        ),
-                                        onPressed:
-                                            !_sending &&
-                                                controller.canSend &&
-                                                (value.text.trim().isNotEmpty ||
-                                                    controller
-                                                        .attachments
-                                                        .isNotEmpty)
-                                            ? _send
-                                            : null,
-                                        icon: const Icon(
-                                          Icons.arrow_upward_rounded,
-                                          size: 26,
-                                        ),
-                                      ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ],
-                        ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
+              ],
+              controls: [
+                IconButton(
+                  key: const ValueKey('composer-attach'),
+                  tooltip: !controller.supportsAttachments
+                      ? '当前引擎尚未接入附件'
+                      : (_picking ? '正在选择文件' : '添加文件'),
+                  onPressed: _picking || !controller.supportsAttachments
+                      ? null
+                      : _pick,
+                  style: IconButton.styleFrom(
+                    backgroundColor: DshPalette.of(context).ink
+                        .withValues(alpha: .06),
+                  ),
+                  icon: Icon(
+                    _picking ? Icons.more_horiz_rounded : Icons.add_rounded,
+                    size: 27,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      key: const ValueKey('composer-model'),
+                      onPressed: () => showModelSelector(context, controller),
+                      style: TextButton.styleFrom(
+                        backgroundColor: DshPalette.of(context).ink
+                            .withValues(alpha: .06),
+                        side: BorderSide(
+                          color: DshPalette.of(context).ink
+                              .withValues(alpha: .13),
+                        ),
+                        shape: const StadiumBorder(),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        minimumSize: const Size(0, 48),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              controller.modelLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: DshPalette.of(context).ink,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.expand_more_rounded,
+                            size: 16,
+                            color: DshPalette.of(context).inkSoft,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  key: const ValueKey('composer-permission'),
+                  tooltip: '工具权限：' + controller.permission.label,
+                  onPressed: () => showPermissionSelector(context, controller),
+                  style: IconButton.styleFrom(
+                    backgroundColor: DshPalette.of(context).ink
+                        .withValues(alpha: .06),
+                  ),
+                  icon: DshPermissionIcon(
+                    glyph: switch (controller.permission) {
+                      ComposerPermission.readOnly =>
+                        DshPermissionGlyph.readOnly,
+                      ComposerPermission.workspaceWrite =>
+                        DshPermissionGlyph.workspaceWrite,
+                      ComposerPermission.fullAccess =>
+                        DshPermissionGlyph.fullAccess,
+                    },
+                    size: 22,
+                  ),
+                ),
+                if (busy) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    key: const ValueKey('composer-stop'),
+                    tooltip: '停止执行',
+                    onPressed: controller.stop,
+                    icon: const Icon(Icons.stop_circle_outlined, size: 28),
+                  ),
+                ],
+                const SizedBox(width: 8),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _textController,
+                  builder: (context, value, _) => ComposerSendButton(
+                    buttonKey: const ValueKey('composer-send'),
+                    tooltip: busy ? '排队到下一轮' : '发送',
+                    onPressed:
+                        !_sending &&
+                            controller.canSend &&
+                            (value.text.trim().isNotEmpty ||
+                                controller.attachments.isNotEmpty)
+                        ? _send
+                        : null,
+                  ),
+                ),
+              ],
             ),
-          ),
+          ],
         ),
       );
     },

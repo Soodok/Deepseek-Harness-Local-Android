@@ -7,6 +7,10 @@ import 'package:dsh_native_chat/src/state/chat_controller.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 import 'package:dsh_native_chat/src/transport/dsh_transport.dart';
 import 'package:dsh_native_chat/src/ui/subagent_panel.dart';
+import 'package:dsh_native_chat/src/ui/composer_surface.dart';
+import 'package:dsh_native_chat/src/ui/conversation_flow.dart';
+import 'package:dsh_native_chat/src/ui/tool_run_card.dart';
+import 'package:dsh_native_chat/src/transport/fixture_transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -78,6 +82,7 @@ class _ChildService implements SubagentTransport, DshTransport {
     return SubagentConversation(
       address: address,
       messages: initial.messages,
+      tools: initial.tools,
       revision: initial.revision,
       running: initial.running,
     );
@@ -227,6 +232,126 @@ Future<ChatController> _openPanel(
 }
 
 void main() {
+  testWidgets('child guard hides input for a self-address', (tester) async {
+    final service = FixtureTransport();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.light(),
+        home: SubagentChatPage(
+          agent: _agent(
+            'self',
+            'invalid',
+            address: const SubagentAddress(
+              parentSessionId: 'same',
+              childSessionId: 'same',
+              mode: SubagentMode.continuable,
+            ),
+          ),
+          service: service,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('subagent-input')), findsNothing);
+    expect(find.textContaining('不可用'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
+    await service.close();
+  });
+
+  testWidgets(
+    'child uses the shared flow, selectable rows, disclosure and floating surface',
+    (tester) async {
+      final service = _ChildService(
+        SubagentConversation(
+          address: _child,
+          revision: 1,
+          messages: const [
+            SubagentMessage(id: 'answer', role: 'assistant', text: '真实子会话正文'),
+          ],
+          tools: [
+            ToolRun(
+              id: 'child-command',
+              name: 'bash',
+              messageId: 'answer',
+              status: ToolStatus.complete,
+              content: ToolContent(
+                title: 'bash',
+                command: const CommandResult(
+                  command: 'pwd',
+                  stdout: 'CHILD OUTPUT',
+                  exitCode: 0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      await _pumpPage(
+        tester,
+        _agent('review', '代码检查', address: _child),
+        service,
+      );
+      expect(find.byType(ConversationFlow), findsOneWidget);
+      expect(find.byType(ConversationMessage), findsOneWidget);
+      expect(find.byType(ComposerSurface), findsOneWidget);
+      expect(find.byType(ComposerSendButton), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(ConversationMessage),
+          matching: find.byType(SelectableText),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(ToolRunCard), findsNothing);
+      final toggle = find.byKey(
+        const ValueKey('execution-toggle-message-answer'),
+      );
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(find.byType(ToolRunCard), findsOneWidget);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('process-command-child-command')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('process-command-child-command')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('CHILD OUTPUT'), findsOneWidget);
+      expect(find.byKey(const ValueKey('composer-model')), findsNothing);
+      expect(find.byKey(const ValueKey('composer-attach')), findsNothing);
+      expect(find.byKey(const ValueKey('composer-permission')), findsNothing);
+      expect(find.byKey(const ValueKey('composer-stop')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'running continuable child still accepts one queued send without fabricated messages',
+    (tester) async {
+      final service = _ChildService(_conversation(const [], running: true));
+      await _pumpPage(
+        tester,
+        _agent('review', '代码检查', address: _child),
+        service,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('subagent-input')),
+        '运行中补充',
+      );
+      await tester.pump();
+      expect(find.byTooltip('排队到下一轮'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('subagent-send')));
+      await tester.pump();
+      expect(service.sent, ['运行中补充']);
+      expect(find.byType(ConversationMessage), findsNothing);
+      service.gate.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('已排队'), findsOneWidget);
+      expect(find.byType(ConversationMessage), findsNothing);
+    },
+  );
+
   testWidgets('fixture 目录实时聚合、按 id 与父子地址去重并可展开', (tester) async {
     final transport = _CatalogTransport();
     final controller = await _openPanel(tester, transport);
@@ -407,7 +532,7 @@ void main() {
     expect(find.byKey(const ValueKey('subagent-loading')), findsNothing);
     expect(find.text('请检查边界'), findsOneWidget);
     expect(find.text('我在检查边界。'), findsOneWidget);
-    expect(find.text('代码检查'), findsOneWidget);
+    expect(find.text('代码检查', findRichText: true), findsOneWidget);
     expect(find.byKey(const ValueKey('subagent-busy')), findsOneWidget);
     expect(find.textContaining('fixture 演示'), findsOneWidget);
     expect(service.reads, 1);
@@ -766,12 +891,18 @@ void main() {
     await tester.scrollUntilVisible(
       find.textContaining('演示正文 11'),
       300,
-      scrollable: find.descendant(
-        of: find.byKey(const ValueKey('subagent-messages')),
+      scrollable: find.ancestor(
+        of: find.descendant(
+          of: find.byKey(const ValueKey('subagent-messages')),
+          matching: find.byType(SliverList),
+        ),
         matching: find.byType(Scrollable),
       ),
     );
-    await tester.pumpAndSettle();
+    // The overflowing title intentionally keeps animating.
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(tester.takeException(), isNull);
     expect(find.textContaining('演示正文 11'), findsOneWidget);
   });

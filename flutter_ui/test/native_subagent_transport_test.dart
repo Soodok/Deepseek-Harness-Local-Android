@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dsh_native_chat/src/model/subagent_model.dart';
+import 'package:dsh_native_chat/src/model/chat_model.dart';
 import 'package:dsh_native_chat/src/model/tool_content.dart';
 import 'package:dsh_native_chat/src/transport/dsh_rpc_connection.dart';
 import 'package:dsh_native_chat/src/transport/native_subagent_transport.dart';
@@ -36,6 +37,8 @@ Map<String, Object?> _user(int seq, String text) =>
     });
 Map<String, Object?> _assistant(int seq, String text) =>
     _record(seq, 'assistant/message', {
+      'turn': 1,
+      'step': 1,
       'message': {
         'id': 'a$seq',
         'content': [
@@ -87,6 +90,471 @@ void main() {
     await rpc.close();
     await host.close();
   });
+
+  Future<void> withActive(
+    Future<void> Function(
+      StreamIterator<SubagentConversation>,
+      void Function(Map<String, Object?>),
+    )
+    check, {
+    bool code = false,
+  }) async {
+    final iterator = StreamIterator(service.watchSubagent(address));
+    final first = iterator.moveNext();
+    final open = await host.waitFrame((r) => r.frame['type'] == 'open');
+    host.item(
+      open,
+      _snapshot(
+        1,
+        [_user(1, 'question')],
+        assistant: {
+          'revision': 1,
+          'activeAttempt': {
+            'attemptId': 'guard',
+            'startedAfterSeq': 1,
+            'turn': 1,
+            'step': 1,
+            'nextIndex': 1,
+            'stream': [
+              {
+                'type': code ? 'code-chunks' : 'text-chunks',
+                'time0': 1,
+                'index': 0,
+                'dt': [],
+                'texts': [code ? 'print(' : 'LIVE'],
+                if (code) 'language': 'dart',
+              },
+            ],
+          },
+        },
+      ),
+    );
+    await first;
+    await check(iterator, (frame) => host.item(open, frame));
+    await iterator.cancel();
+  }
+
+  Map<String, Object?> frame(
+    String type,
+    int revision, {
+    Map<String, Object?>? outcome,
+    Map<String, Object?>? chunk,
+  }) => {
+    'type': 'assistant-stream',
+    'frame': {
+      'type': type,
+      'attemptId': 'guard',
+      'revision': revision,
+      'index': 1,
+      'outcome': ?outcome,
+      'chunk': ?chunk,
+    },
+  };
+  test('child guard rejects a committed receipt for a user event', () async {
+    await withActive((iterator, emit) async {
+      final rejected = expectLater(
+        iterator.moveNext(),
+        throwsA(
+          isA<DshRpcException>().having(
+            (e) => e.code,
+            'code',
+            'subagent/sequence-gap',
+          ),
+        ),
+      );
+      emit(
+        frame(
+          'end',
+          2,
+          outcome: {'kind': 'committed', 'eventType': 'user/message', 'seq': 1},
+        ),
+      );
+      await rejected;
+    });
+  });
+  test('child guard keeps live text for an unrelated durable assistant and rejects its receipt', () async {
+    await withActive((iterator, emit) async {
+      emit(
+        _record(2, 'assistant/message', {
+          'turn': 2,
+          'step': 1,
+          'message': {
+            'id': 'other',
+            'content': [
+              {'type': 'text', 'text': 'OTHER'},
+            ],
+          },
+        }),
+      );
+      await iterator.moveNext();
+      expect(iterator.current.messages.map((m) => m.text), contains('LIVE'));
+      final rejected = expectLater(
+        iterator.moveNext(),
+        throwsA(isA<DshRpcException>()),
+      );
+      emit(
+        frame(
+          'end',
+          2,
+          outcome: {
+            'kind': 'committed',
+            'eventType': 'assistant/message',
+            'seq': 2,
+          },
+        ),
+      );
+      await rejected;
+    });
+  });
+  test(
+    'child guard rejects a second start before the active attempt ends',
+    () async {
+      await withActive((iterator, emit) async {
+        final rejected = expectLater(
+          iterator.moveNext(),
+          throwsA(
+            isA<DshRpcException>().having(
+              (e) => e.code,
+              'code',
+              'subagent/sequence-gap',
+            ),
+          ),
+        );
+        emit({
+          'type': 'assistant-stream',
+          'frame': {
+            'type': 'start',
+            'revision': 2,
+            'attemptId': 'other',
+            'startedAfterSeq': 1,
+            'turn': 1,
+            'step': 2,
+          },
+        });
+        await rejected;
+      });
+    },
+  );
+  test(
+    'child guard preserves baseline and incremental code as assistant content',
+    () async {
+      await withActive((iterator, emit) async {
+        expect(iterator.current.messages.last.role, 'assistant');
+        expect(
+          iterator.current.messages.last.text,
+          contains('dart' + String.fromCharCode(10) + 'print('),
+        );
+        emit(
+          frame(
+            'chunk',
+            2,
+            chunk: {'type': 'code-delta', 'index': 0, 'text': '1);'},
+          ),
+        );
+        await iterator.moveNext();
+        expect(iterator.current.messages.last.role, 'assistant');
+        expect(
+          iterator.current.messages.last.text,
+          contains('dart' + String.fromCharCode(10) + 'print(1);'),
+        );
+      }, code: true);
+    },
+  );
+  test('child guard rejects an empty nonempty-cursor history while allowing bounded suffixes', () async {
+    host.onCall = (r) async => r.endpoint == 'session/state'
+        ? {'running': false}
+        : {
+            'cursor': 5,
+            'hasMore': true,
+            'records': [_assistant(5, 'bounded')],
+          };
+    expect(
+      (await service.readSubagent(address)).messages.single.text,
+      'bounded',
+    );
+    host.onCall = (r) async => r.endpoint == 'session/state'
+        ? {'running': false}
+        : {'cursor': 5, 'hasMore': false, 'records': []};
+    await expectLater(
+      service.readSubagent(address),
+      throwsA(
+        isA<DshRpcException>().having(
+          (e) => e.code,
+          'code',
+          'subagent/sequence-gap',
+        ),
+      ),
+    );
+  });
+  test('child guard refuses a self-address before sending', () {
+    expect(
+      const SubagentAddress(
+        parentSessionId: 'same',
+        childSessionId: 'same',
+        mode: SubagentMode.continuable,
+      ).canSend,
+      isFalse,
+    );
+  });
+
+  test('real tool calls, failed results and reasoning keep structured detail and original ownership', () async {
+    host.onCall = (r) async => r.endpoint == 'session/state'
+        ? {'running': false}
+        : {
+            'cursor': 4,
+            'hasMore': false,
+            'records': [
+              _record(1, 'assistant/message', {
+                'message': {
+                  'id': 'answer',
+                  'content': [
+                    {'type': 'text', 'text': '正在核对'},
+                    {'type': 'reasoning', 'text': '真实思考内容'},
+                  ],
+                },
+              }),
+              _record(2, 'tool/call', {
+                'callId': 'shell',
+                'name': 'bash',
+                'arguments': '{"command":"pwd","workdir":"/ws"}',
+              }),
+              _assistant(3, '后来的回复不应重新绑定工具'),
+              _record(4, 'tool/result', {
+                'message': {
+                  'source': {'callId': 'shell'},
+                  'isError': true,
+                  'content': [
+                    {'type': 'text', 'text': '真实失败输出'},
+                  ],
+                },
+                'meta': {
+                  'stdout': '真实stdout',
+                  'stderr': '真实stderr',
+                  'exitCode': 7,
+                },
+              }),
+            ],
+          };
+    final view = await service.readSubagent(address);
+    expect(view.messages.map((m) => m.text), ['正在核对', '后来的回复不应重新绑定工具']);
+    final reasoning = view.tools.singleWhere(
+      (t) => t.content?.reasoning == '真实思考内容',
+    );
+    expect(reasoning.messageId, 'answer');
+    final tool = view.tools.singleWhere((t) => t.id == 'shell');
+    expect(tool.messageId, 'answer');
+    expect(tool.status, ToolStatus.failed);
+    expect(tool.elapsedMs, 2000);
+    expect(tool.detail, '真实失败输出');
+    expect(tool.content!.command!.command, 'pwd');
+    expect(tool.content!.command!.cwd, '/ws');
+    expect(tool.content!.command!.stdout, '真实stdout');
+    expect(tool.content!.command!.stderr, '真实stderr');
+    expect(tool.content!.command!.exitCode, 7);
+  });
+
+  test('surface replacements remove old tool records and bounded results stay visible', () async {
+    host.onCall = (r) async => r.endpoint == 'session/state'
+        ? {'running': false}
+        : {
+            'cursor': 4,
+            'hasMore': false,
+            'records': [
+              _assistant(1, '旧正文'),
+              _record(2, 'tool/call', {
+                'callId': 'old',
+                'name': 'bash',
+                'arguments': '{}',
+              }),
+              _record(
+                3,
+                'assistant/message',
+                {
+                  'message': {
+                    'id': 'new',
+                    'content': [
+                      {'type': 'text', 'text': '替换正文'},
+                    ],
+                  },
+                },
+                surfaceOp: {'op': 'replace', 'startSeq': 1, 'endSeq': 2},
+              ),
+              _record(4, 'tool/result', {
+                'message': {
+                  'source': {'callId': 'bounded'},
+                  'content': [
+                    {'type': 'text', 'text': '页首以前的工具结果'},
+                  ],
+                },
+              }),
+            ],
+          };
+    final view = await service.readSubagent(address);
+    expect(view.messages.single.text, '替换正文');
+    expect(view.tools.map((t) => t.id), ['bounded']);
+    expect(view.tools.single.name, '未知工具');
+    expect(view.tools.single.detail, '页首以前的工具结果');
+  });
+
+  test('live tool deltas keep complete arguments and are replaced by the durable call', () async {
+    final iterator = StreamIterator(service.watchSubagent(address));
+    final first = iterator.moveNext();
+    final open = await host.waitFrame((r) => r.frame['type'] == 'open');
+    host.item(
+      open,
+      _snapshot(
+        1,
+        [_user(1, '核对工具')],
+        assistant: {
+          'revision': 1,
+          'activeAttempt': {
+            'attemptId': 'live-tool',
+            'turn': 1,
+            'step': 1,
+            'startedAfterSeq': 1,
+            'nextIndex': 1,
+            'stream': [
+              {
+                'type': 'tool-call-chunks',
+                'index': 0,
+                'id': 'call-live',
+                'name': 'bash',
+                'args': ['{"command":'],
+              },
+            ],
+          },
+        },
+      ),
+    );
+    await first;
+    expect(iterator.current.tools.single.id, 'call-live');
+    expect(iterator.current.tools.single.status, ToolStatus.running);
+    host.item(open, {
+      'type': 'assistant-stream',
+      'frame': {
+        'type': 'chunk',
+        'attemptId': 'live-tool',
+        'revision': 2,
+        'index': 1,
+        'chunk': {
+          'type': 'tool-call-delta',
+          'index': 0,
+          'argumentsDelta': '"pwd"}',
+        },
+      },
+    });
+    await iterator.moveNext();
+    expect(iterator.current.tools.single.content!.command!.command, 'pwd');
+    host.item(
+      open,
+      _record(2, 'assistant/message', {
+        'turn': 1,
+        'step': 1,
+        'message': {
+          'id': 'committed',
+          'content': [
+            {
+              'type': 'tool-call',
+              'id': 'call-live',
+              'name': 'bash',
+              'arguments': '{"command":"pwd"}',
+            },
+          ],
+        },
+      }),
+    );
+    await iterator.moveNext();
+    host.item(
+      open,
+      _record(3, 'tool/call', {
+        'callId': 'call-live',
+        'name': 'bash',
+        'arguments': '{"command":"pwd"}',
+      }),
+    );
+    await iterator.moveNext();
+    expect(iterator.current.tools, hasLength(1));
+    expect(iterator.current.tools.single.id, 'call-live');
+    await iterator.cancel();
+  });
+
+  test(
+    'embedded tool calls keep command and edit data through a later result',
+    () async {
+      host.onCall = (r) async => r.endpoint == 'session/state'
+          ? {'running': false}
+          : {
+              'cursor': 3,
+              'hasMore': false,
+              'records': [
+                _record(1, 'assistant/message', {
+                  'message': {
+                    'id': 'owner',
+                    'content': [
+                      {'type': 'text', 'text': '核对变更'},
+                      {
+                        'type': 'tool-call',
+                        'id': 'embedded',
+                        'name': 'edit',
+                        'arguments': '{"command":"git diff","file_path":"/ws/a.dart","old_string":"before","new_string":"after"}',
+                      },
+                    ],
+                  },
+                }),
+                _record(2, 'tool/result', {
+                  'message': {
+                    'source': {'callId': 'embedded'},
+                    'content': [
+                      {'type': 'text', 'text': '保留结果'},
+                    ],
+                  },
+                  'meta': {'stdout': 'DIFF', 'exitCode': 0},
+                }),
+                _assistant(3, '后续正文'),
+              ],
+            };
+      final tool = (await service.readSubagent(address)).tools.single;
+      expect(tool.messageId, 'owner');
+      expect(tool.status, ToolStatus.complete);
+      expect(tool.content!.command!.command, 'git diff');
+      expect(tool.content!.command!.stdout, 'DIFF');
+      expect(tool.content!.edits.single.path, '/ws/a.dart');
+      expect(tool.content!.edits.single.before, 'before');
+      expect(tool.content!.edits.single.after, 'after');
+    },
+  );
+
+  test(
+    'opaque blocks do not steal tool ownership from the real assistant message',
+    () async {
+      host.onCall = (r) async => r.endpoint == 'session/state'
+          ? {'running': false}
+          : {
+              'cursor': 2,
+              'hasMore': false,
+              'records': [
+                _record(1, 'assistant/message', {
+                  'message': {
+                    'id': 'owner',
+                    'content': [
+                      {'type': 'reasoning', 'text': '仅思考的真实消息'},
+                      {'type': 'future-block', 'value': '保留未知块'},
+                    ],
+                  },
+                }),
+                _record(2, 'tool/call', {
+                  'callId': 'owned',
+                  'name': 'read',
+                  'arguments': '{}',
+                }),
+              ],
+            };
+      final view = await service.readSubagent(address);
+      expect(view.tools.map((t) => t.messageId), everyElement('owner'));
+      expect(view.messages.single.role, 'event');
+      expect(view.messages.single.text, contains('保留未知块'));
+    },
+  );
 
   test('catalog resolves unknown identity, keeps external rows unaddressable and requires durable completion', () async {
     host.onCall = (r) async {

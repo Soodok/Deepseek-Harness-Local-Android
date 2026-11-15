@@ -1,5 +1,17 @@
 # DSH Android · 交接文档
 
+## 自然配色、玻璃与共享子会话（2026-11-15—16，已验证并归档）
+
+- 基线9ba99ffec2ce002c84e6e7417ede8e3eb07af1f1，仅写隔离树E:/tmp/wt-flutter-native-chat；主仓库保持不动。本轮未扩展Android排障。
+- liquid_glass_widgets固定1.17.3；GlassPanel标准材质、blur8、chromaticAberration0、无重阴影。减少动效/高对比切换使用稳定背景槽，State/文本/焦点/局部滚动回归通过。
+- 雾灰/暖砂/鼠尾草/暮紫各含深浅两套，ThemeExtension传色；真实菜单切换保留控制器和草稿。8套正文至少7:1、小字至少4.5:1；共享禁用图标对比至少3:1。选择仅当前运行有效。
+- OverflowTitle实测溢出才28px/s往返、两端停1.5s；15项覆盖方向、缩放、后台/TickerMode、无障碍及销毁。同页等待3200ms后抽屉标题区域2695像素变化。
+- 主子会话真实共用ConversationFlow/Message、ComposerViewport/Surface/SendButton；工具按需构建。continuable保留真实read/watch/queue，一次性/未知只读。代码流、settlement turn/step归属、重复start、self-address、空历史游标已有效红测后修复；合法后段历史不误拒绝。
+- 两轮独立只读复核结束，七类实际问题已修复；“必须从seq0开始”审查意见经主投影与有界窗口契约核对未采纳。最终完整257项测试通过（50s）；最后仅修改测试字面量风格后7项守卫复跑通过、analyze No issues found（1.2s），之后Dart未改动。
+- beta.27/code402 Web release退出0（68.2s），bundle SHA256 abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9。14张原始PNG、对照图、哈希清单、脚本日志归档docs/reports/assets/2026-11-15-natural-glass；13次采集shader请求200、无运行异常，主宽432及子宽360，17个画廊资源HTTP200。子会话实际发送及排队在PNG已查看。
+- 报告docs/reports/2026-11-15-natural-glass-validation.md；DSH Go固定AGPL提交仅研究4文件设计取舍，未复制源码。Android/APK/真机在线引擎及FPS/峰值内存仍未验收；下一独立工作应是其实际环境验收，不能用本轮Web证据代替。
+
+
 ## 蓝色深浅主题（2026-11-14，已验证并归档）
 
 - 本轮仅隔离目录E:/tmp/wt-flutter-native-chat，基线67e838d4caf4c09697ae96b364098a68bd80897c。蓝色深浅两套、双人轮廓子智能体图标；抽屉“外观”可选浅色、深色、跟随系统。

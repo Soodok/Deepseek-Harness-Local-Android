@@ -1,0 +1,35 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 360,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 360,
+    "bodyWidth": 360
+  },
+  "url": "http://127.0.0.1:58068/",
+  "output": "E:\\tmp\\native-chat-web-preview\\natural-child-dark-360.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data",
+  "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+  "shaderResponses": [
+    {
+      "url": "http://127.0.0.1:58068/assets/packages/liquid_glass_widgets/shaders/lightweight_glass.frag",
+      "status": 200
+    }
+  ],
+  "runtimeErrors": [],
+  "args": [
+    "--width=360",
+    "--showcase",
+    "--settled",
+    "--subagents",
+    "--child-chat",
+    "--child-send",
+    "--semantics"
+  ],
+  "capturedAt": "2026-11-15T16:34:30.243Z"
+}

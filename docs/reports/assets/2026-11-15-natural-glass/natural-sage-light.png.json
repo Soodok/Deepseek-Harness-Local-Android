@@ -1,0 +1,33 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 432,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 432,
+    "bodyWidth": 432
+  },
+  "url": "http://127.0.0.1:55140/",
+  "output": "E:\\tmp\\native-chat-web-preview\\natural-sage-light.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data",
+  "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+  "shaderResponses": [
+    {
+      "url": "http://127.0.0.1:55140/assets/packages/liquid_glass_widgets/shaders/lightweight_glass.frag",
+      "status": 200
+    }
+  ],
+  "runtimeErrors": [],
+  "args": [
+    "--width=432",
+    "--light",
+    "--mood=sage",
+    "--draft",
+    "--semantics"
+  ],
+  "capturedAt": "2026-11-15T16:33:32.728Z"
+}

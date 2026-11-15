@@ -2,12 +2,18 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../model/chat_model.dart';
 import '../model/subagent_model.dart';
 import '../model/tool_content.dart';
 import '../state/chat_controller.dart';
 import '../state/subagent_controller.dart';
 import '../theme/dsh_theme.dart';
 import '../transport/dsh_transport.dart';
+import 'chat_shell.dart' show ChatLayout;
+import 'composer_surface.dart';
+import 'conversation_flow.dart';
+import 'glass_panel.dart';
+import 'overflow_title.dart';
 
 TextStyle _meta(BuildContext context) => TextStyle(
   color: DshPalette.of(context).inkSoft,
@@ -43,7 +49,8 @@ Future<void> showSubagentPanel(
 bool _hasSession(SubagentAddress? address) =>
     address != null &&
     address.parentSessionId.isNotEmpty &&
-    address.childSessionId.isNotEmpty;
+    address.childSessionId.isNotEmpty &&
+    address.parentSessionId != address.childSessionId;
 
 /// Deduplicated agents in first-seen order; later observations win.
 List<AgentTask> collectSubagents(ChatController controller) {
@@ -254,31 +261,49 @@ String _receiptLabel(String delivery) => switch (delivery) {
   _ => '回执状态：' + delivery,
 };
 
-PreferredSizeWidget _bar(
-  BuildContext context,
-  String title, {
-  bool busy = false,
-}) => AppBar(
-  backgroundColor: DshPalette.of(context).paperDeep,
-  leading: IconButton(
-    key: const ValueKey('subagent-back'),
-    tooltip: '返回母会话',
-    onPressed: () => Navigator.of(context).maybePop(),
-    icon: const Icon(Icons.arrow_back),
+Widget _bar(BuildContext context, String title, {bool busy = false}) => Padding(
+  padding: EdgeInsets.fromLTRB(
+    ChatLayout.gutter(MediaQuery.sizeOf(context).width) - 2,
+    8,
+    ChatLayout.gutter(MediaQuery.sizeOf(context).width) - 2,
+    8,
   ),
-  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-  actions: [
-    if (busy)
-      const Padding(
-        key: ValueKey('subagent-busy'),
-        padding: EdgeInsets.only(right: 16),
-        child: SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+  child: Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: ChatLayout.maxColumn),
+      child: GlassPanel(
+        radius: 24,
+        child: Row(
+          children: [
+            IconButton(
+              key: const ValueKey('subagent-back'),
+              tooltip: '返回母会话',
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back),
+            ),
+            Expanded(
+              child: OverflowTitle(
+                text: title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            if (busy)
+              const Padding(
+                key: ValueKey('subagent-busy'),
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              const SizedBox(width: 16),
+          ],
         ),
       ),
-  ],
+    ),
+  ),
 );
 
 /// Independent child conversation. Message text comes only from the
@@ -403,7 +428,20 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
     final busy =
         child != null &&
         (child.loading || child.sending || child.conversation?.running == true);
-    final maxBubble = MediaQuery.sizeOf(context).width * 0.82;
+    final flowMessages = messages
+        .map(
+          (message) => ChatMessage(
+            id: message.id,
+            role: switch (message.role) {
+              'user' => ChatRole.user,
+              'assistant' => ChatRole.assistant,
+              _ => ChatRole.system,
+            },
+            text: message.text,
+            isStreaming: message.isStreaming,
+          ),
+        )
+        .toList(growable: false);
     final header = <Widget>[
       if (fixture) Text('fixture 演示：以下为演示子会话内容。', style: _meta(context)),
       Text(
@@ -416,11 +454,6 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
             : '历史对话',
         style: _meta(context),
       ),
-      if (restriction != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(restriction, style: _body(context)),
-        ),
       if (child != null && child.loading && child.conversation == null)
         Padding(
           key: ValueKey('subagent-loading'),
@@ -449,121 +482,70 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
         ),
     ];
     final receipt = child?.lastReceipt;
-    final tail = receipt == null ? 0 : 1;
     return Scaffold(
       backgroundColor: DshPalette.of(context).paper,
-      appBar: _bar(context, widget.agent.name, busy: busy),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              key: const ValueKey('subagent-messages'),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              itemCount: header.length + messages.length + tail,
-              itemBuilder: (context, index) {
-                if (index < header.length) return header[index];
-                final i = index - header.length;
-                if (i < messages.length) {
-                  return _MessageBubble(
-                    message: messages[i],
-                    maxWidth: maxBubble,
-                  );
-                }
-                return Padding(
-                  key: const ValueKey('subagent-receipt'),
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    _receiptLabel(receipt!.delivery),
-                    style: _meta(context),
-                  ),
-                );
-              },
-            ),
-          ),
-          if (restriction == null && child != null)
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 8, 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        key: const ValueKey('subagent-input'),
-                        controller: _input,
-                        minLines: 1,
-                        maxLines: 5,
-                        keyboardType: TextInputType.multiline,
-                        style: _body(context),
-                        decoration: InputDecoration(
-                          hintText: '发给' + widget.agent.name,
-                          filled: true,
-                          fillColor: DshPalette.of(context).surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide.none,
-                          ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, viewport) => Column(
+            children: [
+              _bar(context, widget.agent.name, busy: busy),
+              Expanded(
+                child: ConversationFlow(
+                  conversationIdentity: child,
+                  listKey: const ValueKey('subagent-messages'),
+                  messages: flowMessages,
+                  tools: child?.conversation?.tools ?? const [],
+                  leading: header,
+                  trailing: [
+                    if (receipt != null)
+                      Padding(
+                        key: const ValueKey('subagent-receipt'),
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _receiptLabel(receipt.delivery),
+                          style: _meta(context),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: IconButton(
-                        key: const ValueKey('subagent-send'),
-                        tooltip: child.sending ? '发送中' : '发送',
-                        onPressed:
-                            child.canSend && _input.text.trim().isNotEmpty
-                            ? _send
-                            : null,
-                        style: IconButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          disabledForegroundColor: DshPalette.of(context)
-                              .inkFaint,
-                          backgroundColor: DshPalette.of(context).sendBlue,
-                          disabledBackgroundColor: DshPalette.of(context)
-                              .sendBlueMuted,
-                        ),
-                        icon: const Icon(Icons.arrow_upward),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.maxWidth});
-
-  final SubagentMessage message;
-  final double maxWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final mine = message.role == 'user';
-    final text = Text(message.text, style: _body(context));
-    if (!mine) {
-      return Padding(padding: const EdgeInsets.only(top: 12), child: text);
-    }
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.only(top: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        decoration: BoxDecoration(
-          color: DshPalette.of(context).userWash,
-          borderRadius: BorderRadius.circular(16),
+              ComposerViewport(
+                availableHeight: viewport.maxHeight,
+                scrollKey: const ValueKey('subagent-composer-scroll'),
+                child: restriction == null && child != null
+                    ? ComposerSurface(
+                        textController: _input,
+                        inputKey: const ValueKey('subagent-input'),
+                        hintText: '发给' + widget.agent.name,
+                        controls: [
+                          const Spacer(),
+                          ComposerSendButton(
+                            buttonKey: const ValueKey('subagent-send'),
+                            tooltip: child.sending
+                                ? '发送中'
+                                : child.conversation?.running == true
+                                ? '排队到下一轮'
+                                : '发送',
+                            onPressed:
+                                child.canSend && _input.text.trim().isNotEmpty
+                                ? _send
+                                : null,
+                          ),
+                        ],
+                      )
+                    : GlassPanel(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            restriction ?? '子会话不可用。',
+                            style: _body(context),
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
-        child: text,
       ),
     );
   }

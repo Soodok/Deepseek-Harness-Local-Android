@@ -1,0 +1,366 @@
+{
+  "version": "1.6.0-beta.27",
+  "versionCode": 402,
+  "baseCommit": "9ba99ffec2ce002c84e6e7417ede8e3eb07af1f1",
+  "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+  "verification": {
+    "fullTests": 257,
+    "fullTestsSeconds": 50,
+    "finalGuardTests": 7,
+    "analyzer": "No issues found",
+    "webBuildSeconds": 68.2
+  },
+  "coverage": "Actual Flutter Web, fixture data; no APK/device/live-engine acceptance",
+  "titleMotion": {
+    "requestedWaitMs": 3200,
+    "changedDrawerPixelsAbove8": 2695
+  },
+  "artifacts": [
+    {
+      "file": "natural-mist-dark.png",
+      "sha256": "2ed75bcbc9117e266fe216326cde1c3ef75539fa94c8321665854df9f74ad7a7",
+      "bytes": 34774,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:32:40.679Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-mist-light.png",
+      "sha256": "00c0e62a8ac1a49118ddb273cfea18a88ab6fb607e62ae9c9b81281524bc45a7",
+      "bytes": 33566,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:32:49.400Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-sand-dark.png",
+      "sha256": "148e43e2f9a823292e3e93e860a0161f9bd63c5893d0ff5e841707fb7c59770d",
+      "bytes": 34869,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--mood=sand",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:32:57.792Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-sand-light.png",
+      "sha256": "0a361e0ebd0861fbb805ff9839828158899069b5c2309065aa329283fdfc2eaf",
+      "bytes": 33802,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--mood=sand",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:33:09.195Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-sage-dark.png",
+      "sha256": "73b7dd63125b9b27af7548880382043590b89934f717941a8e4bcb44d3fa6e68",
+      "bytes": 34928,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--mood=sage",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:33:18.075Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-sage-light.png",
+      "sha256": "d2e64db69f2b69cc447d382ecc6bc59861b115b2138b66b132b0e93df20ffdfd",
+      "bytes": 33853,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--mood=sage",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:33:32.728Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-plum-dark.png",
+      "sha256": "7c607ad722e9e83f7d02e9dd4ee6466cc65045d10de67129f86114cb6d047dbe",
+      "bytes": 34799,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--mood=plum",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:33:40.928Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-plum-light.png",
+      "sha256": "70e7993f34d197911de6a500c0c6e8b93663c881285bdbb43b609ae2671270aa",
+      "bytes": 33590,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--mood=plum",
+        "--draft",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:33:52.027Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-child-light.png",
+      "sha256": "68a136c9d75181fc7bece84232711d3134baa6aa29157d1a0e88e6514778b0da",
+      "bytes": 49596,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--mood=sand",
+        "--showcase",
+        "--settled",
+        "--subagents",
+        "--child-chat",
+        "--child-send",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:34:10.412Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-child-dark-360.png",
+      "sha256": "2a6357b50e7f9df87c098a41caf3e595b7552ce47053dd5b223b674bdef75e7a",
+      "bytes": 50261,
+      "width": 360,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 360,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 360,
+        "bodyWidth": 360
+      },
+      "args": [
+        "--width=360",
+        "--showcase",
+        "--settled",
+        "--subagents",
+        "--child-chat",
+        "--child-send",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:34:30.243Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-process-dark.png",
+      "sha256": "3fd0b5ac543221067ac67f470f3a40eaa0644a0e71c4e61cc57b2665eec995c9",
+      "bytes": 73889,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--execution",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:34:42.051Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-process-light.png",
+      "sha256": "aa7dd11dc1230bced3873ef71a778d280ef15b7513070602b27643b46fc0b9db",
+      "bytes": 72668,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--mood=sage",
+        "--showcase",
+        "--settled",
+        "--collapse-question",
+        "--execution",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:34:59.359Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-title.png",
+      "sha256": "ae1b3c88788f17abd87ba88cb918b95f8f676da701d0684c904db220bff476a7",
+      "bytes": 39683,
+      "width": 432,
+      "height": 960,
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9",
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--drawer",
+        "--marquee",
+        "--semantics"
+      ],
+      "capturedAt": "2026-11-15T16:35:13.521Z",
+      "glassShaderHttp200": true,
+      "runtimeErrors": []
+    },
+    {
+      "file": "natural-title-after.png",
+      "sha256": "4111f105414e5b64725e96ec908b8aea6128c70762dcfff8d8c9f361e586c1d7",
+      "bytes": 39081,
+      "width": 432,
+      "height": 960,
+      "source": "same title session; capture after requested 3200ms wait",
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9"
+    },
+    {
+      "file": "natural-palettes.png",
+      "sha256": "cbede71231e66b4603a17140d68ccfab6c9516c7e84745a3dbaa9c3064416e92",
+      "bytes": 203717,
+      "width": 1098,
+      "height": 1296,
+      "source": "composition of the eight listed original palette screenshots",
+      "bundleSha256": "abc4cebff0de820cf284bb112ee0934fc88c4b0e1f44bbdfa431690dfe666bc9"
+    }
+  ]
+}

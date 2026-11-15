@@ -1,0 +1,52 @@
+Formatted lib/src/transport/native_subagent_transport.dart
+Formatted test/native_subagent_transport_test.dart
+Formatted test/subagent_panel_test.dart
+Formatted 5 files (3 changed) in 0.09 seconds.
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a committed receipt for a user event
+00:00 +1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard keeps live text for an unrelated durable assistant and rejects its receipt
+00:00 +2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a second start before the active attempt ends
+00:00 +3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard preserves baseline and incremental code as assistant content
+00:00 +4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects an empty nonempty-cursor history while allowing bounded suffixes
+00:00 +5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard refuses a self-address before sending
+00:00 +6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: real tool calls, failed results and reasoning keep structured detail and original ownership
+00:00 +7: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: surface replacements remove old tool records and bounded results stay visible
+00:00 +8: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: live tool deltas keep complete arguments and are replaced by the durable call
+00:00 +9: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: embedded tool calls keep command and edit data through a later result
+00:00 +10: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: opaque blocks do not steal tool ownership from the real assistant message
+00:00 +11: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: catalog resolves unknown identity, keeps external rows unaddressable and requires durable completion
+00:00 +12: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: events uses the addressed request and real user/message and assistant/message fields
+00:00 +13: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: unknown assistant blocks remain readable without inventing an assistant reply
+00:00 +14: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: watch stays passive, replaces snapshots and drops duplicate seq
+00:00 +15: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: a durable seq gap becomes a visible stream error
+00:00 +16: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: assistant baseline and deltas settle into the durable message once
+00:00 +17: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: surface replacement removes prior messages without classifying unknown data as replies
+00:00 +18: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: prompt acknowledges inbox delivery only and rejects read-only modes before RPC
+00:00 +19: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: empty history accepts the protocol minus-one cursor
+00:00 +20: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: unknown read resolves its wire mode while preserving caller identity
+00:00 +21: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: late read cannot overwrite a newer watched conversation
+00:00 +22: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: malformed acceptance is rejected instead of fabricated as a receipt
+00:00 +23: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart
+00:01 +23: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child guard hides input for a self-address
+00:01 +24: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child uses the shared flow, selectable rows, disclosure and floating surface
+00:02 +25: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: running continuable child still accepts one queued send without fabricated messages
+00:02 +26: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: fixture 目录实时聚合、按 id 与父子地址去重并可展开
+00:02 +27: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 不支持子会话时入口直接显示原因并禁用
+00:02 +28: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 可用入口真实订阅子会话，返回直接回到母会话
+00:04 +29: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 缺少地址时列表说明不可用，不读取也不发送
+00:04 +30: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 同一更新同时连接已有 id 和地址时只保留最新一条
+00:04 +31: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 读取期间显示 loading，正文只来自 read 结果
+00:04 +32: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: continuable 只发送一次，排队回执独立显示且不伪造回复
+00:04 +33: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 一次性、未知模式只读；缺地址和空地址不可用；均不发送
+00:04 +34: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 发送失败保留草稿并可重发
+00:04 +35: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 发送中编辑过的草稿不被成功结果清空，即使改回原文
+00:04 +36: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 读取失败可重试并重新订阅，退出页面取消订阅
+00:05 +37: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 退出后晚到的发送结果安全丢弃
+00:05 +38: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 退出后晚到的真实挂起读取安全丢弃
+00:05 +39: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 同地址元数据更新保留草稿且不重复读取
+00:06 +40: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 切换子会话清旧稿，旧发送完成不影响新稿
+00:06 +41: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: watch 的真实增量显示为助手正文
+00:06 +42: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 未知送达状态不会显示为已送达
+00:06 +43: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 空白草稿不可发送
+00:06 +44: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 360 宽、两倍文字与键盘弹出时可滚动且无溢出
+00:06 +45: All tests passed!

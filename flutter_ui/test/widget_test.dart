@@ -39,7 +39,7 @@ void main() {
   testWidgets('DSH app bootstrap shows independent chat shell', (tester) async {
     await tester.pumpWidget(const DshApp());
     await tester.pump();
-    expect(find.text('DSH'), findsOneWidget);
+    expect(find.text('DSH', findRichText: true), findsOneWidget);
     expect(find.byTooltip('fixture 模式'), findsOneWidget);
   });
 }

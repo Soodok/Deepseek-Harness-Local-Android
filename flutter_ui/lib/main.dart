@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'src/bridge/host_bridge.dart';
 import 'src/bridge/engine_sessions_stub.dart'
@@ -8,7 +9,16 @@ import 'src/theme/dsh_theme.dart';
 import 'src/transport/fixture_transport.dart';
 import 'src/ui/chat_shell.dart';
 
-void main() => runApp(const DshApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
+  runApp(
+    LiquidGlassWidgets.wrap(
+      child: const DshApp(),
+      brightnessResolver: Theme.maybeBrightnessOf,
+    ),
+  );
+}
 
 class DshApp extends StatefulWidget {
   const DshApp({super.key});
@@ -21,6 +31,7 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
   late ChatController _controller;
   HostInfo? _hostInfo;
   ThemeMode _themeMode = ThemeMode.dark;
+  DshMood _mood = DshMood.mist;
 
   @override
   void initState() {
@@ -54,11 +65,13 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return DshAppearance(
       mode: _themeMode,
+      mood: _mood,
+      onMoodChanged: (value) => setState(() => _mood = value),
       onChanged: (mode) => setState(() => _themeMode = mode),
       child: MaterialApp(
         title: 'DSH',
-        theme: DshTheme.light(),
-        darkTheme: DshTheme.dark(),
+        theme: DshTheme.light(mood: _mood),
+        darkTheme: DshTheme.dark(mood: _mood),
         themeMode: _themeMode,
         debugShowCheckedModeBanner: false,
         home: Builder(

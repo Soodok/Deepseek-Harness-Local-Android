@@ -1,0 +1,31 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart
+00:00 +0: accessibility changes preserve editable and scrollable glass children
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: same instance as _GlassProbeState:<_GlassProbeState#58396(lifecycle state: defunct, not
+mounted)>
+  Actual: _GlassProbeState:<_GlassProbeState#58aec>
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart:27:3)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1968:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart line 27
+The test description was:
+  accessibility changes preserve editable and scrollable glass children
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: accessibility changes preserve editable and scrollable glass children [E]
+  Test failed. See exception logs above.
+  The test description was: accessibility changes preserve editable and scrollable glass children
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: accessibility changes preserve editable and scrollable glass children
