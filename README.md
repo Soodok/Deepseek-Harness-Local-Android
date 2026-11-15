@@ -34,6 +34,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/Soodok/Deepseek-Harness-Local-Android?color=64748b)](https://github.com/Soodok/Deepseek-Harness-Local-Android/commits/main)
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
 [![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
+[![Afdian](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E4%BD%9C%E8%80%85-946ce6?style=for-the-badge&logo=heart&logoColor=white)](https://afdian.com/a/114514soodok)
 
 ---
 
@@ -626,6 +627,20 @@ dev api GET /dev/routes
 - [Telegram](https://t.me/+4VN3pYyH6i8yNDA1)
 
 提 issue 请附：设备型号、Android 版本、CPU ABI、版本号、当前运行模式、相关权限状态、`logcat`、最小复现步骤、失败时的原始输出。
+
+---
+
+## 💜 支持这个项目
+
+项目以 MIT 许可开源，所有功能免费、无付费墙、无订阅、无激活码 —— 赞助**不解锁任何东西**，纯粹是让这件事能继续做下去。
+
+如果它帮你省了时间，可以在这里请作者喝杯咖啡：
+
+**[afdian.com/a/114514soodok](https://afdian.com/a/114514soodok)**
+
+赞助主要用在：真机测试设备与配件、构建与签名环境、域名与服务器、以及跟进上游版本的维护时间。
+
+不赞助也完全没问题 —— 提一个带复现步骤的 Issue、写一份真实使用反馈、把项目推荐给需要的人，同样是实实在在的帮助。
 
 ---
 

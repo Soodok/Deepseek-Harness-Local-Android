@@ -16,6 +16,7 @@
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
 [![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
+[![Afdian](https://img.shields.io/badge/Afdian-Sponsor-946ce6?style=for-the-badge&logo=heart&logoColor=white)](https://afdian.com/a/114514soodok)
 
 <p align="center">
   <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness. Jetzt in deiner Hosentasche." width="100%">
@@ -443,6 +444,18 @@ Fehler gefunden oder eine Funktion vorgeschlagen? Eröffne ein [Issue](https://g
 **[Telegram-Gruppe](https://t.me/+4VN3pYyH6i8yNDA1)** — gleicher Zweck, besser erreichbar ausserhalb Chinas.
 
 Fehler bitte weiterhin als Issue melden, damit sie nicht untergehen.
+
+## 💜 Dieses Projekt unterstützen
+
+Dieses Projekt ist unter MIT lizenziert. Alle Funktionen sind kostenlos — keine Paywall, kein Abo, kein Lizenzschlüssel. **Eine Spende schaltet nichts frei**; sie hält die Arbeit schlicht am Laufen.
+
+Wenn es dir Zeit gespart hat, kannst du dem Autor hier einen Kaffee spendieren:
+
+**[afdian.com/a/114514soodok](https://afdian.com/a/114514soodok)**
+
+Spenden fliessen in: Testgeräte und Zubehör, Build- und Signierungsinfrastruktur, Domain- und Serverkosten sowie die Wartungszeit, um Upstream-Releases weiter zu verfolgen.
+
+Nicht zu spenden ist völlig in Ordnung — ein reproduzierbarer Issue-Bericht, ehrliches Nutzungsfeedback oder ein Hinweis an jemanden, der es braucht, hilft genauso.
 
 ## 🙏 Mitwirkende
 

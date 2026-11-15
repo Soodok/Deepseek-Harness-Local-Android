@@ -13736,3 +13736,32 @@ SET_DEFAULT + CHECK），设备装的是 0.7.4 —— 三个能力全无。
 真机逐项点按未做：设备上 ASR 是 0.7.4，升到 0.8.0 要用户自己从 GitHub Releases
 装包，我没有代装。本次修的是「正确识别并说明版本过旧」，不是「让 0.7.4 也能
 一键设默认」—— 那三个接口在 0.7.4 里根本不存在。
+
+## 一百三十二 · 2026-11-15 README 三语加爱发电支持入口
+
+**需求**：用户要求在仓库 README 加爱发电支持链接 `https://afdian.com/a/114514soodok`。
+
+**改动**（4 个文件，只增不改，41 行新增）：
+- `README.md` / `README_EN.md` / `README.de.md`：各加两处 —— ① 徽章区 Telegram 之后加 shields 徽章；② 「反馈」与「贡献者」之间新增 `## 💜 支持这个项目` 段（英/德版为 `Support This Project` / `Dieses Projekt unterstützen`）。
+- `.github/FUNDING.yml`（新增）：`custom: ["https://afdian.com/a/114514soodok"]`，让仓库页右上角出现 Sponsor 按钮。
+
+**文案口径**（三语一致，避免"付费解锁"误解）：项目 MIT 开源、所有功能免费、无付费墙/订阅/激活码；**赞助不解锁任何东西**；赞助用途写实（真机测试设备、构建签名环境、域名服务器、跟进上游的维护时间）；明确"不赞助也完全没问题，带复现的 Issue / 真实反馈 / 推荐给需要的人同样是帮助"。
+
+**验证**：
+- 徽章 SVG 实际取回：`爱发电: 赞助作者`，126.75×28，无 error/invalid；英文版徽章标签用 `Afdian-Sponsor`（英德版不塞中文）。
+- 链接可达：`curl -A Chrome https://afdian.com/a/114514soodok` → 200，18,671 B。
+- `markdown` 3.11.1 渲染校验：三份文件新增段均渲染为 `<h2>`，段内 afdian 链接各 1 个，加粗正常。
+- 编码：三份均 UTF-8 无 BOM、无 CRLF；代码围栏配平（10/4/4）；`git diff --stat` 仅 41 行新增。
+- 门禁：`python scripts/check-i18n.py` → All i18n checks passed（退出码 0），未触碰 strings.xml 与 Kotlin 字面量。
+- `yaml.safe_load` 解析 FUNDING.yml 通过。
+
+**德语版一处顺序修正**：Afdian 徽章初次插在 Telegram 与 `![i18n]` 之间，把 i18n 徽章挤到行尾；已调整为 i18n 在前、Afdian 在最后，与另两版视觉分组一致。
+
+### 顺带发现（未修，超出本次范围）
+`README.md:145` / `README_EN.md:96` / `README.de.md:95` 仍写「**57 个条目**」，但
+`app/src/main/assets/extensions/catalog.json` 实际 **58 项**（提交 `11680997`
+「feat(ext): 扩展中心新增 Bun 运行时（58 项）」已在 HEAD 历史中，Language runtimes 由 9 变 10，
+新增 `bun`）。同一口径也出现在 dshm.soodok.cn 宣传页（两处 57）。
+三份 README 的「20 套工具链」需同步核对（当前 catalog 的 Build & tooling 14 + Language runtimes 10
++ Cross compiling 2 = 26 项编译相关，与"20 套工具链"的旧分法不一致，需按 README 原文口径确认后再改）。
+
