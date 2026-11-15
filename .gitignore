@@ -153,6 +153,9 @@ scripts/probes/*.bin
 !/scripts/probes/_test_root_pnpm_locks.py
 !/scripts/probes/_test_plugin_engine_compat.py
 !/scripts/probes/_test_plugin_install_errors.py
+# 扩展入口补链守卫（v1.6.0-beta.15）：守住「相对 target 按链接父目录解析」+
+# 安装期清单重放 + 启动期存量补链 + binutils 声明别名 + 仍拒真越界
+!/scripts/probes/_test_ext_link_guard.py
 !/scripts/probes/_test_webview_media_permission.py
 !/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_test_webview_polyfill_v4.mjs

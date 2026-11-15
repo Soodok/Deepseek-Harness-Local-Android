@@ -366,6 +366,10 @@ class ExtensionManager(private val ctx: Context) {
         // 解释器补链（v1.2.31 新增），对已装扩展补齐 —— 否则 166 个 shebang 脚本
         // 仍报 bad interpreter（Agent 实测）。
         // v1.2.35：同时做声明 bins 核对 + 跨扩展解释器 shebang 升级（PATH 依赖 → 绝对直指）
+        // v1.6.0-beta.15：同时补回「被 v1.7.12 落点守卫误拦」的入口软链。
+        // 那时候相对 target 按扩展根解析，deb 里最常见的 `bin/x -> ../lib/x/x` 全被
+        // 判越界跳过 —— 已装扩展里根本没有这条链，修判定只能救将来的安装。
+        // 这里按安装期清单重放 + 按上游已知布局探测（见 ExtensionLinkRepair）。
         runCatching {
             val engine = EngineConfig.engineRoot(ctx)
             val binsOf = loadCatalog().associate { it.id to it.bins }
@@ -373,9 +377,28 @@ class ExtensionManager(private val ctx: Context) {
                 ?.filter { it.isDirectory && File(it, MARKER).isFile }
                 ?.forEach { dir ->
                     ensureShimInterpreters(dir, dir, engine, otherExtBins(dir))
-                    // 声明的 bins 全缺 = 负载没落地（历史残缺安装），启动日志留证据
+                    // 声明名与上游产物名不一致的（binutils 的 gar/gnm/…）先补别名
+                    runCatching { ExtensionBinAliases.apply(dir.name, dir) }
+                    // 被守卫拦掉的链接：先按清单重放，再按已知布局兜底
+                    val manifest = File(dir, LINK_MANIFEST)
+                    runCatching {
+                        if (manifest.isFile) {
+                            val n = ExtensionLinkRepair.replayManifest(
+                                dir, manifest.readLines().filter { it.isNotBlank() })
+                            if (n > 0) Log.i(TAG, "ext ${dir.name}: replayed $n link(s) from manifest")
+                        }
+                    }
                     val declared = binsOf[dir.name].orEmpty()
-                    val missing = declared.filterNot { File(dir, "bin/$it").exists() }
+                    runCatching {
+                        val healed = ExtensionLinkRepair.repairMissingBins(
+                            dir, declared) { d, n -> binExists(d, n) }
+                        if (healed.isNotEmpty()) {
+                            Log.i(TAG, "ext ${dir.name}: healed missing bins " +
+                                healed.joinToString(", ") { it.first + " -> " + it.second })
+                        }
+                    }
+                    // 声明的 bins 全缺 = 负载没落地（历史残缺安装），启动日志留证据
+                    val missing = declared.filterNot { binExists(dir, it) }
                     if (missing.isNotEmpty()) {
                         Log.w(TAG, "ext ${dir.name}: missing bins $missing (reinstalling this extension fixes it)")
                     }
@@ -828,6 +851,11 @@ class ExtensionManager(private val ctx: Context) {
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
             if (ext.id == "vim") patchVimLinks(finalDir)
             if (ext.id == "lua") patchLuaLinks(finalDir)
+            // 目录声明名与上游产物名不一致时补别名（binutils：ar/nm/objdump/strip/ld
+            // 在上游叫 gar/gnm/gobjdump/gstrip/ld.bfd —— issue #116）。放在主程序
+            // 存在性校验**之前**，否则这类扩展会被判「装失败」并删掉版本标记。
+            val aliased = ExtensionBinAliases.apply(ext.id, finalDir)
+            if (aliased > 0) Log.i(TAG, "ext " + ext.id + ": created " + aliased + " bin alias link(s)")
             patchGradleLauncher(finalDir)
             // 发布后主程序存在性校验（v1.2.42 收严，Agent 实测「19/19 green 但主程序没落地」）：
             // 声明 bins **全部**缺失 = 依赖装上了、主程序没落地 → 判安装失败（删标记），
@@ -1148,9 +1176,18 @@ class ExtensionManager(private val ctx: Context) {
                     val t = remapTermuxTarget(finalDir, job.target)
                     // ★ 约束目标落在扩展根内（v1.7.12）。remapTermuxTarget 只处理两种
                     //   已知前缀，其余 target 原样返回 —— 于是 "../../.." 或 "/system/x"
-                    //   这类值会被照建，指到扩展目录之外。合法扩展的链接目标都在自己根内
-                    //   （usr/* 已同级化），越界只能是索引/包被篡改，此时不建才是对的。
-                    if (!isInExtensionRoot(finalDir, t)) {
+                    //   这类值会被照建，指到扩展目录之外。越界只能是索引/包被篡改，
+                    //   此时不建才是对的。
+                    //
+                    // ⚠️ v1.6.0-beta.15 修：相对 target 的基准必须是**链接父目录**。
+                    //   v1.7.12 的实现以扩展根为基准解析，于是 deb 里最常见的
+                    //   `bin/zig -> ../lib/zig/zig`、`bin/go -> ../lib/go/bin/go`、
+                    //   `bin/d2j-dex2jar -> ../opt/dex2jar/d2j-dex2jar.sh` 全被判越界并
+                    //   静默跳过 —— 负载 171MB 完好，bin/ 却没有主程序，校验报
+                    //   「none of the executables declared by Zig (zig) were installed」。
+                    //   判定口径移到 ExtensionLinkPolicy（纯 JVM，单测直接覆盖）。
+                    val linkRel = job.linkRel.removePrefix("usr/")
+                    if (!isInExtensionRoot(finalDir, linkRel, t)) {
                         Log.w(TAG, "symlink target escapes extension root, skipped: " +
                             job.linkRel + " -> " + job.target)
                         return@forEach
@@ -1181,6 +1218,15 @@ class ExtensionManager(private val ctx: Context) {
             link.setExecutable(true, false)
             link.setReadable(true, false)
         }
+        // 记录本次要落地的全部链接：落点守卫以后若再次收紧/调整基准，启动期能按清单
+        // 把「当时被跳过」的链接补回来（存量用户手里的 deb 早已清掉，重放不了原始载荷）。
+        runCatching {
+            File(finalDir, LINK_MANIFEST).writeText(
+                pending.joinToString("\n") {
+                    ExtensionLinkRepair.encodeLink(it.linkRel, it.target, it.isSymlink)
+                },
+            )
+        }.onFailure { Log.w(TAG, "link manifest write failed: " + it.message) }
     }
 
     /**
@@ -1211,15 +1257,15 @@ class ExtensionManager(private val ctx: Context) {
     }.takeIf { it?.isFile == true }
 
     /**
-     * 链接目标是否仍在扩展根内（v1.7.12）。相对 target 以链接父目录为基准解析，
-     * 绝对 target 直接比前缀。用 canonical 路径比较，绕过 ".." 与重复分隔符。
+     * 链接目标是否仍在扩展根内（v1.7.12 引入，v1.6.0-beta.15 修正基准）。
+     *
+     * 具体口径见 [ExtensionLinkPolicy] —— 移到那里是为了能直接被 JVM 单测覆盖：
+     * 这段判定出过一次「相对 target 以扩展根为基准」的方向性错误，把 35 个真实
+     * deb 包里最常见的入口软链形态（`bin/x -> ../lib/x/x`）全判成越界。
+     * 保留这个薄封装是为了不改动调用方，同时避免两处实现漂移。
      */
-    private fun isInExtensionRoot(finalDir: File, target: String): Boolean = runCatching {
-        val root = finalDir.canonicalFile.toPath()
-        val p = java.nio.file.Paths.get(target)
-        val abs = if (p.isAbsolute) p else root.resolve(p)
-        abs.normalize().startsWith(root.normalize())
-    }.getOrDefault(false)
+    private fun isInExtensionRoot(finalDir: File, linkRel: String, target: String): Boolean =
+        ExtensionLinkPolicy.isInExtensionRoot(finalDir, linkRel, target)
 
     // Absolute symlink target -> path inside the extension dir.
     // Termux PREFIX is "<files>/usr" and the unpacked extension root IS that
@@ -1887,6 +1933,8 @@ class ExtensionManager(private val ctx: Context) {
         private const val TERMUX_HOME_PREFIX = "$TERMUX_PREFIX/"
         /** 悬空链接自愈标记：修过一次就不再扫（见 repairFlattenedUsrLinks） */
         private const val LINK_REPAIR_MARK = ".link-map-v2"
+        /** 安装期待落地链接清单（每行 linkRel<TAB>target<TAB>s|h）：落点守卫修正后用于补回存量 */
+        private const val LINK_MANIFEST = ".links.tsv"
         // gradle 启动脚本补丁的幂等标记 —— 出现过就不再重复打（见 patchGradleLauncher）
         private const val GRADLE_PATCH_MARK = "# dsh-android-patch: gradle-launcher"
 

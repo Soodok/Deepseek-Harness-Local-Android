@@ -272,14 +272,20 @@ android {
         // ② MD3 从「只改颜色」补上形态分叉（7 个 dimension 令牌 + 弹窗主题 + 去掉 show 后换背景）；
         // ③ 动态取色不再重建 Activity（SystemAccent 直读 system_accent1，relaunch 0 次）；
         // ④ 首次启动跟随系统语言（#109）；⑤ 容器里 C 编译的两层根因；⑥ 插件坏 lockfile 自愈。
-        // versionCode 继续单调递增：375 → … → 388 → 389 → 390。
-        versionCode = 390
+        // v1.6.0-beta.15（2026-11-15）：扩展「下载失败」误报（#115 / #116）——
+        // ① 软链落点守卫把相对 target 按扩展根解析（应为链接父目录），deb 里最常见的
+        //    bin/x -> ../lib/x/x 全被判越界静默跳过 → bin/ 没有主程序但负载完好；
+        // ② 启动期按安装清单 + 上游已知布局补回存量扩展缺失的入口链；
+        // ③ binutils 补声明名 → 上游名别名（ar→gar / nm→gnm / objdump→gobjdump /
+        //    strip→gstrip / ld→ld.bfd），健康检查不再永远报 Main executables missing (5)。
+        // versionCode 继续单调递增：375 → … → 389 → 390 → 391。
+        versionCode = 391
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.14"
+        versionName = "1.6.0-beta.15"
 
         ndk {
             abiFilters += listOf(targetAbi)
