@@ -69,7 +69,7 @@ object BackupPreferences {
     /** Emits a versioned UTF-8 JSON document; includeCredentials opts into reviewed sensitive keys. */
     @Synchronized
     fun snapshot(ctx: Context, includeCredentials: Boolean = false): ByteArray {
-        val app = ctx.applicationContext.createCredentialProtectedStorageContext()
+        val app = ctx.applicationContext
         val dir = File(File(app.applicationInfo.dataDir).canonicalFile, "shared_prefs")
         if (dir.exists() && (dir.canonicalFile != dir.absoluteFile || !dir.isDirectory)) {
             throw IOException("invalid shared_prefs directory")
@@ -108,7 +108,7 @@ object BackupPreferences {
     @Synchronized
     fun applyWithRollback(ctx: Context, bytes: ByteArray, replace: Boolean = false): ApplyReport {
         val entries = decode(bytes)
-        val app = ctx.applicationContext.createCredentialProtectedStorageContext()
+        val app = ctx.applicationContext
         val changes = mutableListOf<ChangeRecord>()
         try {
             for ((file, group) in entries.groupBy { it.file }) {
@@ -137,7 +137,7 @@ object BackupPreferences {
 
     @Synchronized
     fun rollback(ctx: Context, snapshot: RollbackSnapshot): RollbackReport =
-        rollbackInternal(ctx.applicationContext.createCredentialProtectedStorageContext(), snapshot)
+        rollbackInternal(ctx.applicationContext, snapshot)
 
     private fun rollbackInternal(ctx: Context, snapshot: RollbackSnapshot): RollbackReport {
         var restored = 0
