@@ -6,7 +6,7 @@
 ## 0. 约束
 
 - 本会话只用 DeepSeek/GLM 路线开发（gf/deepseek-v4.1-flash 具名配置）；唯一例外是用户新授权的「gpt-6-luna 真实应用测试」，仅用于模拟器内一次短回复 + 一次只读工具任务 + 一次取消。
-- 密钥不得出现在任何输出、回复、截图、文档、git、证据中；仅在内存中 parse，脱敏写出。
+- 密钥不得出现在输出、回复、截图、文档、git、证据或 APK 中；仅授权写入专用模拟器的应用私有凭据配置。本轮曾产生一个明文传输暂存文件，已在收尾核实并删除，原始回滚备份保留。
 - Flutter format/test/analyze 与 Gradle 串行执行（禁止并发构建/测试）。
 
 ## 1. 主会话入口 vs 子会话返回（规格 1）
@@ -20,14 +20,14 @@
 
 - [x] 视觉胶囊表面 34dp（区间 32–36），发送按钮 48dp；外层保留 48dp 触控区。
 - [x] 文字垂直居中、左右内边距对称（12dp），长模型名 ellipsis 不溢出。
-- [x] 小字/大字号测试 + 360/432 实机截图；断言胶囊视觉高度与 48dp 触控区同时成立。
+- [x] 小字/大字号与 360/390/432dp 组件测试；同一专用模拟器的 1080×2340 截图另行取证，不能视为三种设备宽度实测。
 
 ## 3. 悬浮玻璃（规格 3）
 
-- [x] 复核 DSH Go 固定提交 `9f31a46`：`app/pubspec.yaml` 无任何玻璃依赖；`app/lib/ui/theme/glass.dart` 为自绘 `GlassSurface`，`surfaces.dart` 定义 GlassTier/GlassStyle；项目 AGPL-3.0。结论写进报告（精确文件/commit/URL），不复制其源码。
+- [x] 收尾复核 DSH Go 可用提交 `97635eb8cae420cd70076eee5ae446a8dd47b131`（原 `9f31a46` 引用未能重新联网核对）：`app/pubspec.yaml` 无任何玻璃依赖；`app/lib/ui/theme/glass.dart` 为自绘 `GlassSurface`，`surfaces.dart` 定义 GlassTier/GlassStyle；项目 AGPL-3.0。结论写进报告（精确文件/commit/URL），不复制其源码。
 - [x] 用 Flutter 官方公开 API 重写 `GlassPanel`：`BackdropFilter(ImageFilter.blur)` + 裁剪 + 发丝描边 + 顶边高光 + 只在形状外侧的阴影；减少动效/高对比走实色兜底。
 - [x] 页面加轻微背景渐变 + 柔光（自身实现），使模糊有内容可透出（现在纯色背景导致模糊不可见）。
-- [x] 主子共享同一 `GlassPanel`；State/焦点/草稿保持；真实屏 360/432 对比证据。
+- [x] 主子共享同一 `GlassPanel`；State/焦点/草稿保持由组件测试验证，设备截图仅覆盖专用模拟器，真实子会话尚未在线验收。
 
 ## 4. 子智能体图标（规格 4）
 
@@ -44,7 +44,7 @@
 
 ## 6. 真实模型授权测试（规格 6）
 
-- [x] 只读定位桌面 DSH 的 gpt-6-luna 路由：provider `liang-da-guan-bao`、api `openai-completions`、baseURL（脱敏记录）、credential ref `FFF_API_KEY`（值不输出）。
+- [x] 只读定位桌面 DSH 的 gpt-6-luna 路由：provider `liang-da-guan-bao`、api `openai-completions`、baseURL（端点可记录，密钥值不输出）、credential ref `FFF_API_KEY`（值不输出）。
 - [x] 备份设备 `dsh-home/profiles/web/cordis.patch.yml` 与 `.credentials.yaml`，仅写该设备独立 profile；桌面主配置不动。
 - [x] 重启引擎/应用 → 模型面板出现该模型 → 一条短真实回复（marker）→ 一条只读工具任务 → 一次停止；读 receipt/journal 确认。
 - [x] 失败如实记录（endpoint 不可达/限额/不支持工具），不退化成 fixture/固定回复。
@@ -59,5 +59,5 @@
 
 - 门禁：353 项测试通过、analyze 无问题、beta.35(code410) 构建成功并安装到 emulator-5570。
 - 规格 1/2/3/4/5 全部落地并有对应测试与设备截图。
-- 规格 6：真实 gpt-6-luna 短回复与一次取消在设备上跑通并读到 journal；**只读工具任务失败**——上游 luna 路由不返回 tool_calls（带 48 个真实工具 schema 直连复现，59.4s 返回 0 个 tool_calls 且自述无法访问 bash），属中转站能力限制，已在报告 §9 如实记录。
-- 证据：docs/reports/assets/2026-11-16-composer-refinement（24 张 PNG + 24 份同帧 XML + 5 份 journal JSON + 产物 JSON）。
+- 规格 6：真实 gpt-6-luna 短回复与取消已在设备跑通；**只读工具任务未通过**——bash 任务由用户停止，read 任务两次 300000ms 超时后停止，一次直连复现返回 200 但无 tool_calls。样本不足以归因到模型或中转站的稳定能力限制，真实工具、审批及子代理全流程仍未验收。
+- 证据：docs/reports/assets/2026-11-16-composer-refinement（24 张 PNG + 24 份同帧 XML + 6 份 journal JSON + 产物 JSON + 三项门禁日志及凭据扫描判定）。

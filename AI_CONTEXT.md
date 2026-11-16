@@ -1,18 +1,21 @@
 # DSH Android · 交接文档
 
-## Composer 细化与真实模型验收（2026-11-16 21:50，beta.35 已安装）
+## Composer 细化与真实模型验收（2026-11-16 收尾复核，beta.35 已安装）
 
 - 基线 831bd414（beta.34/code409）；只写 E:/tmp/wt-flutter-native-chat，主仓库未动；设备只用 emulator-5570。
 - 规格 1：ChatShell 删除 onBack 误用，主会话左上角固定为「打开会话抽屉」（key session-menu），会话列表入口在抽屉内（Android 文案「会话列表」）；真实子会话仍在 SubagentChatPage 用返回箭头。子会话新增只读模型展示 subagent-model-readonly（来源 modelSelection.next.model，读取失败返回 null 而不中断子会话），无 composer-model、无 selectModel。
-- 规格 2：新增 ComposerModelPill —— 34dp 绘制表面（key composer-model-surface）套在 48dp 触控区（key composer-model）内，InkWell 覆盖整个 48dp 行高，StadiumBorder 0.8dp 描边、左右 12dp、height:1 + 均分行高居中、长名 ellipsis、文字缩放夹 1.2。
-- 规格 3：查明 DSH Go 固定提交 9f31a46 无玻璃第三方库——app/lib/ui/theme/glass.dart 自绘 GlassSurface，surfaces.dart 定义 GlassTier{chrome,sheet,card,pill}，仓库 AGPL-3.0；本仓库只借鉴设计取舍。GlassPanel 改为 ClipRRect + BackdropFilter(enabled:+ImageFilter.compose(饱和度,blur), 16px) + CustomPaint 发丝边/顶边高光 + 只在形状外绘制的阴影；减少动效只切 enabled 与近实色填充，组件结构不变（State/焦点/滚动保留）；新增 DshBackdrop 页面渐变+两处柔光让模糊有内容；移除 liquid_glass_widgets 1.17.3（pubspec/main.dart 初始化与 wrap 全删）。
+- 规格 2：新增 ComposerModelPill —— 34dp 绘制表面（key composer-model-surface）套在 48dp 触控区（key composer-model）内，InkWell 覆盖整个 48dp 行高，圆角容器 0.8dp 描边、左右 12dp、height:1 + 均分行高居中、长名 ellipsis、文字缩放夹 1.2。
+- 规格 3：收尾实核 DSH Go 提交 97635eb8cae420cd70076eee5ae446a8dd47b131 无玻璃第三方库（稀疏检出的 glass.dart/surfaces.dart 已按 Git blob 导出核对；旧9f31a46引用未能联网复核）——app/lib/ui/theme/glass.dart 自绘 GlassSurface，surfaces.dart 定义 GlassTier{chrome,sheet,card,pill}，仓库 AGPL-3.0；本仓库只借鉴设计取舍。GlassPanel 改为 ClipRRect + BackdropFilter(enabled:+ImageFilter.compose(饱和度,blur), 16px) + CustomPaint 发丝边/顶边高光 + 只在形状外绘制的阴影；减少动效只切 enabled 与近实色填充，组件结构不变（State/焦点/滚动保留）；新增 DshBackdrop 页面渐变+两处柔光让模糊有内容；移除 liquid_glass_widgets 1.17.3（pubspec/main.dart 初始化与 wrap 全删）。
 - 规格 4：_TopBar 用 collectSubagents(controller).isNotEmpty 决定是否布局 subagent-selector，空目录不占位。
 - 规格 5：ComposerActionButton 取代并列的停止+发送：running&&!hasContent 且可停→停止(key composer-stop)，有草稿/附件→发送(key composer-send，走 queue/steering)，空闲空稿禁用；ChatController 新增 isBusy/canStop/stopInFlight，stop 防连点；取消失败不再伪装成连接错误（保留状态+错误文案，顶栏显示「操作未完成」），可重试。子会话复用同一组件但 canStop=false（无 cancel RPC，不伪造停止）。
 - 规格 6：桌面侧 luna 路由 liang-da-guan-bao / openai-completions / http://118.178.131.110:9178/v1 / 模型 gpt-6-luna / 凭据引用 FFF_API_KEY（值从未输出）。设备仅写 profiles/web/cordis.patch.yml（追加 llm-pi-ai provider luna-route + agent-default-model）与 .credentials.yaml（追加 refs.FFF_API_KEY）；写入前备份 E:/tmp/dsh-luna-provision/backup-20261116-205020。设备 session/modelCatalog 返回 luna-route/gpt-6-luna。
-- 门禁（单次串行）：完整 353 项测试通过（01:35，android-beta35-flutter.log）、analyze No issues found（3.8s）、gradle assembleDebug BUILD SUCCESSFUL（android-beta35-build.log）。APK E:/tmp/native-chat-web-preview/dsh-native-chat-beta35-x86_64-full.apk，248029690 B，SHA-256 5ef94ff9599dcac8b3c21d05536857710dbe5202aac8eb3c41ae64705f2adc9e，仅 x86_64，内嵌 runtime 0b693c76…（138391732 B）；install -r 成功，设备 versionCode=410。
+- 门禁（单次串行）：完整 353 项测试通过（末行01:24，android-beta35-flutter.log，EXIT=0）、最终analyze No issues found（35.4s，退出0，android-beta35-analyze-final.log）、gradle assembleDebug BUILD SUCCESSFUL（1m11s，android-beta35-build.log，EXIT=0）。APK E:/tmp/native-chat-web-preview/dsh-native-chat-beta35-x86_64-full.apk，248029690 B，SHA-256 5ef94ff9599dcac8b3c21d05536857710dbe5202aac8eb3c41ae64705f2adc9e，仅 x86_64，内嵌 runtime 0b693c76…（138391732 B）；install -r 成功，设备 versionCode=410。
 - 设备实测：主会话首元素是打开会话抽屉、无返回箭头、无「返回会话列表」；该会话无真实子会话时顶栏完全没有子代理按钮；真实短回复 LUNA_DEVICE_OK 经 luna-route 返回（journal seq 50-54）；运行中同一槽位变「停止执行」，点一次后 journal 记 turn/end aborted(user) 且槽位回到发送。
-- 未通过项（真实失败，非界面缺陷）：只读工具任务在该中转站失败——journal 为 pi-ai stream idle timeout 300000ms + llm/retry 两次仍超时；把 journal 里的 48 个真实工具 schema 原样打给同一端点，53-59s 后返回 200 但 tool_calls=0，正文自述无法访问 bash。即上游 gpt-6-luna 不真正执行工具调用。
-- 报告 docs/reports/2026-11-16-composer-refinement-validation.md，证据 docs/reports/assets/2026-11-16-composer-refinement（24 PNG + 24 XML + 5 journal JSON + beta35-artifact.json）。
+- 未通过项：bash工具任务没有工具调用，seq60为stream=[]，用户停止后seq62=aborted(user)；read任务seq68/71两次300000ms超时、seq69/72重试1/2，最终seq76=aborted(user)。完整77条事件已补存rpc-events-beta35-final.json。一次直接探测带48个真实schema，59.4s HTTP200、tool_calls=0。仅能确认本轮工具任务未通过，不能归因模型或路由始终不支持；真实在线工具、审批及子代理全流程仍未验收。
+- 报告 docs/reports/2026-11-16-composer-refinement-validation.md，证据 docs/reports/assets/2026-11-16-composer-refinement（24 PNG + 24 XML + 6 journal JSON + beta35-artifact.json + 门禁日志/凭据扫描判定）。
+- GLM checker会话tool-management-child-a8b9d43f-3e0f-4645-ae1c-ec9647d88614已completed，实际route=opencode-go-2/opencode-2-glm-5.3-flash。无P1/P2代码问题，两项报告P2已逐条对账修正，处理记录docs/reports/2026-11-16-composer-refinement-review.md。
+- 凭据精确扫描：1884个受版本管理文件、最终journal、APK1354个解压条目均未命中授权密钥；发现并删除本轮本地明文传输暂存，以及设备/data/local/tmp的四个传输文件。已授权应用私有配置及写入前回滚备份保留，最终判定见beta35-secret-audit-post-cleanup.json。
+- 专用模拟器5570已正常退出，旧50287画廊已停止释放内存；AVD与安装数据保留。后续首要任务是定位本轮真实工具调用失败，再验收在线审批/子代理；当前不得宣称完整在线全流程通过。
 
 ## Android 实机链路验收（2026-11-16 17:55，beta.34 已安装，在线模型待授权）
 
