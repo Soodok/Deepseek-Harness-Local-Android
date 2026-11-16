@@ -54,6 +54,7 @@ class SubagentConversation {
     List<ToolRun> tools = const [],
     required this.revision,
     this.running = false,
+    this.modelLabel,
   }) : messages = List.unmodifiable(messages),
        tools = List.unmodifiable(tools);
   final SubagentAddress address;
@@ -61,6 +62,11 @@ class SubagentConversation {
   final List<ToolRun> tools;
   final int revision;
   final bool running;
+
+  /// The child's own model as reported by the Host projections. It is display
+  /// only: a child conversation never selects or changes a model, so null means
+  /// "not reported", never "inherit and edit".
+  final String? modelLabel;
 }
 
 class SubagentReceipt {

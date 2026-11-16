@@ -90,6 +90,7 @@ class NativeSubagentTransport implements SubagentTransport {
     journal.page(page);
     journal.running =
         (await _state(resolved.childSessionId))['running'] as bool;
+    final modelLabel = await _modelOf(resolved.childSessionId);
     final currentRevision = _revisions[address] ?? -1;
     final currentCursor = _cursors[address] ?? -1;
     // A read started before a live update cannot replace that newer view.
@@ -103,9 +104,10 @@ class NativeSubagentTransport implements SubagentTransport {
         tools: view.tools,
         revision: math.min(revisionAtStart, currentRevision - 1),
         running: journal.running,
+        modelLabel: modelLabel,
       );
     }
-    return _conversation(journal);
+    return _conversation(journal, modelLabel: modelLabel);
   }
 
   @override
@@ -113,6 +115,7 @@ class NativeSubagentTransport implements SubagentTransport {
     _validate(address);
     final resolved = await _resolve(address);
     final state = await _state(resolved.childSessionId);
+    final modelLabel = await _modelOf(resolved.childSessionId);
     final journal = _ChildJournal(address)..running = state['running'] as bool;
     await for (final frame in rpc.follow('session/follow', {
       'request': {
@@ -122,7 +125,9 @@ class NativeSubagentTransport implements SubagentTransport {
         'turnWindow': {'minMessages': 50, 'minTurns': 2},
       },
     })) {
-      if (journal.accept(frame)) yield _conversation(journal);
+      if (journal.accept(frame)) {
+        yield _conversation(journal, modelLabel: modelLabel);
+      }
     }
   }
 
@@ -159,6 +164,20 @@ class NativeSubagentTransport implements SubagentTransport {
     return SubagentReceipt(requestId: requestId, delivery: 'queue');
   }
 
+  /// The child's effective model, as the Host projects it. Read only: a child
+  /// conversation can never select one, so this feeds a label, nothing else.
+  Future<String?> _modelOf(String id) async {
+    // A label is never worth failing a child conversation over: an unreported
+    // or malformed projection simply shows nothing.
+    try {
+      final selection = _object((await _projections(id))['modelSelection']);
+      final next = _object(selection?['next']);
+      return _string(next?['model']) ?? _string(next?['provider']);
+    } on Object {
+      return null;
+    }
+  }
+
   Future<Map<String, Object?>> _projections(String id) async {
     final projection = _object(
       await rpc.call('session/projections', {
@@ -192,7 +211,10 @@ class NativeSubagentTransport implements SubagentTransport {
     );
   }
 
-  SubagentConversation _conversation(_ChildJournal journal) {
+  SubagentConversation _conversation(
+    _ChildJournal journal, {
+    String? modelLabel,
+  }) {
     final revision = math.max(
       (_revisions[journal.address] ?? -1) + 1,
       journal.cursor,
@@ -206,6 +228,7 @@ class NativeSubagentTransport implements SubagentTransport {
       tools: view.tools,
       revision: revision,
       running: journal.running,
+      modelLabel: modelLabel,
     );
   }
 

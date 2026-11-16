@@ -124,6 +124,18 @@ class ChatController extends ChangeNotifier {
           _state.status == ChatStatus.streaming ||
           _state.status == ChatStatus.waitingAction);
 
+  bool get isBusy =>
+      _state.status == ChatStatus.streaming ||
+      _state.status == ChatStatus.waitingAction;
+
+  /// A stop request is only offered while a turn actually runs, and it cannot
+  /// be sent twice: the second click would cancel a turn that already ended.
+  bool get canStop => isBusy && !_stopInFlight;
+
+  /// True from the click until the transport answered; the button stays
+  /// disabled so a double tap cannot send two cancels.
+  bool get stopInFlight => _stopInFlight;
+
   String? get queuedDispatchError {
     if (_queuedSubmissions.isEmpty || transport is! SessionComposerTransport)
       return null;
@@ -274,7 +286,10 @@ class ChatController extends ChangeNotifier {
     try {
       await transport.stop();
     } on Object catch (error) {
-      _setError(error.toString());
+      // A refused cancel does not prove the turn ended. Keep the running state
+      // (so the same slot can retry) and surface the reason, instead of
+      // pretending the turn finished or that the connection dropped.
+      if (!_disposed) _setState(_state.copyWith(error: error.toString()));
     } finally {
       _stopInFlight = false;
       if (!_disposed) notifyListeners();

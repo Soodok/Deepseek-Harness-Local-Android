@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'src/bridge/host_bridge.dart';
 import 'src/bridge/engine_sessions_stub.dart'
@@ -19,13 +18,9 @@ import 'src/bridge/settings_service_stub.dart'
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
-  runApp(
-    LiquidGlassWidgets.wrap(
-      child: const DshApp(),
-      brightnessResolver: Theme.maybeBrightnessOf,
-    ),
-  );
+  // The chrome is drawn with Flutter's own BackdropFilter/ImageFilter, so the
+  // app no longer initializes a third-party glass renderer at startup.
+  runApp(const DshApp());
 }
 
 class DshApp extends StatefulWidget {

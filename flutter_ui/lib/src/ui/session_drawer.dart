@@ -16,6 +16,7 @@ class SessionDrawer extends StatelessWidget {
     this.onOpenEngineSessions,
     this.currentTitle,
     this.isFixture = false,
+    this.sessionsLabel = '连接本机引擎',
   });
 
   final VoidCallback? onNewSession;
@@ -24,6 +25,11 @@ class SessionDrawer extends StatelessWidget {
   final VoidCallback? onOpenEngineSessions;
   final String? currentTitle;
   final bool isFixture;
+
+  /// A hosted Android conversation lists sessions in place, so the entry keeps
+  /// its identity as the session list. The fixture preview keeps the older
+  /// wording, where it really links to the host engine.
+  final String sessionsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +148,7 @@ class SessionDrawer extends StatelessWidget {
               ListTile(
                 key: const ValueKey('engine-sessions'),
                 leading: const Icon(Icons.hub_outlined),
-                title: const Text('连接本机引擎'),
+                title: Text(sessionsLabel),
                 onTap: () {
                   Navigator.of(context).pop();
                   onOpenEngineSessions!();

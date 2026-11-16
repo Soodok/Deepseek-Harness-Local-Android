@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dsh_native_chat/main.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
@@ -34,16 +33,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('runtime-selector')));
     await settleUi(tester);
     final panels = find.byType(GlassPanel);
+    // The real material is the pane's own fill over a blurred backdrop, so the
+    // light/dark assertion reads that fill instead of a package settings object.
     Color surfacePaint() {
-      return tester
-          .widget<GlassContainer>(
-            find.descendant(
-              of: panels.last,
-              matching: find.byType(GlassContainer),
-            ),
-          )
-          .settings!
-          .glassColor;
+      final pane = find
+          .descendant(of: panels.last, matching: find.byType(DecoratedBox))
+          .first;
+      final decoration =
+          tester.widget<DecoratedBox>(pane).decoration as BoxDecoration;
+      return decoration.color!;
     }
 
     expect(Theme.of(tester.element(panels.last)).brightness, Brightness.light);

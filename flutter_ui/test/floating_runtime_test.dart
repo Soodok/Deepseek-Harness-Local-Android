@@ -77,9 +77,9 @@ void main() {
         final runtime = tester.getRect(
           find.byKey(const ValueKey('runtime-selector')),
         );
-        final agents = tester.getRect(
-          find.byKey(const ValueKey('subagent-selector')),
-        );
+        // No child has been observed yet, so the subagent entry is not laid
+        // out at all: nothing is hidden behind an empty slot.
+        expect(find.byKey(const ValueKey('subagent-selector')), findsNothing);
         expect(header.right - runtime.right, inInclusiveRange(5, 14));
         final chevron = tester.getRect(
           find.descendant(
@@ -88,7 +88,6 @@ void main() {
           ),
         );
         expect(header.right - chevron.right, inInclusiveRange(12, 28));
-        expect(runtime.left - agents.right, inInclusiveRange(0, 8));
         final attach = tester.getRect(
           find.byKey(const ValueKey('composer-attach')),
         );
@@ -103,12 +102,26 @@ void main() {
         );
         expect(model.left - attach.right, inInclusiveRange(4, 8));
         expect(send.left - permission.right, greaterThanOrEqualTo(8));
+        // The capsule is a 34dp painted surface inside a 48dp touch target,
+        // so it reads flatter than the 48dp send button without shrinking
+        // either the tap area or the dock row.
         expect(
           tester
-              .widget<TextButton>(find.byKey(const ValueKey('composer-model')))
-              .style
-              ?.side,
-          isNotNull,
+              .getSize(find.byKey(const ValueKey('composer-model-surface')))
+              .height,
+          inInclusiveRange(32, 36),
+        );
+        expect(model.height, greaterThanOrEqualTo(48));
+        expect(send.height, greaterThanOrEqualTo(48));
+        expect(
+          (tester
+                      .widget<Container>(
+                        find.byKey(const ValueKey('composer-model-surface')),
+                      )
+                      .decoration!
+                  as BoxDecoration)
+              .borderRadius,
+          isA<BorderRadius>(),
         );
         expect(
           find.descendant(
@@ -117,6 +130,13 @@ void main() {
           ),
           findsOneWidget,
         );
+        // A real observed catalog publishes the entry beside the runtime chip.
+        (controller.transport as FixtureTransport).emitShowcase();
+        await tester.pump();
+        final agents = tester.getRect(
+          find.byKey(const ValueKey('subagent-selector')),
+        );
+        expect(runtime.left - agents.right, inInclusiveRange(0, 8));
         await tester.tap(find.byTooltip('打开会话抽屉'));
         // The drawer session title may deliberately scroll continuously.
         for (var i = 0; i < 6; i++) {

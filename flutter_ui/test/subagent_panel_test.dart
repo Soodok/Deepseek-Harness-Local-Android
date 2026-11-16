@@ -85,6 +85,7 @@ class _ChildService implements SubagentTransport, DshTransport {
       tools: initial.tools,
       revision: initial.revision,
       running: initial.running,
+      modelLabel: initial.modelLabel,
     );
   }
 
@@ -174,11 +175,13 @@ SubagentConversation _conversation(
   List<SubagentMessage> messages, {
   int revision = 1,
   bool running = false,
+  String? modelLabel,
 }) => SubagentConversation(
   address: _child,
   messages: messages,
   revision: revision,
   running: running,
+  modelLabel: modelLabel,
 );
 
 Future<void> _pumpPage(
@@ -295,7 +298,7 @@ void main() {
       expect(find.byType(ConversationFlow), findsOneWidget);
       expect(find.byType(ConversationMessage), findsOneWidget);
       expect(find.byType(ComposerSurface), findsOneWidget);
-      expect(find.byType(ComposerSendButton), findsOneWidget);
+      expect(find.byType(ComposerActionButton), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(ConversationMessage),
@@ -318,10 +321,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('CHILD OUTPUT'), findsOneWidget);
+      // A child conversation never offers model selection: no picker entry,
+      // no model sheet, and no selectModel call path exists on this page.
       expect(find.byKey(const ValueKey('composer-model')), findsNothing);
       expect(find.byKey(const ValueKey('composer-attach')), findsNothing);
       expect(find.byKey(const ValueKey('composer-permission')), findsNothing);
-      expect(find.byKey(const ValueKey('composer-stop')), findsNothing);
+      expect(find.byKey(const ValueKey('subagent-stop')), findsNothing);
     },
   );
 
@@ -569,6 +574,30 @@ void main() {
     expect(find.text('queued'), findsNothing);
     expect(find.text('请只读核对\n不要改文件'), findsNothing);
     expect(find.byTooltip('发送'), findsOneWidget);
+  });
+
+  testWidgets('child shows the inherited model read only and cannot change it', (
+    tester,
+  ) async {
+    final service = _ChildService(
+      _conversation(const [], modelLabel: 'deepseek-v4.1-flash'),
+    );
+    await _pumpPage(tester, _agent('review', '代码检查', address: _child), service);
+    // The value shown is exactly the one the Host reported for that child.
+    final chip = find.byKey(const ValueKey('subagent-model-readonly'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('deepseek-v4.1-flash')),
+      findsOneWidget,
+    );
+    // It is inert: tapping it opens no sheet and the model selector entry that
+    // the parent composer has does not exist here at all.
+    await tester.tap(find.byType(ComposerModelPill));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('选择模型'), findsNothing);
+    expect(find.byKey(const ValueKey('model-option-m-one')), findsNothing);
+    expect(find.byKey(const ValueKey('composer-model')), findsNothing);
   });
 
   testWidgets('一次性、未知模式只读；缺地址和空地址不可用；均不发送', (tester) async {

@@ -36,7 +36,6 @@ class ChatShell extends StatefulWidget {
     required this.controller,
     this.onOpenWebFallback,
     this.onOpenEngineSessions,
-    this.onBack,
     this.onNewSession,
     this.hostInfo,
     this.disposeController = false,
@@ -45,7 +44,6 @@ class ChatShell extends StatefulWidget {
   final ChatController controller;
   final VoidCallback? onOpenWebFallback;
   final VoidCallback? onOpenEngineSessions;
-  final VoidCallback? onBack;
   final VoidCallback? onNewSession;
   final bool disposeController;
   final HostInfo? hostInfo;
@@ -89,6 +87,7 @@ class _ChatShellState extends State<ChatShell> {
           backgroundColor: DshPalette.of(context).paper,
           drawer: SessionDrawer(
             currentTitle: firstPrompt,
+            sessionsLabel: '会话列表',
             onNewSession: widget.onNewSession,
             onOpenSettings: () => showSettingsHome(context, widget.controller),
             onOpenEngineSessions: widget.onOpenEngineSessions,
@@ -99,40 +98,41 @@ class _ChatShellState extends State<ChatShell> {
                 : null,
             isFixture: widget.controller.transport.isFixture,
           ),
-          body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, viewport) => Column(
-                children: [
-                  _TopBar(
-                    controller: widget.controller,
-                    hostInfo: widget.hostInfo,
-                    onBack: widget.onBack,
-                    onOpenWebFallback: widget.onOpenWebFallback,
-                  ),
-                  if (state.status == ChatStatus.reconnecting ||
-                      state.status == ChatStatus.error ||
-                      state.error != null)
-                    _ConnectionBanner(
+          body: DshBackdrop(
+            child: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, viewport) => Column(
+                  children: [
+                    _TopBar(
                       controller: widget.controller,
-                      status: state.status,
-                      detail: state.error,
+                      hostInfo: widget.hostInfo,
+                      onOpenWebFallback: widget.onOpenWebFallback,
                     ),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, remaining) => Column(
-                        children: [
-                          Expanded(
-                            child: MessageList(controller: widget.controller),
-                          ),
-                          Composer(
-                            controller: widget.controller,
-                            availableHeight: remaining.maxHeight,
-                          ),
-                        ],
+                    if (state.status == ChatStatus.reconnecting ||
+                        state.status == ChatStatus.error ||
+                        state.error != null)
+                      _ConnectionBanner(
+                        controller: widget.controller,
+                        status: state.status,
+                        detail: state.error,
+                      ),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, remaining) => Column(
+                          children: [
+                            Expanded(
+                              child: MessageList(controller: widget.controller),
+                            ),
+                            Composer(
+                              controller: widget.controller,
+                              availableHeight: remaining.maxHeight,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -146,16 +146,18 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.controller,
     this.hostInfo,
-    this.onBack,
     this.onOpenWebFallback,
   });
   final ChatController controller;
   final HostInfo? hostInfo;
-  final VoidCallback? onBack;
   final VoidCallback? onOpenWebFallback;
   @override
   Widget build(BuildContext context) {
     final host = hostInfo ?? HostInfo.preview;
+    // The catalog is the only source of truth: an icon that leads to an empty
+    // sheet would be a dead end, so it is not laid out at all until the parent
+    // conversation has actually observed a child.
+    final hasAgents = collectSubagents(controller).isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Center(
@@ -168,14 +170,14 @@ class _TopBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
               child: Row(
                 children: [
+                  // A top-level conversation opens its drawer; only a real
+                  // child conversation uses a back arrow (SubagentChatPage).
                   IconButton(
-                    tooltip: onBack == null ? '打开会话抽屉' : '返回会话列表',
-                    onPressed:
-                        onBack ?? () => Scaffold.of(context).openDrawer(),
+                    key: const ValueKey('session-menu'),
+                    tooltip: '打开会话抽屉',
+                    onPressed: () => Scaffold.of(context).openDrawer(),
                     icon: Icon(
-                      onBack == null
-                          ? Icons.menu_rounded
-                          : Icons.arrow_back_rounded,
+                      Icons.menu_rounded,
                       size: 23,
                       color: DshPalette.of(context).inkSoft,
                     ),
@@ -190,17 +192,18 @@ class _TopBar extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    key: const ValueKey('subagent-selector'),
-                    tooltip: '子代理',
-                    onPressed: () =>
-                        showSubagentPanel(context, controller: controller),
-                    icon: Icon(
-                      Icons.people_alt_outlined,
-                      size: 21,
-                      color: DshPalette.of(context).ice,
+                  if (hasAgents)
+                    IconButton(
+                      key: const ValueKey('subagent-selector'),
+                      tooltip: '子代理',
+                      onPressed: () =>
+                          showSubagentPanel(context, controller: controller),
+                      icon: Icon(
+                        Icons.people_alt_outlined,
+                        size: 21,
+                        color: DshPalette.of(context).ice,
+                      ),
                     ),
-                  ),
                   ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth: MediaQuery.sizeOf(context).width * .48,
@@ -341,6 +344,11 @@ class _ConnectionBanner extends StatelessWidget {
                         ? '请确认会话权限'
                         : isError
                         ? '引擎连接失败'
+                        : (status == ChatStatus.streaming ||
+                                  status == ChatStatus.waitingAction) &&
+                              detail != null &&
+                              detail!.isNotEmpty
+                        ? '操作未完成'
                         : '连接已中断',
                     style: TextStyle(
                       color: DshPalette.of(context).ink,
@@ -348,7 +356,7 @@ class _ConnectionBanner extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (isError && detail != null && detail!.isNotEmpty)
+                  if (detail != null && detail!.isNotEmpty)
                     Text(
                       detail!,
                       maxLines: isConfiguration ? 4 : 1,

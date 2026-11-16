@@ -44,6 +44,11 @@ class _ComposerState extends State<Composer> {
     _focusNode.requestFocus();
   }
 
+  Future<void> _stop() async {
+    if (!widget.controller.canStop) return;
+    await widget.controller.stop();
+  }
+
   Future<void> _pick() async {
     if (_picking) return;
     setState(() => _picking = true);
@@ -182,43 +187,10 @@ class _ComposerState extends State<Composer> {
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      key: const ValueKey('composer-model'),
+                    child: ComposerModelPill(
+                      pillKey: const ValueKey('composer-model'),
+                      label: controller.modelLabel,
                       onPressed: () => showModelSelector(context, controller),
-                      style: TextButton.styleFrom(
-                        backgroundColor: DshPalette.of(context).ink
-                            .withValues(alpha: .06),
-                        side: BorderSide(
-                          color: DshPalette.of(context).ink
-                              .withValues(alpha: .13),
-                        ),
-                        shape: const StadiumBorder(),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        minimumSize: const Size(0, 48),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              controller.modelLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: DshPalette.of(context).ink,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.expand_more_rounded,
-                            size: 16,
-                            color: DshPalette.of(context).inkSoft,
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ),
@@ -245,29 +217,25 @@ class _ComposerState extends State<Composer> {
                           size: 22,
                         ),
                 ),
-                if (busy) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    key: const ValueKey('composer-stop'),
-                    tooltip: '停止执行',
-                    onPressed: controller.stop,
-                    icon: const Icon(Icons.stop_circle_outlined, size: 28),
-                  ),
-                ],
                 const SizedBox(width: 8),
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _textController,
-                  builder: (context, value, _) => ComposerSendButton(
-                    buttonKey: const ValueKey('composer-send'),
-                    tooltip: busy ? '排队到下一轮' : '发送',
-                    onPressed:
-                        !_sending &&
-                            controller.canSend &&
-                            (value.text.trim().isNotEmpty ||
-                                controller.attachments.isNotEmpty)
-                        ? _send
-                        : null,
-                  ),
+                  builder: (context, value, _) {
+                    final hasContent =
+                        value.text.trim().isNotEmpty ||
+                        controller.attachments.isNotEmpty;
+                    return ComposerActionButton(
+                      sendKey: const ValueKey('composer-send'),
+                      stopKey: const ValueKey('composer-stop'),
+                      running: busy,
+                      canStop: controller.canStop && !_sending,
+                      stopInFlight: controller.stopInFlight,
+                      canSend: controller.canSend && !_sending,
+                      hasContent: hasContent,
+                      onSend: _send,
+                      onStop: _stop,
+                    );
+                  },
                 ),
               ],
             ),

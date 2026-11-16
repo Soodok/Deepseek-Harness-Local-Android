@@ -64,7 +64,8 @@ void main() {
     expect(find.byType(ConversationFlow), findsOneWidget);
     expect(find.byType(ConversationMessage), findsOneWidget);
     expect(find.byType(ComposerSurface), findsOneWidget);
-    expect(find.byType(ComposerSendButton), findsOneWidget);
+    // The shared composer wraps the send/stop slot in one action button.
+    expect(find.byType(ComposerActionButton), findsOneWidget);
     expect(find.byKey(const ValueKey('conversation-list')), findsOneWidget);
     expect(find.byKey(const ValueKey('composer-input')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());

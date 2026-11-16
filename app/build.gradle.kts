@@ -269,14 +269,17 @@ android {
         // v1.6.0-beta.34（2026-11-16）：对话正文只显示人类正文与助手回复，system/developer
         // 及注入型 user/message 不再平铺（仍完整保留在 journal 与 Web 日志里）；
         // 回合失败改为可读原因，缺凭据时明确提示登录或添加 API Key。
-        versionCode = 409
+        // v1.6.0-beta.35（2026-11-16 21:00）：主会话左上角改为会话抽屉入口（真实子会话仍用返回箭头）；
+        // 模型胶囊 34dp 表面/48dp 触控；自绘原生模糊玻璃 + 页面柔光背景；
+        // 子代理入口按真实目录出现/消失；发送与停止合并为同一槽位（停止防连点、失败可重试）。
+        versionCode = 410
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.34"
+        versionName = "1.6.0-beta.35"
 
         ndk {
             abiFilters += listOf(targetAbi)

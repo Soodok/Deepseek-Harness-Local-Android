@@ -454,6 +454,19 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
             : '历史对话',
         style: _meta(context),
       ),
+      if (child?.conversation?.modelLabel != null)
+        Padding(
+          key: const ValueKey('subagent-model-readonly'),
+          padding: const EdgeInsets.only(top: 6),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ComposerModelPill(
+              label: child!.conversation!.modelLabel!,
+              onPressed: null,
+              enabled: false,
+            ),
+          ),
+        ),
       if (child != null && child.loading && child.conversation == null)
         Padding(
           key: ValueKey('subagent-loading'),
@@ -519,17 +532,22 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                         hintText: '发给' + widget.agent.name,
                         controls: [
                           const Spacer(),
-                          ComposerSendButton(
-                            buttonKey: const ValueKey('subagent-send'),
-                            tooltip: child.sending
-                                ? '发送中'
-                                : child.conversation?.running == true
-                                ? '排队到下一轮'
-                                : '发送',
-                            onPressed:
-                                child.canSend && _input.text.trim().isNotEmpty
-                                ? _send
-                                : null,
+                          ComposerActionButton(
+                            sendKey: const ValueKey('subagent-send'),
+                            stopKey: const ValueKey('subagent-stop'),
+                            running:
+                                child.sending ||
+                                child.conversation?.running == true,
+                            // A child conversation has no cancel RPC of its
+                            // own, so this slot never pretends to stop it.
+                            canStop: false,
+                            stopInFlight: false,
+                            canSend: child.canSend,
+                            hasContent: _input.text.trim().isNotEmpty,
+                            onSend: _send,
+                            onStop: () {},
+                            busyLabel: child.sending ? '发送中' : '排队到下一轮',
+                            noStopLabel: '子会话不能停止，正在输出时无法发送',
                           ),
                         ],
                       )

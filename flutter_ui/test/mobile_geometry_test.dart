@@ -34,21 +34,19 @@ void main() {
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expectInside(
-        tester,
-        find.byKey(const ValueKey('composer-send')),
-        viewport,
+      // Idle with an empty draft: the slot is send, disabled, and there is no
+      // second stop button anywhere.
+      expectInside(tester, find.byKey(const ValueKey('composer-send')), viewport);
+      expect(find.byKey(const ValueKey('composer-stop')), findsNothing);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('composer-send')))
+            .onPressed,
+        isNull,
       );
-      expectInside(
-        tester,
-        find.byKey(const ValueKey('composer-input')),
-        viewport,
-      );
-      expectInside(
-        tester,
-        find.byKey(const ValueKey('web-fallback')),
-        viewport,
-      );
+      expectInside(tester, find.byKey(const ValueKey('composer-input')), viewport);
+      expectInside(tester, find.byKey(const ValueKey('web-fallback')), viewport);
+
       await tester.enterText(
         find.byKey(const ValueKey('composer-input')),
         '检查项目',
@@ -57,31 +55,37 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('composer-send')));
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expectInside(
-        tester,
-        find.byKey(const ValueKey('composer-send')),
-        viewport,
-      );
-      expectInside(
-        tester,
-        find.byKey(const ValueKey('composer-stop')),
-        viewport,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('composer-input')),
-        '下一轮',
-      );
+      // The turn now runs and the draft was consumed: the same slot is stop.
+      expectInside(tester, find.byKey(const ValueKey('composer-stop')), viewport);
+      expect(find.byKey(const ValueKey('composer-send')), findsNothing);
+
+      // Typing a new prompt flips the slot back to send (queue/steering), and
+      // the stop disappears instead of sitting next to it.
+      await tester.enterText(find.byKey(const ValueKey('composer-input')), '下一轮');
       await tester.pump();
+      expectInside(tester, find.byKey(const ValueKey('composer-send')), viewport);
+      expect(find.byKey(const ValueKey('composer-stop')), findsNothing);
       await tester.tap(find.byKey(const ValueKey('composer-send')));
       await tester.pump();
       final dispatch = find.widgetWithText(TextButton, '发送下一条');
       expectInside(tester, dispatch, viewport);
       expect(tester.getSize(dispatch).height, greaterThanOrEqualTo(48));
+
+      // Clearing the draft restores the stop in the same slot.
+      await tester.enterText(find.byKey(const ValueKey('composer-input')), '');
+      await tester.pump();
+      expectInside(tester, find.byKey(const ValueKey('composer-stop')), viewport);
       final stopRect = tester.getRect(
         find.byKey(const ValueKey('composer-stop')),
       );
       expect(stopRect.width, greaterThanOrEqualTo(48));
       expect(stopRect.height, greaterThanOrEqualTo(48));
+
+      await tester.tap(find.byKey(const ValueKey('composer-stop')));
+      await tester.pump();
+      await tester.pump();
+      // After the cancel completes the turn is over: only a disabled send stays.
+      expect(find.byKey(const ValueKey('composer-stop')), findsNothing);
       final sendRect = tester.getRect(
         find.byKey(const ValueKey('composer-send')),
       );

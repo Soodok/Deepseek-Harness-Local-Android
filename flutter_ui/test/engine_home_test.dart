@@ -216,7 +216,13 @@ void main() {
       expect(shell.disposeController, isTrue);
       expect(shell.onOpenEngineSessions, isNotNull);
       expect(shell.onNewSession, isNotNull);
-      shell.onBack!();
+      // A hosted conversation reaches the session list through its own drawer,
+      // never through a back arrow in the top bar.
+      await tester.tap(find.byKey(const ValueKey('session-menu')));
+      await _settle(tester);
+      expect(find.byType(Drawer), findsOneWidget);
+      expect(find.text('返回会话列表'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('engine-sessions')));
       await _settle(tester);
       expect(find.byType(EngineSessionPicker), findsOneWidget);
       expect(peers.last.closed, isTrue);

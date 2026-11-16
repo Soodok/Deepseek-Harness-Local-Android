@@ -290,7 +290,6 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
               controller: controller,
               disposeController: true,
               hostInfo: widget.host,
-              onBack: _showList,
               onNewSession: () => unawaited(_newSession()),
               onOpenEngineSessions: _showList,
               onOpenWebFallback: () => openSettingsWeb(context),

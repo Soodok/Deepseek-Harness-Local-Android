@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "value": {
+    "default": {
+      "provider": "luna-route",
+      "model": "gpt-6-luna"
+    },
+    "routableProviders": [
+      "luna-route"
+    ],
+    "groups": [
+      {
+        "id": "luna-route",
+        "name": "Luna Route",
+        "models": [
+          {
+            "id": "gpt-6-luna",
+            "name": "gpt-6-luna"
+          }
+        ]
+      }
+    ],
+    "failures": []
+  }
+}

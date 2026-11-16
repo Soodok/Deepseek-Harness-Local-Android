@@ -1,8 +1,9 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dsh_native_chat/main.dart';
 import 'package:dsh_native_chat/src/ui/chat_shell.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 import 'package:dsh_native_chat/src/ui/glass_panel.dart';
 import 'package:dsh_native_chat/src/ui/composer_surface.dart';
@@ -184,7 +185,7 @@ void main() {
       }
     },
   );
-  testWidgets('glass uses package material and solid accessiblity fallback', (
+  testWidgets('glass uses a real backdrop blur and a solid fallback', (
     tester,
   ) async {
     Widget app(bool calm) => MaterialApp(
@@ -196,14 +197,18 @@ void main() {
     );
     await tester.pumpWidget(app(false));
     await tester.pump();
-    final glass = tester.widget<GlassContainer>(find.byType(GlassContainer));
-    expect(glass.quality, GlassQuality.standard);
-    expect(glass.settings!.chromaticAberration, 0);
-    expect(glass.settings!.blur, lessThanOrEqualTo(10));
+    final blur = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
+    expect(blur.enabled, isTrue);
+    expect(blur.filter, isA<ImageFilter>());
+    // The calm fallback keeps the same subtree so editors and scroll offsets
+    // survive; only the blur is switched off.
     await tester.pumpWidget(app(true));
     await tester.pump();
     expect(find.text('readable glass'), findsOneWidget);
-    expect(find.byType(GlassContainer), findsNothing);
+    expect(
+      tester.widget<BackdropFilter>(find.byType(BackdropFilter)).enabled,
+      isFalse,
+    );
     expect(tester.takeException(), isNull);
   });
 }

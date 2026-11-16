@@ -104,6 +104,179 @@ class ComposerSurface extends StatelessWidget {
   );
 }
 
+/// One slot that is either the send or the stop action. The position never
+/// moves, so a running turn never grows a second button next to the first.
+///
+/// A stop is offered only when the transport can actually cancel this turn and
+/// the draft is empty; as soon as text or an attachment exists the same slot
+/// becomes send, which follows the real steering/queue protocol. Reading the
+/// draft here (not in the caller) keeps every conversation identical.
+class ComposerActionButton extends StatelessWidget {
+  const ComposerActionButton({
+    super.key,
+    required this.sendKey,
+    required this.stopKey,
+    required this.running,
+    required this.canStop,
+    required this.stopInFlight,
+    required this.canSend,
+    required this.hasContent,
+    required this.onSend,
+    required this.onStop,
+    this.busyLabel = '排队到下一轮',
+    this.noStopLabel = '当前会话不支持停止',
+  });
+
+  final Key sendKey;
+  final Key stopKey;
+  final bool running;
+  final bool canStop;
+  final bool stopInFlight;
+  final bool canSend;
+  final bool hasContent;
+  final VoidCallback onSend;
+  final VoidCallback onStop;
+  final String busyLabel;
+  final String noStopLabel;
+
+  /// The stop wins this slot only when a turn runs, nothing is drafted and the
+  /// transport can actually cancel it. A pending stop keeps the stop icon (the
+  /// slot does not jump back to send) but is no longer pressable.
+  bool get _stopSlot => running && !hasContent && (canStop || stopInFlight);
+
+  @override
+  Widget build(BuildContext context) {
+    if (_stopSlot) {
+      return IconButton.filled(
+        key: stopKey,
+        tooltip: stopInFlight ? '正在停止' : '停止执行',
+        style: IconButton.styleFrom(
+          backgroundColor: DshPalette.of(context).ink.withValues(alpha: .10),
+          foregroundColor: DshPalette.of(context).ink,
+          disabledBackgroundColor: DshPalette.of(context).ink
+              .withValues(alpha: .06),
+          disabledForegroundColor: DshPalette.of(context).inkFaint,
+          minimumSize: const Size(48, 48),
+        ),
+        onPressed: canStop ? onStop : null,
+        icon: stopInFlight
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.stop_rounded, size: 24),
+      );
+    }
+    final waitingOnlyStop = running && !hasContent;
+    return Tooltip(
+      message: waitingOnlyStop ? noStopLabel : (running ? busyLabel : '发送'),
+      child: IconButton.filled(
+        key: sendKey,
+        onPressed: !waitingOnlyStop && canSend && hasContent ? onSend : null,
+        style: IconButton.styleFrom(
+          backgroundColor: DshPalette.of(context).sendBlue,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: DshPalette.of(context).sendBlueMuted,
+          disabledForegroundColor: DshPalette.of(context).inkFaint,
+          minimumSize: const Size(48, 48),
+        ),
+        icon: const Icon(Icons.arrow_upward_rounded, size: 26),
+      ),
+    );
+  }
+}
+
+/// Compact model capsule: a 34dp painted surface inside a 48dp touch target,
+/// so it reads lighter than the send button without shrinking the tap area.
+class ComposerModelPill extends StatelessWidget {
+  const ComposerModelPill({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.enabled = true,
+    this.pillKey,
+  });
+
+  static const double surfaceHeight = 34;
+  static const double touchHeight = 48;
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool enabled;
+  final Key? pillKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = DshPalette.of(context);
+    final foreground = enabled ? palette.ink : palette.inkFaint;
+    // The ink well — and therefore the real tap target and semantics node —
+    // fills the whole 48dp row height; only the painted stadium inside it is
+    // 34dp. Painting the surface alone would leave the 7dp above and below
+    // unresponsive while still looking tappable.
+    return SizedBox(
+      key: pillKey,
+      height: touchHeight,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(touchHeight / 2),
+          child: Center(
+            child: Container(
+              key: const ValueKey('composer-model-surface'),
+              height: surfaceHeight,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: palette.ink.withValues(alpha: .06),
+                borderRadius: BorderRadius.circular(surfaceHeight / 2),
+                border: Border.all(
+                  color: palette.ink.withValues(alpha: .13),
+                  width: 0.8,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.2,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        textHeightBehavior: const TextHeightBehavior(
+                          leadingDistribution: TextLeadingDistribution.even,
+                          applyHeightToFirstAscent: true,
+                          applyHeightToLastDescent: true,
+                        ),
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1,
+                          color: foreground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Icon(
+                    Icons.expand_more_rounded,
+                    size: 16,
+                    color: enabled ? palette.inkSoft : palette.inkFaint,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ComposerSendButton extends StatelessWidget {
   const ComposerSendButton({
     super.key,
