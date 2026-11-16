@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-14 · `main` 代码提交 `bcb12f4b`（已推，本文件在其之后）· 本轮「试发行 1.6.0-beta.14 / 390」已完成构建 + 双 ABI 产物 + 装机冒烟（见一百三十节）；上一轮是「MD3 真形态分叉 + 动态取色闪屏 / 弹窗跳变」（一百二十九节）。
+**最后更新**：2026-11-16 · `main` 代码提交 `d03a04fd`（未推）· 本轮合入 PR #110（隐藏的开发者选项）与 #88（MCP 控制台目录项），并修掉 #110 带进来的三处 UI 观感偏离（见一百三十三章）；上一轮是「扩展入口软链误拦 + binutils 声明名不符」（第一百三十二章）。
 > ✅ 远端 `main` 已同步到本文件所在的提交（凭据已于 11-14 晚换新并存入 GCM，`ls-remote` 可通）。
 > `v1.6.0-beta.14` 的 tag 仍未打（发版流程待走，见 `docs/RELEASE.md`）。
 本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
@@ -13929,3 +13929,82 @@ abs.normalize().startsWith(root.normalize())
   zig/dex2jar 类**能**（启动期按布局兜底补链），binutils 类**也能**（启动期补别名），
   但都不需要重装；只有 `.ext-version` 被删（安装判失败时会发生）才必须重装。
 
+
+## 第一百三十三章（v1.6.0-beta.15 · 2026-11-16）PR #110 / #88 合入 + 三处 UI 观感修正
+
+### 背景
+2026-11-15 审核了 6 个 open PR，本轮按「确保无冲突、无 UI 畸形、无其他 bug」的要求合入其中 2 个。
+非交互式审核结论见下文「其余 4 个 PR 未合入的原因」。
+
+### 合入（两个 merge 提交，均 `--no-ff`，零冲突）
+| 提交 | 内容 |
+|---|---|
+| `bf28ee04` | `merge: #110 Upstream/hidden developer options（@qingjian0）` —— 13 文件 +220 |
+| `60bbc60a` | `merge: #88 feat(plugins): 添加移动端 MCP 设置控制台目录项（@Masspedro）` —— 2 文件 +7 −1 |
+
+合并基线 `04810982`（`origin/main` 同步，`rev-list --left-right --count` = 0 0）。
+两次 merge 均 `exit=0`，无 CONFLICT。
+
+### 修掉的三处观感偏离（`d03a04fd`，4 文件 +47 −45）
+`#110` 的 UI 全部在 Kotlin 里手搭，与仓库既有 XML 页面规范不一致；真机/模拟器像素采样确认后改掉：
+
+1. **开发者选项页整页布局** —— 原 `DeveloperOptionsActivity.onCreate` 里 `new LinearLayout`，
+   顶栏用 `setPadding(dp(16), dp(10), dp(20), dp(10))` 撑高，与其它子页的
+   `@dimen/md3_topbar_height`（56dp）不等高；标题 `textSize = 20f` 写死，没走
+   `?attr/textAppearanceHeadlineSmall`；`resolveColor` 拿不到 attr 时回退 `0xff888888`，
+   在浅色主题下是灰色而非主题色。
+   → 新增 `app/src/main/res/layout/activity_developer_options.xml`，
+   与 `activity_maintenance.xml` 同构：`md3_topbar_height` 顶栏 + `ic_back` +
+   `MaxWidthLinearLayout` + `MaterialCardView`（`?attr/dshCardRadius` / `dshCardStroke` /
+   `dshSurface`）+ `bg_md3_seg_single`。Kotlin 只做绑定（`btnBack` / `swDeveloperMaster`）。
+2. **设置页入口行的 leading icon 颜色** —— 原 `android:tint="?attr/colorOnSurface"`，
+   同组其余行（Upgrade / Maintenance / Language / About）都是 `?attr/colorPrimary`。
+   深色主题下该行齿轮是灰的、没有主题蓝。像素采样（模拟器 1080×2280）：
+   该行 `blue_px=0`，其余行 `blue_px=758~1912`。改为 `?attr/colorPrimary`。
+3. **同一行 chevron 颜色** —— `?attr/colorOnSurface` → `?attr/dshIslandText`，与邻行统一。
+
+修后复采样：该行 `blue_px=1271`（与 Maintenance 完全相同）、
+chevron 区域 `bright=170`（与邻行 82 同口径，箭头已绘制）。
+
+### `.gitignore` 白名单
+`scripts/probes/_test_developer_options.py` 由 `#110` 引入但没进白名单，而
+`/scripts/probes/*` 会忽略它 —— 该文件在树里是 `git add -f` 的产物，与其余 136 个
+已跟踪探针的惯例不一致。补一行 `!/scripts/probes/_test_developer_options.py`。
+
+### 验证证据
+- **门禁（提交后全量复跑）**：`check-i18n` / `check-ui-tokens` / `count-catalog-limits` /
+  `check-no-bulk-perms` / `_test_developer_options` / `_test_data_import` /
+  `_test_settings_ux` / `_test_settings_theme_consistency` / `_test_style_tokens` /
+  `_test_island_expand_once` / `_test_island_panel_shadow` / `_test_island_side_panel` /
+  `_test_pet_overlay` —— **13 项全部 EXIT=0**。
+- **构建**：`-Ppackage=noruntime -PdebuggableRelease=true assembleRelease --offline`
+  → BUILD SUCCESSFUL，APK **43,941,365 B**，`lib/` 只有 `arm64-v8a`；
+  `classes4.dex` 含 `DeveloperOptionsActivity`，`resources.arsc` 含
+  `activity_developer_options`，`assets/market/catalog.json` 含 `masspedro`。
+- **模拟器实测**（`sdk_gphone64_x86_64` / `emulator-5558` / 1080×2280，`-Pabi=x86_64` 包）：
+  1. 设置 → About → 版本号 7 连击 → `shared_prefs/developer_options.xml` 变
+     `enabled=true`；返回设置页底部出现「Developer options / Optional tools and advanced controls」。
+  2. 点进 → 主开关关掉 → pref 变 `false`，自动返回设置页，该行消失。
+  3. 再 7 连击 → 该行重新出现。完整往返闭环。
+  4. 社区插件页搜 `masspedro` → 命中 `Masspedro/dsh-mcp-console` `v0.7.0-preview.1`，
+     描述与 catalog 一致（`#88` 的目录项在应用内真实可见）。
+- **未证边界**：真机 PLZ110（`192.168.101.21:9000`）当时处于锁屏（`deviceLocked=1`），
+  无法解锁，因此上述 UI 验收**只在模拟器**完成；arm64 包已构建但未装机复验。
+
+### 其余 4 个 PR 未合入的原因
+- **#113 `WIP: selectable user data backup`** —— 作者自标 `draft: true`，正文写明
+  「Import is deliberately disabled pending safe shutdown and durable rollback;
+  do not merge or use for restore」。代码里 `FullBackup.restoreSafetyReady()` 硬编码
+  `return false`，`import()` 第一句即抛 `IOException`；而合入后 `BackupActivity` 的
+  「导入数据」入口已从 `DataExport.import`（可用）改成 `FullBackup.import`（必失败）——
+  合入等于删掉现网可用的导入功能。**不合**。
+- **#111 设置项内联展开** —— `0642cbe7` 把 main 上 `d9b065c9` 加固过的 D1 断言
+  （锚定 `<stroke>` 标签内部再判宽度）改回全文匹配。最小破坏实测：把
+  `bg_card.xml` 的 `android:width="?attr/dshCardStroke"` 改成 `0dp`（描边真没了），
+  宽松判据仍返回通过，加固判据正确报红 —— 是假绿回归。功能部分可留，需作者 rebase 掉该提交。
+- **#112 / #102** —— 81 文件冲突，且 `docs/md3/` 43 文件 18484 行抓来的 Material 3 文档占
+  74% 体积；方向与 main 上 `c1f33fdc`/`6781e9b5` 已做的 MD3 适配重叠；`#112` 的 CI 是 0 checks。
+
+### 与并行会话的边界
+本轮只在 `main` 上做上述 3 个提交。合并期间 `git status` 始终只有既有的
+`?? docs/ui-preview/probe-opacity.mjs`（非本会话产物）。
