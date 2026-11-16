@@ -3,6 +3,7 @@ package app.dsh.mobile
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.content.Intent
 import android.widget.ImageView
 import android.widget.TextView
@@ -41,6 +42,20 @@ class AboutActivity : ThemedActivity() {
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.txtVersion).text =
             getString(R.string.about_version, versionName())
+
+        var versionTapCount = 0
+        var firstVersionTapAt = 0L
+        findViewById<TextView>(R.id.txtVersion).setOnClickListener {
+            if (DeveloperModePrefs.isEnabled(this)) return@setOnClickListener
+            val now = SystemClock.elapsedRealtime()
+            if (versionTapCount == 0 || now - firstVersionTapAt > 5_000L) { versionTapCount = 0; firstVersionTapAt = now }
+            versionTapCount += 1
+            if (versionTapCount >= 7) {
+                versionTapCount = 0
+                DeveloperModePrefs.setEnabled(this, true)
+                Toast.makeText(this, R.string.developer_options_unlocked, Toast.LENGTH_LONG).show()
+            }
+        }
 
         // fork 构建要显式声明身份：仓库地址按构建期 RepoConfig 显示，
         // 避免把 XiaoPb 的包看成上游正式包（两者签名与发版节奏都不同）。
