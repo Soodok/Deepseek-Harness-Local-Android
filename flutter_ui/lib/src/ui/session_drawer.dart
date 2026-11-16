@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../theme/dsh_theme.dart';
 import 'overflow_title.dart';
+import 'settings/account_footer.dart';
 
 /// Session navigation. Multi-session listing and creation are not wired to a
 /// backend yet, so "新建会话" stays disabled unless [onNewSession] is provided
@@ -10,6 +11,7 @@ class SessionDrawer extends StatelessWidget {
   const SessionDrawer({
     super.key,
     this.onNewSession,
+    this.onOpenSettings,
     this.onShowcase,
     this.onOpenEngineSessions,
     this.currentTitle,
@@ -17,6 +19,7 @@ class SessionDrawer extends StatelessWidget {
   });
 
   final VoidCallback? onNewSession;
+  final VoidCallback? onOpenSettings;
   final VoidCallback? onShowcase;
   final VoidCallback? onOpenEngineSessions;
   final String? currentTitle;
@@ -226,6 +229,8 @@ class SessionDrawer extends StatelessWidget {
                   trailing: const Icon(Icons.unfold_more_rounded, size: 18),
                 ),
               ),
+            if (onOpenSettings != null)
+              AccountFooter(onOpenSettings: onOpenSettings!),
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),

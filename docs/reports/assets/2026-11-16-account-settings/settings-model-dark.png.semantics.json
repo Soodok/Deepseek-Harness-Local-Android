@@ -1,0 +1,128 @@
+[
+  {
+    "label": null,
+    "role": null,
+    "text": "Back模型配置当前会话 · 演示模型标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast服务提供商与 API Key完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 0,
+    "y": 0,
+    "w": 432,
+    "h": 960
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "Back模型配置当前会话 · 演示模型标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast服务提供商与 API Key完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 0,
+    "y": 0,
+    "w": 432,
+    "h": 960
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "Back模型配置当前会话 · 演示模型标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast服务提供商与 API Key完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 0,
+    "y": 0,
+    "w": 432,
+    "h": 960
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "Back模型配置当前会话 · 演示模型标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast服务提供商与 API Key完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 0,
+    "y": 0,
+    "w": 432,
+    "h": 960
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "Back模型配置",
+    "x": 0,
+    "y": 0,
+    "w": 432,
+    "h": 56
+  },
+  {
+    "label": null,
+    "role": "button",
+    "text": "Back",
+    "x": 4,
+    "y": 4,
+    "w": 48,
+    "h": 48
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "当前会话 · 演示模型标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast服务提供商与 API Key完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 0,
+    "y": 56,
+    "w": 432,
+    "h": 904
+  },
+  {
+    "label": null,
+    "role": "group",
+    "text": "当前会话 · 演示模型标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast服务提供商与 API Key完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 0,
+    "y": 56,
+    "w": 432,
+    "h": 904
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "当前会话 · 演示模型",
+    "x": 20,
+    "y": 74,
+    "w": 392,
+    "h": 33
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "标准 · 演示\nfixture-balanced快速 · 演示\nfixture-fast",
+    "x": 20,
+    "y": 107,
+    "w": 392,
+    "h": 133
+  },
+  {
+    "label": null,
+    "role": "button",
+    "text": "标准 · 演示\nfixture-balanced",
+    "x": 20,
+    "y": 107,
+    "w": 392,
+    "h": 66
+  },
+  {
+    "label": null,
+    "role": "button",
+    "text": "快速 · 演示\nfixture-fast",
+    "x": 20,
+    "y": 174,
+    "w": 392,
+    "h": 66
+  },
+  {
+    "label": null,
+    "role": null,
+    "text": "服务提供商与 API Key",
+    "x": 20,
+    "y": 264,
+    "w": 392,
+    "h": 33
+  },
+  {
+    "label": null,
+    "role": "button",
+    "text": "完整模型配置\n在 Web UI 管理提供商、API Key 和模型参数",
+    "x": 20,
+    "y": 297,
+    "w": 392,
+    "h": 89
+  }
+]

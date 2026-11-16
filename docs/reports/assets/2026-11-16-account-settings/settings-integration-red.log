@@ -1,0 +1,79 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancellation during initialization cancels the eventual named attempt
+00:00 +0 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancellation during initialization cancels the eventual named attempt [E]
+  Expected: ['late-attempt']
+    Actual: MappedIterable<({Map<String, Object?> args, String endpoint}), Object?>:[]
+     Which: at location [0] is MappedIterable<({Map<String, Object?> args, String endpoint}), Object?>:[] which shorter than expected
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test\native_settings_service_test.dart 82:5         main.<fn>
+
+00:00 +0 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: profile maps only sanitized fields and rejects unsafe avatar URL
+00:00 +1 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: browser flow uses host callback and ignores unrelated attempt completion
+00:00 +2 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: malicious authorize destination is rejected and named attempt cancelled
+00:00 +3 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: unsupported callback is refused before any account mutation
+00:00 +4 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: logout checks account tasks and passes client metadata
+00:00 +5 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancel closes pending stream without accepting a later successful attempt
+00:01 +6 -1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following assertion was thrown running a test:
+The finder "Found 0 widgets with widget matching predicate: []" (used in a call to "tap()") could
+not find any matching widgets.
+
+When the exception was thrown, this was the stack:
+#0      WidgetController._getElementPoint (package:flutter_test/src/controller.dart:2094:7)
+#1      WidgetController.getCenter (package:flutter_test/src/controller.dart:1946:12)
+#2      WidgetController.tap (package:flutter_test/src/controller.dart:1079:7)
+#3      main.<anonymous closure> (file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart:13:16)
+<asynchronous suspension>
+#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1968:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+The test description was:
+  drawer account menu opens settings, preview sign-in and confirmed logout share identity
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:02 +6 -2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity [E]
+  Test failed. See exception logs above.
+  The test description was: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+
+00:02 +6 -2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: synchronous account failure never leaves an orphan progress dialog
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: no matching candidates
+  Actual: _TypeWidgetFinder:<Found 1 widget with type "AlertDialog": [
+            AlertDialog(dependencies: [Directionality, InheritedCupertinoTheme, MediaQuery,
+_InheritedTheme, _LocalizationsScope-[GlobalKey#031ba]]),
+          ]>
+   Which: means one was found but none were expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart:34:3)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1968:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart line 34
+The test description was:
+  synchronous account failure never leaves an orphan progress dialog
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:02 +6 -3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: synchronous account failure never leaves an orphan progress dialog [E]
+  Test failed. See exception logs above.
+  The test description was: synchronous account failure never leaves an orphan progress dialog
+
+00:02 +6 -3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: native management section calls only its typed destination
+00:03 +7 -3: Some tests failed.
+
+Failing tests:
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancellation during initialization cancels the eventual named attempt
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: synchronous account failure never leaves an orphan progress dialog

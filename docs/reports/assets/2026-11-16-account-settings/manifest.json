@@ -1,0 +1,173 @@
+{
+  "version": "1.6.0-beta.30",
+  "versionCode": 405,
+  "bundleSha256": "b2ca5297919dc369d908ed04cfd61287832ab36b1ec8341a58800d049e5e8d05",
+  "baseCommit": "8d932a56d78edf71eecf02b994ca18f4fee0b22a",
+  "source": "Flutter Web release; explicit fixture profile and usage; no online account acceptance",
+  "screenshots": [
+    {
+      "file": "settings-home-light.png",
+      "sha256": "e9d3cd813801124e65bf25916130ee722f37469e3de8d63a2190e07a2fbe7012",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--settings",
+        "--account-preview",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "settings-home-dark.png",
+      "sha256": "3329ebeabafce88f63cf8dbd65ec4cd235045dc1e0f6dc7415a4b503ebb6d01a",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--settings",
+        "--account-preview",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "settings-list-light.png",
+      "sha256": "ae416ec47494cf0efaea7df22d65140c326ca1a9e1cab9310c16fe64022a7199",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--settings",
+        "--account-preview",
+        "--settings-bottom",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "settings-account-menu.png",
+      "sha256": "835e74fe6b8ada8b354bbc7e1a673157c71390fc06a015ed10fd5ecd01c966c6",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--settings",
+        "--account-preview",
+        "--signed-menu",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "settings-theme-light.png",
+      "sha256": "cbc6dc8043be0f792b13ad4f420dd8f48d133e9f48a559404b140391ae6fd654",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--settings",
+        "--account-preview",
+        "--settings-theme",
+        "--semantics",
+        "--settle-fonts"
+      ],
+      "sourceCapture": "E:\\tmp\\native-chat-web-preview\\settings-theme-font-settled.png"
+    },
+    {
+      "file": "settings-model-dark.png",
+      "sha256": "2cad332479c0fee1d8d92479da1d0f7b613060d3cda93ad6b19b251e65e33dec",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--settings",
+        "--account-preview",
+        "--settings-model",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "settings-home-360.png",
+      "sha256": "67c996f518447eebed55de1657526907b0861980b7f581865e0d4bc8603c47b2",
+      "width": 360,
+      "height": 960,
+      "viewport": {
+        "width": 360,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 360,
+        "bodyWidth": 360
+      },
+      "args": [
+        "--width=360",
+        "--light",
+        "--settings",
+        "--account-preview",
+        "--semantics"
+      ]
+    },
+    {
+      "file": "settings-daily-light.png",
+      "sha256": "aa320ee655fbca357e4becdec1fc63390dba39d0aa4628d7df5aa2a923bd7084",
+      "width": 432,
+      "height": 960,
+      "viewport": {
+        "width": 432,
+        "height": 960,
+        "dpr": 1,
+        "visualWidth": 432,
+        "bodyWidth": 432
+      },
+      "args": [
+        "--width=432",
+        "--light",
+        "--settings",
+        "--account-preview",
+        "--settings-daily",
+        "--semantics"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,14 @@
 # DSH Android · 交接文档
 
+## 账号与 MIUI 设置（2026-11-16，已验证并归档）
+
+- 隔离基线8d932a56d78edf71eecf02b994ca18f4fee0b22a；只改E:/tmp/wt-flutter-native-chat，主仓库未写入。
+- 共享SettingsController、抽屉底部头像菜单、MIUI设置主页、模型/主题/权限子页和11类入口已实现；Android管理页通过枚举白名单打开。Token默认156dp紧凑概览，展开后84日均有48dp操作区域。
+- 已核对DSH rc.2账号RPC；凭据只由Host保管，未使用桌面账号。无公开按日账号用量接口，格点来自设备本地时区的最近50个主会话/每会话500条，含缓存输入、不含子代理、明确非账单；缺失不是零，演示单独标注。
+- 初始化取消遗漏命名撤销、即时完成弹窗残留、旧资料/旧统计和Host失联复用服务均已有效红测后修复。只清空失败投影；Host失联进入非演示不可用服务，epoch过滤迟到读取。最终完整303项测试通过（72s），analyze No issues found（10.6s）；job bash-33d011bb97364f24退出0。
+- 具名checker超时、后台协调无报告后，由可追踪只读队友settings-checker-review完成独立审查及修复复核，无残留P1/P2。详见docs/reports/2026-11-16-account-settings-review.md。
+- 最终1.6.0-beta.30/code405 Web构建退出0（137.8s）；bundle SHA256 b2ca5297919dc369d908ed04cfd61287832ab36b1ec8341a58800d049e5e8d05；8张实际点击截图及视口/语义旁证归档docs/reports/assets/2026-11-16-account-settings，宽360/432、DPR1、bodyWidth和运行异常检查均通过。验证报告docs/reports/2026-11-16-account-settings-validation.md；下一独立项是Android APK、真机导航和真实在线授权/头像网络加载验收，原有依赖下载阻塞尚未解除。主题仅本次运行有效，Android语言设置尚不本地化Flutter文案。
+
 ## 自然配色、玻璃与共享子会话（2026-11-15—16，已验证并归档）
 
 - 基线9ba99ffec2ce002c84e6e7417ede8e3eb07af1f1，仅写隔离树E:/tmp/wt-flutter-native-chat；主仓库保持不动。本轮未扩展Android排障。

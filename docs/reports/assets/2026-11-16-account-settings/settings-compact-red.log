@@ -1,0 +1,29 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart
+00:00 +0: compact heatmap overview opens accessible daily details
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following StateError was thrown running a test:
+Bad state: No element
+
+When the exception was thrown, this was the stack:
+#0      Iterable.single (dart:core/iterable.dart:694:25)
+#1      WidgetController.getSize (package:flutter_test/src/controller.dart:2177:47)
+#2      main.<anonymous closure> (file:///E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart:85:19)
+<asynchronous suspension>
+#3      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#4      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1968:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+The test description was:
+  compact heatmap overview opens accessible daily details
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:01 +0 -1: compact heatmap overview opens accessible daily details [E]
+  Test failed. See exception logs above.
+  The test description was: compact heatmap overview opens accessible daily details
+
+00:01 +0 -1: Some tests failed.
+
+Failing tests:
+  E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: compact heatmap overview opens accessible daily details

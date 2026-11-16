@@ -32,6 +32,7 @@ class NativeChatActivity : FlutterActivity() {
                         val allowed = uri != null && uri.scheme in setOf("http", "https") && !uri.host.isNullOrEmpty() && uri.userInfo.isNullOrEmpty()
                         result.success(allowed && runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }.isSuccess)
                     }
+                    "openSettingsSection" -> result.success(openSettingsSection(call.argument<String>("section")))
                     "openWebFallback" -> {
                         openWebFallback()
                         result.success(true)
@@ -89,6 +90,21 @@ class NativeChatActivity : FlutterActivity() {
                 putExtra(PermissionCenterActivity.EXTRA_GROUP, PermissionCenterActivity.GROUP_ENGINE)
             })
         }
+    }
+
+    private fun openSettingsSection(section: String?): Boolean {
+        val destination = when (section) {
+            "plugins" -> Intent(this, PluginStoreActivity::class.java)
+            "extensions" -> Intent(this, ExtensionStoreActivity::class.java)
+            "containers" -> Intent(this, LinuxActivity::class.java)
+            "language" -> Intent(this, SettingsActivity::class.java).putExtra("native_chat_open_language", true)
+            "permissions" -> Intent(this, PermissionCenterActivity::class.java)
+            "diagnostics" -> Intent(this, LogViewerActivity::class.java)
+            "backup" -> Intent(this, BackupActivity::class.java)
+            "about" -> Intent(this, AboutActivity::class.java)
+            else -> return false
+        }
+        return runCatching { startActivity(destination) }.isSuccess
     }
 
     /** SSH workspace routing is owned by the Web shell; no native deep link is verified. */

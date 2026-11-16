@@ -9,6 +9,7 @@ import 'overflow_title.dart';
 import 'runtime_panel.dart';
 import 'subagent_panel.dart';
 import '../state/chat_controller.dart';
+import 'settings/settings_home.dart';
 import '../theme/dsh_theme.dart';
 import 'composer.dart';
 import 'message_list.dart';
@@ -86,6 +87,7 @@ class _ChatShellState extends State<ChatShell> {
           backgroundColor: DshPalette.of(context).paper,
           drawer: SessionDrawer(
             currentTitle: firstPrompt,
+            onOpenSettings: () => showSettingsHome(context, widget.controller),
             onOpenEngineSessions: widget.onOpenEngineSessions,
             onShowcase:
                 widget.controller.transport is FixtureTransport &&

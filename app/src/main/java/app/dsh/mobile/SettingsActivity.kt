@@ -392,6 +392,13 @@ class SettingsActivity : ThemedActivity() {
             startActivity(Intent(this, AboutActivity::class.java))
         }
 
+        if (intent.getBooleanExtra("native_chat_open_language", false)) {
+            intent.removeExtra("native_chat_open_language")
+            findViewById<LinearLayout>(R.id.rowLanguage).post {
+                findViewById<LinearLayout>(R.id.rowLanguage).performClick()
+            }
+        }
+
         // 记忆面板（M8）的入口 v1.7.9 起收进「权限与能力 → 无障碍 → 任务记忆」，
         // 主页不再单列一个「记忆」分组（同一页两个入口只会让人犹豫点哪个）。
     }

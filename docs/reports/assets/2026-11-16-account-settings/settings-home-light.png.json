@@ -1,0 +1,33 @@
+{
+  "before": {
+    "width": 500,
+    "height": 865,
+    "dpr": 1
+  },
+  "after": {
+    "width": 432,
+    "height": 960,
+    "dpr": 1,
+    "visualWidth": 432,
+    "bodyWidth": 432
+  },
+  "url": "http://127.0.0.1:63050/",
+  "output": "E:\\tmp\\native-chat-web-preview\\settings-home-light.png",
+  "source": "Flutter web; explicit CDP mobile viewport; fixture data",
+  "bundleSha256": "b2ca5297919dc369d908ed04cfd61287832ab36b1ec8341a58800d049e5e8d05",
+  "shaderResponses": [
+    {
+      "url": "http://127.0.0.1:63050/assets/packages/liquid_glass_widgets/shaders/lightweight_glass.frag",
+      "status": 200
+    }
+  ],
+  "runtimeErrors": [],
+  "args": [
+    "--width=432",
+    "--light",
+    "--settings",
+    "--account-preview",
+    "--semantics"
+  ],
+  "capturedAt": "2026-11-16T04:23:41.874Z"
+}

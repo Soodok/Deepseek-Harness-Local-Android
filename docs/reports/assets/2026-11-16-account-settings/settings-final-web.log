@@ -1,0 +1,47 @@
+Compiling lib\main.dart for the Web...
+Wasm dry run succeeded. Consider building and testing your application with the `--wasm` flag. See docs for more info: https://docs.flutter.dev/platform-integration/web/wasm
+Use --no-wasm-dry-run to disable these warnings.
+
+┌─ Shader Warning ─────────────────────────────────────────────────────────────────────────────────┐
+│ [WARNING]                                                                                        │
+│ "C:\\Users\\Qt\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\liquid_glass_widgets-1.17.3\\shader │
+│ s\\liquid_glass_render.frag": Fragment shader uses texture samplers alongside multiple 'return'  │
+│ statements in `main()`. This has the potential to cause compilation errors during shader         │
+│ compilation on Windows.                                                                          │
+│ To avoid crashes on Windows, consider removing multiple 'return;' statements in `main()`.See     │
+│ https://github.com/flutter/flutter/issues/190809 for details.                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Shader Warning ─────────────────────────────────────────────────────────────────────────────────┐
+│ [WARNING]                                                                                        │
+│ "C:\\Users\\Qt\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\liquid_glass_widgets-1.17.3\\shader │
+│ s\\lightweight_glass.frag": Fragment shader uses texture samplers alongside multiple 'return'    │
+│ statements in `main()`. This has the potential to cause compilation errors during shader         │
+│ compilation on Windows.                                                                          │
+│ To avoid crashes on Windows, consider removing multiple 'return;' statements in `main()`.See     │
+│ https://github.com/flutter/flutter/issues/190809 for details.                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Shader Warning ─────────────────────────────────────────────────────────────────────────────────┐
+│ [WARNING]                                                                                        │
+│ "C:\\Users\\Qt\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\liquid_glass_widgets-1.17.3\\shader │
+│ s\\progressive_blur.frag": Fragment shader uses texture samplers alongside multiple 'return'     │
+│ statements in `main()`. This has the potential to cause compilation errors during shader         │
+│ compilation on Windows.                                                                          │
+│ To avoid crashes on Windows, consider removing multiple 'return;' statements in `main()`.See     │
+│ https://github.com/flutter/flutter/issues/190809 for details.                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Shader Warning ─────────────────────────────────────────────────────────────────────────────────┐
+│ [WARNING]                                                                                        │
+│ "C:\\Users\\Qt\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\liquid_glass_widgets-1.17.3\\shader │
+│ s\\interactive_indicator.frag": Fragment shader uses texture samplers alongside multiple         │
+│ 'return' statements in `main()`. This has the potential to cause compilation errors during       │
+│ shader compilation on Windows.                                                                   │
+│ To avoid crashes on Windows, consider removing multiple 'return;' statements in `main()`.See     │
+│ https://github.com/flutter/flutter/issues/190809 for details.                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+Font asset "CupertinoIcons.ttf" was tree-shaken, reducing it from 257628 to 844 bytes (99.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 11432 bytes (99.3% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Compiling lib\main.dart for the Web...                            137.8s
+√ Built build\web

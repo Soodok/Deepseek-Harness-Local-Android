@@ -1,0 +1,27 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: compact heatmap overview opens accessible daily details
+00:01 +1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:01 +2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:01 +3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:02 +4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:03 +5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:03 +6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:03 +7: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:04 +8: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:04 +9: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:04 +10: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:04 +11: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:05 +12: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:05 +13: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: invalid avatar schemes use the local fallback
+00:05 +14: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: synchronous account failure never leaves an orphan progress dialog
+00:05 +15: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: back at the root leaves settings visible
+00:05 +16: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: back at the root leaves settings visible
+00:05 +17: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: mist dark
+00:05 +18: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: mist light
+00:05 +19: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sand dark
+00:06 +20: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sand light
+00:06 +21: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sage dark
+00:06 +22: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sage light
+00:06 +23: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: plum dark
+00:07 +24: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: plum light
+00:07 +25: All tests passed!

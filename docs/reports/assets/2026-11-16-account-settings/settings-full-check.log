@@ -1,0 +1,341 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: native single choice treats custom text as an alternative answer
+00:00 +1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: structured reply keeps labels and custom text in separate fields
+00:01 +2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: free text is trimmed and an empty answer cannot submit
+00:01 +3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: single choice replaces the selection and includes optional text
+00:01 +4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: an option can be submitted without any free text
+00:01 +5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: multiple choices toggle and submit labels in request order
+00:01 +6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: changing the request ID clears selection and draft only then
+00:01 +7: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: busy disables all question controls and preserves an unsent draft
+00:01 +8: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: approval keeps its callbacks and disables both buttons while busy
+00:01 +9: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_cards_test.dart: production theme keeps 48dp targets within a 360dp viewport
+00:02 +10: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_dispatch_test.dart
+00:03 +10: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_dispatch_test.dart: approval dispatch rejects duplicates and stale requests
+00:03 +11: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_dispatch_test.dart: question dispatch rejects duplicate and empty submissions
+00:03 +12: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_lifecycle_test.dart
+00:03 +12: E:/tmp/wt-flutter-native-chat/flutter_ui/test/action_lifecycle_test.dart: unrelated tool completion and snapshot keep slow approval locked
+00:04 +13: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart
+00:04 +13: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: applies snapshot and assistant deltas in sequence order
+00:04 +14: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: ignores stale generations and stops on sequence gaps
+00:04 +15: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: keeps tool and user action cards in state
+00:04 +16: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: keeps approval and question cards mutually exclusive
+00:04 +17: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: preserves queued prompts through a resync snapshot
+00:04 +18: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: guards stale and gapped snapshots
+00:04 +19: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_reducer_test.dart: copies snapshot lists before exposing state
+00:04 +20: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_screen_test.dart
+00:05 +20: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_screen_test.dart: renders the complete fixture lifecycle
+00:06 +21: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_screen_test.dart: queues a prompt while a turn is waiting for action
+00:07 +22: E:/tmp/wt-flutter-native-chat/flutter_ui/test/chat_screen_test.dart: stops a waiting action
+00:07 +23: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_controls_test.dart
+00:08 +23: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_controls_test.dart: failed send keeps editable draft and files through reconnect retry
+00:09 +24: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_controls_test.dart: file bytes are read, limits reject, and attachment bytes are immutable
+00:09 +25: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_controls_test.dart: model permission and system picker work at width 360.0
+00:09 +26: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_controls_test.dart: model permission and system picker work at width 390.0
+00:10 +27: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_controls_test.dart: model permission and system picker work at width 432.0
+00:11 +28: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart
+00:11 +28: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: replayed question restores only an identical stable payload draft
+00:12 +29: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: empty state takes no space
+00:12 +30: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: plan holds for two seconds then contracts over 260ms
+00:13 +31: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: same plan status updates do not restart reading or reopen
+00:13 +32: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: manual expansion cancels automatic collapse until a new plan
+00:13 +33: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: new plan id and new generation each receive their own reading time
+00:13 +34: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: latest plan survives ordinary tools and history page replacement
+00:13 +35: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: question selection and text survive collapse and explicit submit
+00:13 +36: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: request replacement resets draft and starts expanded
+00:14 +37: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: pending question stays expanded while only plan auto collapses
+00:14 +38: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: approval remains explicit and disables both actions while busy
+00:14 +39: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: reduced motion still allows two seconds reading then collapses instantly
+00:14 +40: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: 360dp small screen with keyboard bounds scrolling and 48dp controls
+00:14 +41: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_dock_test.dart: dispose cancels the plan reading timer
+00:14 +42: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_options_test.dart
+00:16 +42: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_options_test.dart: double queue dispatch sends first once and preserves second
+00:16 +43: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_options_test.dart: submission includes model permission and actual attachment bytes
+00:16 +44: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_options_test.dart: queued submission freezes model permission and attachments until dispatch
+00:16 +45: E:/tmp/wt-flutter-native-chat/flutter_ui/test/composer_options_test.dart: attachment-only submit works and model IDs are validated
+00:16 +46: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/conversation_flow_test.dart
+00:16 +46: E:/tmp/wt-flutter-native-chat/flutter_ui/test/conversation_flow_test.dart: main list and composer use the shared flow and input surface
+00:17 +47: E:/tmp/wt-flutter-native-chat/flutter_ui/test/conversation_flow_test.dart: expanded execution records stay lazy and updates preserve disclosure
+00:17 +48: E:/tmp/wt-flutter-native-chat/flutter_ui/test/conversation_flow_test.dart: child flow keeps structured plans without a composer dock
+00:18 +49: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/dock_integration_test.dart
+00:18 +49: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dock_integration_test.dart: replaced active plan keeps the historical steps reachable
+00:20 +50: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dock_integration_test.dart: full shell remains usable with keyboard, large text and a long draft
+00:20 +51: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dock_integration_test.dart: active question lives above composer outside the history list
+00:20 +52: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart
+00:22 +52: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: exchange preserves mount, peer Cookie and a single socket
+00:22 +53: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: HTTP 200 business failure preserves code, message and details
+00:22 +54: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: rpcId mismatch fails even when result is successful
+00:22 +55: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: mux dispatches immediate items, errors and ends by streamId
+00:22 +56: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: cancel only unsubscribes its stream and ignores late items
+00:22 +57: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: disconnect closes streams and reconnect exchanges a fresh Cookie
+00:22 +58: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: close during exchange makes a late handshake inert
+00:22 +59: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: close completes even a follow that is still connecting
+00:22 +60: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: foreign redirect is rejected without following or leaking token
+00:22 +61: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_rpc_connection_test.dart: invalid URLs and endpoint traversal fail before network access
+00:22 +62: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart
+00:23 +62: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: snapshot sorts exact real envelopes and maps tools by source.callId
+00:23 +63: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: durable duplicates consume no client sequence and gaps fail until rebaseline
+00:23 +64: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: reasoning, text and raw code blocks fold compact records without duplication
+00:23 +65: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: live prefix growth emits deltas without replaying the history window
+00:23 +66: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: assistant revisions and dense indexes detect gaps separately from durable seq
+00:23 +67: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: idle clears streaming without completing an interrupted tool or turn
+00:23 +68: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: todos baseline, whole writes and turn/start project as visible steps
+00:23 +69: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: unknown tool output and failure identity stay lossless and do not become actions
+00:23 +70: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: surface replacement removes the addressed rows and keeps non-human context distinct
+00:23 +71: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: only completed turn/end reports complete; failure and cancellation remain explicit
+00:23 +72: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: catalog refresh preserves true child addresses and one-shot read-only mode
+00:23 +73: E:/tmp/wt-flutter-native-chat/flutter_ui/test/dsh_session_projection_test.dart: invalid snapshot identity and missing tail never publish partial windows
+00:23 +74: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/engine_session_test.dart
+00:24 +74: E:/tmp/wt-flutter-native-chat/flutter_ui/test/engine_session_test.dart: catalog preserves real root identity and disables migration rows
+00:24 +75: E:/tmp/wt-flutter-native-chat/flutter_ui/test/engine_session_test.dart: malformed catalog cannot be reported as an empty success
+00:24 +76: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/execution_group_test.dart
+00:25 +76: E:/tmp/wt-flutter-native-chat/flutter_ui/test/execution_group_test.dart: one collapsed summary lazily reveals tools and keeps their full detail
+00:26 +77: E:/tmp/wt-flutter-native-chat/flutter_ui/test/execution_group_test.dart: tool updates preserve manual expansion and show failure in collapsed summary
+00:26 +78: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart
+00:27 +78: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: successful native navigation closes stale runtime sheet
+00:28 +79: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: runtime bridge preserves actual fallback and unresolved modes
+00:28 +80: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: joined floating header and composer spacing 360.0
+00:29 +81: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: joined floating header and composer spacing 390.0
+00:29 +82: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: joined floating header and composer spacing 432.0
+00:29 +83: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: joined floating header and composer spacing 600.0
+00:29 +84: E:/tmp/wt-flutter-native-chat/flutter_ui/test/floating_runtime_test.dart: runtime entries open native managers without faking host selection
+00:30 +85: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart
+00:30 +85: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: replacement settlement dedupes, retry contributes separately and cache is included
+00:31 +86: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: missing samples stay unknown while an explicit zero is recorded
+00:31 +87: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: bounded suffix is legal and dates use device local time
+00:31 +88: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: replacement moves its contribution across date boundaries
+00:31 +89: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: invalid and unsafe counts fail visibly instead of inventing zeros
+00:31 +90: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: internal sequence gap and missing tail are rejected
+00:31 +91: E:/tmp/wt-flutter-native-chat/flutter_ui/test/local_usage_reader_test.dart: read failure is propagated and catalog is bounded to 50 main sessions
+00:31 +92: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/mobile_geometry_test.dart
+00:31 +92: E:/tmp/wt-flutter-native-chat/flutter_ui/test/mobile_geometry_test.dart: mobile controls stay reachable at width 360.0
+00:33 +93: E:/tmp/wt-flutter-native-chat/flutter_ui/test/mobile_geometry_test.dart: mobile controls stay reachable at width 390.0
+00:34 +94: E:/tmp/wt-flutter-native-chat/flutter_ui/test/mobile_geometry_test.dart: mobile controls stay reachable at width 432.0
+00:34 +95: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart
+00:37 +95: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: starts exactly one empty events follow and waits for strict ready
+00:37 +96: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: rejects waterfall before ready without sending any result
+00:37 +97: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: rejects ready with missing host or additional keys
+00:37 +98: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: approval stays pending until an explicit decision and sends real outcome
+00:37 +99: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: reject and cancel are closed approval vocabulary values
+00:37 +100: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: foreign parent and unknown events explicitly delegate with next
+00:37 +101: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: only a real approval schema can create an approval card
+00:37 +102: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: single question preserves labels and descriptions as immutable data
+00:37 +103: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: legacy newline selection maps only complete canonical labels
+00:37 +104: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: structured selection plus custom text keeps their separate wire fields
+00:37 +105: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: ambiguous legacy mixed text is rejected with its draft preserved
+00:37 +106: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: free text is encoded as custom without normalizing its content
+00:37 +107: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: invalid structured question identity, labels and cardinality never submit
+00:37 +108: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: multiple questions, timed claim, intents and lossy labels use Web fallback
+00:37 +109: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: question cancel sends the real UserQuestionError instead of a fake answer
+00:37 +110: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: duplicate in-flight approval shares one send and terminal submit is refused
+00:37 +111: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: failed asynchronous receipt retains editable draft and permits an explicit retry
+00:37 +112: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: late acknowledgement cannot erase a draft edited while submitting
+00:37 +113: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: structured draft edits during delivery replace the old text draft
+00:37 +114: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: host cancel withdraws the card and never posts a reply on its own
+00:37 +115: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: host cancel wins over a pending HTTP receipt
+00:37 +116: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: reconnect changes identity and old receipt cannot settle the replayed event
+00:37 +117: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: question draft identity survives replay and changes with the real payload
+00:37 +118: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: identical waterfall replay is deduplicated but changed identity payload fails
+00:37 +119: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: forbidden request agent/signal fields fail the frame rather than guessing
+00:37 +120: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: stream end interrupts pending actions and preserves their drafts
+00:37 +121: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: manual delegate sends next without manufacturing approval or answer
+00:37 +122: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: close invalidates work, is idempotent, and does not own the shared RPC
+00:37 +123: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: nonvoid acknowledgement is a protocol failure and keeps the draft
+00:37 +124: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: failed automatic delegation is visible and can be explicitly retried
+00:37 +125: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: draft snapshots survive host cancel and another consumer cannot mutate them
+00:37 +126: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: indefinite wait callId remains metadata and structured empty answer is explicit skip
+00:37 +127: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: an additional ready after opening ends the current generation
+00:37 +128: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_interactions_test.dart: real loopback carrier uses exact mux and HTTP event-result envelopes
+00:37 +129: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart
+00:38 +129: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: native interactions project, reply and withdraw through the parent sequence
+00:38 +130: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: list uses _request, follow stays addressed and real events become visible
+00:38 +131: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: prompt and stop preserve real RPC arguments and do not invent completion
+00:38 +132: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: composer exposes models and sends verified permission command before prompt
+00:39 +133: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: unsupported submission parts fail before changing model, policy or sending
+00:39 +134: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: business failures and malformed receipts propagate instead of appearing accepted
+00:39 +135: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: gap reports an error, then explicit reconnect replaces the window in a new generation
+00:39 +136: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: passive idle state clears streaming and pending actions direct users to Web
+00:39 +137: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: catalog refresh delegates real child identities and one-shot cannot send
+00:39 +138: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: close during opening rejects connect without waiting for a snapshot timeout
+00:39 +139: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: permission command failure stops submission before prompt admission
+00:39 +140: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_session_transport_test.dart: close cancels follow and timer and rejects a late catalog result
+00:39 +141: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart
+00:39 +141: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancellation during initialization cancels the eventual named attempt
+00:39 +142: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: profile maps only sanitized fields and rejects unsafe avatar URL
+00:39 +143: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: browser flow uses host callback and ignores unrelated attempt completion
+00:39 +144: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: malicious authorize destination is rejected and named attempt cancelled
+00:39 +145: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: unsupported callback is refused before any account mutation
+00:39 +146: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: logout checks account tasks and passes client metadata
+00:39 +147: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancel closes pending stream without accepting a later successful attempt
+00:40 +148: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart
+00:40 +148: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a committed receipt for a user event
+00:41 +149: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard keeps live text for an unrelated durable assistant and rejects its receipt
+00:41 +150: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects a second start before the active attempt ends
+00:41 +151: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard preserves baseline and incremental code as assistant content
+00:41 +152: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard rejects an empty nonempty-cursor history while allowing bounded suffixes
+00:41 +153: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: child guard refuses a self-address before sending
+00:41 +154: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: real tool calls, failed results and reasoning keep structured detail and original ownership
+00:41 +155: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: surface replacements remove old tool records and bounded results stay visible
+00:41 +156: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: live tool deltas keep complete arguments and are replaced by the durable call
+00:41 +157: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: embedded tool calls keep command and edit data through a later result
+00:41 +158: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: opaque blocks do not steal tool ownership from the real assistant message
+00:41 +159: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: catalog resolves unknown identity, keeps external rows unaddressable and requires durable completion
+00:41 +160: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: events uses the addressed request and real user/message and assistant/message fields
+00:41 +161: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: unknown assistant blocks remain readable without inventing an assistant reply
+00:41 +162: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: watch stays passive, replaces snapshots and drops duplicate seq
+00:41 +163: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: a durable seq gap becomes a visible stream error
+00:41 +164: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: assistant baseline and deltas settle into the durable message once
+00:41 +165: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: surface replacement removes prior messages without classifying unknown data as replies
+00:41 +166: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: prompt acknowledges inbox delivery only and rejects read-only modes before RPC
+00:41 +167: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: empty history accepts the protocol minus-one cursor
+00:41 +168: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: unknown read resolves its wire mode while preserving caller identity
+00:41 +169: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: late read cannot overwrite a newer watched conversation
+00:41 +170: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_subagent_transport_test.dart: malformed acceptance is rejected instead of fabricated as a receipt
+00:41 +171: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart
+00:42 +171: E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: shared disabled send icon stays visible in every palette
+00:43 +172: E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: accessibility changes preserve editable and scrollable glass children
+00:43 +173: E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: palette menu repaints all moods while preserving the shell and draft
+00:44 +174: E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: four moods have distinct light and dark surfaces with readable text
+00:44 +175: E:/tmp/wt-flutter-native-chat/flutter_ui/test/natural_glass_test.dart: glass uses package material and solid accessiblity fallback
+00:44 +176: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart
+00:45 +176: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: short text stays on one line without scheduling animation
+00:45 +177: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: overflow waits, travels at 28 px/s and pauses at both ends
+00:46 +178: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: widening to fit restores the origin and cancels motion
+00:46 +179: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: shrinking restarts with a complete initial pause
+00:46 +180: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: reduced motion stays at the origin and stops active motion
+00:46 +181: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: changing a long title returns to its beginning and waits again
+00:46 +182: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: semantics exposes the full title exactly once while scrolling
+00:46 +183: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: RTL begins at the right edge and moves toward the trailing end
+00:46 +184: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: text scale changes recompute whether the title overflows
+00:46 +185: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: style changes recompute overflow using actual glyph widths
+00:46 +186: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: short text honors the supplied alignment
+00:46 +187: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: TickerMode pauses without advancing by hidden elapsed time
+00:46 +188: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: a pause during the return leg preserves direction and speed
+00:46 +189: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: application background pauses and resumes without a time jump
+00:46 +190: E:/tmp/wt-flutter-native-chat/flutter_ui/test/overflow_title_test.dart: disposing during motion or its initial pause cancels callbacks
+00:46 +191: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/permission_presets_test.dart
+00:47 +191: E:/tmp/wt-flutter-native-chat/flutter_ui/test/permission_presets_test.dart: permission presets use the three actual DSH machine values
+00:47 +192: E:/tmp/wt-flutter-native-chat/flutter_ui/test/permission_presets_test.dart: full access is submitted and frozen when queued
+00:47 +193: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/question_keepalive_test.dart
+00:48 +193: E:/tmp/wt-flutter-native-chat/flutter_ui/test/question_keepalive_test.dart: unsubmitted question survives scrolling outside lazy cache
+00:49 +194: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/resource_bridge_test.dart
+01:10 +194: E:/tmp/wt-flutter-native-chat/flutter_ui/test/resource_bridge_test.dart: resource open is explicit, validated and reports host failures
+01:10 +195: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_controller_test.dart
+01:11 +195: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_controller_test.dart: profile remains visible when only usage fails
+01:11 +196: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_controller_test.dart: successful logout fences a slow read and duplicate logouts
+01:11 +197: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_controller_test.dart: failed logout preserves the known profile and allows retry
+01:11 +198: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_controller_test.dart: dispose ignores late refresh safely
+01:11 +199: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart
+01:11 +199: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+01:14 +200: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: synchronous account failure never leaves an orphan progress dialog
+01:14 +201: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: native management section calls only its typed destination
+01:14 +202: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart
+01:15 +202: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: signed out profile invokes the supplied login callback
+01:16 +203: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: profile shows supplied identity and signs out via callback
+01:16 +204: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: search filters actual destinations and dispatches each enum value
+01:17 +205: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: search also matches enum subtitles
+01:17 +206: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: selecting a supplied day shows real input output and combined totals
+01:17 +207: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: missing days remain unknown while a recorded zero displays zero
+01:17 +208: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: heatmap contains exactly 84 calendar dates in 12 weekly columns
+01:18 +209: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: unavailable usage does not render supplied stale numbers as current
+01:18 +210: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: demo provenance is opt in
+01:18 +211: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: busy state protects login logout refresh and destinations
+01:18 +212: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: refresh serializes attempts and recovers from failure
+01:18 +213: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: invalid avatar schemes use the local fallback
+01:18 +214: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: back at the root leaves settings visible
+01:18 +215: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: mist dark
+01:18 +216: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: mist light
+01:18 +217: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sand dark
+01:19 +218: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sand light
+01:19 +219: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sage dark
+01:19 +220: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: sage light
+01:19 +221: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: plum dark
+01:19 +222: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_page_test.dart: 360px 2x text scrolls without overflow: plum light
+01:19 +223: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/structured_tools_test.dart
+01:20 +223: E:/tmp/wt-flutter-native-chat/flutter_ui/test/structured_tools_test.dart: tool progress replaces one stable ID and preserves anchor and content
+01:20 +224: E:/tmp/wt-flutter-native-chat/flutter_ui/test/structured_tools_test.dart: output links allow only explicit web URIs and retain file metadata
+01:20 +225: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart
+01:21 +225: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart: subscription failure is visible and loading is released
+01:21 +226: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart: send is once while pending, accepted text is not an assistant reply
+01:21 +227: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart: one-shot and unknown addresses remain read only
+01:21 +228: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart: old revisions do not replace newer child conversation
+01:21 +229: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart: watch retry during a pending delivery does not strand the send lock
+01:21 +230: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_controller_test.dart: delivery failures stay retryable
+01:21 +231: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart
+01:22 +231: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child guard hides input for a self-address
+01:22 +232: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: child uses the shared flow, selectable rows, disclosure and floating surface
+01:23 +233: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: running continuable child still accepts one queued send without fabricated messages
+01:23 +234: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: fixture 目录实时聚合、按 id 与父子地址去重并可展开
+01:23 +235: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 不支持子会话时入口直接显示原因并禁用
+01:23 +236: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 可用入口真实订阅子会话，返回直接回到母会话
+01:25 +237: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 缺少地址时列表说明不可用，不读取也不发送
+01:25 +238: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 同一更新同时连接已有 id 和地址时只保留最新一条
+01:25 +239: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 读取期间显示 loading，正文只来自 read 结果
+01:25 +240: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: continuable 只发送一次，排队回执独立显示且不伪造回复
+01:25 +241: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 一次性、未知模式只读；缺地址和空地址不可用；均不发送
+01:25 +242: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 发送失败保留草稿并可重发
+01:25 +243: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 发送中编辑过的草稿不被成功结果清空，即使改回原文
+01:26 +244: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 读取失败可重试并重新订阅，退出页面取消订阅
+01:26 +245: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 退出后晚到的发送结果安全丢弃
+01:27 +246: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 退出后晚到的真实挂起读取安全丢弃
+01:27 +247: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 同地址元数据更新保留草稿且不重复读取
+01:27 +248: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 切换子会话清旧稿，旧发送完成不影响新稿
+01:27 +249: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: watch 的真实增量显示为助手正文
+01:27 +250: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 未知送达状态不会显示为已送达
+01:27 +251: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 空白草稿不可发送
+01:27 +252: E:/tmp/wt-flutter-native-chat/flutter_ui/test/subagent_panel_test.dart: 360 宽、两倍文字与键盘弹出时可滚动且无溢出
+01:27 +253: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart
+01:28 +253: E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart: system appearance updates an already open runtime panel
+01:31 +254: E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart: light theme uses real light material surfaces
+01:31 +255: E:/tmp/wt-flutter-native-chat/flutter_ui/test/theme_modes_test.dart: appearance switch repaints the chat without losing an edited draft
+01:32 +256: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart
+01:33 +256: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: production theme fits 360.0 with 48dp resource actions
+01:34 +257: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: production theme fits 390.0 with 48dp resource actions
+01:34 +258: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: production theme fits 432.0 with 48dp resource actions
+01:34 +259: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: plan starts quiet and expands all step states
+01:35 +260: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: agents show every status before expanding task and result
+01:35 +261: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: open receives exact resource without invented success
+01:35 +262: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: open failure stays visible and URI can be copied (false)
+01:35 +263: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: open failure stays visible and URI can be copied (true)
+01:35 +264: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: open is disabled without host callback
+01:35 +265: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: pending open cannot be dispatched twice
+01:35 +266: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: unsafe URI actions are disabled: javascript:alert(1)
+01:35 +267: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: unsafe URI actions are disabled: file:///secret.png
+01:35 +268: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: unsafe URI actions are disabled: data:image/png;base64,AA==
+01:35 +269: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: unsafe URI actions are disabled: https://user:pass@example.test/a
+01:35 +270: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: stale open result cannot mark a replacement resource failed
+01:35 +271: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: clipboard failure is visible without false copied feedback
+01:35 +272: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: image builds only after preview with loading and error UI
+01:36 +273: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_content_view_test.dart: trusted package asset loads only after preview
+01:36 +274: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_performance_test.dart
+01:37 +274: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_performance_test.dart: collapsed logs are not built and long logs remain accessible
+01:38 +275: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart
+01:39 +275: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: reduced motion settles process disclosures without timed transitions
+01:40 +276: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: reasoning, command and diff start collapsed
+01:40 +277: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: failed status shows even when exit code is absent, and exit 7 keeps stderr
+01:40 +278: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: failed run with no exit code still reads as failed
+01:40 +279: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: same id keeps expansion across prop updates
+01:40 +280: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: diff expands to added and removed lines
+01:40 +281: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: long output starts truncated and full text copies
+01:41 +282: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: status does not come from command output or exit code
+01:41 +283: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: changing tool id resets previously expanded sections
+01:41 +284: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: path-only edits do not fabricate change counts
+01:42 +285: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: before and after show line numbers and copy original sources
+01:42 +286: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: a partial final diff line still offers complete access
+01:42 +287: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: copy failure has no success confirmation
+01:42 +288: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: a pending copy result is ignored after replacing the tool
+01:42 +289: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: production theme fits 360.0 with expanded content
+01:42 +290: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: production theme fits 390.0 with expanded content
+01:42 +291: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: production theme fits 432.0 with expanded content
+01:43 +292: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_card_test.dart: empty sections stay hidden and touch targets hold at 360dp
+01:43 +293: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_model_test.dart
+01:43 +293: E:/tmp/wt-flutter-native-chat/flutter_ui/test/tool_process_model_test.dart: streaming tool snapshots retain typed command and code output at completion
+01:43 +294: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/transport_fixture_test.dart
+01:44 +294: E:/tmp/wt-flutter-native-chat/flutter_ui/test/transport_fixture_test.dart: fixture emits a deterministic prompt and approval flow
+01:44 +295: E:/tmp/wt-flutter-native-chat/flutter_ui/test/transport_fixture_test.dart: fixture reconnect starts a new generation
+01:44 +296: E:/tmp/wt-flutter-native-chat/flutter_ui/test/transport_fixture_test.dart: real transport rejects an empty engine URL
+01:44 +297: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/widget_test.dart
+01:45 +297: E:/tmp/wt-flutter-native-chat/flutter_ui/test/widget_test.dart: host runtime refreshes after returning from native settings
+01:47 +298: E:/tmp/wt-flutter-native-chat/flutter_ui/test/widget_test.dart: DSH app bootstrap shows independent chat shell
+01:47 +299: All tests passed!
+Analyzing flutter_ui...
+No issues found! (ran in 2.1s)

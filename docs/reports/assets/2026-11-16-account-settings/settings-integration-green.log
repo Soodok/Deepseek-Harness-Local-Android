@@ -1,0 +1,12 @@
+00:00 +0: loading E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart
+00:00 +0: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancellation during initialization cancels the eventual named attempt
+00:00 +1: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: profile maps only sanitized fields and rejects unsafe avatar URL
+00:00 +2: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: browser flow uses host callback and ignores unrelated attempt completion
+00:00 +3: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: malicious authorize destination is rejected and named attempt cancelled
+00:00 +4: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: unsupported callback is refused before any account mutation
+00:00 +5: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: logout checks account tasks and passes client metadata
+00:00 +6: E:/tmp/wt-flutter-native-chat/flutter_ui/test/native_settings_service_test.dart: cancel closes pending stream without accepting a later successful attempt
+00:00 +7: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: drawer account menu opens settings, preview sign-in and confirmed logout share identity
+00:04 +8: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: synchronous account failure never leaves an orphan progress dialog
+00:04 +9: E:/tmp/wt-flutter-native-chat/flutter_ui/test/settings_integration_test.dart: native management section calls only its typed destination
+00:04 +10: All tests passed!

@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import '../model/tool_content.dart';
+import '../model/settings_model.dart';
 import 'resource_web_stub.dart'
     if (dart.library.js_interop) 'resource_web.dart';
 
@@ -88,6 +89,8 @@ class HostBridge {
 
   static Future<bool> openRuntimeSettings([String? target]) =>
       _open('openRuntimeSettings', target == null ? null : {'target': target});
+  static Future<bool> openSettingsSection(SettingsDestination destination) =>
+      _open('openSettingsSection', {'section': destination.name});
   static Future<bool> openSshManager(String platform) =>
       _open('openSshManager', {'platform': platform});
   static Future<bool> _open(
