@@ -332,3 +332,6 @@ local-overrides/
 
 # UI 预览服务的运行时状态（含 pid，不属于源码）
 docs/ui-preview/.preview-server.json
+
+# #110 隐藏的开发者选项：7 连击解锁、陈旧入口自守、不绕过 CapabilityGate
+!/scripts/probes/_test_developer_options.py
