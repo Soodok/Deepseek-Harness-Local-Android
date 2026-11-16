@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dsh_native_chat/src/model/chat_model.dart';
 import 'package:dsh_native_chat/src/model/composer_model.dart';
+import 'package:dsh_native_chat/src/state/chat_controller.dart';
 import 'package:dsh_native_chat/src/state/chat_reducer.dart';
 import 'package:dsh_native_chat/src/state/chat_state.dart';
 import 'package:dsh_native_chat/src/transport/dsh_rpc_connection.dart';
@@ -316,6 +317,462 @@ void main() {
     },
   );
 
+  test('reopening a real read-only session displays its model and never upgrades on send', () async {
+    final original = host.onCall!;
+    host.onCall = (r) async => r.endpoint == 'session/modelCatalog'
+        ? {
+            'default': {'provider': 'provider', 'model': 'catalog-default'},
+            'groups': [
+              {
+                'id': 'provider',
+                'models': [
+                  {'id': 'catalog-default', 'name': 'Catalog Default'},
+                  {'id': 'm', 'name': 'Restored Session Model'},
+                ],
+              },
+            ],
+            'failures': [],
+          }
+        : await original(r);
+    host.onFrame = (r) {
+      if (r.frame['type'] == 'open') {
+        host.item(
+          r,
+          snapshot(
+            0,
+            [user(0, 'initial')],
+            values: {
+              'modelSelection': {
+                'lastUsed': {
+                  'provider': 'provider',
+                  'model': 'catalog-default',
+                },
+                'next': {'provider': 'provider', 'model': 'm'},
+              },
+              'permissions': {'currentValue': 'read-only'},
+            },
+          ),
+        );
+      }
+    };
+    final live = NativeSessionTransport(rpc: rpc, sessionId: 'parent');
+    final controller = ChatController(live);
+    addTearDown(controller.dispose);
+    await controller.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.selectedModelId, '["provider","m"]');
+    expect(controller.modelLabel, 'Restored Session Model');
+    expect(controller.permission, ComposerPermission.readOnly);
+    expect(await controller.sendPrompt('保留 Host 只读权限'), isTrue);
+    expect(
+      host.requests.where((r) => r.endpoint == 'session/prompt'),
+      hasLength(1),
+    );
+    expect(
+      host.requests.where((r) => r.endpoint == 'commands/execute'),
+      isEmpty,
+    );
+    expect(
+      host.requests.where((r) => r.endpoint == 'session/selectModel'),
+      isEmpty,
+    );
+    await live.close();
+  });
+
+  test(
+    'opening snapshot restores next model and current session permission',
+    () async {
+      host.onFrame = (r) {
+        if (r.frame['type'] == 'open') {
+          host.item(
+            r,
+            snapshot(
+              0,
+              [user(0, 'initial')],
+              values: {
+                'modelSelection': {
+                  'lastUsed': {
+                    'provider': 'old-provider',
+                    'model': 'old-model',
+                  },
+                  'next': {
+                    'provider': 'provider',
+                    'model': 'm',
+                    'reasoningEffort': 'high',
+                  },
+                },
+                'permissions': {'currentValue': 'read-only'},
+              },
+            ),
+          );
+        }
+      };
+      await transport.connect();
+      expect(transport.composerConfiguration.modelId, '["provider","m"]');
+      expect(
+        transport.composerConfiguration.permission,
+        ComposerPermission.readOnly,
+      );
+      expect(transport.composerConfiguration.permissionPreset, 'read-only');
+      expect(
+        host.requests.where((r) => r.endpoint == 'commands/execute'),
+        isEmpty,
+      );
+      expect(
+        host.requests.where((r) => r.endpoint == 'session/selectModel'),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'a restored model remains identifiable when its catalog is unavailable',
+    () async {
+      final original = host.onCall!;
+      host.onCall = (r) async => r.endpoint == 'session/modelCatalog'
+          ? {'groups': [], 'failures': []}
+          : await original(r);
+      host.onFrame = (r) {
+        if (r.frame['type'] == 'open') {
+          host.item(
+            r,
+            snapshot(
+              0,
+              [user(0, 'initial')],
+              values: {
+                'modelSelection': {
+                  'lastUsed': null,
+                  'next': {'provider': 'host-provider', 'model': 'host-model'},
+                },
+                'permissions': {'currentValue': 'read-only'},
+              },
+            ),
+          );
+        }
+      };
+      final live = NativeSessionTransport(rpc: rpc, sessionId: 'parent');
+      final controller = ChatController(live);
+      addTearDown(controller.dispose);
+      await controller.start();
+      expect(controller.modelLabel, 'host-model');
+      await live.close();
+    },
+  );
+
+  test('inherited unknown permission is refused before prompt or configuration writes', () async {
+    host.onFrame = (r) {
+      if (r.frame['type'] == 'open')
+        host.item(
+          r,
+          snapshot(
+            0,
+            [user(0, 'initial')],
+            values: {
+              'permissions': {'currentValue': 'custom'},
+            },
+          ),
+        );
+    };
+    await transport.connect();
+    await expectLater(
+      transport.sendSubmission(
+        PromptSubmission(
+          text: 'must not run',
+          modelId: null,
+          permission: ComposerPermission.readOnly,
+          applyPermission: false,
+          applyModel: false,
+        ),
+      ),
+      throwsA(isA<DshRpcException>()),
+    );
+    expect(
+      host.requests.where(
+        (r) =>
+            r.endpoint == 'session/prompt' ||
+            r.endpoint == 'commands/execute' ||
+            r.endpoint == 'session/selectModel',
+      ),
+      isEmpty,
+    );
+  });
+
+  test('unknown permission received during model selection refuses prompt admission', () async {
+    host.onFrame = (r) {
+      if (r.frame['type'] == 'open')
+        host.item(
+          r,
+          snapshot(
+            0,
+            [user(0, 'initial')],
+            values: {
+              'permissions': {'currentValue': 'read-only'},
+            },
+          ),
+        );
+    };
+    await transport.connect();
+    await transport.refreshCatalog();
+    final original = host.onCall!;
+    final entered = Completer<void>(), release = Completer<Object?>();
+    host.onCall = (r) async {
+      if (r.endpoint == 'session/selectModel') {
+        entered.complete();
+        return release.future;
+      }
+      if (r.endpoint == 'session/projections')
+        return {
+          'kind': 'sequenced',
+          'asOfSeq': 1,
+          'values': {
+            'permissions': {'currentValue': 'custom'},
+          },
+        };
+      return await original(r);
+    };
+    final sending = transport.sendSubmission(
+      PromptSubmission(
+        text: 'must remain blocked',
+        modelId: transport.models.single.id,
+        permission: ComposerPermission.readOnly,
+        applyModel: true,
+        applyPermission: false,
+      ),
+    );
+    await entered.future;
+    await transport.refreshConfiguration();
+    expect(transport.composerConfiguration.permission, isNull);
+    final rejected = expectLater(sending, throwsA(isA<DshRpcException>()));
+    release.complete({
+      'selected': {'provider': 'provider', 'model': 'm'},
+    });
+    await rejected;
+    expect(host.requests.where((r) => r.endpoint == 'session/prompt'), isEmpty);
+    expect(
+      host.requests.where((r) => r.endpoint == 'commands/execute'),
+      isEmpty,
+    );
+  });
+
+  test('inherited submissions ignore catalog defaults and never write configuration', () async {
+    host.onFrame = (r) {
+      if (r.frame['type'] == 'open')
+        host.item(
+          r,
+          snapshot(
+            0,
+            [user(0, 'initial')],
+            values: {
+              'permissions': {'currentValue': 'read-only'},
+            },
+          ),
+        );
+    };
+    await transport.connect();
+    await transport.sendSubmission(
+      PromptSubmission(
+        text: 'inherit the host',
+        modelId: 'not-a-catalog-route',
+        permission: ComposerPermission.workspaceWrite,
+        applyModel: false,
+        applyPermission: false,
+      ),
+    );
+    expect(
+      host.requests.where((r) => r.endpoint == 'session/prompt'),
+      hasLength(1),
+    );
+    expect(
+      host.requests.where((r) => r.endpoint == 'commands/execute'),
+      isEmpty,
+    );
+    expect(
+      host.requests.where((r) => r.endpoint == 'session/selectModel'),
+      isEmpty,
+    );
+  });
+
+  test(
+    'configuration refresh uses real request shape and ignores cached hints',
+    () async {
+      host.onFrame = (r) {
+        if (r.frame['type'] == 'open') {
+          host.item(
+            r,
+            snapshot(
+              0,
+              [user(0, 'initial')],
+              values: {
+                'permissions': {'currentValue': 'read-only'},
+              },
+            ),
+          );
+        }
+      };
+      await transport.connect();
+      await transport.refreshCatalog();
+      final original = host.onCall!;
+      host.onCall = (r) async => r.endpoint == 'session/projections'
+          ? {
+              'kind': 'migration-required',
+              'values': {
+                'permissions': {'currentValue': 'danger-full-access'},
+              },
+            }
+          : await original(r);
+      await expectLater(
+        transport.refreshConfiguration(),
+        throwsA(isA<DshRpcException>()),
+      );
+      expect(
+        transport.composerConfiguration.permission,
+        ComposerPermission.readOnly,
+      );
+      final reads = host.requests.where(
+        (r) => r.endpoint == 'session/projections',
+      );
+      expect(request(reads.last), {'sessionId': 'parent'});
+    },
+  );
+
+  test(
+    'late configuration read cannot undo an acknowledged permission change',
+    () async {
+      await transport.connect();
+      await transport.refreshCatalog();
+      final original = host.onCall!;
+      final entered = Completer<void>(), release = Completer<Object?>();
+      host.onCall = (r) async {
+        if (r.endpoint == 'session/projections') {
+          if (!entered.isCompleted) entered.complete();
+          return release.future;
+        }
+        return await original(r);
+      };
+      final pending = transport.refreshConfiguration();
+      await entered.future;
+      await transport.sendSubmission(
+        PromptSubmission(
+          text: 'explicitly read only',
+          modelId: null,
+          permission: ComposerPermission.readOnly,
+          applyModel: false,
+        ),
+      );
+      release.complete({
+        'kind': 'sequenced',
+        'asOfSeq': 0,
+        'values': {
+          'permissions': {'currentValue': 'danger-full-access'},
+        },
+      });
+      await pending;
+      expect(
+        transport.composerConfiguration.permission,
+        ComposerPermission.readOnly,
+      );
+    },
+  );
+
+  test('follow configuration events refresh through exact projections and reject older cuts', () async {
+    host.onFrame = (r) {
+      if (r.frame['type'] == 'open') {
+        host.item(
+          r,
+          snapshot(
+            0,
+            [user(0, 'initial')],
+            values: {
+              'permissions': {'currentValue': 'danger-full-access'},
+            },
+          ),
+        );
+      }
+    };
+    await transport.connect();
+    await transport.refreshCatalog();
+    final original = host.onCall!;
+    var cut = 0;
+    final entered = Completer<void>();
+    host.onCall = (r) async {
+      if (r.endpoint != 'session/projections') return await original(r);
+      if (!entered.isCompleted) entered.complete();
+      return {
+        'kind': 'sequenced',
+        'asOfSeq': cut,
+        'values': {
+          'permissions': {'currentValue': 'read-only'},
+          'subagentCatalog': [],
+        },
+      };
+    };
+    final channel = await host.waitFrame(
+      (r) =>
+          r.frame['type'] == 'open' && r.frame['endpoint'] == 'session/follow',
+    );
+    host.item(channel, {
+      'type': 'event',
+      'event': {
+        'seq': 1,
+        'time': 10,
+        'type': 'permission/preset',
+        'data': {'preset': 'read-only'},
+      },
+    });
+    await entered.future;
+    await transport.refreshConfiguration();
+    expect(
+      transport.composerConfiguration.permission,
+      ComposerPermission.fullAccess,
+    );
+    cut = 1;
+    await transport.refreshConfiguration();
+    expect(
+      transport.composerConfiguration.permission,
+      ComposerPermission.readOnly,
+    );
+  });
+
+  test(
+    'reconnect restores the new Host choice instead of the previous projection',
+    () async {
+      var permission = 'danger-full-access';
+      host.onFrame = (r) {
+        if (r.frame['type'] == 'open') {
+          host.item(
+            r,
+            snapshot(
+              0,
+              [user(0, 'initial')],
+              values: {
+                'modelSelection': {
+                  'lastUsed': null,
+                  'next': {'provider': 'provider', 'model': 'm'},
+                },
+                'permissions': {'currentValue': permission},
+              },
+            ),
+          );
+        }
+      };
+      await transport.connect();
+      expect(
+        transport.composerConfiguration.permission,
+        ComposerPermission.fullAccess,
+      );
+      permission = 'read-only';
+      await transport.reconnect();
+      expect(
+        transport.composerConfiguration.permission,
+        ComposerPermission.readOnly,
+      );
+      expect(
+        host.requests.where((r) => r.endpoint == 'commands/execute'),
+        isEmpty,
+      );
+    },
+  );
+
   test('composer exposes models and sends verified permission command before prompt', () async {
     await transport.connect();
     expect(transport.models.single.label, 'Visible Model');
@@ -352,7 +809,7 @@ void main() {
             args(r)['line'] == '/permission ' + permission.wireValue,
       );
       expect(args(command), {
-        'agent': 'parent',
+        'agentId': 'parent',
         'line': '/permission ' + permission.wireValue,
         'submittedAttachments': [],
       });
@@ -665,7 +1122,10 @@ void main() {
         transport.refreshState(),
         throwsA(isA<DshRpcException>()),
       );
-      expect(host.frames.any((r) => r.frame['type'] == 'cancel'), isTrue);
+      final cancelled = await host.waitFrame(
+        (r) => r.frame['type'] == 'cancel',
+      );
+      expect(cancelled.frame['type'], 'cancel');
     },
   );
 }

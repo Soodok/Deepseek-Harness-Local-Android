@@ -77,6 +77,71 @@ void main() {
     seen = [];
   });
 
+  test('internal model context stays out of conversation while user and turn errors remain visible', () {
+    final records = <Map<String, Object?>>[
+      record(0, 'system/message', {
+        'message': {
+          'content': [
+            {'type': 'text', 'text': 'internal system seed'},
+          ],
+          'source': {'kind': 'system-prompt'},
+        },
+      }),
+      record(1, 'developer/message', {
+        'message': {
+          'content': [
+            {'type': 'text', 'text': 'internal developer seed'},
+          ],
+        },
+      }),
+      for (final kind in [
+        'user-approval',
+        'agent-instructions',
+        'runtime-context',
+        'skill-catalog',
+        'time-context',
+      ])
+        record(
+          2 +
+              [
+                'user-approval',
+                'agent-instructions',
+                'runtime-context',
+                'skill-catalog',
+                'time-context',
+              ].indexOf(kind),
+          'user/message',
+          {
+            'source': {'kind': kind},
+            'content': [
+              {'type': 'text', 'text': 'internal ' + kind},
+            ],
+          },
+        ),
+      user(7, 'Please reply NATIVE_UI_OK'),
+      record(8, 'turn/end', {
+        'turn': 1,
+        'reason': {
+          'kind': 'error',
+          'error': {'code': 'MISSING_CREDENTIAL', 'message': 'no API key'},
+        },
+      }),
+    ];
+    apply(projection.accept(snapshot(8, records)));
+    expect(projection.cursor, 8);
+    expect(
+      state.messages.where((m) => m.text.startsWith('internal ')),
+      isEmpty,
+    );
+    expect(
+      state.messages.where((m) => m.role == ChatRole.user).single.text,
+      'Please reply NATIVE_UI_OK',
+    );
+    expect(state.messages.last.text, contains('模型尚未配置'));
+    expect(state.messages.last.text, contains('API Key'));
+    expect(seen.where((e) => e.kind == ChatEventKind.turnComplete), isEmpty);
+  });
+
   test(
     'snapshot sorts exact real envelopes and maps tools by source.callId',
     () {

@@ -10,12 +10,24 @@ import 'chat_state.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController(this.transport) {
-    if (models.isNotEmpty) _modelId = models.first.id;
+    if (transport is SessionComposerTransport) {
+      _permission = ComposerPermission.readOnly;
+      _restoreComposerConfiguration(
+        (transport as SessionComposerTransport).composerConfiguration,
+        notify: false,
+      );
+    } else if (models.isNotEmpty) {
+      _modelId = models.first.id;
+    }
   }
 
   final DshTransport transport;
   ChatState _state = ChatState.empty();
   StreamSubscription<ChatEvent>? _eventsSubscription;
+  StreamSubscription<ComposerConfiguration>? _configurationSubscription;
+  bool _modelChanged = false;
+  bool _permissionChanged = false;
+  String? _configurationError;
   bool _started = false;
   bool _disposed = false;
   bool _resyncInFlight = false;
@@ -47,14 +59,27 @@ class ChatController extends ChangeNotifier {
   String? get selectedModelId => _modelId;
   String get modelLabel =>
       models.where((m) => m.id == _modelId).firstOrNull?.label ??
+      (transport is SessionComposerTransport
+          ? (transport as SessionComposerTransport)
+                .composerConfiguration
+                .modelLabel
+          : null) ??
       (supportsComposerOptions ? '当前会话模型' : '模型未接入');
   ComposerPermission get permission => _permission;
+  String? get configurationError => _configurationError;
+  bool get permissionKnown => _configurationError == null;
+  String get permissionLabel =>
+      permissionKnown ? _permission.label : '未知 · 请确认';
+  int _modelRevision = 0;
+  int _permissionRevision = 0;
   List<PromptAttachment> get attachments => List.unmodifiable(_attachments);
   static const maxFiles = 5;
   static const maxAttachmentBytes = 20 * 1024 * 1024;
   void selectModel(String id) {
     if (!models.any((m) => m.id == id)) throw ArgumentError.value(id, 'model');
     _modelId = id;
+    _modelChanged = true;
+    ++_modelRevision;
     if (!_disposed) notifyListeners();
   }
 
@@ -62,7 +87,15 @@ class ChatController extends ChangeNotifier {
     if (!supportsPermission(mode))
       throw const TransportException('当前引擎未提供此权限模式，请使用 Web 版查看');
     _permission = mode;
-    if (!_disposed) notifyListeners();
+    _permissionChanged = true;
+    ++_permissionRevision;
+    if (transport is SessionComposerTransport) {
+      _restoreComposerConfiguration(
+        (transport as SessionComposerTransport).composerConfiguration,
+      );
+    } else if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   void addAttachments(List<PromptAttachment> files) {
@@ -86,16 +119,43 @@ class ChatController extends ChangeNotifier {
   }
 
   bool get canSend =>
-      _state.status == ChatStatus.ready ||
-      _state.status == ChatStatus.streaming ||
-      _state.status == ChatStatus.waitingAction;
+      _configurationError == null &&
+      (_state.status == ChatStatus.ready ||
+          _state.status == ChatStatus.streaming ||
+          _state.status == ChatStatus.waitingAction);
+
+  String? get queuedDispatchError {
+    if (_queuedSubmissions.isEmpty || transport is! SessionComposerTransport)
+      return null;
+    final queued = _queuedSubmissions.first;
+    if (!queued.applyPermission &&
+        (transport as SessionComposerTransport)
+                .composerConfiguration
+                .permission ==
+            null) {
+      return '队首消息继承的会话权限未知。请先在 Web 确认权限，或发送当前明确选择权限的新消息。';
+    }
+    if (queued.applyPermission && !supportsPermission(queued.permission))
+      return '队首消息选择的权限暂不可用，请重试连接或打开 Web。';
+    return null;
+  }
 
   bool get canDispatchQueued =>
-      !_queuedDispatchInFlight && _state.status == ChatStatus.ready;
+      !_queuedDispatchInFlight &&
+      _queuedSubmissions.isNotEmpty &&
+      queuedDispatchError == null &&
+      _state.status == ChatStatus.ready;
 
   Future<void> start() async {
     if (_started || _disposed) return;
     _started = true;
+    if (transport is SessionComposerTransport) {
+      final session = transport as SessionComposerTransport;
+      _configurationSubscription = session.composerConfigurationChanges.listen(
+        _restoreComposerConfiguration,
+      );
+      _restoreComposerConfiguration(session.composerConfiguration);
+    }
     _eventsSubscription = transport.events.listen(
       _onEvent,
       onError: (Object error, StackTrace stack) => _setError(error.toString()),
@@ -114,6 +174,11 @@ class ChatController extends ChangeNotifier {
       text: text.trim(),
       modelId: _modelId,
       permission: _permission,
+      applyModel: transport is! SessionComposerTransport || _modelChanged,
+      applyPermission:
+          transport is! SessionComposerTransport || _permissionChanged,
+      modelRevision: _modelRevision,
+      permissionRevision: _permissionRevision,
       attachments: _attachments,
     );
     if (submission.text.isEmpty && submission.attachments.isEmpty) return false;
@@ -140,6 +205,19 @@ class ChatController extends ChangeNotifier {
   Future<void> _dispatch(PromptSubmission submission) async {
     if (transport is ComposerTransport) {
       await (transport as ComposerTransport).sendSubmission(submission);
+      if (transport is SessionComposerTransport && !_disposed) {
+        if (submission.applyModel &&
+            _modelRevision == submission.modelRevision) {
+          _modelChanged = false;
+        }
+        if (submission.applyPermission &&
+            _permissionRevision == submission.permissionRevision) {
+          _permissionChanged = false;
+        }
+        _restoreComposerConfiguration(
+          (transport as SessionComposerTransport).composerConfiguration,
+        );
+      }
     } else {
       if (submission.attachments.isNotEmpty ||
           submission.modelId != null ||
@@ -162,6 +240,11 @@ class ChatController extends ChangeNotifier {
         text: text.trim(),
         modelId: _modelId,
         permission: _permission,
+        applyModel: transport is! SessionComposerTransport || _modelChanged,
+        applyPermission:
+            transport is! SessionComposerTransport || _permissionChanged,
+        modelRevision: _modelRevision,
+        permissionRevision: _permissionRevision,
       ),
     );
     _syncQueue();
@@ -256,6 +339,30 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  void _restoreComposerConfiguration(
+    ComposerConfiguration configuration, {
+    bool notify = true,
+  }) {
+    if (_disposed) return;
+    if (!_modelChanged) _modelId = configuration.modelId;
+    final previousError = _configurationError;
+    if (!_permissionChanged) {
+      _permission = configuration.permission ?? ComposerPermission.readOnly;
+    }
+    _configurationError =
+        !_permissionChanged && configuration.permission == null
+        ? '当前会话工具权限为 ' +
+              (configuration.permissionPreset ?? '未知') +
+              '，原生端无法回显；请显式选择权限或使用 Web 版。'
+        : null;
+    if (_configurationError != null) {
+      _state = _state.copyWith(error: _configurationError);
+    } else if (previousError != null && _state.error == previousError) {
+      _state = _state.copyWith(clearError: true);
+    }
+    if (notify) notifyListeners();
+  }
+
   void _onEvent(ChatEvent event) {
     final next = ChatReducer.apply(_state, event);
     if (identical(next, _state)) return;
@@ -285,7 +392,9 @@ class ChatController extends ChangeNotifier {
         (_pendingAction != next.approval?.requestId &&
             _pendingAction != next.question?.requestId))
       _pendingAction = null;
-    _state = next;
+    _state = next.error == null && _configurationError != null
+        ? next.copyWith(error: _configurationError)
+        : next;
     notifyListeners();
   }
 
@@ -293,6 +402,7 @@ class ChatController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     unawaited(_eventsSubscription?.cancel());
+    unawaited(_configurationSubscription?.cancel());
     unawaited(transport.close());
     super.dispose();
   }

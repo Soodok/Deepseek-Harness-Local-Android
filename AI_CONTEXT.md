@@ -1,5 +1,21 @@
 # DSH Android · 交接文档
 
+## Android 实机链路验收（2026-11-16 17:55，beta.34 已安装，在线模型待授权）
+
+- 用户要求构建 Android 应用，在模拟器确认真实配置与交互。仅写 E:/tmp/wt-flutter-native-chat（基线616efa8ab9e6142f3570e7bea4455bd2d5ea2db7）；主仓库和已有设备不改。
+- beta.32/code407 x86_64 full debug APK 构建成功（3m3s），内置经过同版ASAR/闭包校验的DSH0.2.2-rc.2运行时；已安装到本任务专用 emulator-5570（AVD dsh_flutter_20261116，Android 34）。实际完成引导、启动本地Bionic Node、health ok=true missing=[] failed=[]、打开真实Flutter入口、创建session-a417e50d-81a2-48fe-92c8-231d197ee6e9。原始设备证据 E:/tmp/native-chat-web-preview/android-evidence。
+- AGP 9.1.1 生成 Kotlin 源目录必须注册 AndroidSourceSet.kotlin：app/build.gradle.kts 使用 sourceSets.getByName("main").kotlin.srcDir(repoConfigDir)，原 java.srcDir 导致 RepoConfig 未解析，修正后构建通过。
+- Android默认真实EngineHome，只有Web/显式preview=true使用fixture；Host全URL/可用性轮换会销毁旧RPC、页面及设置服务。空列表实际填写应用沙箱绝对cwd创建成功，无桌面账号/模型凭据复制。
+- 外观SharedPreferences在设备读回mode=light,mood=sand，强制停止+重新启动后主题与会话都恢复。beta.32真实发送暴露commands/execute错误：agent字段应为agentId；独立对照rc.2 wire描述符并有效红测后修复。
+- 独立复核发现配置错误隐藏、A/B/A队列消费新草稿及未知权限被新草稿放行问题；已分别有效红测后修复。队首按冻结提交独立闸门，transport在配置写入前与最后await后再次校验继承权限。实际usage读取暴露rc.2 records={type:event,event:{...}}，解析与基础测试已迁移真实封装，保留安全整数/缺口/尾游标约束。
+- beta.34/code409（2026-11-16 17:40）修掉「系统提示占屏」：dsh_session_projection.dart 的 _view() 只把 source.kind=user 的 user/message 当人类正文，compact-checkpoint 仍作系统行，system/developer 与其余注入来源不再平铺（依据 rc.2 message.ts:85-112 与 request-prompt.ts）；journal、surfaceOp replace、工具与失败记录不变。回合结束改可读文案：MISSING_CREDENTIAL/NO_CREDENTIAL_STORE 明确提示登录或添加 API Key，另有凭据无效、未登录、额度、限流、上下文超限、模型不可用等分支，其余保留原始 message+code；失败回合仍不发 turnComplete。
+- 该修复由已落盘测试 dsh_session_projection_test.dart:80 先红（android-internal-context-red.log exit 1，7 条内部 ChatMessage 非空）后转绿；compact-checkpoint 与 turn/end 既有用例未被放宽。
+- beta.34 门禁单次运行：完整 339 项测试通过（52s，android-beta34-flutter.log）、analyze No issues found（1.7s）、gradle assembleDebug BUILD SUCCESSFUL 1m6s。APK E:/tmp/native-chat-web-preview/dsh-native-chat-beta34-x86_64-full.apk，250678251 B，SHA-256 ca6923b6e86bd19cfbd0c6d844016f619c332228befa9522862008b2dd3f7323，仅 x86_64，内嵌 runtime 0b693c76…（138391732 B）。已覆盖安装到 emulator-5570，设备回报 versionCode=409 / 1.6.0-beta.34。
+- 设备实测（截图与同帧 dump 在 docs/reports/assets/2026-11-16-android-beta34）：真实会话正文只剩人类气泡与一行可读错误；同一会话再发一条真实消息仍被引擎接收并以同一缺凭据错误结束；设置 Token 显示「所选时段暂无记录」无异常；模型面板空 catalog 时明确提示并要求登录/配置；冷启动后入口、会话、浅色 sand 主题恢复，无崩溃日志。journal 同批 40 条事件里仍含 system/message、五类注入来源与两次 turn/end error，证明内部上下文只是不显示、未被丢弃。
+- 当前唯一阻塞：模型 catalog 为空且未登录/未配 API Key，真实模型回复、工具执行、审批与停止按钮无法验收。按用户要求禁止读取或复制桌面凭据，也不允许用 fixture/固定回复冒充在线 AI；需要用户提供登录或 API Key 授权方式后继续。
+- 报告 docs/reports/2026-11-16-android-emulator-validation.md。未覆盖：子代理面板、Web 与原生双端同步、长时运行与性能；启动期短暂「Backoff」现象已记录但无证据判定为回归。
+
+
 ## 账号与 MIUI 设置（2026-11-16，已验证并归档）
 
 - 隔离基线8d932a56d78edf71eecf02b994ca18f4fee0b22a；只改E:/tmp/wt-flutter-native-chat，主仓库未写入。

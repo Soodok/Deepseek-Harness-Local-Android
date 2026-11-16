@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../model/composer_model.dart';
+import '../bridge/host_bridge.dart';
 import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
 import 'glass_panel.dart';
@@ -90,7 +91,32 @@ Future<void> _show(
                       padding: EdgeInsets.all(12),
                       child: Text('当前引擎尚未接入此能力，请使用 Web 版。'),
                     )
-                  else if (models)
+                  else if (models && controller.models.isEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('还没有可用模型，请先配置模型提供商或登录账号。'),
+                    ),
+                    TextButton.icon(
+                      key: const ValueKey('model-configure'),
+                      icon: const Icon(Icons.settings_outlined),
+                      label: const Text('配置模型'),
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        HostBridge.openWebFallback();
+                      },
+                    ),
+                    TextButton.icon(
+                      key: const ValueKey('model-refresh'),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重新读取可用模型'),
+                      onPressed: () async {
+                        Navigator.of(sheetContext).pop();
+                        await controller.reconnect();
+                        if (context.mounted)
+                          await showModelSelector(context, controller);
+                      },
+                    ),
+                  ] else if (models)
                     ...controller.models.map(
                       (model) => _Choice(
                         key: ValueKey('model-option-' + model.id),
@@ -122,7 +148,9 @@ Future<void> _show(
                         detail: controller.supportsPermission(mode)
                             ? mode.description
                             : '当前引擎未提供此模式，请使用 Web 版查看。',
-                        selected: controller.permission == mode,
+                        selected:
+                            controller.permissionKnown &&
+                            controller.permission == mode,
                         onTap: !controller.supportsPermission(mode)
                             ? null
                             : () {

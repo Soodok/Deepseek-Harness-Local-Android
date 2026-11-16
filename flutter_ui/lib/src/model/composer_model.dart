@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 enum ComposerPermission {
@@ -34,16 +35,48 @@ class PromptSubmission {
     required this.text,
     required this.modelId,
     required this.permission,
+    this.applyModel = true,
+    this.applyPermission = true,
+    this.modelRevision = 0,
+    this.permissionRevision = 0,
     List<PromptAttachment> attachments = const [],
   }) : attachments = List.unmodifiable(attachments);
   final String text;
   final String? modelId;
   final ComposerPermission permission;
+
+  /// False means inherit the Host value, even when a display value was captured.
+  final bool applyModel;
+  final bool applyPermission;
+  final int modelRevision;
+  final int permissionRevision;
   final List<PromptAttachment> attachments;
   String get displayText => [
     if (text.isNotEmpty) text,
     for (final file in attachments) '附件：' + file.name,
   ].join(String.fromCharCode(10));
+}
+
+/// Session values are independent of catalog defaults and explicit draft overrides.
+class ComposerConfiguration {
+  const ComposerConfiguration({
+    this.modelId,
+    this.modelLabel,
+    this.permissionPreset,
+  });
+
+  final String? modelId;
+  final String? modelLabel;
+  final String? permissionPreset;
+  ComposerPermission? get permission => ComposerPermission.values
+      .where((mode) => mode.wireValue == permissionPreset)
+      .firstOrNull;
+}
+
+/// Optional read capability for transports whose configuration is owned by a Host.
+abstract interface class SessionComposerTransport {
+  ComposerConfiguration get composerConfiguration;
+  Stream<ComposerConfiguration> get composerConfigurationChanges;
 }
 
 /// Explicit restrictions advertised by transports with partial composer support.

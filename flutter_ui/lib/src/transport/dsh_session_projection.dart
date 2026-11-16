@@ -65,10 +65,7 @@ class DshSessionProjection {
                 ),
               );
             } else if (reason?['kind'] == 'error') {
-              final failure = _object(reason?['error']);
-              events.add(
-                error(_string(failure?['message']) ?? jsonEncode(reason)),
-              );
+              events.add(error(_turnEndText(reason, data)));
             }
           }
           return events;
@@ -305,21 +302,34 @@ class DshSessionProjection {
       final id = sessionId + ':event:' + seq.toString();
       switch (type) {
         case 'user/message':
+          // Web shows a transcript row only for source.kind=user. Injected context
+          // (approval notices, instructions, runtime/skill/time context, plugin and
+          // model notes) is a collapsible context node there, never human speech.
+          // A compaction checkpoint is the summary that replaced the surface, so it
+          // stays visible as a system row. The journal keeps every record either way.
+          final kind = _string(_object(data['source'])?['kind']);
+          if (kind != 'user' && kind != 'compact-checkpoint') break;
+          final text = _blocksText(data['content']);
+          if (text.isNotEmpty)
+            messages.add(
+              ChatMessage(
+                id: id,
+                role: kind == 'user' ? ChatRole.user : ChatRole.system,
+                text: text,
+              ),
+            );
         case 'assistant/message':
-        case 'system/message':
-        case 'developer/message':
-          final message = type == 'user/message'
-              ? data
-              : _requiredObject(data['message']);
-          final source = _object(message['source']);
-          final role = type == 'assistant/message'
-              ? ChatRole.assistant
-              : type == 'user/message' && source?['kind'] == 'user'
-              ? ChatRole.user
-              : ChatRole.system;
+          final message = _requiredObject(data['message']);
           final text = _blocksText(message['content']);
           if (text.isNotEmpty)
-            messages.add(ChatMessage(id: id, role: role, text: text));
+            messages.add(
+              ChatMessage(id: id, role: ChatRole.assistant, text: text),
+            );
+        case 'system/message':
+        case 'developer/message':
+          // System prompts and developer context are model input, not conversation.
+          // Validate the envelope so a malformed frame still fails the projection.
+          _requiredObject(data['message']);
         case 'turn/end':
           final reason = _object(data['reason']);
           if (reason?['kind'] != 'completed')
@@ -327,7 +337,7 @@ class DshSessionProjection {
               ChatMessage(
                 id: id,
                 role: ChatRole.system,
-                text: '回合结束：' + jsonEncode(reason ?? data),
+                text: _turnEndText(reason, data),
               ),
             );
         case 'assistant/attempt':
@@ -609,6 +619,62 @@ int _cursor(Object? value) {
 }
 
 int _integerOr(Object? value) => value is int ? value : 0;
+
+/// Names a known credential failure in the user's terms instead of echoing a
+/// provider diagnostic, while leaving every other cause intact.
+String _failureText(Map<String, Object?> failure) {
+  final code = _string(failure['code']);
+  final message = _string(failure['message']);
+  switch (code) {
+    case 'MISSING_CREDENTIAL':
+    case 'NO_CREDENTIAL_STORE':
+      return '模型尚未配置：当前模型提供方没有可用凭据。请登录账号或添加 API Key 后重试。';
+    case 'INVALID_CREDENTIAL':
+    case 'ACCOUNT_TOKEN_INVALID':
+      return '凭据不可用：已保存的 API Key 或账号令牌无效。请在设置中更新后重试。';
+    case 'AUTH':
+    case 'ACCOUNT_SIGN_IN_REQUIRED':
+      // Auth diagnostics may echo a masked credential, so never repeat them.
+      return '账号未登录或授权已失效：请登录后重试。';
+    case 'QUOTA':
+    case 'ACCOUNT_QUOTA':
+      return '额度已用完：' + (message ?? '请检查账号额度或余额后重试。');
+    case 'RATE_LIMIT':
+      return '请求过于频繁：' + (message ?? '请稍后重试。');
+    case 'CONTEXT_WINDOW_EXCEEDED':
+      return '上下文超出模型窗口：请压缩历史或新建会话后重试。';
+    case 'MODEL_UNSUPPORTED':
+    case 'UNKNOWN_MODEL':
+      return '模型不可用：' + (message ?? '请重新选择模型后重试。');
+  }
+  if (code == null) return message ?? jsonEncode(failure);
+  return message == null ? code : message + '（' + code + '）';
+}
+
+/// Turn endings other than completion stay visible, but as a readable sentence.
+String _turnEndText(Map<String, Object?>? reason, Map<String, Object?>? data) {
+  final kind = _string(reason?['kind']) ?? 'unknown';
+  final label = '回合结束（' + kind + '）';
+  switch (reason?['kind']) {
+    case 'error':
+      return label +
+          '：' +
+          _failureText(_object(reason?['error']) ?? data ?? const {});
+    case 'aborted':
+      final cause = _object(_object(reason?['reason'])?['reason']);
+      return label + (cause == null ? '' : '：' + _failureText(cause));
+    case 'interrupted':
+      return label + '：DSH 进程在本回合结束前退出。';
+    case 'max-tokens':
+      return label + '：已达到本次输出的令牌上限。';
+    case 'blocked':
+      return label + '：回合被阻止，没有继续执行。';
+    case 'forked':
+      return label + '：回合已分叉。';
+  }
+  return label + (reason == null && data != null ? '：' + jsonEncode(data) : '');
+}
+
 Map<String, Object?> _event(Object? raw) {
   final record = _requiredObject(raw), event = _requiredObject(record['event']);
   if (record['type'] != 'event' || _string(event['type']) == null)

@@ -73,12 +73,13 @@ Future<UsageHistory> readLocalUsage(
       throw const FormatException('Invalid history cursor');
     final events = <int, Map>{};
     for (final raw in page['records'] as List) {
-      if (raw is! Map)
+      if (raw is! Map || raw['type'] != 'event' || raw['event'] is! Map)
         throw const FormatException('Invalid usage journal record');
-      final seq = _natural(raw['seq']);
+      final record = raw['event'] as Map;
+      final seq = _natural(record['seq']);
       if (seq > cursor)
         throw const FormatException('Usage record exceeds cursor');
-      events.putIfAbsent(seq, () => raw);
+      events.putIfAbsent(seq, () => record);
     }
     final ordered = events.keys.toList()..sort();
     if ((ordered.isEmpty && cursor != -1) ||
@@ -144,7 +145,8 @@ Future<UsageHistory> readLocalUsage(
   return UsageHistory(
     from: start,
     through: end,
-    sourceLabel: '主会话最近记录 · 本地时区 · 含缓存输入 · 非账号账单（最多50个会话，每会话500条；不含子代理）',
+    sourceLabel:
+        '主会话最近记录 · 本地时区 · 含缓存输入 · 非账号账单（最多50个会话，每会话最近500条对话消息及相关事件；不含子代理）',
     days: [
       for (final date in dates)
         TokenUsageDay(

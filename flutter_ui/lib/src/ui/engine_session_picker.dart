@@ -7,9 +7,14 @@ class EngineSessionPicker extends StatefulWidget {
     super.key,
     required this.load,
     required this.onOpen,
+    this.onCreate,
+    this.onSettings,
+    this.onWebFallback,
   });
   final Future<List<EngineSession>> Function() load;
   final Future<void> Function(EngineSession) onOpen;
+  final Future<void> Function()? onCreate;
+  final VoidCallback? onSettings, onWebFallback;
   @override
   State<EngineSessionPicker> createState() => _EngineSessionPickerState();
 }
@@ -37,11 +42,40 @@ class _EngineSessionPickerState extends State<EngineSessionPicker> {
     }
   }
 
+  Future<void> _create() async {
+    if (_opening || widget.onCreate == null) return;
+    setState(() => _opening = true);
+    try {
+      await widget.onCreate!();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('新建失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('本机引擎会话'),
       actions: [
+        if (widget.onSettings != null)
+          IconButton(
+            key: const ValueKey('engine-settings'),
+            tooltip: '设置',
+            onPressed: _opening ? null : widget.onSettings,
+            icon: const Icon(Icons.settings_outlined),
+          ),
+        if (widget.onWebFallback != null)
+          IconButton(
+            key: const ValueKey('engine-web'),
+            tooltip: '打开 Web',
+            onPressed: widget.onWebFallback,
+            icon: const Icon(Icons.open_in_browser),
+          ),
         IconButton(
           tooltip: '刷新',
           onPressed: _opening
@@ -51,6 +85,14 @@ class _EngineSessionPickerState extends State<EngineSessionPicker> {
         ),
       ],
     ),
+    floatingActionButton: widget.onCreate == null
+        ? null
+        : FloatingActionButton.extended(
+            key: const ValueKey('engine-new-session'),
+            onPressed: _opening ? null : _create,
+            icon: const Icon(Icons.add),
+            label: const Text('新建会话'),
+          ),
     body: FutureBuilder<List<EngineSession>>(
       future: _rows,
       builder: (context, snapshot) {
@@ -76,6 +118,7 @@ class _EngineSessionPickerState extends State<EngineSessionPicker> {
         final rows = snapshot.data ?? const <EngineSession>[];
         if (rows.isEmpty) return const Center(child: Text('暂时没有可打开的主会话'));
         return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 100),
           itemCount: rows.length,
           itemBuilder: (context, index) {
             final row = rows[index];

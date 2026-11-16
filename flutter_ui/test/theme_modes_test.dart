@@ -21,7 +21,7 @@ void main() {
   ) async {
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-    await tester.pumpWidget(const DshApp());
+    await tester.pumpWidget(const DshApp(preview: true));
     await settleUi(tester);
     await tester.tap(find.byTooltip('打开会话抽屉'));
     await settleUi(tester);
@@ -63,7 +63,7 @@ void main() {
   testWidgets(
     'appearance switch repaints the chat without losing an edited draft',
     (tester) async {
-      await tester.pumpWidget(const DshApp());
+      await tester.pumpWidget(const DshApp(preview: true));
       await settleUi(tester);
       final shell = tester.state(find.byType(ChatShell));
       await tester.enterText(

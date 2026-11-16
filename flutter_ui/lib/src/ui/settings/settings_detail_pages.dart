@@ -203,7 +203,7 @@ class PermissionsSettingsPage extends StatelessWidget {
               minTileHeight: 80,
               leading: const Icon(Icons.shield_outlined),
               title: const Text('当前会话访问范围'),
-              subtitle: Text(controller.permission.label),
+              subtitle: Text(controller.permissionLabel),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => showPermissionSelector(context, controller),
             ),

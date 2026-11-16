@@ -1,0 +1,13 @@
+{
+  "apk": "E:\\tmp\\native-chat-web-preview\\dsh-native-chat-beta34-x86_64-full.apk",
+  "bytes": 250678251,
+  "sha256": "ca6923b6e86bd19cfbd0c6d844016f619c332228befa9522862008b2dd3f7323",
+  "abis": [
+    "x86_64"
+  ],
+  "runtimeBytes": 138391732,
+  "runtimeSha256": "0b693c76ae829035bb9c2f74ebaa869ad3f7abd086c97840d861bbf80c5e92a9",
+  "versionCode": 409,
+  "versionName": "1.6.0-beta.34",
+  "builtAt": "2026-11-16T09:45:00Z"
+}

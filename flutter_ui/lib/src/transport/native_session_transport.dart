@@ -18,6 +18,7 @@ class NativeSessionTransport
         SubagentTransport,
         ComposerTransport,
         ComposerCapabilities,
+        SessionComposerTransport,
         StructuredQuestionTransport {
   NativeSessionTransport({
     required this.rpc,
@@ -46,6 +47,13 @@ class NativeSessionTransport
   Future<void>? _closing;
   Future<void>? _catalogRead;
   Future<void>? _stateRead;
+  Future<void>? _configurationRead;
+  int _configurationRevision = 0;
+  int _modelConfigurationCut = -2;
+  int _permissionConfigurationCut = -2;
+  ComposerConfiguration _configuration = const ComposerConfiguration();
+  final _configurationChanges =
+      StreamController<ComposerConfiguration>.broadcast(sync: true);
   Completer<void>? _opening;
   int _generation = 0;
   int _requestSerial = 0;
@@ -65,6 +73,11 @@ class NativeSessionTransport
   bool get isFixture => false;
   @override
   List<ComposerModel> get models => _models;
+  @override
+  ComposerConfiguration get composerConfiguration => _configuration;
+  @override
+  Stream<ComposerConfiguration> get composerConfigurationChanges =>
+      _configurationChanges.stream;
   @override
   bool get supportsAttachments => false;
   @override
@@ -137,6 +150,10 @@ class NativeSessionTransport
 
   Future<void> _open() async {
     final generation = ++_generation;
+    ++_configurationRevision;
+    _modelConfigurationCut = -2;
+    _permissionConfigurationCut = -2;
+    _publishConfiguration(const ComposerConfiguration());
     final projection = DshSessionProjection(
       sessionId: sessionId,
       generation: generation,
@@ -169,7 +186,10 @@ class NativeSessionTransport
           (frame) {
             if (!_current(generation) || !_following) return;
             try {
-              _emit(projection.accept(frame));
+              final before = projection.cursor;
+              final events = projection.accept(frame);
+              _acceptConfigurationFrame(frame, before: before);
+              _emit(events);
               _syncInteractions();
               if (projection.opened && !opened.isCompleted) opened.complete();
             } on Object catch (error) {
@@ -209,6 +229,7 @@ class NativeSessionTransport
         if (!_current(generation) || !_following) return;
         _backgroundState(generation);
         _backgroundCatalog(generation);
+        _backgroundConfiguration(generation);
       });
       _backgroundState(generation);
       _backgroundCatalog(generation);
@@ -240,6 +261,7 @@ class NativeSessionTransport
     _connecting = null;
     _catalogRead = null;
     _stateRead = null;
+    _configurationRead = null;
     await follow?.cancel();
     _checkOpen();
     await connect();
@@ -312,6 +334,127 @@ class NativeSessionTransport
       error ??= failure;
     }
     capabilityError = error;
+    // Catalog completion can change labels and enabled options without changing selection.
+    if (!_closed) _configurationChanges.add(_configuration);
+  }
+
+  void _publishConfiguration(ComposerConfiguration configuration) {
+    if (_closed) return;
+    if (_configuration.modelId == configuration.modelId &&
+        _configuration.modelLabel == configuration.modelLabel &&
+        _configuration.permissionPreset == configuration.permissionPreset)
+      return;
+    _configuration = configuration;
+    _configurationChanges.add(configuration);
+  }
+
+  void _acceptConfigurationFrame(
+    Map<String, Object?> frame, {
+    required int before,
+  }) {
+    if (frame['type'] == 'snapshot') {
+      final projection = _map(frame['projections']);
+      final values = _map(projection?['values']);
+      final cut = projection?['asOfSeq'] ?? projection?['seq'];
+      if (values != null && cut is int) _applyConfiguration(values, cut);
+      return;
+    }
+    final event = _map(frame['event']);
+    final seq = event?['seq'];
+    if (seq is! int || seq <= before) return;
+    final type = event?['type'];
+    if (type == 'model/selection' || type == 'request/header') {
+      _modelConfigurationCut = seq;
+    } else if (type == 'permission/preset' ||
+        type == 'sandbox/mode' ||
+        type == 'approval/policy') {
+      _permissionConfigurationCut = seq;
+    } else {
+      return;
+    }
+    _backgroundConfiguration(_generation);
+  }
+
+  void _applyConfiguration(Map<String, Object?> values, int cut) {
+    var modelId = _configuration.modelId;
+    var modelLabel = _configuration.modelLabel;
+    var permissionPreset = _configuration.permissionPreset;
+    if (values.containsKey('modelSelection') && cut >= _modelConfigurationCut) {
+      final selection = _map(values['modelSelection']);
+      if (selection == null || !selection.containsKey('next')) throw _invalid;
+      final next = _map(selection['next']);
+      if (selection['next'] != null && next == null) throw _invalid;
+      if (next == null) {
+        modelId = null;
+        modelLabel = null;
+      } else {
+        final provider = _text(next['provider']), model = _text(next['model']);
+        if (provider == null || model == null) throw _invalid;
+        modelId = jsonEncode([provider, model]);
+        modelLabel = model;
+      }
+      _modelConfigurationCut = cut;
+    }
+    if (values.containsKey('permissions') &&
+        cut >= _permissionConfigurationCut) {
+      final preset = _text(_map(values['permissions'])?['currentValue']);
+      if (preset == null) throw _invalid;
+      permissionPreset = preset;
+      _permissionConfigurationCut = cut;
+    }
+    _publishConfiguration(
+      ComposerConfiguration(
+        modelId: modelId,
+        modelLabel: modelLabel,
+        permissionPreset: permissionPreset,
+      ),
+    );
+  }
+
+  /// Reads exact current values; cached migration hints cannot grant permissions.
+  Future<void> refreshConfiguration() {
+    if (_closed) return Future.error(_closedError);
+    if (_configurationRead != null) return _configurationRead!;
+    final generation = _generation, revision = _configurationRevision;
+    final operation = () async {
+      final result = _map(
+        await rpc.call('session/projections', {
+          'request': {'sessionId': sessionId},
+        }),
+      );
+      _check(generation);
+      if (revision != _configurationRevision) return;
+      final cut = result?['asOfSeq'], values = _map(result?['values']);
+      if (result?['kind'] != 'sequenced' ||
+          cut is! int ||
+          cut < -1 ||
+          values == null) {
+        throw _invalid;
+      }
+      _applyConfiguration(values, cut);
+    }();
+    _configurationRead = operation;
+    unawaited(
+      operation.then<void>(
+        (_) {
+          if (identical(_configurationRead, operation))
+            _configurationRead = null;
+        },
+        onError: (Object _, StackTrace _) {
+          if (identical(_configurationRead, operation))
+            _configurationRead = null;
+        },
+      ),
+    );
+    return operation;
+  }
+
+  void _backgroundConfiguration(int generation) {
+    unawaited(
+      refreshConfiguration().catchError((Object error) {
+        if (_current(generation)) capabilityError = error;
+      }),
+    );
   }
 
   Future<void> refreshCatalog() {
@@ -452,14 +595,19 @@ class NativeSessionTransport
       await connect();
       final generation = _generation;
       final permission = submission.permission.wireValue;
-      if (!_permissions.contains(permission))
+      if (!submission.applyPermission && _configuration.permission == null) {
+        throw _unsupported(
+          'The inherited session permission is unknown; explicitly select a permission before sending',
+        );
+      }
+      if (submission.applyPermission && !_permissions.contains(permission))
         throw _unsupported(
           'The host does not advertise permission preset ' + permission,
         );
-      final model = submission.modelId == null
+      final model = !submission.applyModel || submission.modelId == null
           ? null
           : _routes[submission.modelId];
-      if (submission.modelId != null && model == null)
+      if (submission.applyModel && submission.modelId != null && model == null)
         throw _unsupported('The selected model is unavailable');
       if (model != null) {
         final selected = _map(
@@ -472,25 +620,51 @@ class NativeSessionTransport
         if (route?['provider'] != model['provider'] ||
             route?['model'] != model['model'])
           throw _invalid;
-      }
-      final execution = _map(
-        await rpc.call('commands/execute', {
-          'agent': sessionId,
-          'line': '/permission ' + permission,
-          'submittedAttachments': <Object?>[],
-        }),
-      );
-      _check(generation);
-      final result = _map(execution?['result']);
-      if (execution == null ||
-          _text(execution['commandId']) == null ||
-          result == null)
-        throw _unsupported('The host has no usable /permission command');
-      if (result['kind'] != 'success')
-        throw DshRpcException(
-          'session/permission-failed',
-          _text(result['text']) ?? 'The host rejected the permission preset',
+        ++_configurationRevision;
+        _publishConfiguration(
+          ComposerConfiguration(
+            modelId: submission.modelId,
+            modelLabel: _models
+                .where((m) => m.id == submission.modelId)
+                .firstOrNull
+                ?.label,
+            permissionPreset: _configuration.permissionPreset,
+          ),
         );
+      }
+      if (submission.applyPermission) {
+        final execution = _map(
+          await rpc.call('commands/execute', {
+            'agentId': sessionId,
+            'line': '/permission ' + permission,
+            'submittedAttachments': <Object?>[],
+          }),
+        );
+        _check(generation);
+        final result = _map(execution?['result']);
+        if (execution == null ||
+            _text(execution['commandId']) == null ||
+            result == null)
+          throw _unsupported('The host has no usable /permission command');
+        if (result['kind'] != 'success')
+          throw DshRpcException(
+            'session/permission-failed',
+            _text(result['text']) ?? 'The host rejected the permission preset',
+          );
+        ++_configurationRevision;
+        _publishConfiguration(
+          ComposerConfiguration(
+            modelId: _configuration.modelId,
+            modelLabel: _configuration.modelLabel,
+            permissionPreset: permission,
+          ),
+        );
+      }
+      if (!submission.applyPermission && _configuration.permission == null) {
+        throw _unsupported(
+          'The inherited session permission changed while configuring the model; explicitly select a permission before sending',
+        );
+      }
       await sendPrompt(submission.text);
     } finally {
       _submissionBusy = false;
@@ -692,6 +866,7 @@ class NativeSessionTransport
       await rpc.close();
       // An unobserved single-subscription stream must not delay resource disposal.
       unawaited(_events.close());
+      unawaited(_configurationChanges.close());
     }();
     return _closing!;
   }

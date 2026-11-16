@@ -87,6 +87,25 @@ class HostBridge {
     return _open('openResource', {'uri': uri.toString()});
   }
 
+  static Future<Map<String, String>?> readAppearance() async {
+    try {
+      final raw = await _channel.invokeMethod<Object?>('readAppearance');
+      if (raw is! Map) return null;
+      return {
+        for (final entry in raw.entries)
+          if (entry.key is String && entry.value is String)
+            entry.key as String: entry.value as String,
+      };
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  static Future<bool> writeAppearance(String mode, String mood) =>
+      _open('writeAppearance', {'mode': mode, 'mood': mood});
+
   static Future<bool> openRuntimeSettings([String? target]) =>
       _open('openRuntimeSettings', target == null ? null : {'target': target});
   static Future<bool> openSettingsSection(SettingsDestination destination) =>

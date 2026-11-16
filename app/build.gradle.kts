@@ -266,13 +266,17 @@ android {
         // v1.6.0-beta.11 / beta.12（2026-11-14 13:40 / 13:45）：模型/文件/权限选择，局部玻璃面板与异步派发修复。
         // v1.6.0-beta.13 (2026-11-14): 悬浮运行环境顶栏、Bionic/Alpine 状态与 SSH 管理入口。
         // v1.6.0-beta.14 / beta.15（2026-11-14 15:48 / 16:12）：结构化工具UI与审查修复后的预览。
-        versionCode = 405
+        // v1.6.0-beta.34（2026-11-16）：对话正文只显示人类正文与助手回复，system/developer
+        // 及注入型 user/message 不再平铺（仍完整保留在 journal 与 Web 日志里）；
+        // 回合失败改为可读原因，缺凭据时明确提示登录或添加 API Key。
+        versionCode = 409
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.30"
+        // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
+        versionName = "1.6.0-beta.34"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -293,7 +297,7 @@ android {
     }
 
     // 构建期生成的 RepoConfig.kt（Fork 自动改自动更新链接）
-    sourceSets.getByName("main").java.srcDir(repoConfigDir)
+    sourceSets.getByName("main").kotlin.srcDir(repoConfigDir)
     // 构建期生成的 runtime/hardssh 资产（runtime.zip、runtime/MANIFEST.json、hardssh/）
     sourceSets.getByName("main").assets.srcDir(runtimeAssetsDir)
     // 构建期从正式 keystore 导出的索引验签公钥

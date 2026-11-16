@@ -18,7 +18,7 @@ void main() {
   testWidgets(
     'drawer account menu opens settings, preview sign-in and confirmed logout share identity',
     (tester) async {
-      await tester.pumpWidget(const DshApp());
+      await tester.pumpWidget(const DshApp(preview: true));
       await settle(tester);
       await tester.tap(find.byTooltip('打开会话抽屉'));
       await settle(tester);

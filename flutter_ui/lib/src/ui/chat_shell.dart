@@ -37,6 +37,7 @@ class ChatShell extends StatefulWidget {
     this.onOpenWebFallback,
     this.onOpenEngineSessions,
     this.onBack,
+    this.onNewSession,
     this.hostInfo,
     this.disposeController = false,
   });
@@ -45,6 +46,7 @@ class ChatShell extends StatefulWidget {
   final VoidCallback? onOpenWebFallback;
   final VoidCallback? onOpenEngineSessions;
   final VoidCallback? onBack;
+  final VoidCallback? onNewSession;
   final bool disposeController;
   final HostInfo? hostInfo;
 
@@ -87,6 +89,7 @@ class _ChatShellState extends State<ChatShell> {
           backgroundColor: DshPalette.of(context).paper,
           drawer: SessionDrawer(
             currentTitle: firstPrompt,
+            onNewSession: widget.onNewSession,
             onOpenSettings: () => showSettingsHome(context, widget.controller),
             onOpenEngineSessions: widget.onOpenEngineSessions,
             onShowcase:
@@ -107,7 +110,8 @@ class _ChatShellState extends State<ChatShell> {
                     onOpenWebFallback: widget.onOpenWebFallback,
                   ),
                   if (state.status == ChatStatus.reconnecting ||
-                      state.status == ChatStatus.error)
+                      state.status == ChatStatus.error ||
+                      state.error != null)
                     _ConnectionBanner(
                       controller: widget.controller,
                       status: state.status,
@@ -305,7 +309,8 @@ class _ConnectionBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isError = status == ChatStatus.error;
+    final isConfiguration = controller.configurationError != null;
+    final isError = status == ChatStatus.error || isConfiguration;
     final tone = isError
         ? DshPalette.of(context).bad
         : DshPalette.of(context).warn;
@@ -332,7 +337,11 @@ class _ConnectionBanner extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isError ? '引擎连接失败' : '连接已中断',
+                    isConfiguration
+                        ? '请确认会话权限'
+                        : isError
+                        ? '引擎连接失败'
+                        : '连接已中断',
                     style: TextStyle(
                       color: DshPalette.of(context).ink,
                       fontSize: 13,
@@ -342,7 +351,7 @@ class _ConnectionBanner extends StatelessWidget {
                   if (isError && detail != null && detail!.isNotEmpty)
                     Text(
                       detail!,
-                      maxLines: 1,
+                      maxLines: isConfiguration ? 4 : 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: DshPalette.of(context).inkSoft,

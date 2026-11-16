@@ -19,6 +19,19 @@ class NativeChatActivity : FlutterActivity() {
         ).also { methodChannel ->
             methodChannel.setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "readAppearance" -> {
+                        val prefs = getSharedPreferences("native_chat_ui", MODE_PRIVATE)
+                        result.success(mapOf("mode" to prefs.getString("mode", "dark"), "mood" to prefs.getString("mood", "mist")))
+                    }
+                    "writeAppearance" -> {
+                        val mode = call.argument<String>("mode")
+                        val mood = call.argument<String>("mood")
+                        if (mode !in setOf("system", "light", "dark") || mood !in setOf("mist", "sand", "sage", "plum")) {
+                            result.error("appearance/invalid", "Unknown appearance value", null)
+                        } else {
+                            result.success(getSharedPreferences("native_chat_ui", MODE_PRIVATE).edit().putString("mode", mode).putString("mood", mood).commit())
+                        }
+                    }
                     "engineInfo" -> result.success(engineInfo())
                     "webUrl" -> result.success(supervisorOrNull()?.webUrl().orEmpty())
                     "engineState" -> result.success(engineState())

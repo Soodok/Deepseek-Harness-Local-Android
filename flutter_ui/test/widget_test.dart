@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:dsh_native_chat/main.dart';
+import 'package:dsh_native_chat/src/bridge/engine_sessions_native.dart';
 import 'package:dsh_native_chat/src/ui/settings/settings_scope.dart';
 
 void main() {
@@ -29,17 +30,13 @@ void main() {
       );
       await tester.pumpWidget(const DshApp());
       await tester.pump();
-      final old = SettingsScope.of(
-        tester.element(find.text('DSH', findRichText: true)),
-      );
+      final old = SettingsScope.of(tester.element(find.byType(EngineHome)));
       expect(old.isDemo, isFalse);
       available = false;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
-      final next = SettingsScope.of(
-        tester.element(find.text('DSH', findRichText: true)),
-      );
+      final next = SettingsScope.of(tester.element(find.byType(EngineHome)));
       expect(identical(old, next), isFalse);
       expect(next.profile, isNull);
       expect(next.usage, isNull);
@@ -71,16 +68,24 @@ void main() {
     );
     await tester.pumpWidget(const DshApp());
     await tester.pump();
-    expect(find.text('Bionic Node'), findsOneWidget);
+    expect(
+      tester.widget<EngineHome>(find.byType(EngineHome)).host.runtimeLabel,
+      'Bionic Node',
+    );
     runtime = 'linux';
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
-    expect(find.text('DSH Alpine'), findsOneWidget);
+    expect(
+      tester.widget<EngineHome>(find.byType(EngineHome)).host.runtimeLabel,
+      'DSH Alpine',
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
-  testWidgets('DSH app bootstrap shows independent chat shell', (tester) async {
-    await tester.pumpWidget(const DshApp());
+  testWidgets('explicit web preview shows the independent fixture shell', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const DshApp(preview: true));
     await tester.pump();
     expect(find.text('DSH', findRichText: true), findsOneWidget);
     expect(find.byTooltip('fixture 模式'), findsOneWidget);

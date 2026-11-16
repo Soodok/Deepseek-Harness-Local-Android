@@ -86,6 +86,7 @@ class _ComposerState extends State<Composer> {
             if (state.queuedPrompts.isNotEmpty)
               _QueueTray(
                 prompts: state.queuedPrompts,
+                error: controller.queuedDispatchError,
                 onSend: controller.canDispatchQueued
                     ? controller.sendNextQueued
                     : null,
@@ -224,23 +225,25 @@ class _ComposerState extends State<Composer> {
                 const SizedBox(width: 8),
                 IconButton(
                   key: const ValueKey('composer-permission'),
-                  tooltip: '工具权限：' + controller.permission.label,
+                  tooltip: '工具权限：' + controller.permissionLabel,
                   onPressed: () => showPermissionSelector(context, controller),
                   style: IconButton.styleFrom(
                     backgroundColor: DshPalette.of(context).ink
                         .withValues(alpha: .06),
                   ),
-                  icon: DshPermissionIcon(
-                    glyph: switch (controller.permission) {
-                      ComposerPermission.readOnly =>
-                        DshPermissionGlyph.readOnly,
-                      ComposerPermission.workspaceWrite =>
-                        DshPermissionGlyph.workspaceWrite,
-                      ComposerPermission.fullAccess =>
-                        DshPermissionGlyph.fullAccess,
-                    },
-                    size: 22,
-                  ),
+                  icon: !controller.permissionKnown
+                      ? const Icon(Icons.help_outline)
+                      : DshPermissionIcon(
+                          glyph: switch (controller.permission) {
+                            ComposerPermission.readOnly =>
+                              DshPermissionGlyph.readOnly,
+                            ComposerPermission.workspaceWrite =>
+                              DshPermissionGlyph.workspaceWrite,
+                            ComposerPermission.fullAccess =>
+                              DshPermissionGlyph.fullAccess,
+                          },
+                          size: 22,
+                        ),
                 ),
                 if (busy) ...[
                   const SizedBox(width: 8),
@@ -276,10 +279,11 @@ class _ComposerState extends State<Composer> {
 }
 
 class _QueueTray extends StatelessWidget {
-  const _QueueTray({required this.prompts, this.onSend});
+  const _QueueTray({required this.prompts, this.onSend, this.error});
 
   final List<String> prompts;
   final VoidCallback? onSend;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
@@ -329,6 +333,14 @@ class _QueueTray extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (error != null)
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: DshPalette.of(context).bad,
+                      fontSize: 12,
+                    ),
+                  ),
                 if (hidden > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -344,7 +356,7 @@ class _QueueTray extends StatelessWidget {
             ),
           ),
           Tooltip(
-            message: onSend == null ? '当前轮结束后可发送' : '立即发送队首消息',
+            message: error ?? (onSend == null ? '当前轮结束后可发送' : '立即发送队首消息'),
             child: TextButton(
               onPressed: onSend,
               style: TextButton.styleFrom(minimumSize: const Size(64, 48)),

@@ -1,0 +1,338 @@
+{
+  "cursor": 39,
+  "hasMore": false,
+  "events": [
+    {
+      "seq": 0,
+      "type": "permission/preset",
+      "source": null,
+      "preset": "danger-full-access",
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 1,
+      "type": "sandbox/mode",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 2,
+      "type": "approval/policy",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 3,
+      "type": "session/end-seed",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 4,
+      "type": "command/run",
+      "source": "user",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 5,
+      "type": "permission/preset",
+      "source": null,
+      "preset": "read-only",
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 6,
+      "type": "sandbox/mode",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 7,
+      "type": "approval/policy",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 8,
+      "type": "agent/inbox/spliced",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 9,
+      "type": "command/done",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 10,
+      "type": "agent/inbox/spliced",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 11,
+      "type": "turn/start",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 12,
+      "type": "agent/inbox/spliced",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 13,
+      "type": "agent/inbox/spliced",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 14,
+      "type": "step/start",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 15,
+      "type": "system/message",
+      "source": "system-prompt",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 16,
+      "type": "user/message",
+      "source": "user-approval",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 17,
+      "type": "user/message",
+      "source": "user",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 18,
+      "type": "user/message",
+      "source": "agent-instructions",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 19,
+      "type": "user/message",
+      "source": "runtime-context",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 20,
+      "type": "user/message",
+      "source": "skill-catalog",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 21,
+      "type": "user/message",
+      "source": "time-context",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 22,
+      "type": "request/header",
+      "source": null,
+      "preset": null,
+      "reason": "initial",
+      "error": null
+    },
+    {
+      "seq": 23,
+      "type": "request/context",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 24,
+      "type": "session/title",
+      "source": "fallback",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 25,
+      "type": "session/title-llm-request",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 26,
+      "type": "assistant/attempt",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 27,
+      "type": "step/end",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 28,
+      "type": "turn/end",
+      "source": null,
+      "preset": null,
+      "reason": {
+        "kind": "error",
+        "error": {
+          "message": "llm-deepseek: no API key for provider route \"deepseek-official\"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export DEEPSEEK_API_KEY in the launching environment",
+          "code": "MISSING_CREDENTIAL"
+        }
+      },
+      "error": null
+    },
+    {
+      "seq": 29,
+      "type": "session/end-seed",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 30,
+      "type": "agent/inbox/spliced",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 31,
+      "type": "turn/start",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 32,
+      "type": "agent/inbox/spliced",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 33,
+      "type": "step/start",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 34,
+      "type": "user/message",
+      "source": "user",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 35,
+      "type": "user/message",
+      "source": "time-context",
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 36,
+      "type": "request/header",
+      "source": null,
+      "preset": null,
+      "reason": "resume",
+      "error": null
+    },
+    {
+      "seq": 37,
+      "type": "assistant/attempt",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 38,
+      "type": "step/end",
+      "source": null,
+      "preset": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "seq": 39,
+      "type": "turn/end",
+      "source": null,
+      "preset": null,
+      "reason": {
+        "kind": "error",
+        "error": {
+          "message": "llm-deepseek: no API key for provider route \"deepseek-official\"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export DEEPSEEK_API_KEY in the launching environment",
+          "code": "MISSING_CREDENTIAL"
+        }
+      },
+      "error": null
+    }
+  ]
+}

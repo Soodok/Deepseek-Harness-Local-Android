@@ -53,11 +53,80 @@ Future<Object?> Function(String, Map<String, Object?>) carrier(
         ],
       }
     : {
-        'records': records,
+        'records': [
+          for (final record in records) {'type': 'event', 'event': record},
+        ],
         'cursor': records.isEmpty ? -1 : records.last['seq'],
         'hasMore': hasMore,
       };
 void main() {
+  test(
+    'damaged event wrappers and unsafe inner sequences remain invalid',
+    () async {
+      for (final record in [
+        {'type': 'event', 'event': null},
+        {
+          'type': 'event',
+          'event': {...event(0, 'user/message'), 'seq': -1},
+        },
+        {'type': 'other', 'event': event(0, 'user/message')},
+      ]) {
+        await expectLater(
+          readLocalUsage(
+            (endpoint, args) async => endpoint == 'session/list'
+                ? {
+                    'items': [
+                      {'sessionId': 's'},
+                    ],
+                  }
+                : {
+                    'cursor': 0,
+                    'records': [record],
+                    'hasMore': false,
+                  },
+          ),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+  test(
+    'rc2 event envelopes retain missing usage and actual token samples',
+    () async {
+      final empty = await readLocalUsage(
+        carrier([
+          {
+            'type': 'permission/preset',
+            'seq': 0,
+            'time': 1794816883881,
+            'data': {'preset': 'danger-full-access'},
+          },
+          {
+            'type': 'sandbox/mode',
+            'seq': 1,
+            'time': 1794816883887,
+            'data': {'mode': 'danger-full-access'},
+          },
+          {
+            'type': 'approval/policy',
+            'seq': 2,
+            'time': 1794816883888,
+            'data': {'policy': 'never'},
+          },
+        ]),
+        now: DateTime(2026, 11, 16),
+      );
+      expect(empty.days, isEmpty);
+      final used = await readLocalUsage(
+        carrier([
+          event(0, 'assistant/message', input: 11, output: 4, cache: 2),
+        ]),
+        now: DateTime(2026, 11, 16),
+      );
+      expect(used.days.single.inputTokens, 13);
+      expect(used.days.single.outputTokens, 4);
+    },
+  );
   test('replacement settlement dedupes, retry contributes separately and cache is included', () async {
     final a = event(0, 'assistant/message', cache: 2);
     final records = [

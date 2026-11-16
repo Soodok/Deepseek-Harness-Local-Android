@@ -117,7 +117,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 450));
       }
 
-      await tester.pumpWidget(const DshApp());
+      await tester.pumpWidget(const DshApp(preview: true));
       await frame();
       final shell = tester.state(find.byType(ChatShell));
       await tester.enterText(
