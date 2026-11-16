@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-16 · `main` 代码提交 `d03a04fd`（未推）· 本轮合入 PR #110（隐藏的开发者选项）与 #88（MCP 控制台目录项），并修掉 #110 带进来的三处 UI 观感偏离（见一百三十三章）；上一轮是「扩展入口软链误拦 + binutils 声明名不符」（第一百三十二章）。
+**最后更新**：2026-11-16 · `main` 代码提交 `8ad34f9a`（**已推送**，远端 `main` 与本地一致）· 本轮推送 10 个提交、关闭已合并 PR、清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（见第一百三十四章）；上一轮是「PR #110/#88 合入 + 三处 UI 观感修正」（第一百三十三章），再上一轮是「扩展入口软链误拦 + binutils 声明名不符」（第一百三十二章）。
 > ✅ 远端 `main` 已同步到本文件所在的提交（凭据已于 11-14 晚换新并存入 GCM，`ls-remote` 可通）。
 > `v1.6.0-beta.14` 的 tag 仍未打（发版流程待走，见 `docs/RELEASE.md`）。
 本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
@@ -88,15 +88,15 @@ Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了�
 
 | 项 | 值 |
 | --- | --- |
-| 版本号 | `367 / 1.5.1`（`app/build.gradle.kts:246,252`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，**本次合并刻意不 bump**；`feat/linux-workspace` 的 `374 / 1.5.4-beta.5` 未采用 |
-| 远端 | **已同步**：`main` = origin/main = `7ed8ed03`（2026-11-09 13:36 推送成功，领先/落后均为 0）。本次推送一次性把 88 个提交送上远端（83 个 `feat/linux-workspace` + 3 个合并提交 + 2 个文档提交） |
+| 版本号 | `391 / 1.6.0-beta.15`（`app/build.gradle.kts:282,288`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，合入 PR 时**不 bump** |
+| 远端 | **已同步**：`main` = origin/main = `8ad34f9a`（2026-11-16 推送成功，领先/落后均为 0）。远端只剩 `main` 一个分支（另有 3 个已并入的分支已删，见第一百三十四章） |
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
-| 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
-| worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
-| 探针 | **114 个**（`_test_*.py`），110 过 / 0 败 / 4 跳过；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 分支 | **本地 2 个 / 远端 1 个**：`main` + `feat/flutter-native-chat`（`831bd414`，12 提交 / 337 文件 / +41314 −10，独立 Flutter 原生聊天宿主，未合、远端无备份，**活跃开发线勿删**）。2026-11-16 清仓删掉 20 个本地分支与 3 个远端分支，备份在 `E:/Deepeek harness/branches_backup_20261116.bundle` |
+| worktree | **21 个**（含主仓）：主仓 + `/e/tmp/wt-flutter-native-chat`（挂上面那个分支）+ **19 个 dirty 的游离树**（并行会话在途草稿：`wt-side` 61 项、`wt-m3b`/`wt-m3c` 各 37、`wt-m3` 36、`wt-gate` 24、`wt-runmode` 15、`wt-aimode` 13、`wt-ssh` 11 …，**都不属于本会话，勿动**）。全部 `dirty=0` 的游离树已清 |
+| 探针 | **138 个**（`_test_*.py`）。**跑探针一律带 `PYTHONIOENCODING=utf-8`** —— 否则 `print("✓")` 在 GBK 控制台炸 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'`，会误报 18 个失败（2026-11-16 逐条验证，基线同样失败，与代码无关） |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
-| 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+| 待办 | ①~~推送~~ / ~~清分支~~ / ~~清 worktree~~ **均已完成**（见第一百三十四章）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③弄清 4 个 open PR 的归属（#113 draft 不可合、#112/#102 冲突 81 文件、#111 需作者 rebase 掉假绿提交）；④本文 14108 行远超自定的 300 行上限，待归档 |
 
 ## 一·零·补十三、外观与显示两个颜色故障：根因与修复（2026-11-12）
 
@@ -14008,3 +14008,101 @@ chevron 区域 `bright=170`（与邻行 82 同口径，箭头已绘制）。
 ### 与并行会话的边界
 本轮只在 `main` 上做上述 3 个提交。合并期间 `git status` 始终只有既有的
 `?? docs/ui-preview/probe-opacity.mjs`（非本会话产物）。
+
+## 第一百三十四章（v1.6.0-beta.15 · 2026-11-16）推送 main + PR/分支/worktree 大清仓
+
+### 推送
+`git fetch origin`（0 behind）→ `git push origin main`，`04810982..8ad34f9a`，快进无冲突。
+远端 `main` 现为 `8ad34f9a`，本地与远端 `rev-list --left-right --count` = `0 0`。
+
+### PR 收口
+合入的 #110 / #88 在合并时已由 GitHub 自动置为 `closed + merged=True`
+（`merged_at=2026-11-16T12:46:12Z`，`merge_commit_sha` 分别是 `bf28ee04` / `60bbc60a`），
+无需手工关闭。当前 open PR 只剩 4 个：**#113（draft）/ #112 / #111 / #102**，
+不合的理由见第一百三十三章末节，本轮未改变判断。
+
+### 分支清理
+
+**本地分支 22 → 2，远端 4 → 1。**
+
+远端删了 3 个（`git push origin --delete`，全部 exit=0）：
+| 分支 | 删除前 SHA | 依据 |
+|---|---|---|
+| `feat/linux-workspace` | `84735c44` | `merge-base --is-ancestor` 判定全部提交已在 `origin/main` |
+| `fix/ext-symlink-and-plugin-ownership` | `3b7ab65a` | 同上 |
+| `feat/peer-sync` | `3df42f43` | 非严格祖先（2 个提交），但功能文件（`PeerSync.kt`/`PeerSyncActivity.kt`/`tools/peersync/*`）与 main 的 `78bf3c2f` 版**逐字节相同**，仅 AI_CONTEXT 章节编号不同（远端叫「一百〇七」，main 收在「一百一十一」） |
+
+本地删了 20 个，其中 12 个是 `merge-base --is-ancestor` 严格判定已并入 main 的：
+`feat/a11y-screen-ref`(5e59c778) / `feat/linux-workspace`(a1527fff) / `feat/upstream-rc3`(0789057a) /
+`fix/delete-residue`(c4bf0451) / `fix/onboarding-polish`(d0e76128) /
+`merge/linux-workspace-20261109`(14e9af8e) / `pr-95`(c40726ae) / `pr101`(53658cc0) /
+`pr103`(f0ec2c35) / `pr105`(712db706) / `pr88`(577e866f) / `pr89`(b6636629)。
+
+另有 8 个"内容已被 main 超越"的，删前逐个比过关键文件 blob 或标记串：
+- `_wip-full-1.5.0-beta.3`(d36ccdca) / `_wip-backup-1.5.0-beta.3`(83ae8755) —— 10-31 的 v1.5.0-beta.3
+  全量快照，对 main 是 `861/866 文件、−17.3 万/−17.4 万行`的整体回退（623 个 main 独有文件在快照里不存在）。
+- `fix/apt-nonroot`(b84183c2) —— MCS 标签漂移、link 复制兜底、glibc Node、DNS 自愈四件事，
+  main 已由 `66f28ddb` / `df92c053` / `5cf78a4b` 等独立落地；分支独有标记串
+  （`bootstrap marker says attempted`、`reset apt lists/partial`、`stillMissing`）在 main 的
+  `LinuxEnvironmentManager.kt` 全部命中。两个探针 `_test_linux_symlink_drift.py` /
+  `_test_linux_apt_nonroot.py` 也都在 main。
+- `fix/linux-workbench-e`(3d507025) —— 三笔提交中 `2677327a`/`baddf310` 已由 `328d25d7` 等
+  等价落地（AI_CONTEXT「一百〇七」明确记为 cherry-pick 方案）；分支相对 main 只剩旧配色注释。
+- `pr102`(f49be362) —— main 的 `40fca0df` 已按「只移植三条核心修法、不照搬会破坏既有能力的两处」移植，
+  探针 `_test_theme_flicker.py` 在 main。
+- `pr93v4`(ce58e47a) —— PR #93 的 `b6b036c0` 已合入，随后被 `60aed9c1` **Revert**，
+  后续由 `4be9534e`/`c1f33fdc`/`6781e9b5` 重做；分支独有 14 个提交在 main 无同主题对应，
+  属被放弃的实现路线。
+- `wip/snapshot-20261113`(88f8645b) —— `stash` 型快照分支（`On main: wip-snapshot-20261113`），
+  对 main 是 `411 文件 / +1917 −23060` 的回退。
+- `feat/peer-sync`(1db2d4a0) —— 见上方远端说明。
+
+**`pr93v4` 删除前先固化**：`/e/tmp/wt93v4` 里有 29 个**已 `git add` 但未提交**的文件
+（8 个新 cap：`BlePeripheralCap`/`BtHidCap`/`BtsnoopParser`/`ContextCap`/`HandOverlay`/
+`NetCap`/`PulseCap`/`ScreenWatchCap`，加 `scripts/fix-kotlin-string-newlines.py` 与 3 个探针）。
+直接 `worktree remove` 会丢掉它们，所以先在 worktree 里 `git commit` 成 `1f86f31d`
+（`wip(pr93v4): 暂存的能力改造 … 归档用，未验收`）再删。其中 7 个 cap 文件与 main 里同名文件
+**blob 完全一致**（已被后续提交收编），只有 `RadioCap`/`RecordCap`/`_test_net_block.py`
+等 18 个文件与 main 不同。
+
+### 备份
+删前打了 `E:/Deepeek harness/branches_backup_20261116.bundle`（122,423,980 B，`--all`），
+`git bundle verify` 输出 **"The bundle records a complete history"**，`list-heads` 含
+`refs/heads/pr93v4=1f86f31d` / `feat/peer-sync` / `wip/snapshot-20261113` /
+`feat/flutter-native-chat` / `main` 以及 `refs/pr/{102,111,112,113}`。
+注意：`git bundle create <file> <branch1> <branch2> ...` 在 Git for Windows 上把 `E:/...`
+的分支名列表误当成路径分隔，会报 `Use '--' to separate paths from revisions`，改用 `--all` 才成功。
+删后校验过 `b84183c2`/`3d507025`/`f49be362`/`83ae8755`/`d36ccdca` 的对象仍可用
+`git cat-file -e` 取到（对象库未 GC）。
+
+### worktree 清理
+38 → 21（含主仓）。删了 17 个：4 个挂已并入分支的
+（`wt-a11y` / `wt-rc3` / `wt-del` / `wt-merge`，均 `dirty=0`）、
+`E:/Deepeek harness/.worktrees/linux-ui`（挂 `fix/linux-workbench-e`，dirty=0）、
+`wt-apt` / `wt-peersync` / `wt93v4`（先提交再删）、`wt-merge110`（我昨晚 #110 试合的遗留），
+以及 8 个 `dirty=0` 的游离树（`wt-72` / `wt-final` / `wt-guard` / `wt-head2` / `wt-head3` /
+`wt-md3` / `wt-origin` / `wt-pre` / `wt-pre-c1f` / `wt-premd3` / `wt-release` / `wt-restore`…）。
+**保留 19 个 dirty 的游离树**（`wt-side` 61 项、`wt-m3b`/`wt-m3c` 各 37、`wt-m3` 36、
+`wt-gate` 24、`wt-runmode` 15、`wt-aimode` 13、`wt-ssh` 11 …）—— 这些是并行会话的在途草稿，
+不属于本会话产物，不动。
+
+`wt-sync` 的 `.git` 文件已不存在（`fatal: validation failed … does not exist`），
+`git worktree prune` 后仍列在 `worktree list` 里，属 gitdir 残留，无害。
+
+### 顺带清理
+- `git update-ref -d refs/pr/88` / `refs/pr/110`（对应 PR 已合并），
+  保留 `refs/pr/{102,111,112,113}`（仍 open，审核要用）。
+- `/e/tmp/wt-*.log` 五个编译日志（`wt-merge110-build` / `wt-pr110-compile` / `wt-pr111-compile` /
+  `wt-pr113-compile` / `wt-stack-build`）。
+
+### 保留项与理由
+- 本地分支只剩 `main` 与 `feat/flutter-native-chat`(831bd414，12 提交、337 文件、+41314 −10)——
+  后者是独立 Flutter 原生聊天宿主，未合且远端无备份，属活跃开发线。
+- tag 107 个全部保留。其中 `_pre_merge_main`(15600762)、`peersync-pre-rebase`(3df42f43) 仅本地有，
+  `runtime` 本地 `fa00dd36` 与远端 `5d63ddf2` 不同（本地更新）—— 都是回滚锚点，不删。
+- `stash@{0}`（`On main: system-toggles-wip`）保留。
+
+### 未做
+- 未清理 19 个 dirty 游离 worktree（并行会话在途）。
+- 未分区 `AI_CONTEXT.md` 的 14010 行（自定上限 300 行），这是长期待办。
+
