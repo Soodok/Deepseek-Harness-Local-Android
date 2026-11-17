@@ -88,15 +88,15 @@ Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了�
 
 | 项 | 值 |
 | --- | --- |
-| 版本号 | `391 / 1.6.0-beta.15`（`app/build.gradle.kts:282,288`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，合入 PR 时**不 bump** |
+| 版本号 | `392 / 1.6.0-beta.16`（`app/build.gradle.kts:289,295`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，合入 PR 时**不 bump** |
 | 远端 | **已同步**：`main` = origin/main = `8ad34f9a`（2026-11-16 推送成功，领先/落后均为 0）。远端只剩 `main` 一个分支（另有 3 个已并入的分支已删，见第一百三十四章） |
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
 | 分支 | **本地 2 个 / 远端 1 个**：`main` + `feat/flutter-native-chat`（`831bd414`，12 提交 / 337 文件 / +41314 −10，独立 Flutter 原生聊天宿主，未合、远端无备份，**活跃开发线勿删**）。2026-11-16 清仓删掉 20 个本地分支与 3 个远端分支，备份在 `E:/Deepeek harness/branches_backup_20261116.bundle` |
 | worktree | **21 个**（含主仓）：主仓 + `/e/tmp/wt-flutter-native-chat`（挂上面那个分支）+ **19 个 dirty 的游离树**（并行会话在途草稿：`wt-side` 61 项、`wt-m3b`/`wt-m3c` 各 37、`wt-m3` 36、`wt-gate` 24、`wt-runmode` 15、`wt-aimode` 13、`wt-ssh` 11 …，**都不属于本会话，勿动**）。全部 `dirty=0` 的游离树已清 |
-| 探针 | **138 个**（`_test_*.py`）。**跑探针一律带 `PYTHONIOENCODING=utf-8`** —— 否则 `print("✓")` 在 GBK 控制台炸 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'`，会误报 18 个失败（2026-11-16 逐条验证，基线同样失败，与代码无关） |
+| 探针 | **141 个**（`_test_*.py`，另有 18 个 `.mjs` 运行期测试）。**跑探针一律带 `PYTHONIOENCODING=utf-8`** —— 否则 `print("✓")` 在 GBK 控制台炸 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'`，会误报 18 个失败（2026-11-16 逐条验证，基线同样失败，与代码无关） |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
-| 待办 | ①~~推送~~ / ~~清分支~~ / ~~清 worktree~~ **均已完成**（见第一百三十四章）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③弄清 4 个 open PR 的归属（#113 draft 不可合、#112/#102 冲突 81 文件、#111 需作者 rebase 掉假绿提交）；④本文 14108 行远超自定的 300 行上限，待归档 |
+| 待办 | ①~~推送~~ / ~~清分支~~ / ~~清 worktree~~ **均已完成**（见第一百三十四章）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；另有 #107 / #118 / #119 三条修复**未真机验收**（见第一百三十六章）；③弄清 4 个 open PR 的归属（#113 draft 不可合、#112/#102 冲突 81 文件、#111 需作者 rebase 掉假绿提交）；④本文 14108 行远超自定的 300 行上限，待归档 |
 
 ## 一·零·补十三、外观与显示两个颜色故障：根因与修复（2026-11-12）
 
@@ -14180,3 +14180,80 @@ Keyboard initialization failed. This could be a missing or incorrect setup of xk
   里注入，`run-as` 手起的容器拿不到 → DNS 不通 → `apk add sway grim wtype`
   反复 `temporary error`，只落下半个 sway（缺 libcairo / libevdev）。
   这条备选暂不推进。
+
+## 第一百三十六章（v1.6.0-beta.16 · 2026-11-17）三条新 issue：#118 思考档位、#107 华为内核 polyfill、#119 用量浮层
+
+本轮把 2026-11-17 新报的三条 issue 逐条查到代码级根因并修复，每条都留下可复验探针与**可逆负对照**（改坏判据必须变红，否则判据在空转）。
+
+### #118 fast_mode 把会话钉死在「无思考」
+
+**现场**：`fast_mode(action="on")` 之后每一步都报
+`agent/request proposed reasoning effort "off" after step preparation fixed "adapter default"; use agent.model.select() before step preparation`，除 off 外思考档位全部失效，必须重启会话。
+
+**根因（与 issue 指向一致，但更靠前一层）**：引擎 0.2.2 起在 `@deepseek-ai/dsh-agent-loop` 的 `prepareRequest()` 里硬校验 `agent/request` 返回的 provider/model/reasoningEffort 必须与 step preparation 阶段定下的 selection 完全一致，不一致就 throw。正解是 `agent.model.select()`，且必须在 preparation 之前（`agent/pre-step`）。
+
+而 `app/src/main/assets/android-plugins/fast-mode.mjs` 靠**猜打包产物里的字面量**决定挂哪个钩子：读 `dsh-agent/lib/index.js` 里有没有 `var AgentModel = class`，命中挂 pre-step，没命中退回 `agent/request`。这个判据不是契约本身，只是某一次 bundler 输出格式的巧合：字面量一变而契约还在，就会把新引擎误判成老引擎，挂上必然 throw 的钩子。
+
+**修法**：判据改成直接读契约（`HARD_CONTRACT_MARKERS` 命中 `after step preparation fixed` 或 `use agent.model.select() before step preparation` 任一条），类名只作辅助信号；并规定**契约在就绝不退回 agent/request**（`usePreStep = hasAgentModel() || CONTRACT`）——宁可不改 effort，也不能挂错钩子。
+
+**验证**：
+- `scripts/probes/_test_fast_mode_engine_compat.py` → **41 / 0**（A3/A3b/A3c 反转：从「探测依据是 AgentModel 类」改成「探测依据是硬契约」，并显式断言不再靠巧合字面量）。
+- `scripts/probes/_fast_mode_runtime_test.mjs` → **30 / 0**，新增 D1~D6：字面量改成 `class AgentModel` 仍必须挂 pre-step、只剩契约（探不到类名）也必须挂、真·老引擎仍退回 `agent/request`。
+- 负对照：把判据改回旧逻辑 → D1~D5 变红（25/5）。
+
+### #107 华为内核 URL.canParse —— polyfill 写了，但没到现场
+
+**现场**：Android 10 / 华为 `com.huawei.webview 114.0.5.302`，对话页整列空白：`slot entry crashed in 'conversation.chat.node': TypeError: URL.canParse is not a function`。槽一崩，消息列表（含历史）整块不渲染。
+
+**根因不是「没写 polyfill」**：仓库 2026-11-08 就补了（`aabdef9f`），v5 一直由 `scripts/patch-webview-polyfill.py` 注入 `dist/index.html`。问题是三条链路各有洞：
+
+1. noruntime 包跨 APK 复用整份 runtime，旧磁盘上的 `dist/index.html` 不会被重打；
+2. index.html 是 Node 引擎运行期从磁盘读出来发的，**不是 APK asset**——「补丁在 asset 里」≠「WebView 拿到的 HTML 里有补丁」；
+3. `onPageFinished` + `evaluateJavascript` 太晚：module 脚本已经解析执行，polyfill 必须**同步**出现在首个 `type="module"` 之前。
+
+**修法（单一真源 + 三处兜底）**：
+- `patch-webview-polyfill.py` 新增 `--asset-out`，把 `POLYFILL` 常量原样导出成 asset；Kotlin / asset 里禁止第二份实现。
+- `app/build.gradle.kts` 的 `prepareRuntimeAssets` 调它生成 `js/legacy-webview-polyfill.html`，失败即 `GradleException`（不许静默产出空文件）。
+- 新增 `engine/WebViewPolyfill.kt`：比较**整块字节**且要求位置在首个 module 之前；`patchHtml` 先整块剥离旧 vN 再插入（不叠加）；`healInstalled` 临时文件 + `ATOMIC_MOVE` 原子替换。
+- `RuntimeInstaller` 在**复用**与**安装完成**两条路径都调 `healInstalled`。
+- `MainActivity` 新增 `shouldInterceptRequest` → `interceptWebUiDocument`：只拦引擎健康端口的回环 GET 首页、只处理 200 + text/html、不跟重定向、复制认证与 Cookie、**重算 Content-Length**，异常一律返回 null 走原生（不白屏）。
+
+**验证**：
+- 新增 `scripts/probes/_test_webview_polyfill_delivery.py` → **38 / 0**：A 单一真源、B 真跑 `--asset-out`（含「导出与常量逐字节一致」「顶层立即执行」）、C 自反证（canParse 改名 / 删 structuredClone 定义 / 包进 DOMContentLoaded / 丢版本标记 → 判据必须变红）、D 落地链路、E 单测案例齐备。
+- 单测 `WebViewPolyfillTest` 四条（早于 module、旧块替换、晚置/重复块修复、非 module 文档不动）→ `:app:testDebugUnitTest` **68 / 0**（全仓 6 个测试类）。
+- `scripts/probes/_test_webview_polyfill_gate.py` → **35 / 0**：新增豁免规则（仅 `app/src/test/` 且文件里显式写 `dsh-polyfill-version-fixture` 才放行测试样本里的版本字面量），负对照验证两个条件缺一即变红。
+
+### #119 Android 上「用量」图标点了没反应
+
+**现场**：每条消息操作行最后那个无标签图标（本轮用量）在 Android 上点击无任何反应；同排复制/好评/差评/分支全部正常；引擎日志 +0 字节、WebView console 0 error；桌面版同一按钮正常弹卡片 ⇒ **平台特定**。
+
+**根因（代码级）**：引擎 0.2.2-rc.3 把浮层定位从「JS 量测 + 内联坐标」（rc.1 的 `useAnchoredPosition` + `MEASURE_STYLE{visibility:hidden}`）换成**纯 CSS anchor positioning**：trigger 外层 span 带 `anchor-name`，面板带 `position-anchor`，CSS 里写 `top:max(12px,var(--dsh-frame-overlay-top,12px))`、`bottom:max(12px,calc(anchor(top) + 8px))`、`left:max(12px,anchor(left))`、`position-area:none`、`position-try-fallbacks:--dsh-stat-*`。
+
+**CSS anchor positioning 是 Chrome 125+ 的能力**，而 Android WebView 普遍更老（#107 那位是 114）。老内核把这些声明整条丢弃，面板只剩 `position:fixed`。
+
+**实测（Chrome 157 + rc.3 真 CSS，412×915 手机视口；把含 `anchor()` 的声明按老解析器语义剥离）**：
+
+| 场景 | 面板落点 | 与 trigger 距离 |
+|---|---|---|
+| 新内核（CSS 锚点生效） | (56, 682) | 上方 8px，正确 |
+| 老内核（声明被丢弃） | (100, 12) | 视口顶边，离 trigger **678px** |
+| 老内核 + 本轮兜底 | (12, 682) | 上方 8px，正确 |
+
+即：老内核上面板不是不渲染，而是被钉在视口顶部（`--dsh-frame-overlay-top` 更大时还会压到顶栏/状态栏下面）——用户视线在屏幕底部，看到的就是「点了没反应」。
+
+**修法**：新增客户端插件包 `app/src/main/assets/android-plugins/chat-anchor-fallback/`（package.json / index.js / client.js），只在 `CSS.supports("position-anchor: --x") === false` 时接管：监听 body 新增的 `[role=dialog]`（跳过 `aria-modal="true"`，且必须存在 `[aria-haspopup="dialog"][aria-expanded="true"]` 的 trigger 才动），用 trigger 的 `getBoundingClientRect()` 算视口内坐标（优先上方、越界夹取），写**内联 !important**——内联 !important 在层叠里高于任何作者样式表 !important，因此也压得过 mobile-layout 插件按文本关键词给「统计胶囊详情」写的固定定位规则。新内核完全 idle。已登记进 `EngineConfig.kt` 的 overlay insert 与目录部署清单。
+
+**验证**：
+- 新增 `scripts/probes/_test_chat_anchor_fallback.py` → **24 / 0**（形态 / 能力门禁 / 保守性 / 行为 / 负对照三条）。
+- 新增 `scripts/probes/_chat_anchor_fallback_runtime_test.mjs` → **24 / 0**：假 DOM 真跑 client.js 钩子（新内核不订阅、老内核摆位、滚动重摆、收起脱钩、卸载断开）。
+- 真实浏览器端到端：老解析器 CSS + 强制 `CSS.supports` 返回 false → 装插件后面板从 (100,12) 变成 (12,682)，`gapToTrigger: 8`，`data-dsh-anchor-fallback` 标记就位。
+- 负对照：去掉能力门禁 / 去掉视口夹取 / 不看 trigger 展开态 → 运行期判据全部变红。
+
+**未完成**：
+- 三条都**未在真机验收**（本机无 adb、无可用设备）。#107 的自愈与拦截只能在装机后看 `WebViewPolyfill` / `polyfill document:` 日志确认；#119 的兜底在华为 114 内核上仍需实机点一次。
+- #108（40MB 会话发消息必 TRANSPORT）本轮未处理。
+
+**改动文件**：
+- #118：`app/src/main/assets/android-plugins/fast-mode.mjs`、`scripts/probes/_test_fast_mode_engine_compat.py`、`scripts/probes/_fast_mode_runtime_test.mjs`
+- #107：`scripts/patch-webview-polyfill.py`、`app/build.gradle.kts`、`app/src/main/java/app/dsh/mobile/engine/WebViewPolyfill.kt`（新）、`app/src/main/java/app/dsh/mobile/engine/RuntimeInstaller.kt`、`app/src/main/java/app/dsh/mobile/MainActivity.kt`、`app/src/test/java/app/dsh/mobile/engine/WebViewPolyfillTest.kt`（新）、`scripts/probes/_test_webview_polyfill_delivery.py`（新）、`scripts/probes/_test_webview_polyfill_gate.py`
+- #119：`app/src/main/assets/android-plugins/chat-anchor-fallback/`（新，三件套）、`app/src/main/java/app/dsh/mobile/engine/EngineConfig.kt`、`scripts/probes/_test_chat_anchor_fallback.py`（新）、`scripts/probes/_chat_anchor_fallback_runtime_test.mjs`（新）
