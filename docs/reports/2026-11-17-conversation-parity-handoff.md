@@ -44,10 +44,10 @@
 | 命令 | 退出码 | 结果 |
 | --- | --- | --- |
 | flutter analyze --no-pub | 0 | No issues found! |
-| flutter test --concurrency=1 | 0 | 427 tests passed |
-| node --test client.test.mjs core.test.mjs | 0 | 34 / 34 pass |
-| node --check client.js | 0 | 语法通过 |
-| gradle :app:assembleDebug | 0 | BUILD SUCCESSFUL in 2m 11s |
+| flutter test --concurrency=1 | 0 | 429 tests passed（/tmp/ft_b52.log） |
+| node --test client.test.mjs core.test.mjs | 0 | 39 / 39 pass |
+| node --check client.js core.js index.js | 0 | 语法通过 |
+| gradle :app:assembleDebug（beta.52） | 0 | BUILD SUCCESSFUL in 1m 31s |
 
 ## 已证实限制
 
