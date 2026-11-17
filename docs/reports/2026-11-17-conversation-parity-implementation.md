@@ -26,6 +26,7 @@
 | 回答身份定位 | 从 rc.2 真实形状 `data.finalNode` 读 `messageId`/`seq`/`turn`，回落到 `data` 顶层 | 只读 `data.messageId`：实测 rc.2 的 assistant-step 节点没有这两个键，分享与重新输出都会定位失败 |
 | 系统分享 | 新增 `ShareBridge`（`DshAndroidShare`）走 `ACTION_SEND` + FileProvider | 只判 `navigator.share`：Android WebView 根本没有这个 API，按钮必然是死的 |
 | 回合表读取时机 | 每次点击确认前向 Host 现查（`planForFresh`），读不到就不弹框并如实提示 | 只在页面绑定时读一次：页面打开后才结束的回合不在表里，确认框会谎报「没有改动文件」 |
+| 失败文案 | 已知错误码在两端各有一张表换成一句可读文案（插件 `readableError`、原生 `readableFailure`）；不认识的码保留原文 | 直接把 error.message 拼给用户：插件端 `rejected(code)` 只带 code，界面会显示「撤回失败：session-busy」这种机器话（beta.51 设备实测） |
 | 撤回的执行顺序 | **先 fork 会话，成功之后才还原文件**（`core.rewindForkFirst`）；冲突预检放在 fork 之前，因为它只读磁盘 | 先还原文件再 fork：fork 一失败，文件已被改回去而会话没分叉，界面报失败却已造成不可见改动；重试时自己写回去的内容还会被冲突检测当成「回合之后被外部改过」，撤回永远卡在冲突 |
 
 ## 3. 落地实现
@@ -68,6 +69,7 @@
 | 1.6.0-beta.49 | 424 | 原生端回合表改为点前现查 |
 | 1.6.0-beta.50 | 425 | 冲突响应兼容顶层 `conflicts` |
 | 1.6.0-beta.51 | 426 | 撤回改为先 fork 后还原文件（fork 失败不再产生不可见改动） |
+| 1.6.0-beta.52 | 427 | 失败原因说人话（错误码不再直接露面，未知码保留原文） |
 
 最终 APK：`app/build/outputs/apk/debug/app-debug.apk`，248169662 B，SHA-256 `4ecec00f2d75fcdc1703491076684ba34fa16c25f3fd74c05b4749aecd4e4f35`，versionCode 426 / versionName 1.6.0-beta.51，ABI 仅 x86_64。
 

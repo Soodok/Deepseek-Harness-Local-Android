@@ -624,6 +624,47 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** 已知失败码 → 一句人能读的话。界面只给普通文案，不把 kebab 错误码丢给用户。 */
+    var ERROR_TEXT = {
+      "session-busy": "这一轮还在进行，等它停下来再试。",
+      "session-not-found": "找不到这个会话了，可能已经被归档。",
+      "target-not-found": "没有找到这条消息对应的记录，可能已经被撤回。",
+      "target-not-in-turn": "这条消息不在任何一轮里，没法从这里开始撤回。",
+      "no-prefix": "这一条之前没有可以撤回的内容。",
+      "query-unavailable": "暂时读不到会话记录，稍后再试。",
+      "fork-unavailable": "宿主暂时不能开新分支，稍后再试。",
+      "no-cwd": "这个会话没有可用的工作目录，文件无法回滚。",
+      "bad-request": "这次请求不完整，请重新操作一次。",
+      "session-unknown": "这个会话的状态还不清楚，稍后再试。",
+    };
+
+    /**
+     * 把一次失败说成一句人话。
+     *
+     * 错误对象里的 message 往往就是 code 本身（插件端 `rejected(code)` 只带
+     * code），直接拼给用户会看到「撤回失败：session-busy」这种机器话。
+     * 已知码一律换成可读说法；**不认识的码保留原文** —— 宁可露出没见过的
+     * 失败，也不要编一个看起来合理的假原因。
+     *
+     * @param {object} error - 抛出的 Error（可能带 code）。
+     * @returns {string} 可直接显示的文案。
+     */
+    function readableError(error) {
+      var code = error && typeof error === "object" && typeof error.code === "string"
+        ? error.code
+        : undefined;
+      if (code !== undefined && Object.prototype.hasOwnProperty.call(ERROR_TEXT, code)) {
+        return ERROR_TEXT[code];
+      }
+      var raw = error && typeof error === "object" && typeof error.message === "string"
+        ? error.message
+        : String(error);
+      if (code !== undefined && (raw === "" || raw === code)) {
+        return "操作没有完成（" + code + "）";
+      }
+      return raw === "" ? "操作没有完成" : raw;
+    }
+
     /**
      * 撤回 / 编辑 / 重新输出的确认框。
      *
@@ -654,7 +695,7 @@ window.__ModuleLoader__.load({
           },
           function (error) {
             setWorking(false);
-            notify((props.failPrefix || "操作失败") + "：" + (error && error.message ? error.message : error), true);
+            notify((props.failPrefix || "操作失败") + "：" + readableError(error), true);
           },
         );
       }
@@ -1477,6 +1518,8 @@ window.__ModuleLoader__.load({
         return overlays.get();
       },
       runRewind: runRewind,
+      /** 失败码 → 可读文案：界面不许把 kebab 错误码丢给用户。 */
+      readableError: readableError,
       createActions: createActions,
       /** 输入区那层：编辑横条与草稿桥都挂在它上面。 */
       DraftBridge: DraftBridge,

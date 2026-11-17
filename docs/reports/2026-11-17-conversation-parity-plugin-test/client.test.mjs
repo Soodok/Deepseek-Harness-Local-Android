@@ -733,3 +733,23 @@ test("a refused edit leaves no editing state behind", async () => {
   assert.equal(t.editingOf("s1"), null);
   assert.deepEqual(harness.opened, []);
 });
+
+test("会话还在跑时用普通话说清原因，而不是把 session-busy 这种码丢给用户", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  const text = t.readableError({ code: "session-busy", message: "session-busy" });
+  assert.equal(/session-busy/.test(text), false, "原始错误码不应出现在提示里");
+  assert.equal(/[a-z]+-[a-z]+/.test(text), false, "提示里不应残留任何 kebab 错误码");
+  assert.ok(text.length >= 8, "提示要是一句能读的话");
+});
+
+test("其它已知失败也有可读说法，未知错误仍然如实带出原文", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  for (const code of ["session-not-found", "target-not-found", "fork-unavailable", "query-unavailable", "no-prefix"]) {
+    const text = t.readableError({ code: code, message: code });
+    assert.equal(text.indexOf(code), -1, code + " 不应原样出现在提示里");
+  }
+  const unknown = t.readableError({ code: "weird-failure", message: "weird-failure" });
+  assert.equal(unknown.indexOf("weird-failure") >= 0, true, "不认识的错误要保留原文，不能编");
+});

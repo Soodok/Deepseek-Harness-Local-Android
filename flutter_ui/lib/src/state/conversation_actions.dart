@@ -39,6 +39,7 @@ class StaticConversationActions implements ConversationActions {
     this.ratingsByMessage = const {},
     this.rewindResult,
     this.shareResult = true,
+    this.rewindError,
   });
 
   List<TurnChangeSummary> changes;
@@ -49,6 +50,10 @@ class StaticConversationActions implements ConversationActions {
   /// Makes [turnChanges] fail, so a test can prove the caller does not quietly
   /// fall back to a stale "no files" answer.
   bool failTurnChanges = false;
+
+  /// When set, [rewind] throws it: the Host refuses the rewind for that reason.
+  Object? rewindError;
+
 
   final rewinds = <({int seq, bool includeFiles, String requestId, bool force})>[];
   final ratingCalls = <({String messageId, bool? positive})>[];
@@ -71,6 +76,8 @@ class StaticConversationActions implements ConversationActions {
     bool force = false,
   }) async {
     rewinds.add((seq: seq, includeFiles: includeFiles, requestId: requestId, force: force));
+    final refused = rewindError;
+    if (refused != null) throw refused;
     return rewindResult ??
         const RewindOutcome(status: 'rewound', childSessionId: 'fork', turn: 0);
   }

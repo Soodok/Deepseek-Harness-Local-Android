@@ -1,6 +1,6 @@
 {
-  "stage": "beta51 实机：双端功能点验、文件回滚六种真实样例、撤回顺序改为先 fork 后还原（含三次负对照）与小屏/大字/减少动效适配全部完成；文档与本地提交完成（未 push），待 Lead 统合与 GLM 复核。",
-  "updatedAt": "2026-11-18T03:34:00+08:00",
+  "stage": "beta52 实机：双端功能点验、文件回滚六种真实样例、撤回顺序（先 fork 后还原）、小屏/大字/减少动效适配、失败原因可读化全部完成；文档与本地提交完成（未 push），待 Lead 统合与 GLM 复核。",
+  "updatedAt": "2026-11-18T04:00:00+08:00",
   "branch": "feat/flutter-native-chat",
   "baseHead": "556ef615ac5162347ea205fd602301622d99d6f1",
   "repo": "E:/tmp/wt-flutter-native-chat",
@@ -74,6 +74,13 @@
       "bytes": 248169662,
       "sha256": "4ecec00f2d75fcdc1703491076684ba34fa16c25f3fd74c05b4749aecd4e4f35",
       "note": "撤回改为先 fork 会话、成功后才还原文件（fork 失败不再产生不可见改动）"
+    },
+    {
+      "name": "1.6.0-beta.52",
+      "code": 427,
+      "bytes": 248173894,
+      "sha256": "e1886d94b3443f1feb042c836247d5fc4908ff1350666f96161d5d1de72f3cd9",
+      "note": "失败原因说人话：插件 readableError + 原生 readableFailure，未知码保留原文"
     }
   ],
   "completed": [
@@ -160,6 +167,10 @@
     {
       "item": "小屏 / 大字 / 减少动效下的编辑横条适配",
       "evidence": "font_scale 1.30 时横条 rect=[16,559,398,39]、position:absolute、elementFromPoint 命中 dsh-rw-editing-text（/tmp/font6.png）；720x1280@320dpi（视口 400x643）下 rect=[16,461,361,40]，点 × 后横幅消失且草稿原样回填（/tmp/small6.png、/tmp/small7.png）；animator_duration_scale=0 时界面正常（/tmp/font1.png）；测完已全部还原"
+    },
+    {
+      "item": "失败原因可读化：session-busy 等 kebab 错误码不再直接显示给用户",
+      "evidence": "插件 client.js 新增 ERROR_TEXT 映射与 readableError（ConfirmDialog 的 failPrefix 提示改走它），core/client 单测 39 pass；原生新增 flutter_ui/lib/src/state/failure_text.dart 的 readableFailure，message_actions.dart 八处 catch 全部改走它，message_actions_test 31 pass（新增 2 例 + 负对照）；设备 Web 端 beta52 实测提示为「撤回失败：这一轮还在进行，等它停下来再试。」（/tmp/b52_busy.png）"
     }
   ],
   "checks": [
@@ -237,6 +248,26 @@
       "cmd": "gradle :app:assembleDebug (beta51)",
       "exit": 0,
       "note": "BUILD SUCCESSFUL in 34s"
+    },
+    {
+      "cmd": "flutter analyze --no-pub (beta52)",
+      "exit": 0,
+      "note": "No issues found! (2.1s)"
+    },
+    {
+      "cmd": "flutter test --concurrency=1 (beta52)",
+      "exit": 0,
+      "note": "429 tests passed (/tmp/ft_b52.log)"
+    },
+    {
+      "cmd": "node --test client.test.mjs core.test.mjs (beta52)",
+      "exit": 0,
+      "note": "39 tests / 39 pass / 0 fail"
+    },
+    {
+      "cmd": "gradle :app:assembleDebug (beta52)",
+      "exit": 0,
+      "note": "BUILD SUCCESSFUL in 1m 31s"
     }
   ],
   "knownLimitations": [
@@ -246,7 +277,8 @@
     "设备默认无模型凭据；本轮验收使用设备已配置的 gpt-6-luna（用户授权），所有在线回合均为真实模型请求（非 fixture）。",
     "「切换 Web / 原生动效」只做目视与时序判断，未录制视频级逐帧证据。",
     "文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」路径只有离线单测，未在设备上做真实故障注入。",
-    "fork 失败的真实故障注入只有离线单测（core.test.mjs + 三次负对照），没在设备上造出 fork 真实失败场景。"
+    "fork 失败的真实故障注入只有离线单测（core.test.mjs + 三次负对照），没在设备上造出 fork 真实失败场景。",
+    "其余已知失败码的可读文案（session-not-found / target-not-found 等）只有离线单测，设备上只实测了 session-busy。"
   ],
   "blockers": [],
   "next": [

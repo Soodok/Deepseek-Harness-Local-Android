@@ -15,6 +15,9 @@
 | flutter test --concurrency=1（beta.51） | 0 | 427 tests passed（/tmp/ft_b51b.log） |
 | node --test client.test.mjs core.test.mjs（beta.51） | 0 | 37 tests / 37 pass / 0 fail |
 | gradle :app:assembleDebug（beta.51） | 0 | BUILD SUCCESSFUL in 34s |
+| flutter analyze --no-pub（beta.52） | 0 | No issues found!（2.1s） |
+| flutter test --concurrency=1（beta.52） | 0 | 429 tests passed（/tmp/ft_b52.log） |
+| node --test client.test.mjs core.test.mjs（beta.52） | 0 | 39 tests / 39 pass / 0 fail |
 
 构建命令（JAVA_HOME=D:/新建文件夹/jbr，ANDROID_HOME=E:/Android/Sdk）：
 
@@ -99,6 +102,14 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 
 注：以上三项测完已把 wm size / wm density / font_scale / 三个动画倍率全部还原（wm size reset、wm density reset、font_scale 1.0、动画值 1）。
 
+### 3.6 beta.52：失败原因说人话（设备级）
+
+| 场景 | 操作 | 结果与证据 |
+| --- | --- | --- |
+| 会话正在跑回合时点撤回（Web 端） | 发一条会写文件的请求，等到「停止生成」出现后立刻点该轮用户气泡的「撤回」并确认 | beta.51 实测提示为裸错误码「撤回失败：session-busy」（/tmp/b51_9.png）；beta.52 改为「撤回失败：这一轮还在进行，等它停下来再试。」（/tmp/b52_busy.png）；确认框保持打开（可再次尝试或取消）、无文件改动、草稿不动 |
+
+修复要点：插件端新增 `readableError`（client.js），原生端新增 `readableFailure`（flutter_ui/lib/src/state/failure_text.dart）。已知错误码一律换成一句可读文案，**不认识的码保留原文** —— 宁可露出没见过的失败，也不编一个看起来合理的假原因。两端各自单测锁定，负对照均已打红。
+
 ### 3.4 会话入口与切换
 
 - 抽屉列出真实引擎会话，只显示人类可读标题（多行均为 KEEP_THIS_DRAFT 这类真实首条消息），无 session 标识、无 cwd（/tmp/b50_10.png）。
@@ -115,5 +126,6 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 
 - 文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」只有离线单测，没有设备级真实故障注入。
 - fork 失败的真实故障注入：只有离线单测（core.test.mjs 三例 + 三次负对照），没在设备上造出 fork 真实失败的场景。
+- 其余已知失败码（session-not-found / target-not-found 等）的可读文案只有离线单测，设备上只实测了 session-busy。
 - 切换动效：未录逐帧视频。
 - ARM 真机、TalkBack、硬件键盘遍历、全部主题像素对比。

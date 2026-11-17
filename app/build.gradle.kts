@@ -293,14 +293,16 @@ android {
         // v1.6.0-beta.51 (2026-11-18 03:12): 撤回改成「先 fork 会话，成功之后才还原文件」。
         // 旧顺序是先回滚文件再 fork：fork 一失败，文件已经被改回去而会话没分叉，界面报
         // 失败却已造成不可见的改动，且重试时自己写回去的内容会被当成"回合之后被外部改过"。
-        versionCode = 426
+        // v1.6.0-beta.52 (2026-11-18 03:45): 失败原因说人话——插件与原生端都把 kebab 错误码
+        // （session-busy 这类）换成一句可读文案；不认识的错误保留原文，不编造原因。
+        versionCode = 427
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.51"
+        versionName = "1.6.0-beta.52"
 
         ndk {
             abiFilters += listOf(targetAbi)

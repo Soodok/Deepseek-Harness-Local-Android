@@ -8,6 +8,7 @@ import 'package:dsh_native_chat/src/state/composer_draft.dart';
 import 'package:dsh_native_chat/src/state/conversation_actions.dart';
 import 'package:dsh_native_chat/src/state/message_actions.dart';
 import 'package:dsh_native_chat/src/state/turn_plan.dart';
+import 'package:dsh_native_chat/src/transport/dsh_rpc_connection.dart';
 import 'package:dsh_native_chat/src/transport/dsh_transport.dart';
 import 'package:dsh_native_chat/src/transport/fixture_transport.dart';
 import 'package:dsh_native_chat/src/transport/native_action_transport.dart';
@@ -812,5 +813,47 @@ void main() {
     first.dispose();
     second.dispose();
     shared.dispose();
+  });
+  testWidgets('a busy Session says so in words, never as a bare session-busy code', (
+    tester,
+  ) async {
+    final notices = <String>[];
+    final harness = _Harness(
+      backend: StaticConversationActions(
+        changes: [_turn(0, 1, 1)],
+        rewindError: const DshRpcException('rewind/session-busy', 'session-busy'),
+      ),
+      onNotice: notices.add,
+    );
+    await harness.actions.retract(
+      _user('u1', '这一轮还在跑', seq: 3),
+      includeFiles: false,
+      replaceDraft: true,
+    );
+    final line = notices.single.substring(1);
+    expect(line.contains('session-busy'), isFalse);
+    expect(line.contains('DshRpcException'), isFalse);
+    expect(line.contains('还在进行'), isTrue);
+    expect(harness.draft.text, isEmpty);
+    expect(harness.backend.opened, isEmpty);
+  });
+
+  testWidgets('an unknown failure keeps its raw text instead of inventing a reason', (
+    tester,
+  ) async {
+    final notices = <String>[];
+    final harness = _Harness(
+      backend: StaticConversationActions(
+        changes: [_turn(0, 1, 1)],
+        rewindError: const DshRpcException('rewind/weird-failure', 'weird-failure'),
+      ),
+      onNotice: notices.add,
+    );
+    await harness.actions.retract(
+      _user('u1', '未知失败', seq: 3),
+      includeFiles: false,
+      replaceDraft: true,
+    );
+    expect(notices.single.contains('weird-failure'), isTrue);
   });
 }

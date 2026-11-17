@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../model/chat_model.dart';
 import '../transport/native_action_transport.dart';
 import 'composer_draft.dart';
+import 'failure_text.dart';
 import 'conversation_actions.dart';
 import 'turn_plan.dart';
 
@@ -88,7 +89,7 @@ class MessageActions extends ChangeNotifier {
       _turns = results[0] as List<TurnChangeSummary>;
       _ratings = results[1] as Map<String, bool>;
     } on Object catch (error) {
-      _say('读取这一段的记录失败：' + error.toString(), isError: true);
+      _say('读取这一段的记录失败：' + readableFailure(error), isError: true);
     } finally {
       _loading = false;
       _notify();
@@ -141,7 +142,7 @@ class MessageActions extends ChangeNotifier {
       }
       _say('已复制');
     } on Object catch (error) {
-      _say('复制失败：' + error.toString(), isError: true);
+      _say('复制失败：' + readableFailure(error), isError: true);
     }
   }
 
@@ -188,7 +189,7 @@ class MessageActions extends ChangeNotifier {
       );
       await onOpenFork(outcome.childSessionId!, '');
     } on Object catch (error) {
-      _say('撤回失败：' + error.toString(), isError: true);
+      _say('撤回失败：' + readableFailure(error), isError: true);
     } finally {
       _busyMessageId = null;
       _notify();
@@ -256,7 +257,7 @@ class MessageActions extends ChangeNotifier {
       await onOpenFork(outcome.childSessionId!, text);
     } on Object catch (error) {
       // The edit stays open with the text intact: the person can retry or cancel.
-      _say('编辑后的发送失败：' + error.toString(), isError: true);
+      _say('编辑后的发送失败：' + readableFailure(error), isError: true);
     } finally {
       _busyMessageId = null;
       _notify();
@@ -274,7 +275,7 @@ class MessageActions extends ChangeNotifier {
     try {
       plan = await planForFresh(answer);
     } on Object catch (error) {
-      _say('读不到这一段的文件记录，先不重做：' + error.toString(), isError: true);
+      _say('读不到这一段的文件记录，先不重做：' + readableFailure(error), isError: true);
       return;
     }
     if (_disposed) return;
@@ -309,7 +310,7 @@ class MessageActions extends ChangeNotifier {
       }
       await onOpenFork(outcome.childSessionId!, prompt);
     } on Object catch (error) {
-      _say('重新输出失败：' + error.toString(), isError: true);
+      _say('重新输出失败：' + readableFailure(error), isError: true);
     } finally {
       _busyMessageId = null;
       _notify();
@@ -330,7 +331,7 @@ class MessageActions extends ChangeNotifier {
       }
       _say(positive == null ? '已取消评价' : (positive ? '已点赞' : '已标记没帮助'));
     } on Object catch (error) {
-      _say('评价没有保存：' + error.toString(), isError: true);
+      _say('评价没有保存：' + readableFailure(error), isError: true);
     } finally {
       _busyMessageId = null;
       _notify();
@@ -343,7 +344,7 @@ class MessageActions extends ChangeNotifier {
       final ok = await backend.share(text);
       if (!ok) _say('系统分享没有打开', isError: true);
     } on Object catch (error) {
-      _say('分享失败：' + error.toString(), isError: true);
+      _say('分享失败：' + readableFailure(error), isError: true);
     }
   }
 

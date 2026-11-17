@@ -1,6 +1,6 @@
 # DSH Android · 交接文档
 
-## 会话平权：双端消息动作 + 文件回滚（2026-11-18，beta.37→beta.51）
+## 会话平权：双端消息动作 + 文件回滚（2026-11-18，beta.37→beta.52）
 
 - 范围：只写 E:/tmp/wt-flutter-native-chat（feat/flutter-native-chat，基线 556ef615），未 push/merge/发布；主仓库 E:/Deepeek harness/dsh-android 与他人工作树一律未动。
 - 已实现并实机点验（emulator-5570，1080x2340）：会话抽屉显示真实 DSH 会话的人类可读标题（无 session id / 无 cwd）；无 picker、无工作目录表单；用户气泡下「复制 / 撤回」；点自己气泡进入编辑（模糊+取消+草稿暂存恢复）；助手回答后「点赞 / 踩 / 复制 / 重新输出 / 分享」；Web（应用内 127.0.0.1:3080）与原生双端共用同一 DSH 权威后端（messageFeedback/put、turnRewind/list|rewind、会话 fork）。
@@ -13,12 +13,13 @@
   4. 回答身份从 data.messageId/seq 改为读 data.finalNode（rc.2 真实形状）——修好 Web 端分享误报「没有正文」与重新输出定位不到回合（beta47）。
   5. WebView 没有 navigator.share：新增 ShareBridge（DshAndroidShare）走真实 ACTION_SEND + FileProvider（beta48）。
   6. 撤回顺序（beta51）：旧实现先回滚文件再 fork，fork 一失败文件已改而会话没分叉——界面报失败却已造成不可见改动，重试还会把自己写回去的内容当成「回合之后被外部改过」而永远卡冲突。改为「冲突预检（只读）→ fork → 还原文件」，`core.rewindForkFirst` 承担，三例单测 + 三次负对照锁定。
-- 门禁（串行执行，最终态 beta51）：flutter analyze --no-pub 退出 0「No issues found!」；flutter test --concurrency=1 退出 0「427 tests passed」；插件 node --test client.test.mjs core.test.mjs 37 pass / 0 fail、node --check 通过；Gradle :app:assembleDebug 退出 0 BUILD SUCCESSFUL in 34s。
-- APK：app/build/outputs/apk/debug/app-debug.apk，248169662 B，SHA-256 4ecec00f2d75fcdc1703491076684ba34fa16c25f3fd74c05b4749aecd4e4f35，versionCode 426 / versionName 1.6.0-beta.51，ABI 仅 x86_64。安装必须用 adb -s emulator-5570 install -r -t -d（设备上曾有其他工作树的 versionCode 430，需 -d 允许降级；不带 -t 会报 INSTALL_FAILED_VERIFICATION_FAILURE）。
+  7. 失败原因泄露错误码（beta52）：插件端 `rejected(code)` 只带 code，界面显示「撤回失败：session-busy」。两端各加一张码→文案表（插件 readableError / 原生 readableFailure），未知码保留原文不编造。设备实测 Web 端已显示「这一轮还在进行，等它停下来再试。」
+- 门禁（串行执行，最终态 beta52）：flutter analyze --no-pub 退出 0「No issues found!」；flutter test --concurrency=1 退出 0「429 tests passed」；插件 node --test client.test.mjs core.test.mjs 39 pass / 0 fail、node --check 通过；Gradle :app:assembleDebug 退出 0 BUILD SUCCESSFUL in 1m 31s。
+- APK：app/build/outputs/apk/debug/app-debug.apk，248173894 B，SHA-256 e1886d94b3443f1feb042c836247d5fc4908ff1350666f96161d5d1de72f3cd9，versionCode 427 / versionName 1.6.0-beta.52，ABI 仅 x86_64。安装必须用 adb -s emulator-5570 install -r -t -d（设备上曾有其他工作树的 versionCode 430，需 -d 允许降级；不带 -t 会报 INSTALL_FAILED_VERIFICATION_FAILURE）。
 - 已证实限制：引擎在模拟器上每约 60–80 秒自愈重启（engine exited: status=0 signal=0），界面会被重建；偶发降级启动 missing=[directoryPickerController,workspaceRegistry,workspaceController]，冷启后恢复；设备无模型凭据，本轮验收用设备已配的 gpt-6-luna（用户授权）；fork 真实失败、权限不足/配额/部分失败重试只有离线单测；Web/原生动效未录逐帧视频。
-- 关键文件：flutter_ui/lib/src/state/{message_actions,conversation_actions,turn_plan,composer_draft}.dart、flutter_ui/lib/src/transport/native_action_transport.dart、flutter_ui/lib/src/ui/{chat_shell,retract_dialog,share_preview}.dart、app/src/main/assets/android-plugins/turn-rewind/{index.js,core.js,client.js}、app/src/main/java/app/dsh/mobile/engine/{ShareBridge.kt,EngineConfig.kt}、app/src/main/java/app/dsh/mobile/MainActivity.kt。
+- 关键文件：flutter_ui/lib/src/state/{message_actions,conversation_actions,turn_plan,composer_draft,failure_text}.dart、flutter_ui/lib/src/transport/native_action_transport.dart、flutter_ui/lib/src/ui/{chat_shell,retract_dialog,share_preview}.dart、app/src/main/assets/android-plugins/turn-rewind/{index.js,core.js,client.js}、app/src/main/java/app/dsh/mobile/engine/{ShareBridge.kt,EngineConfig.kt}、app/src/main/java/app/dsh/mobile/MainActivity.kt。
 - 下一步：交 Lead 统合与 GLM 复核（实现与设备验收已完成；本地提交未 push）。
-- 细节与证据索引见 docs/reports/2026-11-17-conversation-parity-status.json（11 个版本条目 / 21 条完成项 / 15 条检查）。
+- 细节与证据索引见 docs/reports/2026-11-17-conversation-parity-status.json（12 个版本条目 / 22 条完成项 / 19 条检查）。
 ## beta.36 最终验收与指定技能审查（2026-11-17）
 
 - 仅隔离树 E:/tmp/wt-flutter-native-chat，基线59f59401；主仓库与其他设备未写。四项需求已实现：模型胶囊贴左、DeepSeek仅显示缩写ds；结构化独立错误卡；设置选项与留白收紧；90%/100%/110%统一画布及Android持久化。
