@@ -1700,6 +1700,12 @@ class OnboardingActivity : ThemedActivity() {
                 selectedPriv = PrivMode.NORMAL
                 commitNow()
             }
+<<<<<<< HEAD
+=======
+            .create()
+            .apply {
+            }
+>>>>>>> upstream/main
             .show()
     }
 

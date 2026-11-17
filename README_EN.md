@@ -22,6 +22,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/Soodok/Deepseek-Harness-Local-Android?color=64748b)](https://github.com/Soodok/Deepseek-Harness-Local-Android/commits/main)
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
 [![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
+[![Afdian](https://img.shields.io/badge/Afdian-Sponsor-946ce6?style=for-the-badge&logo=heart&logoColor=white)](https://afdian.com/a/114514soodok)
 
 [中文](README.md) · [English](#introduction)
 
@@ -455,6 +456,18 @@ Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok
 **[Telegram group](https://t.me/+4VN3pYyH6i8yNDA1)** — same purpose, better for users outside mainland China.
 
 Bugs are still best filed as Issues so they don't get lost.
+
+## 💜 Support This Project
+
+This project is open source under MIT. Every feature is free — no paywall, no subscription, no license key. **Sponsoring unlocks nothing**; it simply keeps the work going.
+
+If it saved you time, you can buy the author a coffee here:
+
+**[afdian.com/a/114514soodok](https://afdian.com/a/114514soodok)**
+
+Sponsorship goes toward: test devices and accessories, build and signing infrastructure, domain and server costs, and the maintenance time needed to keep tracking upstream releases.
+
+Not sponsoring is completely fine — a reproducible Issue report, honest usage feedback, or telling someone who needs it helps just as much.
 
 ## 🙏 Contributors
 

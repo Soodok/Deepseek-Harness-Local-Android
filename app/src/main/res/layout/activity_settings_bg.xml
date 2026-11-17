@@ -36,11 +36,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
+<<<<<<< HEAD
                 app:cardCornerRadius="@dimen/md3_card_radius"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
+=======
+                app:cardCornerRadius="?attr/dshCardRadius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -135,11 +143,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
+<<<<<<< HEAD
                 app:cardCornerRadius="@dimen/md3_card_radius"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
+=======
+                app:cardCornerRadius="?attr/dshCardRadius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -207,11 +223,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
+<<<<<<< HEAD
                 app:cardCornerRadius="@dimen/md3_card_radius"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
+=======
+                app:cardCornerRadius="?attr/dshCardRadius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -329,11 +353,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
+<<<<<<< HEAD
                 app:cardCornerRadius="@dimen/md3_card_radius"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
+=======
+                app:cardCornerRadius="?attr/dshCardRadius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -403,11 +435,19 @@
                 android:layout_marginTop="12dp"
                 android:clickable="true"
                 android:focusable="true"
+<<<<<<< HEAD
                 app:cardCornerRadius="@dimen/md3_card_radius"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer"
+=======
+                app:cardCornerRadius="?attr/dshCardRadius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface"
+>>>>>>> upstream/main
                 app:rippleColor="?attr/colorPrimary">
 
                 <LinearLayout

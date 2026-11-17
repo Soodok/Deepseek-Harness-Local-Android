@@ -70,7 +70,14 @@ object FailureDialog {
                 .setTitle(R.string.failure_title)
                 .setMessage(state.reason)
                 .setPositiveButton(android.R.string.ok, null)
+<<<<<<< HEAD
                 .show()
+=======
+                .create()
+                .apply {
+                    show()
+                }
+>>>>>>> upstream/main
             return
         }
         val box = LinearLayout(activity).apply {
@@ -151,6 +158,16 @@ object FailureDialog {
                 box.addView(actionRow(activity, state, box, fix))
             }
         }
+<<<<<<< HEAD
+=======
+
+        val dlg = AlertDialog.Builder(activity)
+            .setTitle(R.string.failure_title)
+            .setView(ScrollView(activity).apply { addView(box) })
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+        dlg.show()
+>>>>>>> upstream/main
     }
 
     /**

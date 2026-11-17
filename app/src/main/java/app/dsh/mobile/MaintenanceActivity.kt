@@ -631,4 +631,11 @@ class MaintenanceActivity : ThemedActivity() {
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景 */
+<<<<<<< HEAD
+=======
+    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+        create().apply {
+            show()
+        }
+>>>>>>> upstream/main
 }

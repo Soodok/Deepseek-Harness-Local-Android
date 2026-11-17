@@ -1538,6 +1538,7 @@
     <string name="linux_screen_stop_sub">停掉帧服务，保留最后一帧</string>
     <string name="linux_screen_started">帧服务已启动：/framesrv 1280x720</string>
     <string name="linux_screen_start_failed">帧服务启动失败：%1$s</string>
+    <string name="linux_screen_missing_gui">容器镜像不是 GUI 形态，或者 GUI 软件包没装上。把镜像卡切到「Alpine · GUI」，等它把 Xvfb + xterm 装完再试。</string>
     <string name="linux_screen_stopped">帧服务已停止</string>
     <string name="linux_screen_stop_failed">停止失败：%1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
@@ -1724,6 +1725,10 @@
     <string name="asr_local_set_default">设为默认</string>
     <string name="asr_local_self_check">自检</string>
     <string name="asr_local_need_install">请先安装语音识别服务</string>
+    <string name="asr_local_state_outdated">需更新</string>
+    <string name="asr_local_desc_outdated">已装的识别服务比本页要求的版本旧，一键设置（设为默认 / 自检 / 模型状态）用不了。在下面更新一次即可，已下载的模型不会丢。</string>
+    <string name="asr_local_need_update">请先更新语音识别服务</string>
+    <string name="asr_local_action_failed">当前识别服务版本不支持这个操作</string>
     <string name="setting_linux_ssh">SSH 开发环境</string>
     <string name="setting_linux_ssh_sub">让电脑用标准 SSH 直接连进 Linux 容器</string>
     <string name="linux_ssh_consent">这会开启 2222 端口，在应用内跑一个 SSH 服务端。同一个 Wi-Fi 下知道密码的人就能在 Linux 容器里执行命令。\n\n只在你信任的网络里开，用完请关掉。</string>
@@ -1960,4 +1965,12 @@
     <string name="style_sub_classic">经典 · 冷蓝灰</string>
     <string name="style_classic">经典</string>
     <string name="style_material">材料 3</string>
+
+    <string name="developer_options_title">开发者选项</string>
+    <string name="developer_options_sub">可选工具与高级控制</string>
+    <string name="developer_options_intro">为喜欢探索和高级配置的用户提供的一组可选工具。</string>
+    <string name="developer_options_enabled_sub">关闭后将再次隐藏开发者选项。</string>
+    <string name="developer_options_security_note">开启此菜单不会自动授予 Root、Shizuku 或其他系统权限。每项操作仍须经过独立授权检查。</string>
+    <string name="developer_options_unlocked">已开启开发者选项，可在「设置 → 系统」中查看。</string>
+    <string name="developer_options_disabled_toast">开发者选项已隐藏。再次点击版本信息 7 次即可开启。</string>
 </resources>

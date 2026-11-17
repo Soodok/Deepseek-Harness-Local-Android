@@ -53,4 +53,22 @@
     <attr name="dshIslandText" format="color" />
     <attr name="dshIslandAccent" format="color" />
 
+    <!-- ===== 形态令牌（v1.8.1）=====
+         v1.8.0 只分叉了颜色：两套主题逐项比对，取值不同的 36 项全是颜色，
+         shape / corner / elevation / textAppearance 类 item 两套都是 0 个 ——
+         所以切风格只有色温变化，圆角、描边、控件形态一模一样，用户一眼看出
+         「不就是改了个颜色」。这一组补上形态分叉。
+
+         为什么用主题属性而不是 dimens：dimens 在资源解析期定型，切主题不会变；
+         只有 ?attr 引用会在主题切换后重新解析。已实测 aapt2 接受 corners 里写
+         ?attr 尺寸、以及 MaterialCardView 的 cardCornerRadius 写 ?attr
+         （mergeReleaseResources 通过，真机渲染另行截图核对）。 -->
+    <attr name="dshCardRadius" format="dimension" />
+    <attr name="dshCardStroke" format="dimension" />
+    <attr name="dshIconChipRadius" format="dimension" />
+    <attr name="dshIconChipStroke" format="dimension" />
+    <attr name="dshButtonRadius" format="dimension" />
+    <attr name="dshControlRadius" format="dimension" />
+    <attr name="dshGridCellRadius" format="dimension" />
+
 </resources>

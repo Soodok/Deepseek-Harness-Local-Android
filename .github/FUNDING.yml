@@ -1,0 +1,4 @@
+# GitHub Sponsor 按钮配置
+# 说明：GitHub 原生支持的自定义众筹链接里没有爱发电，但 custom 字段可以填任意 URL，
+# 会显示为仓库页右上角的 "Sponsor" 按钮。不涉及资金托管，只是跳转入口。
+custom: ["https://afdian.com/a/114514soodok"]

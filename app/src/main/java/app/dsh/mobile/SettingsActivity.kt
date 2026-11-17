@@ -393,9 +393,15 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+        findViewById<LinearLayout>(R.id.rowDeveloperOptions).setOnClickListener { startActivity(Intent(this, DeveloperOptionsActivity::class.java)) }
+        refreshDeveloperOptionsEntry()
 
         // 记忆面板（M8）的入口 v1.7.9 起收进「权限与能力 → 无障碍 → 任务记忆」，
         // 主页不再单列一个「记忆」分组（同一页两个入口只会让人犹豫点哪个）。
+    }
+
+    private fun refreshDeveloperOptionsEntry() {
+        findViewById<android.view.View>(R.id.rowDeveloperOptions)?.visibility = if (DeveloperModePrefs.isEnabled(this)) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     /** 从包管理器读取 versionName（AGP 8+ 默认关闭 BuildConfig，避免依赖它） */
@@ -450,6 +456,7 @@ class SettingsActivity : ThemedActivity() {
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
         refreshUpdateEntrySub()
+        refreshDeveloperOptionsEntry()
         refreshA11ySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
@@ -724,7 +731,6 @@ class SettingsActivity : ThemedActivity() {
             .create()
 
         dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val raw = input.text.toString()
                 if (!RuntimeDownloadConfig.isValid(raw)) {
@@ -752,6 +758,17 @@ class SettingsActivity : ThemedActivity() {
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+<<<<<<< HEAD
+=======
+    /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
+    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+        create().apply {
+            show()
+        }
+
+
+
+>>>>>>> upstream/main
     private companion object {
         /** 上游暂时隐藏双端同步入口，功能实现仍然保留。 */
         const val PEERSYNC_UI_ENABLED = false

@@ -109,9 +109,19 @@ def res_path(*parts):
 
 
 bg_card = read(res_path('drawable', 'bg_card.xml'))
+# 判据必须落在 <stroke> 属性上，不能全文找 '1dp' —— bg_card.xml 的注释里就写着
+# 「旧版是 surface 实心 + 1dp 描边 + 18dp」，全文匹配等于让注释替描边背书。
+# 实测：把 stroke 宽度改成 0dp、注释原样保留时，旧判据仍然 PASS（假绿）。
+_stroke = re.search(r'<stroke[\s\S]*?/>', bg_card)
 check('D1 card token keeps a 1dp stroke (separation must survive dark mode)',
+<<<<<<< HEAD
       '<stroke' in bg_card and '1dp' in bg_card
       and ('@color/stroke' in bg_card or '?attr/dshStroke' in bg_card))
+=======
+      _stroke is not None
+      and re.search(r'android:width="(?:1dp|\?attr/dshCardStroke)"', _stroke.group(0)) is not None
+      and ('@color/stroke' in _stroke.group(0) or '?attr/dshStroke' in _stroke.group(0)))
+>>>>>>> upstream/main
 check('D2 group card corners come from md3_card_radius',
       '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
 
@@ -131,6 +141,7 @@ for token in ('colorSurfaceContainer', 'colorSurfaceContainerHigh',
               'colorError', 'colorOnPrimary'):
     check('D4 theme defines %s' % token, 'name="%s">' % token in themes)
 
+<<<<<<< HEAD
 dshapp = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
                            'DshApp.kt'))
 themed = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
@@ -152,6 +163,31 @@ themes_txt = read(os.path.join(RES, 'values', 'themes.xml'))
 check('D5 single Material 3 DayNight theme',
       'name="Theme.Dsh.MD3"' not in themes_txt
       and 'Theme.Material3.DayNight' in themes_txt)
+=======
+src_dir = os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile')
+themed_kt = read(os.path.join(src_dir, 'ThemedActivity.kt'))
+accent_kt = read(os.path.join(src_dir, 'Accent.kt'))
+
+
+def strip_kotlin_comments(src):
+    """注释里出现 API 名不算调用 —— 本文件多处注释在解释「以前调过什么」。"""
+    src = re.sub(r'/\*[\s\S]*?\*/', '', src)
+    return re.sub(r'//[^\n]*', '', src)
+
+
+# Monet 只能给「跟随壁纸」用，而且连它也不能「注入」：
+# DynamicColors.applyToActivityIfAvailable 在 API 31+ 走 ColorResourcesOverride →
+# ResourcesLoader 替换颜色资源，会改动本 Activity 的 Resources 配置，系统随即再派一次
+# configuration change → 第二次 relaunch（真机 / Android 14 实测：点一下闪两次）。
+# 所以动态取色改为 SystemAccent 直接读 android.R.color.system_accent1_*，不碰 Resources。
+# 本条守住的是「没有任何一处再注入 DynamicColors」＋「动态分支确实走 SystemAccent」。
+check('D5 DynamicColors is never injected (it rewrites Resources and re-triggers a relaunch)',
+      'DynamicColors.applyTo' not in strip_kotlin_comments(themed_kt)
+      and 'setContentBasedSource' not in themed_kt)
+check('D5b dynamic accent reads SystemAccent instead of the theme',
+      'SystemAccent.primary(' in accent_kt
+      and 'MaterialColors.getColor' not in strip_kotlin_comments(accent_kt))
+>>>>>>> upstream/main
 
 icon_tint = 0
 app_tint = 0

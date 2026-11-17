@@ -576,7 +576,16 @@ class PermissionCenterActivity : ThemedActivity() {
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
+<<<<<<< HEAD
 // --------------------------------------------------------- AI 能力磁贴
+=======
+    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+        create().apply {
+            show()
+        }
+
+    // --------------------------------------------------------- AI 能力磁贴
+>>>>>>> upstream/main
 
     /** 一项 AI 能力的视图与系统门槛描述（v1.6.0）。 */
     private data class CapSpec(
@@ -1087,7 +1096,6 @@ class PermissionCenterActivity : ThemedActivity() {
             .setView(box)
             .setNegativeButton(getString(R.string.setting_cap_detail_close), null)
             .create()
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
         dialog.show()
 
         sw.setOnCheckedChangeListener { _, checked ->

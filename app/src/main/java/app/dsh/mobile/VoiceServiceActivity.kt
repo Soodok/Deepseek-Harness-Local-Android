@@ -210,10 +210,49 @@ class VoiceServiceActivity : ThemedActivity() {
     // 现在状态一眼可见，四个动作就地可点。
     private val ASR_PKG = "app.dsh.asr"
 
+    /**
+     * 状态卡所需的最低识别应用版本（v0.8.0 / versionCode 32）。
+     *
+     * ## 为什么必须比版本（2026-11-14 真机事故）
+     * 状态卡是照着 v0.8.0 的接口写的：`content://app.dsh.asr.status/status`
+     * 取模型/默认态，`SET_DEFAULT` / `CHECK` 一键设默认与自检。
+     * 但设备上装的是 **0.7.4（versionCode 31）** —— 那版三个能力全没有：
+     *
+     *   content query → Could not find provider: app.dsh.asr.status
+     *   query-activities -a app.dsh.asr.SET_DEFAULT → No activities found
+     *   query-activities -a app.dsh.asr.CHECK       → No activities found
+     *
+     * 于是 `startActivity` 抛 ActivityNotFoundException → 走兜底 → 弹出
+     * 「请先安装语音识别服务」。**用户明明是装了的**（模型也下了），
+     * 看到的却是"没装" —— 这就是那条「真实测试根本用不了」的根因。
+     *
+     * 只判"装没装"不够：装了旧版 = 装了但接口不存在，必须单独一态。
+     */
+    private val ASR_MIN_VERSION_CODE = 32
+
     private fun asrInstalled(): Boolean = runCatching {
         packageManager.getPackageInfo(ASR_PKG, 0)
         true
     }.getOrDefault(false)
+
+    /** 已装版本的 versionCode；没装返回 0。 */
+    private fun asrVersionCode(): Long = runCatching {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(ASR_PKG, 0).versionCode.toLong()
+    }.getOrDefault(0L)
+
+    /** 装了但版本低于 [ASR_MIN_VERSION_CODE]：接口对不上，需要更新。 */
+    private fun asrTooOld(): Boolean {
+        val v = asrVersionCode()
+        return v in 1 until ASR_MIN_VERSION_CODE
+    }
+
+    /** 一条能真正解释现状的提示：没装 / 版本过旧 / 动作暂不可用，分开说。 */
+    private fun asrTroubleText(): Int = when {
+        !asrInstalled() -> R.string.asr_local_need_install
+        asrTooOld() -> R.string.asr_local_need_update
+        else -> R.string.asr_local_action_failed
+    }
 
     /**
      * 读 ASR 侧的状态（v0.8.0 起的 ContentProvider）。
@@ -230,19 +269,23 @@ class VoiceServiceActivity : ThemedActivity() {
 
     private fun bindLocalAsrCard() {
         val installed = asrInstalled()
+        val tooOld = installed && asrTooOld()
         val state = findViewById<TextView>(R.id.asrLocalState)
         val desc = findViewById<TextView>(R.id.asrLocalDesc)
-        val st = if (installed) asrStatus() else null
+        val st = if (installed && !tooOld) asrStatus() else null
         val modelReady = st?.optBoolean("modelReady", false) ?: false
         val isDefault = if (st != null && !st.isNull("isDefault")) st.optBoolean("isDefault") else null
-        val fullyReady = installed && modelReady && isDefault == true
+        val fullyReady = installed && !tooOld && modelReady && isDefault == true
         state.setText(
             when {
                 fullyReady -> R.string.asr_local_state_ready
+                // 旧版必须与"已安装"分开 —— 否则用户看到绿的「已安装」，点任何按钮都失败
+                tooOld -> R.string.asr_local_state_outdated
                 installed -> R.string.asr_local_state_installed
                 else -> R.string.asr_local_state_missing
             }
         )
+<<<<<<< HEAD
         val stateColor = when {
             fullyReady -> androidx.appcompat.R.attr.colorPrimary
             installed -> com.google.android.material.R.attr.colorOnSurfaceVariant
@@ -250,33 +293,59 @@ class VoiceServiceActivity : ThemedActivity() {
         }
         state.setTextColor(MaterialColors.getColor(state, stateColor))
         desc.setText(if (installed) R.string.asr_local_desc else R.string.asr_local_need_install)
+=======
+        state.setTextColor(
+            getColor(
+                when {
+                    fullyReady -> R.color.success
+                    tooOld -> R.color.danger
+                    installed -> R.color.warning
+                    else -> R.color.danger
+                }
+            )
+        )
+        desc.setText(
+            when {
+                tooOld -> R.string.asr_local_desc_outdated
+                installed -> R.string.asr_local_desc
+                else -> R.string.asr_local_need_install
+            }
+        )
+>>>>>>> upstream/main
 
         // 安装 / 更新：进识别应用页（那页有 GitHub Releases 下载与安装引导）
         findViewById<View>(R.id.btnAsrInstall).setOnClickListener {
             startActivity(Intent(this, AsrAppActivity::class.java))
         }
-        // 三个「需要已安装」的动作：未装时置灰并提示，不做假按钮
+        // 三个「需要已安装且版本够新」的动作：不满足时置灰并说明具体原因，不做假按钮
         listOf(
             R.id.btnAsrOpenConfig to "app.dsh.asr.OPEN",
             R.id.btnAsrSetDefault to "app.dsh.asr.SET_DEFAULT",
             R.id.btnAsrSelfCheck to "app.dsh.asr.CHECK",
         ).forEach { (id, action) ->
             findViewById<View>(id).apply {
-                alpha = if (installed) 1f else 0.45f
+                alpha = if (installed && !tooOld) 1f else 0.45f
                 setOnClickListener {
-                    if (!asrInstalled()) {
-                        toast(getString(R.string.asr_local_need_install))
-                        return@setOnClickListener
+                    when {
+                        !asrInstalled() -> {
+                            toast(getString(R.string.asr_local_need_install))
+                            return@setOnClickListener
+                        }
+                        asrTooOld() -> {
+                            toast(getString(R.string.asr_local_need_update))
+                            return@setOnClickListener
+                        }
                     }
                     val ok = runCatching {
                         startActivity(Intent(action).setPackage(ASR_PKG))
                         true
                     }.getOrDefault(false)
-                    // SET_DEFAULT / CHECK 要等 ASR 侧补上对应 intent（P3）；
-                    // 现在还没实现时退回「打开配置」，不假装成功。
+                    // SET_DEFAULT / CHECK 只有 0.8.0+ 才声明。走到这里说明版本够新
+                    // 但解析失败（被 ROM 拦、或那版确实没实现）→ 退回「打开配置」，
+                    // 并且说"动作不可用"而不是误导性的"请先安装"。
                     if (!ok) {
                         runCatching { startActivity(Intent("app.dsh.asr.OPEN").setPackage(ASR_PKG)) }
-                        toast(getString(R.string.asr_local_need_install))
+                        toast(getString(asrTroubleText()))
                     }
                 }
             }

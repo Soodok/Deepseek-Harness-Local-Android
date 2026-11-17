@@ -144,7 +144,6 @@ object PkgProgressDialog {
             .create()
 
         dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
             // 「后台运行」：只关窗，线程继续跑，装完再弹结果。
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 closed = true

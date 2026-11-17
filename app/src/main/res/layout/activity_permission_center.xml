@@ -12,8 +12,14 @@
     <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
         <app.dsh.mobile.MaxWidthLinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="32dp">
             <LinearLayout android:id="@+id/groupEngine" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:orientation="vertical">
+<<<<<<< HEAD
                 <TextView android:id="@+id/txtGroupEngineSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_engine" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingBottom="6dp" />
                 <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/colorSurfaceContainer" app:strokeColor="?attr/colorOutlineVariant">
+=======
+                <TextView android:id="@+id/txtGroupEngineSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_engine" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingBottom="6dp" />
+                app:strokeColor="?attr/dshStroke"
+                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="?attr/dshCardRadius" app:cardElevation="0dp" app:strokeWidth="?attr/dshCardStroke" app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                         <LinearLayout android:id="@+id/rowPriv" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:id="@+id/iconPriv" android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
@@ -58,8 +64,14 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
             <LinearLayout android:id="@+id/groupCaps" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:orientation="vertical">
+<<<<<<< HEAD
                 <TextView android:id="@+id/txtGroupCapsSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_caps" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="16dp" android:paddingBottom="6dp" />
                 <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/colorSurfaceContainer" app:strokeColor="?attr/colorOutlineVariant">
+=======
+                <TextView android:id="@+id/txtGroupCapsSub" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_perm_group_caps" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="16dp" android:paddingBottom="6dp" />
+                app:strokeColor="?attr/dshStroke"
+                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="?attr/dshCardRadius" app:cardElevation="0dp" app:strokeWidth="?attr/dshCardStroke" app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                         <LinearLayout android:id="@+id/rowAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
                             <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_touch" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
@@ -116,7 +128,12 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
             <LinearLayout android:id="@+id/groupDeviceCaps" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="18dp">
+<<<<<<< HEAD
                 <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/colorSurfaceContainer" app:strokeColor="?attr/colorOutlineVariant">
+=======
+                app:strokeColor="?attr/dshStroke"
+                <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="?attr/dshCardRadius" app:cardElevation="0dp" app:strokeWidth="?attr/dshCardStroke" app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
                         <!-- 能力磁贴采用两段式（header+detail）：标题与状态分行显示，勿删除状态行。 -->
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
@@ -468,8 +485,14 @@
                         <TextView android:id="@+id/stCapCamera" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
                     </LinearLayout>
                 </LinearLayout>
+<<<<<<< HEAD
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_cap_batch_title" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="18dp" android:paddingBottom="6dp" />
             <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="?attr/colorSurfaceContainer" app:strokeColor="?attr/colorOutlineVariant">
+=======
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_cap_batch_title" android:textColor="?attr/dshAccent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="18dp" android:paddingBottom="6dp" />
+            app:strokeColor="?attr/dshStroke"
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="?attr/dshCardRadius" app:cardElevation="0dp" app:strokeWidth="?attr/dshCardStroke" app:cardBackgroundColor="?attr/dshSurface">
+>>>>>>> upstream/main
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                     <LinearLayout android:id="@+id/rowGrantAll" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />

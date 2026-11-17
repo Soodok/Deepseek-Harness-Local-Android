@@ -10,9 +10,50 @@
         <item name="colorSecondary">@color/accent_alt</item>
         <item name="colorOnSecondary">@color/on_accent</item>
         <item name="colorSecondaryContainer">@color/accent_soft</item>
+<<<<<<< HEAD
         <item name="colorOnSecondaryContainer">@color/md3_on_surface</item>
         <item name="colorTertiary">@color/accent_alt</item>
         <item name="colorOnTertiary">@color/on_accent</item>
+=======
+        <item name="colorOnSecondaryContainer">@color/text_primary</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/bg</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorOutline">@color/divider</item>
+        <item name="colorOutlineVariant">@color/divider</item>
+        <!-- v1.7.9：弹窗容器色。Material 的 MaterialAlertDialog 不读 windowBackground，
+             而是取 `?attr/colorSurfaceContainerHigh` 当 backgroundTint
+             （@macro/m3_comp_dialog_container_color，反查 material-1.12.0 确认）。
+             这些 role 以前没映射，于是落回 Material3 自带的暖灰板：容器跟随
+             ThemeManager 覆写的 uiMode，而文字色走 @color/text_primary 的取值分支，
+             两者不是同一套条件 → 深色下出现「深底深字」、浅色下出现「浅底白字」。
+             映射到我们自己的 @color 引用后，容器与文字必然同源。 -->
+        <item name="colorSurfaceContainer">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerLow">@color/surface</item>
+        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_alt</item>
+        <item name="colorSurfaceContainerLowest">@color/surface</item>
+        <item name="colorSurfaceBright">@color/surface</item>
+        <item name="colorSurfaceDim">@color/surface_alt</item>
+        <item name="colorOnSurfaceInverse">@color/text_primary</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
+        <!-- v1.8.1：MaterialAlertDialogBuilder（md3Dialog / showMd3）走这条。
+             以前全仓没设这个属性，11 处 md3Dialog() 落回 Material 默认弹窗
+             （Material3 暖灰板 + 80dp 上下 inset），与设置页色板不同源；
+             现在统一到 Dsh 的 overlay，容器色/字色/圆角全跟随风格令牌。 -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dsh.MaterialAlertDialog</item>
+        <!-- v1.4.43：允许窗口画进挖孔区。全屏时真正的沉浸式需要它，
+             否则系统会在顶部保留一条与挖孔等高的黑边。
+             shortEdges 在显示状态栏时无副作用（状态栏本身会占位）。 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+>>>>>>> upstream/main
 
         <!-- 容器与文字使用同一组日夜资源，保持上游弹窗对比度修复。 -->
         <item name="colorSurface">@color/md3_surface</item>
@@ -85,8 +126,19 @@
         <item name="dshOverlay">@color/overlay</item>
         <item name="dshIslandText">@color/island_text</item>
         <item name="dshIslandAccent">@color/island_accent</item>
+
+        <!-- ===== 形态令牌（v1.8.1）：经典 = 现状原值，一个像素不改 =====
+             18dp 卡片 + 1dp 描边 + 12dp 图标底圈，是 v1.5.6 定下的身份。 -->
+        <item name="dshCardRadius">18dp</item>
+        <item name="dshCardStroke">1dp</item>
+        <item name="dshIconChipRadius">12dp</item>
+        <item name="dshIconChipStroke">1dp</item>
+        <item name="dshButtonRadius">20dp</item>
+        <item name="dshControlRadius">12dp</item>
+        <item name="dshGridCellRadius">16dp</item>
     </style>
 
+<<<<<<< HEAD
     <style name="ThemeOverlay.Dsh.Style.Material" parent="ThemeOverlay.Material3">
         <item name="dshBg">?attr/colorSurface</item>
         <item name="dshSurface">?attr/colorSurfaceContainer</item>
@@ -102,14 +154,157 @@
         <item name="dshDivider">?attr/colorOutlineVariant</item>
         <item name="dshStroke">?attr/colorOutlineVariant</item>
         <item name="dshDanger">?attr/colorError</item>
+=======
+    <style name="Theme.Dsh.Spinner" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:popupBackground">@drawable/bg_menu_card</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="Theme.Dsh.Dialog" parent="Theme.Material3.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColor">@color/text_primary</item>
+
+        <!-- ⚠️ v1.7.9：弹窗「深底深字 / 浅底白字」的真正修法。
+             Material 的对话框文字与容器并不读 android:textColorPrimary：
+               · 标题   → @macro/m3_comp_dialog_headline_color      => ?attr/colorOnSurface
+               · 正文   → @macro/m3_comp_dialog_supporting_text_color => ?attr/colorOnSurfaceVariant
+               · 容器底 → @macro/m3_comp_dialog_container_color      => ?attr/colorSurfaceContainerHigh
+             （material-1.12.0 res/values 里三个 macro 的定义，实测反查）
+             这几项本主题原先都没写，于是落到 Material3 自带的暖灰板，
+             而 @color/text_primary 仍按 values(-night) 走我们自己的色板 ——
+             系统 uiMode 与 ThemePref 不一致时两者落在不同分支，
+             弹窗必然出现「深底深字」或「浅底白字」。这里补齐即同源。 -->
+        <item name="colorSurface">@color/dialog_bg</item>
+        <item name="colorSurfaceContainer">@color/dialog_bg</item>
+        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/surface</item>
+        <item name="colorOutline">@color/divider</item>
+        <!-- 单选/多选列表行（setSingleChoiceItems / setItems）是 checkedTextView，
+             平台主题走 ?android:attr/textColorAlertDialogListItem，同样不吃
+             textColorPrimary —— 一并钉死，否则列表项字色还是游离的。 -->
+        <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
+    </style>
+
+    <!-- ===== MD3 试点（v1.5.x）：设置页外观 =====
+         只给这一页套 Material3，其余页面沿用 Theme.Dsh。
+         colorPrimary 等映射到现有色板，保证明暗主题一致；
+         MaterialCardView / MaterialButton 从这里取色。 -->
+    <style name="Theme.Dsh.MD3" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+
+        <item name="colorPrimary">@color/md3_primary</item>
+        <item name="colorOnPrimary">@color/md3_on_primary</item>
+        <item name="colorPrimaryContainer">@color/md3_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/md3_on_primary_container</item>
+        <item name="colorSecondaryContainer">@color/md3_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/md3_on_secondary_container</item>
+        <item name="colorSurface">@color/md3_surface</item>
+        <item name="colorOnSurface">@color/md3_on_surface</item>
+        <item name="colorSurfaceVariant">@color/md3_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
+        <item name="colorOutline">@color/md3_outline_variant</item>
+        <item name="colorOutlineVariant">@color/md3_outline_variant</item>
+        <!-- 弹窗容器色，与 Theme.Dsh 同构（原因见文件上方 Theme.Dsh 的注释）。
+             MaterialAlertDialogBuilder 的对话框主题是**从当前 Activity 主题派生**的
+             （materialAlertDialogTheme 没设 → 用 activity 主题 + Material 的 overlay），
+             所以这一组必须写在这两个 Activity 主题里，只写在 Theme.Dsh.Dialog 里不够。 -->
+        <item name="colorSurfaceContainer">@color/md3_surface_container</item>
+        <item name="colorSurfaceContainerLow">@color/md3_surface</item>
+        <item name="colorSurfaceContainerHigh">@color/md3_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/md3_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/md3_surface</item>
+        <item name="colorSurfaceBright">@color/md3_surface</item>
+        <item name="colorSurfaceDim">@color/md3_surface_container</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <!-- ⚠️ 必须有这一行。Theme.Dsh.MD3 是设置体系 17 个页面用的主题
+             （覆写 usesSettingsBackground = true 的 Activity，v1.7.8 实测计数），
+             原先漏了 alertDialogTheme，于是这些页面里的
+             android.app.AlertDialog.Builder 全部落到平台的 Material 默认弹窗
+             （白底、方角、无我们的色板），用户看到的就是「弹窗变回安卓原版样式」。
+             Theme.Dsh 一直有这行，所以只有设置体系那批页面出问题。
+             新增主题时务必一并带上它。
+
+             注：另有一批弹窗走 ThemedActivity.md3Dialog()（MaterialAlertDialogBuilder，
+             11 处调用），它们吃的是 materialAlertDialogTheme —— 那个属性本仓库
+             至今没设，属于已知的样式缺口（改用 android:alertDialogTheme 只能盖住
+             前者）。要统一观感需显式补 materialAlertDialogTheme。 -->
+        <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
+        <!-- v1.8.1：Material 弹窗统一主题（md3Dialog / showMd3 链路） -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dsh.MaterialAlertDialog</item>
+
+        <!-- ===== 风格令牌（v1.8.0）=====
+             与 Theme.Dsh 的精典冷蓝灰区分开：这一套是 MD3 原生暖灰 + 青墨。
+             两套只在这里分叉，布局里的 ?attr/dshXxx 会自动跟着走。
+             text_muted 在 MD3 里没有独立层级，与 secondary 同值（Material 的
+             on-surface-variant 一档到底，三级灰不是 M3 的语义）。 -->
+        <item name="dshBg">@color/md3_bg</item>
+        <item name="dshSurface">@color/md3_surface</item>
+        <item name="dshSurfaceAlt">@color/md3_surface_container</item>
+        <item name="dshSurfaceHigh">@color/md3_surface_container_high</item>
+        <item name="dshDialogBg">@color/md3_surface_container_high</item>
+        <item name="dshTextPrimary">@color/md3_on_surface</item>
+        <item name="dshTextSecondary">@color/md3_on_surface_variant</item>
+        <item name="dshTextMuted">@color/md3_on_surface_variant</item>
+        <item name="dshAccent">@color/md3_primary</item>
+        <item name="dshAccentSoft">@color/md3_primary_container</item>
+        <item name="dshOnAccent">@color/md3_on_primary</item>
+        <item name="dshDivider">@color/md3_outline_variant</item>
+        <item name="dshStroke">@color/md3_outline_variant</item>
+        <item name="dshDanger">@color/danger</item>
+>>>>>>> upstream/main
         <item name="dshSuccess">@color/success</item>
         <item name="dshWarning">@color/warning</item>
         <item name="dshIconColor">?attr/colorOnSurfaceVariant</item>
         <item name="dshBtnRipple">@color/btn_ripple</item>
         <item name="dshOverlay">@color/overlay</item>
+<<<<<<< HEAD
         <item name="dshIslandText">?attr/colorOnSurfaceVariant</item>
         <item name="dshIslandAccent">?attr/colorPrimary</item>
     </style>
+=======
+        <item name="dshIslandText">@color/md3_on_surface_variant</item>
+        <item name="dshIslandAccent">@color/md3_primary</item>
+
+        <!-- ===== 形态令牌（v1.8.1）：MD3 = 真·Material 3 形态 =====
+             只改色不算换风格。这里按 M3 规范把形态也分叉：
+
+               · 卡片圆角 24dp（M3 的 "large" 档；经典是 18dp）
+               · 卡片描边 0dp —— M3 filled card 本来就没描边，
+                 经典那圈 1dp 冷灰线是旧身份的一部分
+               · 图标底圈 999dp —— M3 的 leading icon 是**正圆** tonal chip，
+                 经典的 12dp 圆角小方块换成圆之后，一眼就能分辨
+               · 图标底圈描边 0dp —— 同上，M3 tonal chip 无描边
+               · 按钮 999dp 全圆胶囊 —— M3 按钮就是 fully rounded
+               · 输入框/小控件 16dp（M3 的 "large" 小控件档） -->
+        <item name="dshCardRadius">24dp</item>
+        <item name="dshCardStroke">0dp</item>
+        <item name="dshIconChipRadius">999dp</item>
+        <item name="dshIconChipStroke">0dp</item>
+        <item name="dshButtonRadius">999dp</item>
+        <item name="dshControlRadius">16dp</item>
+        <item name="dshGridCellRadius">20dp</item>
+    
+        <!-- ===== v1.8.0：MD3 主题改用原生暖灰色板 =====
+             作者原先把 MD3 语义色全映射回旧冷蓝灰（见本文件顶部注释），
+             代价是 Theme.Dsh 与 Theme.Dsh.MD3 画出来一模一样，切风格等于没切。
+             现在改成两套真分叉：本主题走 md3_*（暖灰 #F7F6F5 + 青墨 #1B6C8C），
+             Theme.Dsh 保持旧冷蓝灰（一个像素不改）。
+             风格开关在 设置 → 主题 → 界面风格（StylePref）。 --></style>
+>>>>>>> upstream/main
 
     <style name="Theme.Dsh.Spinner" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:popupBackground">@drawable/bg_menu_card</item>

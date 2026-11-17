@@ -1489,6 +1489,7 @@
     <string name="linux_screen_stop_sub">หยุดบริการเฟรม เก็บเฟรมสุดท้ายไว้</string>
     <string name="linux_screen_started">เริ่มบริการเฟรมแล้ว: /framesrv 1280x720</string>
     <string name="linux_screen_start_failed">เริ่มบริการเฟรมไม่สำเร็จ: %1$s</string>
+    <string name="linux_screen_missing_gui">รูปภาพคอนเทนเนอร์ไม่ใช่บิลด GUI หรือขาดแพ็กเกจ GUI เปลี่ยนการ์ดดิสทริบิวชันเป็น “Alpine · GUI” แล้วรอให้การติดตั้ง (Xvfb + xterm) เสร็จก่อน แล้วลองอีกครั้ง</string>
     <string name="linux_screen_stopped">หยุดบริการเฟรมแล้ว</string>
     <string name="linux_screen_stop_failed">หยุดไม่สำเร็จ: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
@@ -1671,6 +1672,10 @@
     <string name="asr_local_set_default">ตั้งเป็นค่าเริ่มต้น</string>
     <string name="asr_local_self_check">ตรวจสอบ</string>
     <string name="asr_local_need_install">กรุณาติดตั้งตัวรู้จำก่อน</string>
+    <string name="asr_local_state_outdated">ต้องอัปเดต</string>
+    <string name="asr_local_desc_outdated">ตัวรู้จำที่ติดตั้งอยู่เก่ากว่าเวอร์ชันที่หน้านี้ต้องการ ดังนั้นการตั้งค่าด้วยแตะครั้งเดียว (ตั้งเป็นค่าเริ่มต้น / ตรวจสอบตนเอง / สถานะโมเดล) จะใช้งานไม่ได้ อัปเดตด้านล่าง โมเดลที่ดาวน์โหลดไว้จะไม่หาย</string>
+    <string name="asr_local_need_update">กรุณาอัปเดตตัวรู้จำก่อน</string>
+    <string name="asr_local_action_failed">การดำเนินการนี้ไม่รองรับในเวอร์ชันที่ติดตั้งอยู่</string>
     <string name="setting_linux_ssh">สภาพแวดล้อม SSH</string>
     <string name="setting_linux_ssh_sub">ให้ PC เชื่อมต่อเข้าคอนเทนเนอร์ Linux ด้วย SSH มาตรฐาน</string>
     <string name="linux_ssh_consent">การเปิดจะเปิดพอร์ต 2222 และรันเซิร์ฟเวอร์ SSH ในแอป ผู้ที่อยู่ใน Wi-Fi เดียวกันและรู้รหัสผ่านจะสามารถรันคำสั่งในคอนเทนเนอร์ Linux ได้\n\nเปิดเฉพาะเครือข่ายที่เชื่อถือได้ และปิดเมื่อใช้เสร็จ</string>
@@ -1907,4 +1912,12 @@
     <string name="style_sub_classic">คลาสสิก · เทาฟ้าโทนเย็น</string>
     <string name="style_classic">คลาสสิก</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">ตัวเลือกสำหรับนักพัฒนา</string>
+    <string name="developer_options_sub">เครื่องมือเสริมและการควบคุมขั้นสูง</string>
+    <string name="developer_options_intro">ชุดเครื่องมือเสริมสำหรับผู้ที่สนใจและการตั้งค่าขั้นสูง</string>
+    <string name="developer_options_enabled_sub">ปิดเพื่อซ่อนตัวเลือกสำหรับนักพัฒนาอีกครั้ง</string>
+    <string name="developer_options_security_note">การเปิดเมนูนี้ไม่ได้ให้สิทธิ์ Root, Shizuku หรือสิทธิ์ระบบอื่น ๆ แต่ละการดำเนินการยังต้องตรวจสอบการอนุญาตแยกต่างหาก</string>
+    <string name="developer_options_unlocked">เปิดตัวเลือกสำหรับนักพัฒนาแล้ว ดูได้ที่ การตั้งค่า → ระบบ</string>
+    <string name="developer_options_disabled_toast">ซ่อนตัวเลือกสำหรับนักพัฒนาแล้ว แตะข้อมูลเวอร์ชัน 7 ครั้งเพื่อเปิดอีกครั้ง</string>
 </resources>

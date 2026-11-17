@@ -162,7 +162,6 @@ object ReportDialog {
             }
             .create()
             .apply {
-                setOnShowListener { window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded) }
                 show()
             }
     }

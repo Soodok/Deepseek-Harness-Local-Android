@@ -88,20 +88,88 @@ ck("H1 captureCompositor 的 wlshot 调用行真的带 --loop",
    "只看全文有没有 --loop 会被 pkill 那行蒙对")
 ck("H2 有帧率参数（--loop 后面跟数字）",
    re.search(r"--loop\s+\d+", act) is not None)
-# H3 原先断言 `pkill -f 'wlshot`。后来改成 `pkill -f '[w]lshot` —— 这是
-# 真实契约变更：裸写 wlshot 会让 pkill 匹配到运行它的 shell 自身 cmdline
-# （那串字面量就在里面），把自己杀掉，后面 nohup/等首帧全不执行。详见
-# scripts/probes/_test_pkill_selfmatch.py。所以这里改断言新形态。
-ck("H3 起之前 pkill 遗留抓帧进程（[w] 形式，防自杀）",
-   re.search(r"pkill -f '\[w\]lshot", act) is not None,
-   "两个 wlshot 抢同一文件会把 seq 搅乱；且必须防 pkill 自匹配")
+# H3/H6 只验「有没有清」，不锁写法。
+# 必须先剥注释：代码注释里有 `pkill -f wlshot` 这样的反面教材示范，直接对全文
+# 做正则会被它蒙对（实测：把 captureCompositor 里那行 pkill 整条删掉，探针仍
+# 报通过，命中内容是注释里的「裸写 pkill -f wlshot」）。
+# 写法在 2026-11-14 又变过一次：`[w]lshot` → `^/wlsrc/wlshot`。原因是方括号
+# 技巧只在「同一段命令里不含去掉方括号的真实路径」时成立；captureCompositor
+# 里既有模式文本又有 `nohup /wlsrc/wlshot …`，正则照样命中，真机 rc=143 自杀。
+# 锁写法会让每次加固都要改探针，而探针该守的是「起之前先清」这个行为。
+# 自匹配本身由 _test_pkill_selfmatch.py 的 A 段统一守（语义判定，不锁写法）。
+def _strip_kt_comments(text):
+    """剥掉 // 行注释与 /* */ 块注释，但保留字符串内容（含三引号 raw string）。"""
+    out = []
+    i, n = 0, len(text)
+    in_str = in_raw = False
+    while i < n:
+        c = text[i]
+        if in_raw:
+            if text.startswith('"""', i):
+                in_raw = False
+                out.append('"""')
+                i += 3
+            else:
+                out.append(c)
+                i += 1
+            continue
+        if in_str:
+            if c == "\\":
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith('"""', i):
+            in_raw = True
+            out.append('"""')
+            i += 3
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith("//", i):
+            j = text.find(chr(10), i)
+            i = n if j < 0 else j
+            continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+act_code = _strip_kt_comments(act)
+
+
+def _wlshot_kill_patterns(text):
+    """取出所有 pkill -f 里含 wlshot 的模式，无论写成什么形态。"""
+    out = []
+    for m in re.finditer(r"pkill\s+-f\s+(?:'([^']*)'|\"([^\"]*)\"|([^\s;]+))", text):
+        pat = m.group(1) or m.group(2) or m.group(3) or ""
+        if "wlshot" in pat:
+            out.append(pat)
+    return out
+
+
+_up_to_stop = act_code.split("private fun stopFrameServer")[0]
+ck("H3 起 wlshot 之前先清遗留抓帧进程",
+   len(_wlshot_kill_patterns(_up_to_stop)) >= 1,
+   "两个 wlshot 抢同一文件会把 seq 搅乱")
 ck("H4 用 nohup 后台起（不能阻塞 shell 调用）",
    re.search(r"nohup\s+env\s+XDG_RUNTIME_DIR", act) is not None)
 ck("H5 等第一帧真落盘再报成功（不能只说已启动）",
    re.search(r"if \[ -s .{0,24}shared \]", act) is not None,
    "只报启动不验落盘，UI 会说成功但画面空白")
-ck("H6 stopFrameServer 同时杀 wlshot（[w] 形式）",
-   re.search(r"pkill -f '\[w\]lshot", act.split("stopFrameServer")[-1]) is not None)
+ck("H6 stopFrameServer 同时杀 wlshot",
+   len(_wlshot_kill_patterns(act_code.split("private fun stopFrameServer")[-1])) >= 1)
 ck("H7 没有 Wayland socket 时单独报错",
    "NO_SOCKET" in act and "linux_capture_no_socket" in act)
 
