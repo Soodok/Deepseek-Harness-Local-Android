@@ -1486,6 +1486,11 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <activity
+            android:name=".DeveloperOptionsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 用户自定义指令（v1.3.2，issue #19）：编辑 AGENTS.md 的用户段，App 永不覆盖 -->
         <activity
             android:name=".UserPromptActivity"

@@ -362,20 +362,49 @@ async function apply(ctx) {
     return next();
   };
 
-  // 引擎能力探测：有 AgentModel 就只走新路径（agent/request 改 effort 会被判违规），
-  // 没有才退回老路径。两个钩子**不能同时挂** —— 同时挂会在新引擎上先 select 成 off
-  // 再被 agent/request 改成 off（无害）但老引擎上没有 agent.model，反而白挂。
-  const hasAgentModel = () => {
+  // ---- 引擎能力探测：按「硬契约」判断，不按类名字面量猜 ----
+  //
+  // 这里原本只探 dsh-agent 里有没有字面量 `var AgentModel = class`，命中就挂
+  // pre-step、没命中就挂 agent/request。那个判据**不是契约本身**，只是某一次打包
+  // 产物的巧合：真正会 throw 的是 dsh-agent-loop 里 prepareRequest 的两条断言
+  // （文案见 HARD_CONTRACT_MARKERS），而类名换 bundler / 换 minify 配置就会变。
+  // 字面量一变而契约还在时，旧判据会误判成老引擎 → 挂上 agent/request →
+  // 每一步都 throw、整轮对话失败（issue #118 的现场）。
+  //
+  // 所以判据改成直接读那条契约。类名只作辅助信号。
+  const HARD_CONTRACT_MARKERS = [
+    "after step preparation fixed",
+    "use agent.model.select() before step preparation",
+  ];
+
+  const readEngineFile = (rel) => {
     try {
-      const p = path.join(ENGINE_ROOT, "lib/node_modules/@deepseek-ai/dsh-agent/lib/index.js");
-      if (!fs.existsSync(p)) return false;
-      // 直接读源码找 AgentModel：比 import 一个 ESM 包更轻、也不会触发副作用。
-      // 0.2.2+ 有 `var AgentModel = class`；0.2.1-rc.x grep 命中数为 0。
-      return fs.readFileSync(p, "utf8").includes("var AgentModel = class");
-    } catch { return false; }
+      const f = path.join(ENGINE_ROOT, rel);
+      if (!fs.existsSync(f)) return "";
+      return fs.readFileSync(f, "utf8");
+    } catch { return ""; }
   };
 
-  if (hasAgentModel()) {
+  // agent-loop 里存在「在 agent/request 改 effort 就 throw」的硬契约吗？
+  const hasHardContract = () => {
+    const loop = readEngineFile("lib/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js");
+    if (loop === "") return false;
+    return HARD_CONTRACT_MARKERS.some((m) => loop.includes(m));
+  };
+
+  // 有没有 agent.model（select 正解所需的 API）。
+  const hasAgentModel = () => {
+    const agent = readEngineFile("lib/node_modules/@deepseek-ai/dsh-agent/lib/index.js");
+    if (agent === "") return false;
+    return agent.includes("AgentModel");
+  };
+
+  const CONTRACT = hasHardContract();
+  // 有 agent.model 或有硬契约，都必须走 pre-step：契约在时退回 agent/request
+  // 只会整轮失败，宁可不改 effort 也不能挂错钩子。
+  const usePreStep = hasAgentModel() || CONTRACT;
+
+  if (usePreStep) {
     ctx.on("agent/pre-step", fastSelectHook);
   } else {
     ctx.on("agent/request", legacyHook);

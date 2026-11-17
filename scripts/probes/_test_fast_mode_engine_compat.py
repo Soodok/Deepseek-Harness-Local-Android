@@ -69,13 +69,24 @@ print("== A. 不再在 agent/request 里无条件改 reasoningEffort ==")
 # A1: agent/request 的处理器仍存在（老引擎兜底），但必须是「按能力择一」的那个
 check("A1 保留 legacyHook 作为老引擎兜底", "legacyHook" in code)
 
-# A2: 关键字面：必须按 hasAgentModel() 择一挂载，不能两个都挂
+# A2: 关键字面：必须按能力二选一挂载，不能两个都挂
 check("A2 有引擎能力探测 hasAgentModel", "hasAgentModel" in code)
-check("A3 探测依据是 AgentModel 类存在",
-      "var AgentModel = class" in code,
-      "0.2.2+ 才导出 AgentModel；0.2.1-rc.x 里没有")
+# ★ A3 在 2026-11-17 反转（issue #118）：原来断言探测依据是
+#   `var AgentModel = class` —— 那只是某次打包产物的巧合字面量，不是契约本身。
+#   字面量一变而契约还在时，插件会误判成老引擎、挂 agent/request，
+#   于是每一步都 throw「after step preparation fixed」、整轮对话失败。
+#   正确判据是直接读 agent-loop 里的那两条断言文案。
+check("A3 探测依据是 agent-loop 的硬契约（after step preparation fixed）",
+      "after step preparation fixed" in code,
+      "契约在就必须走 pre-step；按类名字面量猜会在换 bundler 后整轮失败")
+check("A3b 契约判据还认 use agent.model.select() 文案",
+      "use agent.model.select() before step preparation" in code,
+      "两条断言文案任一命中都说明引擎有硬契约")
+check("A3c 不再只靠巧合类名字面量决定钩子位置",
+      "includes(\"var AgentModel = class\")" not in code,
+      "旧写法把打包产物的类声明字面量当契约，issue #118 就是这么踩的")
 m_mount = re.search(
-    r"if\s*\(\s*hasAgentModel\(\)\s*\)\s*\{(.{0,300}?)\}\s*else\s*\{(.{0,300}?)\}", code, re.S
+    r"if\s*\(\s*usePreStep\s*\)\s*\{(.{0,300}?)\}\s*else\s*\{(.{0,300}?)\}", code, re.S
 )
 check("A4 按能力二选一挂载（if/else）", m_mount is not None)
 if m_mount:

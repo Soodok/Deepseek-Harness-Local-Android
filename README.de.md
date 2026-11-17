@@ -16,6 +16,7 @@
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
 [![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
+[![Afdian](https://img.shields.io/badge/Afdian-Sponsor-946ce6?style=for-the-badge&logo=heart&logoColor=white)](https://afdian.com/a/114514soodok)
 
 <p align="center">
   <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness. Jetzt in deiner Hosentasche." width="100%">
@@ -291,6 +292,7 @@ Zu jeder Fähigkeit gibt es ein eigenes Dokument (Design-Abwägungen, Messwerte,
 ## ⛔ Grenzen (bitte beachten)
 
 - **WebView muss Chrome 85+ sein (ab 2020-06)**: Die App selbst unterstützt Android 8.0 → 16, aber die Oberfläche wird im System-WebView gerendert, und das Engine-Frontend nutzt moderne Syntax (`??=`, Klassenfelder) — ein **Parse-Zeit**-Merkmal, das Polyfills nicht ersetzen können. Geräte mit einem System-WebView älter als Chrome 85 zeigen eine leere Seite (das Log lässt sich in den Einstellungen exportieren: es protokolliert den `SyntaxError` und die WebView-Version). **Unter Android 8.0+ ist der WebView eine unabhängig aktualisierbare Systemkomponente** (Google Play / Hersteller-Stores), ein Update auf 85+ genügt also; die wenigen chinesischen ROMs, deren WebView sich nie aktualisieren lässt, sind eine bekannte Einschränkung.
+- **Die CSS-Untergrenze liegt höher als die JS-Untergrenze**: Die 85er-Grenze betrifft nur JavaScript (Syntax-Transpiling + API-Polyfills). Das Upstream-CSS nutzt zusätzlich `:has()` (105), `color-mix()` (111) und CSS Anchor Positioning (125), die kein Polyfill ersetzen kann; auf 85-124er-Kernels degradieren sie **still** — kein Fehler, kein weißer Bildschirm, aber einige Selektoren greifen nicht mehr, `color-mix()`-Deklarationen werden komplett verworfen, und verankerte Popover verlieren ihre Position relativ zum Auslöser (gemessen: ohne `anchor()` landet das Nutzungs-Panel an der Oberkante des Viewports, 678 px von seinem Button entfernt). Der bekannte Popover-Fall wird durch ein Client-Plugin gepatcht, der Rest ist kosmetisch. Ein Anheben von `MIN_CHROME` würde einen großen Teil der aktuellen Geräte ausschließen und ist daher eine Produktentscheidung, die wir nicht getroffen haben.
 - **Keine Desktop-Umgebung**: Linux-GUI-Desktop-Apps können nicht laufen; visuelle Ergebnisse werden über lokales HTTP + den integrierten WebView angezeigt
 - **Vorinstallierte Toolchain ist nur node/bash**: Clang, Python, Go und 16 weitere Umgebungen kommen über das integrierte **Erweiterungszentrum** per One Tap, oder der Agent installiert sie selbst (im Root-Modus mit dem Android SDK verifiziert)
 - **Tippen ist „halbblind"**: Das Screen-Reading arbeitet auf dem Accessibility-Knotenbaum (Text + Koordinaten + Klickbarkeit) und ist auf rein grafischen oder Spiel-Bildschirmen wirkungslos; komplexe UI-Automatisierung bleibt begrenzt
@@ -303,7 +305,7 @@ Zu jeder Fähigkeit gibt es ein eigenes Dokument (Design-Abwägungen, Messwerte,
 Derselbe dsh, andere Auslieferungsform — und jeder der folgenden Punkte ist Engineering, das dieses Projekt selbst gebaut hat. Genau deshalb heißt es **Port** und nicht Repack:
 
 **Versionsübergreifende Kompatibilität, schon bezahlt**
-Die App selbst unterstützt Android 8.0 → 16; das Rendering hängt vom System-WebView ab und **erfordert Chrome 85+ (2020-06)** — das Engine-Frontend nutzt `??=` und Ähnliches, ein Parse-Zeit-Merkmal, das Polyfills nicht ersetzen können (siehe Grenzen). Da viele chinesische ROMs ihren WebView nie aktualisieren können, injiziert der Build ein Polyfill ins Frontend (13 moderne APIs, darunter `AbortSignal.any` / `Promise.withResolvers` / `URL.parse`) und senkt die API-Untergrenze von Chrome 126 auf 85; jede `.so` ist **16-KB-seitenausgerichtet** und läuft damit auch auf Geräten mit neuerem Kernel. Auf der Termux-Route ist jedes davon ein Risiko pro Gerät.
+Die App selbst unterstützt Android 8.0 → 16; das Rendering hängt vom System-WebView ab und **erfordert Chrome 85+ (2020-06)** — das Engine-Frontend nutzt `??=` und Ähnliches, ein Parse-Zeit-Merkmal, das Polyfills nicht ersetzen können (siehe Grenzen). Da viele chinesische ROMs ihren WebView nie aktualisieren können, injiziert der Build ein Polyfill ins Frontend (20 moderne APIs / 22 Installationen, darunter `AbortSignal.any` / `Promise.withResolvers` / `URL.parse` / `URL.canParse` / `Object.groupBy`) und senkt die **API**-Untergrenze von Chrome 126 auf 85. Diese Grenze gilt nur für JavaScript: das Upstream-CSS braucht zusätzlich `:has()` (105), `color-mix()` (111) und CSS Anchor Positioning (125), die auf 85-124er-Kernels **still degradieren** (kein Fehler, kein weißer Bildschirm, aber einige Popover verlieren ihre ankerrelative Position) - siehe Grenzen; jede `.so` ist **16-KB-seitenausgerichtet** und läuft damit auch auf Geräten mit neuerem Kernel. Auf der Termux-Route ist jedes davon ein Risiko pro Gerät.
 
 **Plugins sofort nutzbar — ohne vorher Compile-Ingenieur zu spielen**
 dshs „alles ist ein Plugin"-Architektur bleibt erhalten: Hot-Loading von Plugins und Sitzungspersistenz (JSONL) funktionieren normal. Die von Plugins benötigten Sprachumgebungen (Python / Go / Rust / Clang / OpenJDK…) ergänzt das Erweiterungszentrum mit **19 One-Tap-Installationen**, wobei Abhängigkeitsabschlüsse in der CI vorab aufgelöst und auf ELF-Ebene geprüft werden. Auf der Termux-Route ist das Scheitern nativer Module wie `sharp` / `koffi` / `node-pty` der Normalfall — die Community unterhält dafür eigens Projekte mit vorcompilierten Modulen.
@@ -443,6 +445,18 @@ Fehler gefunden oder eine Funktion vorgeschlagen? Eröffne ein [Issue](https://g
 **[Telegram-Gruppe](https://t.me/+4VN3pYyH6i8yNDA1)** — gleicher Zweck, besser erreichbar ausserhalb Chinas.
 
 Fehler bitte weiterhin als Issue melden, damit sie nicht untergehen.
+
+## 💜 Dieses Projekt unterstützen
+
+Dieses Projekt ist unter MIT lizenziert. Alle Funktionen sind kostenlos — keine Paywall, kein Abo, kein Lizenzschlüssel. **Eine Spende schaltet nichts frei**; sie hält die Arbeit schlicht am Laufen.
+
+Wenn es dir Zeit gespart hat, kannst du dem Autor hier einen Kaffee spendieren:
+
+**[afdian.com/a/114514soodok](https://afdian.com/a/114514soodok)**
+
+Spenden fliessen in: Testgeräte und Zubehör, Build- und Signierungsinfrastruktur, Domain- und Serverkosten sowie die Wartungszeit, um Upstream-Releases weiter zu verfolgen.
+
+Nicht zu spenden ist völlig in Ordnung — ein reproduzierbarer Issue-Bericht, ehrliches Nutzungsfeedback oder ein Hinweis an jemanden, der es braucht, hilft genauso.
 
 ## 🙏 Mitwirkende
 

@@ -274,6 +274,12 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
             ln for ln in text.splitlines()
             if not ln.lstrip().startswith(("#", "//", "*", "/*"))
         )
+        # 单元测试要用「v4 / v5 / v99」这类样本字符串来验证升级逻辑，
+        # 这是断言素材而不是构建门禁判据：写死它不会让构建或运行时校验变红。
+        # 只在 app/src/test/ 下、且文件里显式写了豁免标记时才放行 ——
+        # 标记本身要求解释原因，避免变成随手可加的万能后门。
+        if "dsh-polyfill-version-fixture" in text and rel.startswith("app/src/test/"):
+            continue
         if re.search(r"legacy-webview polyfill v\d", body):
             leaks.append(rel)
 

@@ -1603,6 +1603,17 @@ object EngineConfig {
             |# window.__dshResume so MainActivity.onResume can wake it after a freeze.
             |    - id: android-resume-reconnect
             |      name: ./android-plugins/resume-reconnect/index.js
+            |# Anchor fallback (issue #119): engine 0.2.2-rc.3 replaced
+            |# JS-measured popovers (useAnchoredPosition) with pure CSS anchor positioning
+            |# (anchor-name / position-anchor / anchor() / position-area /
+            |# position-try-fallbacks). That is Chrome 125+; Android WebViews are far
+            |# behind (the Huawei kernel in issue #107 is 114.0.5.302), so old kernels drop
+            |# every one of those declarations and the panel loses all trigger-relative
+            |# placement - the tap looks like it did nothing at all. This plugin activates
+            |# only when CSS.supports('position-anchor: --x') is false and places the dialog
+            |# from the trigger's boundingClientRect; on modern kernels it stays idle.
+            |    - id: android-chat-anchor-fallback
+            |      name: ./android-plugins/chat-anchor-fallback/index.js
             |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
             |# sidebar into a drawer and also registered a session-delete route plus
             |# response compression; in practice it produced many bugs (vanishing quick
@@ -1655,6 +1666,7 @@ object EngineConfig {
             listOf(
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
                 "resume-reconnect" to listOf("package.json", "index.js", "client.js"),
+                "chat-anchor-fallback" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")

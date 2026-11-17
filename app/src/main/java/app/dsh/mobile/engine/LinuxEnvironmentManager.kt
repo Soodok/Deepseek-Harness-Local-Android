@@ -693,7 +693,39 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         }.onFailure { Log.w(TAG, "dev/shm setup failed: " + it.message) }
     }
 
+    /**
+     * 预建 Xvfb 的 XKB 输出目录 `<rootfs>/var/lib/xkb`。
+     *
+     * Xvfb 把这个路径**编译写死**在自己的二进制里（XKB_OUTPUT_DIR，见
+     * `strings usr/bin/Xvfb` 里的 `/var/lib/xkb/`），它启动时要调用 xkbcomp
+     * 把键位表编译成 .xkm 写到那儿。而 Alpine 的 rootfs 里**没有这个目录**，
+     * 于是 xkbcomp 返回 1，Xvfb 报
+     *
+     *   XKB: Failed to compile keymap
+     *   (EE) Fatal server error: (EE) Failed to activate virtual core keyboard: 2
+     *
+     * 然后直接退出 —— 界面上表现为「点了开始画面没有任何反应」，没有任何
+     * 指向 X 的提示。
+     *
+     * 部署时建一次（幂等），运行期 startFrameServer 里还会再 mkdir 一次兜底：
+     * 已存在的 rootfs 不会重新部署，光有运行期那一步在某些机型上仍然会踩到
+     * 时序/权限差异，两边都做才稳。
+     */
+    private fun ensureXkbOutputDir(root: File) {
+        runCatching {
+            val dir = File(root, "var/lib/xkb")
+            if (!dir.isDirectory) {
+                dir.mkdirs()
+                Log.i(TAG, "var/lib/xkb created: ${dir.absolutePath}")
+            }
+            dir.setReadable(true, false)
+            dir.setWritable(true, false)
+            dir.setExecutable(true, false)
+        }.onFailure { Log.w(TAG, "var/lib/xkb setup failed: " + it.message) }
+    }
+
     private fun installLinuxCompatShims(root: File) {
+        ensureXkbOutputDir(root)
         runCatching {
             val shDir = File(root, "system/bin").apply { mkdirs() }
             listOf("sh", "bash").forEach { name ->

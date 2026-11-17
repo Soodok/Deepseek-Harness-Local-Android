@@ -575,7 +575,6 @@ class PermissionCenterActivity : ThemedActivity() {
             .onFailure { Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show() }
     }
 
-    /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
 // --------------------------------------------------------- AI 能力磁贴
 
     /** 一项 AI 能力的视图与系统门槛描述（v1.6.0）。 */
@@ -1087,7 +1086,6 @@ class PermissionCenterActivity : ThemedActivity() {
             .setView(box)
             .setNegativeButton(getString(R.string.setting_cap_detail_close), null)
             .create()
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
         dialog.show()
 
         sw.setOnCheckedChangeListener { _, checked ->

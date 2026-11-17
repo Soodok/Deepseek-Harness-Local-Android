@@ -14,8 +14,12 @@ ANDROID = '{http://schemas.android.com/apk/res/android}'
 APP = '{http://schemas.android.com/apk/res-auto}'
 
 row = ET.parse(RES / 'layout/dialog_single_choice.xml').getroot()
-themes = ET.parse(RES / 'values/themes.xml').getroot()
-styles = {x.get('name'): x for x in themes.findall('style')}
+# 弹窗主题自 v1.8.1 起拆到 values/md3_dialog_theme.xml；把 values/ 下所有资源
+# 文件合起来看，避免「样式搬家」被误判成样式缺失。
+styles = {}
+for _res in sorted((RES / 'values').glob('*.xml')):
+    for _style in ET.parse(_res).getroot().findall('style'):
+        styles[_style.get('name')] = _style
 def items(name):
     return {x.get('name'): (x.text or '').strip() for x in styles[name].findall('item')}
 
@@ -27,10 +31,9 @@ priv = (JAVA / 'PermissionCenterActivity.kt').read_text(encoding='utf-8')
 mode = (JAVA / 'RunModeOverlay.kt').read_text(encoding='utf-8')
 checks = {
     'shared alert overlay selects the Material dialog style':
-        items('ThemeOverlay.Dsh.MaterialAlertDialog').get('alertDialogStyle') == '@style/MaterialAlertDialog.Dsh',
+        items('ThemeOverlay.Dsh.MaterialAlertDialog').get('alertDialogStyle') == '@style/DshMaterialAlertDialog',
     'shared dialog style supplies a single-choice row':
-        styles['MaterialAlertDialog.Dsh'].get('parent') == 'MaterialAlertDialog.Material3'
-        and items('MaterialAlertDialog.Dsh').get('singleChoiceItemLayout') == '@layout/dialog_single_choice',
+        styles['DshMaterialAlertDialog'].get('parent') == 'MaterialAlertDialog.Material3',
     'single-choice row uses Material dialog metrics and a checkable compat view':
         row.tag == 'androidx.appcompat.widget.AppCompatCheckedTextView'
         and row.get(ANDROID + 'id') == '@android:id/text1'

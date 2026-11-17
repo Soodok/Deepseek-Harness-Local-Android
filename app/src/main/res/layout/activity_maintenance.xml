@@ -12,20 +12,9 @@
     <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
         <app.dsh.mobile.MaxWidthLinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="32dp">
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_section_maintenance_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:paddingStart="8dp" android:paddingTop="14dp" android:paddingBottom="8dp" />
-                    <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/md3_card_gap"
-                app:cardCornerRadius="@dimen/md3_card_radius"
-                app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-<LinearLayout android:id="@+id/rowPluginKill" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="?attr/dshCardRadius" app:cardElevation="0dp" app:strokeWidth="?attr/dshCardStroke" app:cardBackgroundColor="?attr/dshSurface">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                    <LinearLayout android:id="@+id/rowPluginKill" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:id="@+id/valPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -33,11 +22,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_disable" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowSelfCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -46,11 +30,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_check" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowFixOwner" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -59,11 +38,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnFixOwner" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_fix" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowWipeChats" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_delete" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -72,11 +46,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnWipeChats" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_manage" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowGrantPerms" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -85,11 +54,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnGrantPerms" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowBootTrace" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -98,11 +62,6 @@
                         </LinearLayout>
                         <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowViewLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -111,11 +70,6 @@
                         </LinearLayout>
                         <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowRestart" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -124,11 +78,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnRestart" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_restart" android:textColor="?attr/colorError" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowDeepClean" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_export" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
@@ -137,11 +86,6 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnDeepClean" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_clean" android:textColor="?attr/dshWarning" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:dividerInsetStart="@dimen/md3_divider_inset"
-                    app:dividerInsetEnd="0dp" />
 <LinearLayout android:id="@+id/rowResetHome" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">

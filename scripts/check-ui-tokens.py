@@ -109,11 +109,17 @@ def res_path(*parts):
 
 
 bg_card = read(res_path('drawable', 'bg_card.xml'))
+# 判据必须落在 <stroke> 属性上，不能全文找 '1dp' —— bg_card.xml 的注释里就写着
+# 「旧版是 surface 实心 + 1dp 描边 + 18dp」，全文匹配等于让注释替描边背书。
+# 实测：把 stroke 宽度改成 0dp、注释原样保留时，旧判据仍然 PASS（假绿）。
+_stroke = re.search(r'<stroke[\s\S]*?/>', bg_card)
 check('D1 card token keeps a 1dp stroke (separation must survive dark mode)',
-      '<stroke' in bg_card and '1dp' in bg_card
-      and ('@color/stroke' in bg_card or '?attr/dshStroke' in bg_card))
-check('D2 group card corners come from md3_card_radius',
-      '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
+      _stroke is not None
+      and re.search(r'android:width="(?:1dp|\?attr/dshCardStroke)"', _stroke.group(0)) is not None
+      and ('@color/stroke' in _stroke.group(0) or '?attr/dshStroke' in _stroke.group(0)))
+check('D2 group card corners come from the card radius token',
+      re.search(r'<corners[^>]*android:radius="\?attr/dshCardRadius"', bg_card) is not None
+      or '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
 
 group = os.path.join(RES, 'drawable', 'bg_md3_group.xml')
 check('D3 group border drawable exists (one card per group, not per row)',
@@ -121,37 +127,49 @@ check('D3 group border drawable exists (one card per group, not per row)',
 
 themes = read(os.path.join(RES, 'values', 'themes.xml'))
 # v1.6.x 主题重做后，语义色统一映射到 md3_* 设计令牌（同一份色板，只是命名对齐 MD3）。
+# 主题里的语义角色必须显式映射到自有色板（不能落回 Material 默认暖灰板）。
+# 单主题收敛后，surface/text 直接指向自有 @color/surface、@color/text_primary，
+# 与指向 md3_* 的写法等价 —— 两种都算合法，只要不是 Material 内置默认值。
 check('D4 MD3 semantic colours map back to our palette',
-      'name="colorOnSurface">@color/md3_on_surface<' in themes
-      and 'name="colorSurface">@color/md3_surface<' in themes
-      and 'name="colorPrimary">@color/accent<' in themes)
+      re.search(r'name="colorOnSurface">@color/(md3_on_surface|text_primary)<', themes) is not None
+      and re.search(r'name="colorSurface">@color/(md3_surface|surface)<', themes) is not None
+      and re.search(r'name="colorPrimary">@color/(accent|md3_primary)<', themes) is not None)
 # 完整色阶：缺一个就会让对应组件退化成默认色
 for token in ('colorSurfaceContainer', 'colorSurfaceContainerHigh',
               'colorSurfaceContainerHighest', 'colorOutlineVariant',
               'colorError', 'colorOnPrimary'):
     check('D4 theme defines %s' % token, 'name="%s">' % token in themes)
 
-dshapp = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
-                           'DshApp.kt'))
-themed = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
-                           'ThemedActivity.kt'))
-# 动态取色按 Google 官方做法（v1.6.x 重做）：
-#   · 唯一注册点是 Application.onCreate 的 applyToActivitiesIfAvailable；
-#   · Activity 不得 setTheme()，否则会冲掉官方在 onActivityPreCreated 注入的覆盖层；
-#   · 不允许自造 content-based 色板（那不是 Monet，会把语义色换成中性灰）。
-check('D5 DynamicColors registered in Application',
-      'DynamicColors.applyToActivitiesIfAvailable' in dshapp)
-check('D5 dynamic colour follows the user switch',
-      'ThemeAccent.dynamicEnabled' in dshapp)
-settheme_code = [l.split('//')[0] for l in themed.splitlines() if 'setTheme(' in l.split('//')[0]]
-check('D5 Activity does not call setTheme', not settheme_code, str(settheme_code[:2]))
-check('D5 no content-based pseudo dynamic colour',
-      'setContentBasedSource' not in dshapp and 'setContentBasedSource' not in themed)
-# 主题只能有一套：重复主题必然漏映射色阶（Theme.Dsh.MD3 就漏过 container*）
+src_dir = os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile')
+dshapp = read(os.path.join(src_dir, 'DshApp.kt'))
+themed_kt = read(os.path.join(src_dir, 'ThemedActivity.kt'))
 themes_txt = read(os.path.join(RES, 'values', 'themes.xml'))
-check('D5 single Material 3 DayNight theme',
+
+
+def strip_kotlin_comments(src):
+    """注释里出现 API 名不算调用 —— 本文件多处注释在解释「以前调过什么」。"""
+    src = re.sub(r'/\*[\s\S]*?\*/', '', src)
+    return re.sub(r'//[^\n]*', '', src)
+
+
+# 2026-11 收敛：全站唯一一套 Material 3 主题（Theme.Dsh 本身即 M3 语义色 + dsh 令牌），
+# 经典风格与 Theme.Dsh.MD3 副本已删除；配色方案改由 ThemeOverlay.Dsh.Palette.* 切换，
+# 系统动态取色仍按官方推荐在 Application 里注册（受用户开关约束）。
+check('D5 single Material 3 theme (Theme.Dsh.MD3 removed)',
       'name="Theme.Dsh.MD3"' not in themes_txt
-      and 'Theme.Material3.DayNight' in themes_txt)
+      and re.search(r'<style name="Theme\.Dsh" parent="Theme\.Material3\.', themes_txt) is not None)
+check('D5 DynamicColors registered once in Application, gated by the palette choice',
+      'DynamicColors.applyToActivitiesIfAvailable' in dshapp
+      and 'ThemeAccent.dynamicEnabled' in dshapp)
+check('D5 no per-activity DynamicColors injection',
+      'DynamicColors.applyTo' not in strip_kotlin_comments(themed_kt))
+check('D5 palette overlay is applied after setTheme',
+      re.search(r'setTheme\(R\.style\.Theme_Dsh\)\n(?:[^\n]*\n)*?'
+                r'\s*val paletteOverlay = ThemeAccent\.overlayRes\(this\)\n'
+                r'\s*if \(paletteOverlay != 0\) theme\.applyStyle\(paletteOverlay, true\)',
+                themed_kt) is not None)
+check('D5 no content-based pseudo dynamic colour',
+      'setContentBasedSource' not in dshapp and 'setContentBasedSource' not in themed_kt)
 
 icon_tint = 0
 app_tint = 0

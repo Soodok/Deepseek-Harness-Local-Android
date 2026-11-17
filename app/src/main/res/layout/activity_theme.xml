@@ -4,7 +4,10 @@
 
      页面只有两组，全部原生组件：
        1. 外观模式：MaterialRadioButton 单选（浅色/深色/跟随系统）
-       2. 配色方案：系统动态取色或预设色板 -->
+       2. 配色方案：系统动态取色或预设色板（ThemePaletteSelector 运行时注入）
+
+     注意：v1.6.x 起不再提供 Classic / Material 风格切换（cardStyle /
+     groupStyle / btnStyleClassic / btnStyleMaterial / subStyle 已移除）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -40,7 +43,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="@dimen/md3_card_gap_first"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/theme_mode_section"
@@ -50,10 +53,11 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -214,17 +218,20 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                android:layout_marginTop="@dimen/md3_card_gap"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:id="@+id/paletteContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingVertical="8dp" />
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="16dp" />
             </com.google.android.material.card.MaterialCardView>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>

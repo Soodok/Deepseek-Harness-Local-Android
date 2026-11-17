@@ -33,6 +33,59 @@ C_SRC = os.path.join(ROOT, "..", "dsh-linux-runtime", "bench", "framesrv.c")
 checks = []
 
 
+def _strip_kt_comments(text):
+    """剥掉 // 行注释与 /* */ 块注释，保留字符串（含三引号 raw string）内容。
+
+    为什么必须剥：代码注释里常写「不能用 pkill -f [f]ramesrv」这种反面教材，
+    直接对全文做正则会被注释蒙对 —— D5 就这么假绿过一轮。
+    """
+    out = []
+    i, n = 0, len(text)
+    in_str = in_raw = False
+    while i < n:
+        c = text[i]
+        if in_raw:
+            if text.startswith('"""', i):
+                in_raw = False
+                out.append('"""')
+                i += 3
+            else:
+                out.append(c)
+                i += 1
+            continue
+        if in_str:
+            if c == "\\":
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith('"""', i):
+            in_raw = True
+            out.append('"""')
+            i += 3
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith("//", i):
+            j = text.find(chr(10), i)
+            i = n if j < 0 else j
+            continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def ck(name, cond, detail=""):
     checks.append((name, bool(cond), detail))
 
@@ -104,14 +157,36 @@ if act:
        re.search(r"onDestroy\(\)(.{0,300}?)frameSurface\?\.release\(\)", act, re.S) is not None)
     ck("D4 有开始/停止画面的入口",
        "startFrameServer" in act and "stopFrameServer" in act)
-    # D5 契约已更新：原断言 `pkill -f framesrv` 是裸写，会让 pkill 匹配到
-    # 运行它的 shell 自身 cmdline（那串在命令里），把自己杀掉 → 后面
-    # nohup/等首帧全不执行。改成 [f] 形式防自杀，见
-    # scripts/probes/_test_pkill_selfmatch.py。
-    ck("D5 启动前 pkill 旧帧服务（[f] 形式，防自匹配）",
-       re.search(r"pkill -f \[f\]ramesrv", act) is not None)
+    # D5/D6 只验语义，不锁写法与转义形态。两条都实际假绿过：
+    #
+    # D5 原断言 `pkill -f \[f\]ramesrv`：代码里那串 `[f]ramesrv` 只存在于
+    #    *注释*（反面教材示范里写着「不能用 pkill -f [f]ramesrv」），真正执行
+    #    的是 `pkill -f '^/framesrv'`。对全文做正则 → 靠注释通过。
+    # D6 原断言 `/framesrv.{0,40}\$shared`：Kotlin raw string 里 `$` 必须写成
+    #    `${'$'}`，实际文本是 `/framesrv 1280 720 0 16 ${'$'}shared`，中间那个
+    #    `{` 让 `\$shared` 匹配不上 → 明明传了却报没传。
+    #
+    # 自匹配本身由 _test_pkill_selfmatch.py 的 A 段统一守（语义判定）。
+    act_code = _strip_kt_comments(act)
+    # 把 Kotlin 的 `${'$'}` 还原成 shell 的 `$`，判据才对得上真实执行的脚本。
+    act_sh = act_code.replace("${'$'}", chr(36))
+
+    # D5 必须在 startFrameServer *函数体内* 找。第一版对全文找，于是
+    # captureCompositor / stopFrameServer 里的 `^/framesrv` 把它蒙对了 ——
+    # 实测把 startFrameServer 里那一行整条删掉，探针照样绿。
+    _start_body = act_code.split("private fun startFrameServer")[-1]         if "private fun startFrameServer" in act_code else ""
+    _start_body = _start_body.split("private fun ")[0]
+    _fs_kills = []
+    for m in re.finditer(r"pkill\s+-f\s+(?:'([^']*)'|\"([^\"]*)\"|([^\s;]+))", _start_body):
+        pat = m.group(1) or m.group(2) or m.group(3) or ""
+        if "framesrv" in pat and "x11" not in pat:
+            _fs_kills.append(pat)
+    ck("D5 startFrameServer 启动前先清旧帧服务",
+       len(_fs_kills) >= 1,
+       "不先清，上一轮 framesrv 与本轮抢同一共享文件，seq 会乱跳")
     ck("D6 传共享文件路径给 framesrv",
-       re.search(r"/framesrv.{0,40}\$shared", act, re.S) is not None)
+       re.search(r"/framesrv[^\n]{0,60}\$\{?shared", act_sh) is not None,
+       "传宿主路径而不是容器路径，framesrv 会写到一个 App 看不到的地方")
     # D7 必须先剥掉行注释再判 —— 注释里引号包着的中文不算字面量。
     # 原来直接对全文做正则，于是注释里写 `"[w]lshot"` 这种引号示例就假红。
     act_nc = chr(10).join(

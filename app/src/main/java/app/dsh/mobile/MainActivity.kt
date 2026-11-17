@@ -16,7 +16,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ImageView
@@ -29,6 +31,7 @@ import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.OpenBridge
 import app.dsh.mobile.engine.RepoConfig
 import app.dsh.mobile.engine.RuntimeInstaller
+import app.dsh.mobile.engine.WebViewPolyfill
 import app.dsh.mobile.engine.WebViewDownloader
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
@@ -44,6 +47,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * WebView 容器。
@@ -445,7 +451,6 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onResume() {
         super.onResume()
-        if (styleNeedsRecreate()) return
         // NFC 读卡与屏幕录制都需要 Activity：把自身登记给两个 relay，
         // 让「贴标签」和「录屏授权」能真正接通（桥本身拿不到 Activity）。
         app.dsh.mobile.engine.cap.NfcForegroundRelay.attach(this)
@@ -915,6 +920,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             "DshAndroidBack",
         )
         webView.webViewClient = object : WebViewClient() {
+            // 上游：首屏 index 由拦截器注入 polyfill（模块解析前生效），必须保留。
+            // onPageFinished/evaluateJavascript is too late for module initialization.
+            override fun shouldInterceptRequest(
+                view: WebView?, request: WebResourceRequest?,
+            ): WebResourceResponse? = interceptWebUiDocument(request)
+
+            // PR：记录本次主导航，供 interceptWebUiDocument 判定 webPageReady 用。
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 if (view === webView) {
@@ -1066,6 +1078,72 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 super.doUpdateVisitedHistory(view, url, isReload)
                 updatePreviewChrome(url)
             }
+        }
+    }
+
+    /** Buffer only the engine index so the synchronous polyfill precedes module parsing. */
+    private fun interceptWebUiDocument(request: WebResourceRequest?): WebResourceResponse? {
+        if (request == null || !request.isForMainFrame || request.method != "GET") return null
+        val uri = request.url
+        val enginePort = (application as DshApp).supervisor.healthyPort
+        if (uri.scheme != "http" || uri.host !in setOf("127.0.0.1", "localhost") ||
+            enginePort <= 0 || uri.port != enginePort ||
+            uri.path !in setOf("", "/", "/index.html")
+        ) return null
+        var connection: HttpURLConnection? = null
+        return try {
+            val url = uri.toString()
+            val conn = (URL(url).openConnection() as HttpURLConnection).also { connection = it }
+            conn.connectTimeout = 5_000
+            conn.readTimeout = 10_000
+            conn.useCaches = false
+            // Let WebView handle redirects/auth/error responses with its own URL semantics.
+            conn.instanceFollowRedirects = false
+            val skipped = setOf(
+                "host", "connection", "content-length", "accept-encoding",
+                "if-none-match", "if-modified-since", "range", "if-range",
+            )
+            request.requestHeaders.forEach { (name, value) ->
+                if (name.lowercase(java.util.Locale.ROOT) !in skipped) conn.setRequestProperty(name, value)
+            }
+            val cookies = CookieManager.getInstance()
+            if (request.requestHeaders.keys.none { it.equals("Cookie", ignoreCase = true) }) {
+                cookies.getCookie(url)?.let { conn.setRequestProperty("Cookie", it) }
+            }
+            conn.setRequestProperty("Accept-Encoding", "identity")
+            val contentType = conn.contentType.orEmpty()
+            if (conn.responseCode != 200 ||
+                !contentType.substringBefore(';').trim().equals("text/html", ignoreCase = true) ||
+                !conn.contentEncoding.isNullOrBlank() && !conn.contentEncoding.equals("identity", true)
+            ) {
+                null
+            } else {
+                val charsetName = Regex("""(?i)charset\s*=\s*["']?([^;\s"']+)""")
+                    .find(contentType)?.groupValues?.get(1) ?: "UTF-8"
+                val charset = java.nio.charset.Charset.forName(charsetName)
+                val original = conn.inputStream.bufferedReader(charset).use { it.readText() }
+                val patched = WebViewPolyfill.patchHtml(this, original)
+                val bytes = patched.toByteArray(charset)
+                val headers = linkedMapOf<String, String>()
+                val removed = setOf("content-length", "content-encoding", "transfer-encoding", "connection", "set-cookie")
+                conn.headerFields.forEach { (name, values) ->
+                    if (name != null && name.lowercase(java.util.Locale.ROOT) !in removed) {
+                        headers[name] = values.joinToString(", ")
+                    }
+                    if (name != null && name.equals("Set-Cookie", true)) {
+                        values.forEach { cookies.setCookie(url, it) }
+                    }
+                }
+                headers["Content-Length"] = bytes.size.toString()
+                headers["Cache-Control"] = "no-store"
+                logWebView("polyfill document: " + if (patched == original) "present/unchanged" else "injected before modules")
+                WebResourceResponse("text/html", charset.name(), 200, "OK", headers, ByteArrayInputStream(bytes))
+            }
+        } catch (error: Exception) {
+            logWebView("polyfill document interception failed: " + error.javaClass.simpleName)
+            null
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -4222,8 +4300,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         /**
          * 环境自检脚本：报告 WebView 版本与引擎所需关键 API 是否存在。
-         * 引擎实际需要 Chrome 126（pdf.js 用 URL.parse），polyfill 可补 API 但补不了语法
-         * （`??=` 需 Chrome 85，语法错误会导致白屏 —— 那种情况日志里会看到 SyntaxError）。
+         *
+         * 语义要对齐 [app.dsh.mobile.WebViewDiagnostics.MIN_CHROME] = 85，别写成「需要 126」：
+         * 上游产物里门槛最高的单点是 `URL.parse`（Chrome 126，pdf.js 用），但它在 85 上由
+         * polyfill 补齐（见 `scripts/patch-webview-polyfill.py` 的 22 次安装），语法层
+         * 则由 `scripts/patch-webview-syntax-floor.py` 用 esbuild 转译掉 `static {}`。
+         * 所以这里的 `need` 表是「**未装 polyfill 时**各 API 的原生门槛」，用于判断
+         * 「polyfill 到底补上没有」，不是门禁阈值 —— 缺项时日志打 `polyfill=MISSING:…`，
+         * 说明注入没生效（问题在交付链路，不是内核太老）。
+         *
+         * ⚠️ 覆盖范围只到 **JS API**。`:has()` / `color-mix()` / `anchor()` 这类 CSS
+         * 能力本探针查不到（polyfill 也补不了），它们在内核 85–124 上是静默降级——
+         * 自检全绿不代表样式正确，见 README「边界」。
          */
         private const val WEBVIEW_SELFCHECK_JS = """
 (function () {

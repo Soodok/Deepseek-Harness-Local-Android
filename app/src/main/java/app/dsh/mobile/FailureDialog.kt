@@ -70,7 +70,10 @@ object FailureDialog {
                 .setTitle(R.string.failure_title)
                 .setMessage(state.reason)
                 .setPositiveButton(android.R.string.ok, null)
-                .show()
+                .create()
+                // 窗口背景交给主题（materialAlertDialogTheme → DshMaterialAlertDialog），
+                // 不在 show 之后替换：那会让面板首帧后突然撑大（真机逐帧实测过）。
+                .also { it.show() }
             return
         }
         val box = LinearLayout(activity).apply {

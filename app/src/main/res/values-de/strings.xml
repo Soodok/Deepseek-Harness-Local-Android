@@ -1545,6 +1545,7 @@
     <string name="linux_screen_stop_sub">Framedienst stoppen, letztes Bild bleibt</string>
     <string name="linux_screen_started">Framedienst gestartet: /framesrv 1280x720</string>
     <string name="linux_screen_start_failed">Framedienst startet nicht: %1$s</string>
+    <string name="linux_screen_missing_gui">Das Container-Image ist kein GUI-Build, oder die GUI-Pakete fehlen. Stelle die Distributionskarte auf „Alpine · GUI“ und lass die Installation (Xvfb + xterm) abschließen, dann erneut versuchen.</string>
     <string name="linux_screen_stopped">Framedienst gestoppt</string>
     <string name="linux_screen_stop_failed">Stoppen fehlgeschlagen: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
@@ -1727,6 +1728,10 @@
     <string name="asr_local_set_default">Als Standard</string>
     <string name="asr_local_self_check">Selbsttest</string>
     <string name="asr_local_need_install">Bitte zuerst die Erkennung installieren</string>
+    <string name="asr_local_state_outdated">Update nötig</string>
+    <string name="asr_local_desc_outdated">Die installierte Erkennung ist älter als von dieser Seite benötigt, daher sind Ein-Klick-Aktionen (als Standard festlegen / Selbsttest / Modellstatus) nicht verfügbar. Aktualisieren Sie sie unten — bereits geladene Modelle bleiben erhalten.</string>
+    <string name="asr_local_need_update">Bitte zuerst die Erkennung aktualisieren</string>
+    <string name="asr_local_action_failed">Diese Aktion wird von der installierten Version nicht unterstützt</string>
     <string name="setting_linux_ssh">SSH-Entwicklungsumgebung</string>
     <string name="setting_linux_ssh_sub">Ein PC verbindet sich per Standard-SSH direkt in den Linux-Container</string>
     <string name="linux_ssh_consent">Dies oeffnet Port 2222 und startet einen SSH-Server in der App. Wer im selben WLAN das Passwort kennt, kann Befehle im Linux-Container ausfuehren.\n\nNur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</string>
@@ -1963,4 +1968,12 @@
     <string name="style_sub_classic">Klassisch · kühles Blaugrau</string>
     <string name="style_classic">Klassisch</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Entwickleroptionen</string>
+    <string name="developer_options_sub">Optionale Werkzeuge und erweiterte Steuerung</string>
+    <string name="developer_options_intro">Eine kleine Sammlung optionaler Werkzeuge für neugierige Nutzer und erweiterte Einstellungen.</string>
+    <string name="developer_options_enabled_sub">Deaktivieren, um die Entwickleroptionen wieder auszublenden.</string>
+    <string name="developer_options_security_note">Dieses Menü gewährt keinen Root-, Shizuku- oder anderen Systemzugriff. Jede Aktion benötigt weiterhin eine eigene Berechtigungsprüfung.</string>
+    <string name="developer_options_unlocked">Entwickleroptionen aktiviert. Sie finden sie unter Einstellungen → System.</string>
+    <string name="developer_options_disabled_toast">Entwickleroptionen ausgeblendet. Tippen Sie siebenmal auf die Versionsinformation, um sie erneut anzuzeigen.</string>
 </resources>

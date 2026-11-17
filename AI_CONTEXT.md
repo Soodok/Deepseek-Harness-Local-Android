@@ -8,7 +8,9 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-14 · `main` HEAD `fc0c62fe` · 本轮新增「灵动岛展开两次修复 + 面板边缘投影」（见一百二十五节）。
+**最后更新**：2026-11-16 · `main` 代码提交 `8ad34f9a`（**已推送**，远端 `main` 与本地一致）· 本轮推送 10 个提交、关闭已合并 PR、清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（见第一百三十四章）；上一轮是「PR #110/#88 合入 + 三处 UI 观感修正」（第一百三十三章），再上一轮是「扩展入口软链误拦 + binutils 声明名不符」（第一百三十二章）。
+> ✅ 远端 `main` 已同步到本文件所在的提交（凭据已于 11-14 晚换新并存入 GCM，`ls-remote` 可通）。
+> `v1.6.0-beta.14` 的 tag 仍未打（发版流程待走，见 `docs/RELEASE.md`）。
 本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
 两轮「窄→宽」，根因是 `toggleToolbar()` 先 `renderIslandVisibility()` 再在 120ms 后压小重撑，
 两段动画叠加；把起点 scale/alpha 挪到渲染前、删掉 handle 空转动画即修。② 用户要求侧边面板
@@ -86,15 +88,15 @@ Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了�
 
 | 项 | 值 |
 | --- | --- |
-| 版本号 | `367 / 1.5.1`（`app/build.gradle.kts:246,252`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，**本次合并刻意不 bump**；`feat/linux-workspace` 的 `374 / 1.5.4-beta.5` 未采用 |
-| 远端 | **已同步**：`main` = origin/main = `7ed8ed03`（2026-11-09 13:36 推送成功，领先/落后均为 0）。本次推送一次性把 88 个提交送上远端（83 个 `feat/linux-workspace` + 3 个合并提交 + 2 个文档提交） |
+| 版本号 | `392 / 1.6.0-beta.16`（`app/build.gradle.kts:289,295`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，合入 PR 时**不 bump** |
+| 远端 | **已同步**：`main` = origin/main = `8ad34f9a`（2026-11-16 推送成功，领先/落后均为 0）。远端只剩 `main` 一个分支（另有 3 个已并入的分支已删，见第一百三十四章） |
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
-| 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
-| worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
-| 探针 | **114 个**（`_test_*.py`），110 过 / 0 败 / 4 跳过；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 分支 | **本地 2 个 / 远端 1 个**：`main` + `feat/flutter-native-chat`（`831bd414`，12 提交 / 337 文件 / +41314 −10，独立 Flutter 原生聊天宿主，未合、远端无备份，**活跃开发线勿删**）。2026-11-16 清仓删掉 20 个本地分支与 3 个远端分支，备份在 `E:/Deepeek harness/branches_backup_20261116.bundle` |
+| worktree | **21 个**（含主仓）：主仓 + `/e/tmp/wt-flutter-native-chat`（挂上面那个分支）+ **19 个 dirty 的游离树**（并行会话在途草稿：`wt-side` 61 项、`wt-m3b`/`wt-m3c` 各 37、`wt-m3` 36、`wt-gate` 24、`wt-runmode` 15、`wt-aimode` 13、`wt-ssh` 11 …，**都不属于本会话，勿动**）。全部 `dirty=0` 的游离树已清 |
+| 探针 | **141 个**（`_test_*.py`，另有 18 个 `.mjs` 运行期测试）。**跑探针一律带 `PYTHONIOENCODING=utf-8`** —— 否则 `print("✓")` 在 GBK 控制台炸 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'`，会误报 18 个失败（2026-11-16 逐条验证，基线同样失败，与代码无关） |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
-| 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+| 待办 | ①~~推送~~ / ~~清分支~~ / ~~清 worktree~~ **均已完成**（见第一百三十四章）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；另有 #107 / #118 / #119 三条修复**未真机验收**（见第一百三十六章）；③弄清 4 个 open PR 的归属（#113 draft 不可合、#112/#102 冲突 81 文件、#111 需作者 rebase 掉假绿提交）；④本文 14108 行远超自定的 300 行上限，待归档 |
 
 ## 一·零·补十三、外观与显示两个颜色故障：根因与修复（2026-11-12）
 
@@ -13240,3 +13242,1102 @@ lockfile 内两包出现次数 0，临时目录 `files/fp`、`files/lc` 已删�
 ### 4. 过程记录
 - 截图里出现绿色描边框，一度以为是布局问题；实为模拟器开着 TalkBack（`settings get secure enabled_accessibility_services` 有 TalkBackService），焦点框被 screencap 拍进去。关掉 TalkBack（`accessibility_enabled 0` + `enabled_accessibility_services null`）后画面干净，绿色像素从 14,236 降到 0。**以后拍视觉证据前先确认无障碍服务状态。**
 - 为对比「改动前」，临时把工作区那份布局换回 `HEAD` 版本、单独编了一份 APK 装机量测（耗时约 1 分钟），量完立刻用备份 `_tmp_shots/my_layout.xml` 还原，`git diff` 确认只剩我这处改动。
+
+---
+
+## 一百二十七 · 2026-11-14 容器里 C 编译跑不起来的两层根因（提交 `5cf78a4b`）
+
+用户报「扩展中心装了 build-base，gcc 却说 not found」。逐层量测后是**两层独立问题**，都在
+`LinuxPackageManager` / 任务目录这条链路上，不是 gcc 本身。
+
+### 1. 文件层：包在，但文件不可用（已修，`5cf78a4b`）
+
+真机（PLZ110 / Alpine 3.22 / uid 10499）：
+
+    -rw-r--r--  1 10499 10499  1905896  /usr/bin/gcc    ← 缺 x 位
+    -rw-r--r--  1 10499 10499   529800  /usr/bin/as     ← 同上
+    -rw-r--r--  1 10499 10499  2431592  /usr/bin/ld     ← 同上
+    drwxr-xr-x  3 root  root      3452  /usr/include    ← 属主是 root
+
+`apk info -e gcc` 认、`/lib/apk/db/installed` 也有，所以既有的「包在不在」判据全绿 ——
+这正是 `LinuxPackageManager.kt:196-235` 那段注释没覆盖的第三类：**包在、文件也在，
+但权限位不对**。
+
+新增 `engine/RootfsModes.kt`：
+
+| 症状 | 判据 | 谁能修 |
+|---|---|---|
+| 可执行文件缺 x 位 | 内容是 ELF（`\x7fELF`）或 `#!` shebang，且无 x 位 | **App 自己**（属主已是自己，`chmod` 只需属主） |
+| 头文件装不进去 | 目录 `canWrite()` 为假 | 只有 `Privilege.normalizeOwnership` |
+
+判据刻意窄：只看**内容**不看扩展名（权限位正是被弄坏的那个，不可信）；不跟随符号链接
+（软链的权限位没有意义）；只扫传统 bin 目录，不碰 `/usr/lib` 的 .so 与 `/usr/share` 数据。
+第二类只在装编译链相关包时尝试（`RootfsModes.wantsHeaders`），因为起 `su`/Shizuku 有代价。
+
+头文件那条必须 `apk del musl-dev` **再** `apk add musl-dev`：第一次 add 已记进数据库，
+不 del 直接 add 是幂等跳过，`stdio.h` 永远不会落地（真机实测）。
+
+### 2. 执行层：任务目录里的二进制 execve 被拒（本轮定位，修在 remote-hub 侧）
+
+同一份源码、同一条 gcc、同一个任务内：
+
+    gcc -O0 -o t t.c                    → rc=0，产物 -rwx------
+    ./t                                 → /bin/sh: ./t: not found   (rc=127)
+    /lib/ld-musl-aarch64.so.1 ./t       → OK-2                     (rc=0)
+
+**加载器自己能跑它，只有内核 execve 那一步被拒** —— 典型 noexec 特征。曾怀疑「相对路径、
+绝对路径、`$PWD`、PATH」，四种全部 127；对照实验才定位到判据是**落在哪个目录**：
+
+| 目标 | 结果 |
+|---|---|
+| `/tmp/t` | 正常 |
+| `/usr/local/bin/c-bin` | 正常 |
+| `/root/w/c` | 正常 |
+| `<job 目录>/t`（`files/jobs/<jobId>/`） | not found |
+
+即 `files/jobs/*` 这个 App 私有 data 目录对容器 loader 转发过来的 execve 不可执行。
+修法不在 App 侧：`@soodok/dsh-remote-hub` 的 `phone_build` 把产物编进 `/tmp/dsh-build/`
+跑完再拷回 cwd 供 `/dev/jobs/artifact` 取走（详见该仓提交 `e361ee2`）。
+
+**这条对后续很重要**：任何「在任务目录里编东西再直接执行」的用法都会假失败，而
+失败信息（`not found`）指向的是路径/编译器，不是权限模型。以后往 `/dev/jobs` 里加
+「跑本地产物」的能力，产物一律落 `/tmp`。
+
+### 3. 验证
+
+- 新增 `RootfsModesTest` 13 条（`app/src/test/java/app/dsh/mobile/engine/`）；隔离树
+  `:app:testDebugUnitTest` → **42 tests / 0 fail**（含原有 29 条），`:app:compileDebugKotlin`
+  BUILD SUCCESSFUL，在提交 `96825f0f` 独立检出后跑，不依赖工作区。
+- 真机端到端（remote-hub 侧 `scripts/phone-e2e.mjs`）→ `PHONE_E2E OK (15/15)`，
+  `phone_build` 编出并运行出 `BUILD-2`；修复前是 13/15。
+- `check-i18n.py` → All i18n checks passed。
+
+### 4. 一个必须记住的测试教训
+
+`RootfsModesTest` 第一版 13 条里 **4 条假红/假绿**，全部因为直接断言 `File.canExecute()`：
+**Windows 上它恒为 true**（NTFS 没有 POSIX x 位，JDK 一律报可执行），
+`setExecutable(false)` 也不改变它。改成把「有没有 x 位」作为参数注入（默认值仍是
+`canExecute()`），被测的才是扫描逻辑本身；真实权限位的变化交给真机 `phone_build` 覆盖。
+
+**以后凡是要断言行权限/属主的单测，都不能直接读宿主 API 下结论。**
+
+### 5. 未验证 / 未做
+
+- 「头文件属主漂移」这条自愈路径**只在手工 `chown` + `apk del/add` 下验证过**，
+  `healPackageFiles` 里自动跑的那一段（`Privilege.normalizeOwnership` → del → add）
+  未在真机上从「root 占有的 `/usr/include`」初态完整跑一遍 —— 因为设备上那棵树
+  已经被我手工修好了。要复验得先人为把它改回 root 属主。
+- 本轮**未改版本号**（仍是 `versionCode 388`），按协作约定版本号由维护者在主仓统一管。
+## 一百二十八 · 2026-11-14 Linux 工作台「点开始画面出不来」：三处真因 + 四条链路重写
+
+### 用户反馈
+
+「Linux 工作台，GUI 版本下了，但是里面的帧服务和画面渲染始终不行。原本打算的模拟器里面好像也实现不了」。
+电脑端（理想环境）全流程跑通过，真机（PLZ110 / Android 16 / KernelSU，包 1.6.0-beta.11 / 387）点「开始画面」无任何反应。
+
+### 三处真因（全部真机实验定性，非推测）
+
+**A. `pkill -f` 自杀 —— 这是「点了没反应」的直接原因**
+
+旧代码是单条 `sh -c "pkill -f [f]ramesrv 2>/dev/null; nohup /framesrv … & echo STARTED"`。
+`pkill -f` 匹配**整条 cmdline**，而这条 sh 自己的 cmdline 里既有 `[f]ramesrv` 这串模式文本、
+又有 `/framesrv` 裸路径 —— 正则命中的是后者，于是 sh 把自己 SIGTERM 掉。
+
+真机实测：`sh -c "pkill -f [x]11frsrv 2>/dev/null; echo AFTER1; nohup /x11frsrv … & echo AFTER2"`
+→ 只输出 `Terminated`，**rc=143**，AFTER1 / AFTER2 都不打印，帧服务从未启动，共享文件不存在。
+去掉裸路径那一半则 `SURVIVED_X11_PKILLS` rc=0。
+
+**旧注释里「`[x]yz` 形式防自杀」的推理是错的** —— 它只能防住「模式文本自身被匹配」，
+防不住正则去匹配同一行里的真实路径。这正是本条 bug 藏了这么久的原因。
+
+**B. `Xvfb -nolock` + 残留 socket**
+
+旧代码写死 `Xvfb :99 -screen 0 1280x720x24 -nolock`。
+
+- `-nolock` 只有 root 能用，非 root 只打一行 `Warning: the -nolock option can only be used by root`，
+  且**完全不解决** socket 冲突。
+- 真正的错误是 `_XSERVTransSocketUNIXCreateListener: … SocketCreateListener() failed` /
+  `_XSERVTransMakeAllCOTSServerListeners: server already running` /
+  `(EE) Fatal server error: (EE) Cannot establish any listening sockets`。
+  根因是 rootfs 里残留 `/tmp/.X11-unix/X99`，属主 root，app uid 在 sticky 目录里删不掉。
+- root 手工清掉后，app uid 起 Xvfb → **alive=yes**，socket `srwxrwxrwx 10499 X99`。
+
+用户体感「以前能跑、重启后再也起不来」就是这个残留造成的。
+
+**C. framesrv 的 bionic 路线走不通（所以 X11 路线才是主路径）**
+
+- `framesrv-arm64` 的 PT_INTERP 是 `/system/bin/linker64`（bionic），直接交给 musl loader 会报
+  `Error relocating /framesrv: __libc_init: symbol not found` / `__register_atfork` / `__errno`。
+- 正确路径是 `dsh_alpine.c` 的 bionic 直通分支（`guest_is_bionic()` 读 PT_INTERP 含 linker →
+  `cleaner_exec()` 交给无 filter 的 cleaner 兄弟进程）。实测一律
+  `BIONIC: cleaner_exec FAIL` 后 `nohup: can't execute '/framesrv': No such file or directory` rc=127。
+- 根因：`find_cleaner_by_prefix()` 只按前缀扫 `/proc/net/unix`，扫到的是**别的 uid 的 cleaner**
+  （`@dsh-cleaner-0_1015`，引擎 node 的 root cleaner）；cleaner 端 accept 后做 SO_PEERCRED 校验
+  （要求 `pc.uid == myuid`），跨 uid 请求被静默 close 不回执 → 请求方读回执 EOF。
+- 而 `x11frsrv-arm64` / `inputd-arm64` 是 musl（`/lib/ld-musl-aarch64.so.1`，needed libX11/libXext/libXtst），
+  在容器里能直接跑。**所以 X11 路线是对的，bionic 那条不要指望。**
+
+### 改动（`app/src/main/java/app/dsh/mobile/LinuxActivity.kt`，+219 −65）
+
+**1. 新增两个属性** —— `frameStateDir` = `/data/data/<pkg>/files`、`frameDisplayFile` = `$frameStateDir/dsh-display`。
+display 号与各进程 pid 必须被**另外两次**独立的 `runner.shell()`（开触摸 / 停画面）读到，
+只能落在已 bind 进容器的 App 私有目录；容器内 `/tmp` 有时是 tmpfs，跨调用不保证存活。
+
+**2. 停旧进程全部改成「pidfile 优先 + 行首锚定兜底」** —— `pkill -f '^/x11frsrv'` / `'^/framesrv'` /
+`'^/inputd '` / `'^/wlsrc/wlshot'` / `'^Xvfb '`。sh 的 cmdline 以运行器路径开头，行首锚点不可能误伤自己。
+
+**3. display 号每轮现挑 99..119** —— 判据是 socket 与 lock **都不存在**
+（`[ ! -e /tmp/.X11-unix/X$d ] && [ ! -e /tmp/.X$d-lock ]`），从根上绕开残留，不依赖删除权限；
+挑中的号写进 `$frameDisplayFile`，`setInputEnabled()` 另起 shell 时按它设 `DISPLAY`。
+
+**4. 去掉 `-nolock`；`mkdir -p` + `chmod 1777 /tmp/.X11-unix`。**
+
+**5. 等真实帧落地才报成功** —— 启动前用 `od -A n -t u4 -j 4 -N 4` 读共享文件头的 seq 作基线，
+轮询 120×0.1s 要求 `NOW != BASE && SZ >= 3000000` 才打 `DSHFRAME_OK display=:$DISP seq=… size=…`；
+超时打 `DSHFRAME_FAIL no-frame` 并把 xvfb / 帧服务 / xterm 三个日志的前 6 行原样带回。
+**以前是 fire-and-forget，一发就报「已启动」，哪怕一帧都没出** —— 用户看到的就是「点了没反应」。
+
+**6. 缺包有独立文案** —— `command -v Xvfb` 与 `[ -x /x11frsrv ]` 前置检查，
+失败打 `DSHFRAME_FAIL missing-xvfb` / `missing-x11frsrv`，映射到新增的
+`R.string.linux_screen_missing_gui`（六个 locale 各一条）。
+
+**7. `setInputEnabled()` 判据改成 `out.contains("INPUTD_OK")`** —— 不再看 `res.ok`：
+老逻辑下 `exit 0` + 一句话就报成功，用户看不出是「顺序错了」还是「X 没起来」。
+现在分别打 `INPUTD_FAIL no-display` / `no-x-socket display=:$D` / `exited`（带日志头）。
+
+### 验证（全部实跑，附证据）
+
+| 项 | 命令 / 方式 | 结果 |
+|---|---|---|
+| 新探针 | `python scripts/probes/_test_linux_frame_launch.py` | **18 checks / 0 failed** |
+| 变异反验 | 一次注入三处变异（pkill 退回 `[x]yz` / 插 `DISP=99` / 成功判据改 `true`） | 探针**变红**，恢复后 18/0 复绿 |
+| i18n 门禁 | `python scripts/check-i18n.py` | `All i18n checks passed`（58 extensions），EXIT=0 |
+| Kotlin 编译 | `gradle -Ppackage=noruntime :app:compileDebugKotlin` | BUILD SUCCESSFUL |
+| 打包 | `gradle -Ppackage=noruntime :app:assembleDebug` | BUILD SUCCESSFUL，APK 43.8 MB |
+| 容器内实测 | 走真实 `dsh_alpine` 入口（app uid 10499）跑新脚本 | 挑到 `DISP=100`（99 被占）→ **`DSHFRAME_OK display=:100 seq=3 size=3686416`** |
+| inputd 实测 | 同上，读 display 文件 | **`INPUTD_OK display=:100`**，日志 `INPUTD_KV xtest=2.2 display=:100` |
+| 停止实测 | 同上 | `before: 4 pidfiles` → 四个进程全 killed → `STOPPED` |
+
+**探针自己的三个坑（已固化在脚本里）**：
+1. 直接搜原文会被**注释**喂饱（仓库注释里就写着 `[x]11frsrv` / `:99` / `-nolock`）→ 先 `strip_comments()`。
+2. Kotlin 源码里是 `${'$'}d` 转义壳子，**不是** sh 真正收到的 `$d` → 必须再 `unwrap_shell_escape()`
+   （第一版漏了这层，G2/G3/H2 三条假红）。
+3. Python docstring 里出现三引号会提前闭合 → 改写措辞避开。
+
+### 未完成 / 阻塞（不谎报）
+
+- **「点按钮 → 出画面」这条 UI 端到端仍未验收。** 容器侧脚本、共享文件、帧服务、inputd、停止清理
+  都已实测通过，但点按钮那一步被两个**设备侧**问题阻断：
+  - 点「开始画面」后 App 回到桌面，抖音（`com.ss.android.ugc.aweme`）反复自行抢到前台，
+    `mCurrentFocus` 被夺；`logcat -b crash` 里没有 app.dsh.mobile 的 FATAL，`pidof` 仍有 pid。
+  - ColorOS `OplusHansManager` 会 freeze `uid 10499`（`scene: |StrictMode-1|LcdOn`）。
+  - 收尾时设备直接掉线（`192.168.101.21:9000` ping 100% 丢包、5555/9000 全 timeout），
+    `adb mdns services` 仍能发现服务，无法继续点击验证。
+- 文案债未清：`linux_screen_start_sub` / `linux_screen_started` 等六个 locale 仍写 `/framesrv`，
+  实际主路径已是 X11（`x11frsrv`）。属既有文案，本轮未动。
+- `scripts/check-ui-tokens.py` 的 D1（`card token keeps a 1dp stroke`）是**既有红**：
+  `bg_card.xml` 在 HEAD 就是 `?attr/dshStroke + 1dp`，而判据查的是 `@color/stroke`，与本轮无关。
+
+### 并行会话避让
+
+`engine/LinuxPackageManager.kt`（已 staged）、`engine/RootfsModes.kt` + `RootfsModesTest.kt`（已 staged）、
+`res/layout/activity_onboarding.xml` 属并行会话在途，本轮未纳入提交。
+
+## 一百二十九 · 2026-11-14 MD3 从「只改颜色」改成真形态分叉 + 动态取色闪屏 / 弹窗跳变两个真 bug
+
+用户反馈三条（原话）：「这MD3不就改了个颜色吗？有啥区别???」/「动态取色，点击一下是直接闪屏的」/
+「点击页面缩放的时候，那个弹窗是先上面闪一下，然后再归位到中间」。
+
+### 1. 「只改了颜色」属实 —— 形态一个 item 都没分叉
+
+`values/themes.xml` 里 `Theme.Dsh` 与 `Theme.Dsh.MD3` 逐项比对：**取值不同的全是颜色**，
+shape / corner / elevation / textAppearance / fontFamily 两套都是 0 个。圆角全部写死在布局与 drawable：
+`app:cardCornerRadius="18dp"` 22 处、`app:strokeWidth="1dp"` 22 处、drawable 里
+`@dimen/md3_card_radius`(20dp) / 18dp / 12dp 各若干。
+
+修法：在 `values/attrs_style.xml` 追加 **7 个 dimension 令牌**（dshCardRadius / dshCardStroke /
+dshIconChipRadius / dshIconChipStroke / dshButtonRadius / dshControlRadius / dshGridCellRadius），
+两套主题各注入一份，取值：
+
+| 令牌 | 经典（现状原值） | MD3 |
+|---|---|---|
+| dshCardRadius | 18dp | 24dp |
+| dshCardStroke | 1dp | 0dp |
+| dshIconChipRadius | 12dp | 999dp（正圆） |
+| dshIconChipStroke | 1dp | 0dp |
+| dshButtonRadius | 20dp | 999dp（全圆胶囊） |
+| dshControlRadius | 12dp | 16dp |
+| dshGridCellRadius | 16dp | 20dp |
+
+令牌化范围：布局 7 文件（activity_about / asr_app / maintenance / permission_center / settings_bg / theme /
+update_settings）+ drawable 9 文件（bg_card / bg_md3_card / bg_md3_group / bg_md3_seg_top|single|bottom /
+bg_md3_grid_cell / bg_md3_icon_chip / bg_md3_input）。
+
+**aapt2 事实**：`?attr` 尺寸可以写在 `<corners android:radius>` 与 `app:cardCornerRadius` 里
+（先做 zz_spike_* 探针跑 `:app:mergeReleaseResources` EXIT=0 才铺开，探针文件随后删除）。
+
+### 2. 弹窗「先上面闪一下再归位」= Material 的背景 inset 被 show 之后换掉
+
+`materialAlertDialogTheme` 全仓从未设过，11 处 `MaterialAlertDialogBuilder` 吃 Material 默认主题；
+`ThemedActivity.showMd3()` 在 `setOnShowListener` 里 `window.setBackgroundDrawableResource(bg_dialog_rounded)`。
+反编译 material-1.12.0 确认：`MaterialAlertDialogBuilder.create()` 会用
+`MaterialDialogs.insetDrawable(background, backgroundInsets)` 把窗口背景包成 InsetDrawable
+（MaterialComponents 默认 **上下 80dp / 左右 24dp**）。show 之后把它换成不含 inset 的纯 shape →
+面板可绘制区从「窗口内缩一圈」变成「整个窗口」，首帧后突然变大。
+
+修法：新增 `values/md3_dialog_theme.xml`（`DshMaterialAlertDialog` parent=MaterialAlertDialog.Material3，
+backgroundInset 四边统一 24dp、`backgroundTint=?attr/dshDialogBg`、圆角走 `?attr/dshCardRadius`；
+`ThemeOverlay.Dsh.MaterialAlertDialog` 把 colorSurfaceContainerHigh / colorOnSurface / colorPrimary 等
+映射到 dsh* 令牌），两套主题各注入一处；**全仓 12 处「show 之后换背景」全部删除**
+（ThemedActivity / AppearanceActivity / FailureDialog×2 / ReportDialog / OnboardingActivity /
+LinuxActivity / MaintenanceActivity / PermissionCenterActivity×3 / PkgProgressDialog / SettingsActivity×2）。
+
+### 3. 动态取色闪屏 = 两次 relaunch，第二来自 DynamicColors 改 Resources
+
+`adb logcat -b events` 抓到点一下开关产生 **2 次** `handleRelaunchActivity`，插桩确认只有 1 次
+`recreate()` 来自 `ThemeActivity.setupDynamic`（空转保护 `already == checked` 是好的），第二次是
+`ThemedActivity` 在 DYNAMIC 下调 `DynamicColors.applyToActivityIfAvailable` —— API 31+ 走
+`ColorResourcesOverride` → ResourcesLoader 替换颜色资源 → **改本 Activity 的 Resources 配置** →
+系统再派一次 configuration change。排除过的三个假设：syncAppCompatNight 短路、OrientationPrefs、
+manifest 加 `|uiMode`，三者都仍 2 次。
+
+修法三条：
+1. 删掉 `DynamicColors.applyToActivityIfAvailable` 调用；
+2. 新增 `SystemAccent.kt`（直接读 `android.R.color.system_accent1_200`（深）/ `_600`（浅），
+   `runCatching` 兜底），`Accent.kt` 的 DYNAMIC 分支改走它，不再 `MaterialColors.getColor(colorPrimary)`；
+3. `ThemeActivity` 的 DYNAMIC 分支 `recreate()` → `reapaintAccentLive()`（`AccentTint.apply(decorView)` +
+   `refreshSummary()` + `setupChips()`）——**换界面风格改的是主题必须 recreate；强调色只影响运行时取色，不必重建**。
+配套把 `barBackground()` 简化成一行 `activity.dshColor(R.attr.dshBg, R.color.bg)`（Monet 不注入了，
+主题里 colorSurface 恒为卡片色，再读它反而会出「系统栏比页面白」的色带）。
+
+### 4. 探针（全部带变异反验）
+
+- `scripts/probes/_test_style_tokens.py`：从 4 组扩到 7 组 28 个令牌。新增 T5（7 个形态令牌两套齐全且取值不同）、
+  T6（全部 layout/drawable 的圆角描边必须走 `?attr`，扫全仓断言无 `app:cardCornerRadius="\d+dp"`）、
+  T7（弹窗链路：md3_dialog_theme.xml 存在 + parent 正确 + 圆角走 dshCardRadius + 两个 themes.xml 各有 2 处注入 +
+  **全仓所有 .kt 剥注释后不得出现 `window\s*\??\.\s*setBackgroundDrawableResource\s*\(`**）。
+  变异 M1 删 MD3 的 dshCardRadius / M2 icon chip 圆角改回 12dp / M3 恢复 show 后换背景 / M4 删 values-night 注入 —— 全 EXIT=1。
+  **M3 第一版假绿**（只查了两个 .kt，变异注入到别的文件就漏检），改成全仓 os.walk 才红；
+  另一个坑：注释里写着该调用会被朴素 `in` 命中，必须先 `strip_kotlin_comments()`。
+- `scripts/probes/_test_theme_flicker.py`：整份重写 19 条（旧版 5 条全基于「DYNAMIC 必须注入 DynamicColors」，
+  本轮架构反转后失效）。四变异全红（DYNAMIC 改回 recreate / 恢复 DynamicColors 注入 / barBackground 重新引入
+  dynamic 分支 / Accent 改回 MaterialColors）。**坑**：`reapaintAccentLive` 的函数体边界不能用 `// ----`
+  注释当锚（剥注释后那条边界就没了，会把整份文件的 recreate 都算进来 → 必然假红），要用 `split("private fun ")`。
+
+### 5. 验证（隔离树 `/e/tmp/wt-m3c`，基线 `04bdedbd`；初次是在 `/e/tmp/wt-m3b`（`d9e5a881`）上做的，`04bdedbd` 落地后重新在新基线复跑，本段数字均取自新基线）
+
+- `python scripts/check-i18n.py` → All passed（0 错误）。
+- `bash scripts/run-a11y-jvm-test.sh` → **passed=2402 failed=0**。
+- `bash scripts/gate-memory.sh static` → JVM 2402/0、i18n 0、py 探针 PASS=132 FAIL=2；
+  两个红项 `_test_linux_apt_nonroot.py`（D3/D4/D5 锚点漂移：`tcp accept:` 到 `socketsAlive.set(false)` 距离已 574 字符，
+  探针窗口写死 300）与 `_test_onboarding_v2.py`（9 页向导改成 9 页后探针仍断言 7 页/pagePriv）**均在纯净 HEAD 上
+  同样红**，属既有红项，非本轮引入 —— 未登记进 `docs/reports/GATE_BASELINE.txt`，留给各自的属主。
+- `cmd //c gradle.bat -Pabi=x86_64 -Ppackage=noruntime -PdebuggableRelease=true :app:assembleRelease` →
+  BUILD SUCCESSFUL，APK **44,497,927 B**，md5 `616826664a5dfae599e6b85b0d5063b9`。
+- 模拟器 emulator-5558（Android 14 / API 34）实测：装成 `versionCode=389 / versionName=1.6.0-beta.13`；
+  点动态取色 → `handleRelaunchActivity` **0 次**、`onCreate ThemeActivity` **0 次**，偏好落盘 DYNAMIC，
+  截图开关变蓝、副标题「Current: system dynamic colour」、预设 chip 全灰不选中；
+  两套风格截图（`E:/tmp/m3b_mat.png` vs `E:/tmp/m3b_cla.png`）肉眼可辨：MD3 = 24dp 大圆角 + 无描边 +
+  正圆图标底圈 + 暖灰底；经典 = 18dp + 1dp 冷蓝灰描边 + 方形圆角图标底 + 冷蓝灰底。
+- **未验证**：缩放弹窗的逐帧量测本轮没在模拟器上重录（上一轮在同一份代码上量过：面板平滑长大 3 帧后停住，
+  修复前是 49px→174px 跳变）；真机 OnePlus PLZ110 未装本包。
+
+### 6. 版本
+
+`versionCode 388 → 389`、`versionName 1.6.0-beta.12 → 1.6.0-beta.13`（388 留给并行的 Linux 工作台改动）。
+
+## 一百三十 · 2026-11-14 试发行 1.6.0-beta.14（390）：清工作区 + 打包
+
+### 1. 工作区盘点（`git status --porcelain`）
+
+开工时只剩 9 项未跟踪，全部是**别的会话留下的取证草稿**，没有一行是本轮要交付的代码：
+
+| 文件 | 是什么 |
+| --- | --- |
+| `_cat.py` / `_cat2.py` / `_cat3.py` | 读 `assets/extensions/catalog.json` 与 `EndpointCatalog.kt` 数分类/端点数的临时脚本 |
+| `_prep.py` / `_prep2.py` / `_prep3.py` | 用 PIL 把发布图裁到 `dshm-site/assets2` 的出图脚本 |
+| `_sz.py` | 读 PNG 头判尺寸的小工具 |
+| `_tmp_shots/` | 62 个文件 21 MB（UI dump xml / 截图 png / 构建日志 / 一次性 patch 脚本） |
+| `docs/ui-preview/probe-opacity.mjs` | headless Chrome 探引导页 `.page` 的 opacity/transform（11-13 引导页改版那轮） |
+
+7 个 `_*.py` 已核 **被引用次数全是 0**（全仓 grep）；`.gitignore` 原本只忽略根目录 `/_*.xml`、`/_*.png`、
+`/_*.mjs`、`/_*.sh`、`/_*.json`，漏了 `/_*.py` 与 `/_tmp_shots/` —— 补上这两条后 `git status` 只剩那一份 `.mjs`。
+`probe-opacity.mjs` **没并进本次提交**：它属于另一会话的在途工作（同目录 `shoot-onboarding.mjs` 才是已入库的那份），
+跨会话代提交会破坏「谁的改动谁提交」的边界。
+
+### 2. 版本与产物
+
+- `app/build.gradle.kts`：`versionCode 389 → 390`、`versionName 1.6.0-beta.13 → 1.6.0-beta.14`，
+  并在版本注释里补齐 beta.12 / beta.13 / beta.14 三段变更摘要（原来只写到 beta.13）。
+- 新增 `docs/release-notes/RELEASE_NOTES_v1.6.0-beta.14.md`（7 节，含「已知限制」）。
+- 打包命令（arm64 真机包 / x86_64 模拟器包共用一套参数，只换 `-Pabi`）：
+  `gradle.bat -Pabi=<abi> -Ppackage=noruntime -PdebuggableRelease=true :app:assembleRelease`
+  —— 走 `cmd.exe /c <bat>` 调（MSYS 下 `cmd //c "路径"` 会被吞成只剩 `cmd.exe`，什么都不执行）。
+- 产物：
+  | ABI | versionCode/Name | 体积 | md5 |
+  | arm64-v8a | 390 / 1.6.0-beta.14 | **43,926,645 B** | `a48bbb356cb27b00870a8fb864393a8e` |
+  | x86_64 | 390 / 1.6.0-beta.14 | **44,500,013 B** | `70dc9389828094db67a8d4b8d621464a` |
+- 签名核验：`apksigner verify --print-certs` → `CN=DSH Mobile, OU=DSH, O=Soodok`，
+  SHA-256 `d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8`，与 `keystore/dsh-release.credentials.txt` 一致。
+
+### 3. 门禁（主树 HEAD `d9b065c9` + 本轮三处改动）
+
+- `python scripts/check-i18n.py` → EXIT 0，`All i18n checks passed`（58 个扩展 / 8 个分类）。
+- `python scripts/check-ui-tokens.py` → EXIT 0，`All UI token checks passed`（D1/D5/D5b/D6 全 PASS）。
+- `bash scripts/run-a11y-jvm-test.sh` → **passed=2402 failed=0**。
+- 构建：两 ABI 都 BUILD SUCCESSFUL（arm64 10s、x86_64 3s，增量）。
+
+### 4. 装机冒烟（emulator-5562，Android 14 / API 34，全新安装）
+
+- **必须先卸载**：5562 上原包是**另一套 debug 证书**（`signatures=[a7c3cb58]`），与本机 release 证书不同源，
+  `adb install -r -d` 直接 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。`adb uninstall` 后重装成功。
+- 装成 `versionCode=390 / versionName=1.6.0-beta.14`，`lastUpdateTime=2026-11-14 12:54:30`。
+- `am start -n app.dsh.mobile/.MainActivity` → 首次启动落到 `OnboardingActivity`（九页向导封面），
+  文案是中文（系统 `persist.sys.locale=zh-CN`，#109 的跟随系统语言生效），`logcat -b crash` 空。
+
+### 5. 未做
+
+- **没推远端、没打 tag**：`origin/main` 仍在 `456747ef`，本地领先 **10** 个提交；GitHub 的 `ghp_` 凭据早已 401 失效
+  （见一百二十九 §2 的取证）。tag 要不要打、用哪个名字，等凭据恢复后一并处理。
+- 真机 OnePlus PLZ110 本轮不在线（`adb devices` 只有两个模拟器），arm64 包只做了构建与签名核验，未上真机。
+
+### 6. 完整包（arm64-v8a，内嵌运行时）—— 用户追加要求
+
+用户看完精简包后要「弄一个完全包」「要ARM64」。要点：**full 包不是随便找个 runtime.zip 就能嵌**，Gradle 会验两个补丁：
+PTC 白名单（`LD_LIBRARY_PATH` / `OPENSSL_CONF` / `SSL_CERT_FILE` / `MAGICK_CONFIGURE_PATH` / bootstrap 路径兜底）
+与 WebView polyfill 能力标记。本地 `_runtime_bak/` 里 17 个 zip 我逐个开箱验过：
+
+| 包 | 引擎 | PTC 补丁 | polyfill | 可打 full？ |
+| `rt-arm64-20261112.zip`（137 MB，rc.1） | 0.2.2-rc.1 | **缺 bootstrap 兜底** | v5 ✅ | ❌ |
+| `rt-arm64-zodded.zip`（176 MB） | rc.1 | 缺 bootstrap 兜底 | v4 | ❌ |
+| `rt-arm64-work.zip`（231 MB） | rc.1 | 缺 4 项 | v4 | ❌ |
+| 官方 `runtime` prerelease（149.7 MB） | **0.2.2-rc.3** | **全齐** | v5 | ✅ |
+
+所以 full 包只能拿官方滚动 prerelease `runtime` 的 `runtime-arm64-v8a.zip`。踩到的坑：
+
+1. **`-PruntimeZip=_runtime_bak/xxx.zip` 用相对路径无效** —— `file()` 按 Gradle daemon 的 cwd 解析，实际落在别处 →
+   报「lacks the PTC patch」（其实锚点全在，只是读到了另一个文件）。必须给**绝对路径**。
+2. **直连 GitHub 下载被重置**（`curl (35) Recv failure`，149 MB 单流 30 KB/s 要 85 分钟）。可用镜像只测出
+   `gh-proxy.com` 与 `gh-proxy.org` 活着；最后用**12 线程 Range 分块**下载，18 秒拿完，
+   sha256 `078b8c33…537e` 与官方 `runtime-meta-arm64-v8a.json` 逐字节一致。
+3. **增量打包会留 133 MB 空洞**：先打过 noruntime 包、再切 full 复用同一 `outputs/apk/release/` 时，
+   APK 变成 322,426,920 B，zip 里 `assets/tools/hid.mjs` 前有 133,220,641 B 空洞（数据区没重排）。
+   `rm -f app/build/outputs/apk/release/*.apk` 后重打 → **189,084,815 B**，与 `sum(compress_size)=188,814,738` 只差中央目录。
+   **以后在 noruntime / full 之间切换必须删旧 APK。**
+
+产物与核验：
+
+| 项 | 值 |
+| 路径 | `/e/tmp/rel390/dsh-mobile-v1.6.0-beta.14-arm64-v8a-FULL-hardssh.apk` |
+| 体积 | **190,068,009 B**（181 MB） |
+| md5 | `8db333c5385e7896602f5a44a1e67471` |
+| 内置 hardssh | `@xiaopb/dsh-hardssh@0.2.13`（bundle sha `5b004898…`，3,047,657 B，215 条目） |
+| 内置 mobile-layout | `xiaopb-dsh-mobile-layout-0.4.5.tgz` |
+| 包内 `assets/runtime.zip` | 149,680,344 B，version `2026.11.14-d0bd1fde`，sha256 `078b8c33…` |
+| 内嵌引擎 | **0.2.2-rc.3** |
+| native-code | 只有 `arm64-v8a` |
+| 签名 | `d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8` |
+
+真机实测（OnePlus PLZ110 / Android 16 / arm64-v8a，`192.168.101.21:9000`）：
+
+- 原装 `387 / 1.6.0-beta.11`，`signatures=[5496b679]` 与本机 release 证书同源 → `install -r -d` 直接覆盖成功，
+  装成 `versionCode=390 / versionName=1.6.0-beta.14`，`lastUpdateTime=2026-11-14 21:38:32`。
+- 启动链路日志：`boot step spawn: 987ms` → `health-poll: 1982ms`（总 3855ms），无 crash。
+- 运行时自动解压：`files/engine` **836 MB**、`lib/node_modules/@deepseek-ai` 下 **338** 个包、
+  `BUILD.json` = `{"version":"2026.11.14-d0bd1fde","engineVersion":"0.2.2-rc.3"}`。
+- 引擎 HTTP 服务活着：`adb forward tcp:13080 tcp:3080` + `curl` → **401**（要 token 才放行，属正常鉴权），
+  `dsh_alpine` 进程两个（node 主进程 + web），`--patch /eng/android-overlay.yml`。
+- **注意**：模拟器是 x86_64，装不了 arm64 完整包（`NO_MATCHING_ABIS`），所以完整包**只在真机验证过**。
+
+**⚠️ 完整包缺了内置 SSH 插件（第一版漏做，已补）**：`app/src/main/assets/hardssh/` 不存在（靠 CI 的 `build-hardssh` job
+现场组装），本地直接打 full 包时 `MANIFEST.json` 的 `hardssh` 段是 `{"bundled": false}` —— 装到手机上「SSH 远程工作区」
+插件就没有了。补法：`GH_PROXY=https://gh-proxy.com/ bash scripts/pack-hardssh.sh /e/tmp/hardssh` 拿到 3.4 MB 的
+`hardssh/` 目录，再 `-PhardsshDir=E:/tmp/hardssh/hardssh` 重打。补齐后真机日志出现
+`HardsshInstaller: installed bundled ssh plugin 0.2.13` → `EngineConfig: bundled ssh plugin enabled`。
+**打包前若从 noruntime 切过来，记得先删旧 APK（见上一条空洞坑）。**
+
+## 一百三十一 · 2026-11-14 悬浮窗麦克风图标消失 + 语音页「装了旧版却说没装」（`070754e9`）
+
+两条真机反馈，根因互不相干。
+
+### 一、`ic_mic` 在无障碍悬浮窗里整个不可见
+
+**根因**：v1.8.1 MD3 令牌化把 `app/src/main/res/drawable/ic_mic.xml` 的
+`fillColor` 改成 `?attr/dshIconColor`，而同窗口面板底色 `bg_overlay_panel.xml`
+仍是静态 `@color/surface_glass`（跟随系统夜间）。
+
+`StatusOverlay.show()` 取图用 `LayoutInflater.from(svc.applicationContext)` ——
+**服务上下文，没有 Activity 主题**，`?attr` 落到 application theme（`Theme.Dsh`，
+Light 变体）。两个解析源错配 → 面板深、图标按浅色取 → 夜间图标消失。
+
+**像素取证**（emulator 夜间截图，面板 x 467..1076 / y 314..447）：
+- mic 区域 `(992..1053, 344..405)` 非底色像素 1680 个，其中 1677 个是面板自身
+  抗锯齿过渡色（`212,213,213`），**真图标像素 0 个**；
+- 同窗口暂停按钮：绿色 `34,160,107` 4049 像素 + 白色竖条 324 像素，正常。
+- 该次截图 ui_night_mode 为深色，`Theme.Dsh` 是 Light 变体 → `md3_icon_foreground`
+  在 values 里是 `#FF000000`、values-night 里才是白；实际渲染出的白图标来自
+  application theme 的浅色解析。
+
+v1.8.1 提交里明确写了排除清单「`bg_dynamic_island_dot` / `bg_overlay_*` /
+`ic_island_*`（浮层）」，**`ic_mic` 是漏网的那一个** —— 它是浮层图标，但名字不带
+overlay/island 前缀，靠人眼扫清单必然漏。
+
+**修法**：`fillColor` 回静态 `@color/icon_color`。
+`activity_settings_a11y.xml` 那处引用自带 `android:tint="?attr/colorPrimary"`，
+会覆盖 fillColor，设置页分类色不受影响。
+
+**探针加固**（`scripts/probes/_test_style_tokens.py`）：判据从「手写白名单」改成
+**「`overlay_status.xml` 实际引用的全部 drawable」**（正向枚举，漏一个就是这个
+bug 的复现形状）。三处静态色断言都先 `strip_xml_comments()` 再判 —— 注释里会
+点名 `?attr` 解释为什么不能用它，不剥注释就没法反向验证。
+
+### 二、语音服务页把「装了旧版」当「没装」
+
+**真机取证**（OnePlus PLZ110）：
+```
+app.dsh.asr  已安装  versionName=0.7.4  versionCode=31
+content query --uri content://app.dsh.asr.status/status
+    → Could not find provider: app.dsh.asr.status
+cmd package query-activities -a app.dsh.asr.SET_DEFAULT → No activities found
+cmd package query-activities -a app.dsh.asr.CHECK       → No activities found
+```
+状态卡是照 ASR **v0.8.0（versionCode 32）** 接口写的（StatusProvider +
+SET_DEFAULT + CHECK），设备装的是 0.7.4 —— 三个能力全无。
+
+旧实现只判 `getPackageInfo` 是否成功 → 「已安装」→ 按钮全亮 → `startActivity`
+抛 `ActivityNotFoundException` → 兜底 → 弹「请先安装语音识别服务」。
+**装了却报没装**，用户判定整个功能坏了。
+
+**修法**（`app/src/main/java/app/dsh/mobile/VoiceServiceActivity.kt`）：
+- `ASR_MIN_VERSION_CODE = 32`、`asrVersionCode()`、`asrTooOld()`
+  （判据 `v in 1 until ASR_MIN_VERSION_CODE`；写成 `v < MIN` 会把 0 也算旧版）。
+- 徽标四态：已就绪 / 需更新（danger）/ 已安装 / 未安装；旧版单独一段说明
+  「一键设置用不了，更新一次即可，已下载的模型不会丢」。
+- 三个一键动作在 `asrTooOld()` 时 `toast + return`，不落到 `startActivity`；
+  置灰条件 `installed && !tooOld`。
+- 旧版时不再查 StatusProvider（必然失败，白留异常日志）。
+- 六语言各 +4 条：`asr_local_state_outdated` / `asr_local_desc_outdated` /
+  `asr_local_need_update` / `asr_local_action_failed`。
+
+### 验证
+- 新探针 `scripts/probes/_test_voice_asr_version.py`（V/W/X 三组 21 项，已登记
+  `.gitignore:114` 白名单）。**三处反向验证全红**：alpha 恢复只判 installed → W4；
+  删旧版分支 → W2/W3/W4；MIN 改 1 → V2。还原后全绿。
+- 全量探针 **136/136**；`check-i18n.py` / `check-ui-tokens.py` 全过；
+  `assembleRelease` BUILD SUCCESSFUL（41,430,774 B）。
+
+### 探针自身的两个坑（已写进注释）
+① `re.search(r"listOf\(.*?\)\.forEach", code, re.S)` 非贪婪在第一个 `)` +
+`.forEach` 处停住，group 不含 lambda 体 → 「分支里有没有 return」恒假。
+② 改用 `code.find("listOf(")` 抓到的是文件里第一个 `listOf`（TTS 语速表）。
+最终锚点：唯一标识分发段的 action 名，再往前找 `listOf(` 起点。
+
+### 未覆盖
+真机逐项点按未做：设备上 ASR 是 0.7.4，升到 0.8.0 要用户自己从 GitHub Releases
+装包，我没有代装。本次修的是「正确识别并说明版本过旧」，不是「让 0.7.4 也能
+一键设默认」—— 那三个接口在 0.7.4 里根本不存在。
+
+## 一百三十二 · 2026-11-15 README 三语加爱发电支持入口
+
+**需求**：用户要求在仓库 README 加爱发电支持链接 `https://afdian.com/a/114514soodok`。
+
+**改动**（4 个文件，只增不改，41 行新增）：
+- `README.md` / `README_EN.md` / `README.de.md`：各加两处 —— ① 徽章区 Telegram 之后加 shields 徽章；② 「反馈」与「贡献者」之间新增 `## 💜 支持这个项目` 段（英/德版为 `Support This Project` / `Dieses Projekt unterstützen`）。
+- `.github/FUNDING.yml`（新增）：`custom: ["https://afdian.com/a/114514soodok"]`，让仓库页右上角出现 Sponsor 按钮。
+
+**文案口径**（三语一致，避免"付费解锁"误解）：项目 MIT 开源、所有功能免费、无付费墙/订阅/激活码；**赞助不解锁任何东西**；赞助用途写实（真机测试设备、构建签名环境、域名服务器、跟进上游的维护时间）；明确"不赞助也完全没问题，带复现的 Issue / 真实反馈 / 推荐给需要的人同样是帮助"。
+
+**验证**：
+- 徽章 SVG 实际取回：`爱发电: 赞助作者`，126.75×28，无 error/invalid；英文版徽章标签用 `Afdian-Sponsor`（英德版不塞中文）。
+- 链接可达：`curl -A Chrome https://afdian.com/a/114514soodok` → 200，18,671 B。
+- `markdown` 3.11.1 渲染校验：三份文件新增段均渲染为 `<h2>`，段内 afdian 链接各 1 个，加粗正常。
+- 编码：三份均 UTF-8 无 BOM、无 CRLF；代码围栏配平（10/4/4）；`git diff --stat` 仅 41 行新增。
+- 门禁：`python scripts/check-i18n.py` → All i18n checks passed（退出码 0），未触碰 strings.xml 与 Kotlin 字面量。
+- `yaml.safe_load` 解析 FUNDING.yml 通过。
+
+**德语版一处顺序修正**：Afdian 徽章初次插在 Telegram 与 `![i18n]` 之间，把 i18n 徽章挤到行尾；已调整为 i18n 在前、Afdian 在最后，与另两版视觉分组一致。
+
+### 顺带发现（未修，超出本次范围）
+`README.md:145` / `README_EN.md:96` / `README.de.md:95` 仍写「**57 个条目**」，但
+`app/src/main/assets/extensions/catalog.json` 实际 **58 项**（提交 `11680997`
+「feat(ext): 扩展中心新增 Bun 运行时（58 项）」已在 HEAD 历史中，Language runtimes 由 9 变 10，
+新增 `bun`）。同一口径也出现在 dshm.soodok.cn 宣传页（两处 57）。
+三份 README 的「20 套工具链」需同步核对（当前 catalog 的 Build & tooling 14 + Language runtimes 10
++ Cross compiling 2 = 26 项编译相关，与"20 套工具链"的旧分法不一致，需按 README 原文口径确认后再改）。
+
+
+
+## 第一百三十二章（v1.6.0-beta.15 · 2026-11-16）扩展「下载失败」误报：落点守卫基准错 + binutils 声明名不符
+
+> 关联合并前一轮插件安装失败（第一二九章）之后的又一次「用户看到 A，真实原因是 B」。
+> 本次对应 GitHub issue **#115（Zig 反复下载失败）** 与 **#116（Binutils / APK reverse
+> 健康检查异常、一键修复无效）**，作者 nuolinuoyi，2026-11-15 提交。
+
+### 现象（用户侧）
+- #115 Zig 0.17.1 在 Termux 原生模式装两次都弹「Extension verification failed:
+  none of the executables declared by Zig (zig) were installed (dir has 19526
+  file(s))」，但 `lib/zig/zig` 存在 171,704,376 字节、可直接运行、`find -type f`
+  数出 19523 个文件 —— 与提示里的 19526 吻合，说明**负载是完整的**。
+  用户的临时绕过：手工 `ln -sfn ../lib/zig/zig $PREFIX/extensions/zig/bin/zig`。
+- #116 Binutils 报 `Main executables missing (5): ld, ar, nm, objdump, strip`；
+  APK reverse 报 `Main executables missing (1): d2j-dex2jar`（脚本明明在
+  `opt/dex2jar/d2j-dex2jar.sh`）。用户点「一键修复」无效 —— 因为修复只是把
+  「已装但不健康」的条目重新 enqueue，装出来的东西还是同一个残缺结果。
+
+### 根因（两个独立缺陷，被同一个用户误当成一个问题）
+**其一：落点守卫的相对基准写反（#115 与 #116 的 dex2jar 部分）**
+`ab785000`（2026-11-13，标 v1.7.12）加的「symlink 目标必须落在扩展根内」守卫：
+
+```kotlin
+// ExtensionManager.kt 原 isInExtensionRoot
+val root = finalDir.canonicalFile.toPath()
+val p = java.nio.file.Paths.get(target)
+val abs = if (p.isAbsolute) p else root.resolve(p)   // ← 以扩展根为基准
+abs.normalize().startsWith(root.normalize())
+```
+
+与它自己 KDoc 写的「相对 target 以链接父目录为基准解析」相反。于是 deb 里最常见的
+上级相对链被解析成 `<ext>/../lib/zig/zig` → 越界 → 静默跳过：
+
+| 包 | 上游 deb 里的链 | 判成什么 |
+|---|---|---|
+| zig 0.17.1 | `usr/bin/zig -> ../lib/zig/zig` | `<ext>/../lib/zig/zig` 越界 |
+| golang 1.27.3 | `bin/go -> ../lib/go/bin/go` | 越界 |
+| dex2jar 2.4-1 | `bin/d2j-* -> ../opt/dex2jar/*.sh`（18 条） | 越界 |
+| binwalk 等 | `share/doc/*/copyright -> ../../LICENSES/*.txt` | 越界 |
+
+**取证证据**：从清华 termux 镜像逐个下 deb 解 `data.tar.xz`，确认这三条链**上游本来
+就有**（不是打包缺失）。反向对照：11-12 装的 binwalk 里那 26 条上级相对链还在（守卫
+引入前装的），而 11-13 之后装的扩展里上级相对链全为 0 —— 同一台设备上两种时间点的
+目录同时存在，直接锁定是时间点而非包的问题。
+
+**其二：binutils 的 catalog 声明名与上游产物名不一致（#116 的 binutils 部分）**
+`catalog.json` 按 GCC 语义声明 `["as","ld","ar","nm","objdump","strip"]`，但 Termux
+为了不与基线 llvm 冲突，产物带 g 前缀：`gar/gnm/gobjdump/gstrip/ld.bfd` 等 15 个
+**普通文件**，`ar/nm/objdump/strip/ld` 这五个名字上游根本不提供。这不是链接问题，
+修守卫也救不了 —— 必须补别名。
+
+### 修法
+1. **判定基准改为链接父目录**，抽成纯 JVM 的 `ExtensionLinkPolicy`
+   （`app/src/main/java/app/dsh/mobile/engine/ExtensionLinkPolicy.kt`）：
+   相对 target 用 `File(root, linkRel).parent` 解析；再叠一层 canonicalFile 兜中间
+   软链；拒绝多级 `../`、`/system/bin/env`、前缀相似的兄弟目录（`<ext>-evil/bin/bash`）。
+2. **落链前剥 `usr/` 前缀**再判定 —— `flattenUsrLayout` 已把 `usr/*` 提升到扩展根，
+   不剥就会拿扁平化后的相对位置去算，仍可能判错（golang bin/go 实测事故的同一坑）。
+3. **安装期写链接清单** `.links.tsv`（TSV：`linkRel<TAB>target<TAB>s|h`），启动期
+   重放。存量用户的 deb 早被 cacheDir 清了，无法从原始载荷重建，只能靠清单。
+4. **没清单的历史安装按上游已知布局兜底**（`ExtensionLinkRepair.candidateTargets`）：
+   `lib/<名>/<名>`（zig）、`lib/<名>/bin/<名>`（golang）、`opt/<名>/<名>.sh`、
+   `opt/<去掉 d2j- 前缀>/<名>.sh`（dex2jar）、`lib/<stripped>/bin/<名>`。
+   只认这五种，不做全树模糊搜索 —— 猜错会把链指到无关文件上。
+5. **binutils 补别名链**（`ExtensionBinAliases`），**不改 catalog 声明**：
+   改声明等于假装 GCC 不需要 `ld`/`ar` 这些名字。gcc/clang 驱动按裸名调用
+   `ld`，缺了就链接阶段找不到链接器。别名表 12 条（ld/ar/nm/objdump/strip/
+   objcopy/readelf/ranlib/size/strings/addr2line/c++filt）。
+
+**执行顺序很关键**：别名必须在「`missingBins` 全缺 → 删 MARKER 抛错」之前跑，
+否则 binutils 仍被判装失败并删掉标记（连重试机会都没了）。
+
+### 关键文件
+- 新增 `app/src/main/java/app/dsh/mobile/engine/ExtensionLinkPolicy.kt`（59 行）
+- 新增 `app/src/main/java/app/dsh/mobile/engine/ExtensionLinkRepair.kt`（136 行）
+- 新增 `app/src/main/java/app/dsh/mobile/engine/ExtensionBinAliases.kt`（88 行）
+- 改 `app/src/main/java/app/dsh/mobile/engine/ExtensionManager.kt`（+74 −16）：
+  `createLinks` 的 `linkRel` 剥前缀 + 走 policy；末尾写 `.links.tsv`；
+  `installPhase` 插 `ExtensionBinAliases.apply`；`init` 启动迁移块加
+  「别名 → 清单重放 → 布局兜底」三步，missing 判据从 `File(dir,"bin/$it").exists()`
+  改成 `binExists(dir, it)`（否则 openjdk 这类把 java 放 lib/jvm 的包会假报缺）。
+- 新增测试 `ExtensionLinkPolicyTest.kt`（10 条）、`ExtensionLinkRepairTest.kt`（12 条）
+- 新增探针 `scripts/probes/_test_ext_link_guard.py`（149 行，6 组 A–F），
+  并加进 `.gitignore` 的 `!/scripts/probes/` 白名单。
+
+### 验证（分层，逐级给证据）
+**JVM 单测 64/64**（`:app:testDebugUnitTest --rerun-tasks`，BUILD SUCCESSFUL）：
+`EndpointCatalogSearchTest` 19 + `ExtensionLinkPolicyTest` 10 +
+`ExtensionLinkRepairTest` 12 + `InstallErrorSummaryTest` 10 + `RootfsModesTest` 13。
+
+**变异反验 7 组全红**（改坏后必须能被单测抓出来）：
+
+| 变异 | 失败用例数 |
+|---|---|
+| policy 恢复旧根基准 | 4 |
+| policy 恒 true | 5 |
+| policy 恒 false | 6 |
+| repair 去掉目标存在检查 | 3 |
+| alias 去掉上游检查 | 1 |
+| alias 覆盖已存在链接 | 1 |
+| 候选布局塌缩成一种 | 2 |
+
+恢复后逐文件 md5 一致。**最关键的用例是 `same target is judged by link depth`** ——
+同一 target 在不同深度链接下结果必须不同，旧实现（两个都拒）和恒 false 实现都过不了，
+这条专治「断言比被测对象宽」。
+
+**探针反向验证**：删掉 `removePrefix("usr/")` → 报 `[caller-strips-usr-prefix] FAILED`，
+恢复 → PASSED；`_test_rev_extensions.py` 129 checks 仍 0 failed。
+
+**真机端到端（PLZ110 / Android 16 / KernelSU，v391 / 1.6.0-beta.15，正式签名安装，数据保留）**：
+- zig 0.17.1 原生模式安装 → `bin/zig -> ../lib/zig/zig` 落地，
+  `./bin/zig version` → `0.17.1`；`.links.tsv` 2 行（含两级上级文档链
+  `share/doc/resolv-conf/LICENSE -> ../../LICENSES/Public Domain.txt`，说明多级 `../`
+  也能正确判根内）。
+- binutils 2.47 → `ld/ar/nm/objdump/strip` 五个别名全部落地，加
+  `LD_LIBRARY_PATH` 后分别输出 `GNU ld (GNU Binutils) 2.47` 等；
+  `/ext/check` 状态从 `Main executables missing (5)` 变 `Healthy`。
+  注意：不加 `LD_LIBRARY_PATH` 时 `./bin/ld` 报 `library "libbfd-2.47.so" not found`
+  —— 那是调用方环境问题（引擎拼 PATH/LD_LIBRARY_PATH 会带上），**不是别名没落地**；
+  对照组 `./bin/gar`（上游原名）不加也是同样的错，说明与别名无关。
+- apk-reverse → `bin/d2j-dex2jar -> ../opt/dex2jar/d2j-dex2jar.sh` 落地，
+  `.links.tsv` 292 行；`/ext/check` → `Healthy`。
+- **存量补链**：手工造一个「`lib/zig/zig` 有本体、`bin/` 只有三条 shim」的残缺目录，
+  冷启动后日志 `ext zig: healed missing bins zig -> lib/zig/zig`，`bin/zig` 出现
+  且可执行 —— 这正是 #115 用户手里的目录形态。
+
+### 顺带发现与处理（不在本 issue 范围，但影响验证）
+1. **设备当前跑的是 Linux 模式**（`dsh_ui.xml` 里 `engine_linux_mode=true`），此时引擎在
+   `dsh_alpine` 容器里、扩展由 Alpine 的 apk 管理，`extensions/` 目录**不参与**。
+   在该模式下验证 Termux 链接逻辑会全程看不到扩展目录 —— 必须先切原生模式。
+   两者状态语义不同：Linux 模式 `green` 表示 rootfs 里有包，原生模式 `green` 表示
+   `extensions/<id>/bin` 有可执行入口。
+2. **`/data/user/0/app.dsh.mobile/package.json` 是一个 0 字节空文件**（2026-11-14 14:52
+   产生），导致原生模式引擎启动即崩：
+   `Error: Invalid package config /data/user/0/app.dsh.mobile/package.json`
+   （node 的 `getNearestParentPackageJSON` 往上找到它）。已改名隔离为
+   `package.json.bak-20261116`。**未查清是谁写的**，推测与某次 pnpm/npm 在错误 cwd
+   下执行有关（未验证）。若再出现要顺着写入方查。
+3. `ExtensionStoreActivity` 未导出，`am start` 报 `not exported from uid 10499`，
+   `run-as ... am start` 报 `package=com.android.shell does not belong to uid` ——
+   只能用 `monkey -p app.dsh.mobile -c android.intent.category.LAUNCHER 1` 启动。
+4. 设备亮屏状态会影响 bridge 可连通性：`mScreenState=OFF` 时 `nc 127.0.0.1 3083`
+   无响应（超时无输出），`input keyevent 224` 唤醒后正常。取证脚本要先唤醒。
+
+### 版本
+`app/build.gradle.kts`：versionCode 390 → **391**，versionName 1.6.0-beta.14 →
+**1.6.0-beta.15**。产物 `app/build/outputs/apk/debug/app-debug.apk` 43,809,985 B；
+用 `keystore/dsh-release.keystore`（`CN=DSH Mobile`，SHA-256
+`d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8`）重签后
+`adb install -r` 成功，用户数据保留。
+
+### 提交
+`bd1eb72f` fix(ext): 扩展入口软链被落点守卫误拦，zig/binutils 装完报「下载失败」
+（9 文件 +806 −16），已推送 `origin/main`（`b98e1104..bd1eb72f`，
+`rev-list --left-right --count` = 0 0）。
+
+### 遗留
+- 三份 README 与 dshm.soodok.cn 宣传页的「57 个条目」应为 58（catalog 实际 58 项），
+  「20 套工具链」口径也需按现分类重核 —— 上一章已记录，本次未动。
+- #115/#116 的 issue 回复待发（含升级到 beta.15 后已有安装能否自愈的说明：
+  zig/dex2jar 类**能**（启动期按布局兜底补链），binutils 类**也能**（启动期补别名），
+  但都不需要重装；只有 `.ext-version` 被删（安装判失败时会发生）才必须重装。
+
+
+## 第一百三十三章（v1.6.0-beta.15 · 2026-11-16）PR #110 / #88 合入 + 三处 UI 观感修正
+
+### 背景
+2026-11-15 审核了 6 个 open PR，本轮按「确保无冲突、无 UI 畸形、无其他 bug」的要求合入其中 2 个。
+非交互式审核结论见下文「其余 4 个 PR 未合入的原因」。
+
+### 合入（两个 merge 提交，均 `--no-ff`，零冲突）
+| 提交 | 内容 |
+|---|---|
+| `bf28ee04` | `merge: #110 Upstream/hidden developer options（@qingjian0）` —— 13 文件 +220 |
+| `60bbc60a` | `merge: #88 feat(plugins): 添加移动端 MCP 设置控制台目录项（@Masspedro）` —— 2 文件 +7 −1 |
+
+合并基线 `04810982`（`origin/main` 同步，`rev-list --left-right --count` = 0 0）。
+两次 merge 均 `exit=0`，无 CONFLICT。
+
+### 修掉的三处观感偏离（`d03a04fd`，4 文件 +47 −45）
+`#110` 的 UI 全部在 Kotlin 里手搭，与仓库既有 XML 页面规范不一致；真机/模拟器像素采样确认后改掉：
+
+1. **开发者选项页整页布局** —— 原 `DeveloperOptionsActivity.onCreate` 里 `new LinearLayout`，
+   顶栏用 `setPadding(dp(16), dp(10), dp(20), dp(10))` 撑高，与其它子页的
+   `@dimen/md3_topbar_height`（56dp）不等高；标题 `textSize = 20f` 写死，没走
+   `?attr/textAppearanceHeadlineSmall`；`resolveColor` 拿不到 attr 时回退 `0xff888888`，
+   在浅色主题下是灰色而非主题色。
+   → 新增 `app/src/main/res/layout/activity_developer_options.xml`，
+   与 `activity_maintenance.xml` 同构：`md3_topbar_height` 顶栏 + `ic_back` +
+   `MaxWidthLinearLayout` + `MaterialCardView`（`?attr/dshCardRadius` / `dshCardStroke` /
+   `dshSurface`）+ `bg_md3_seg_single`。Kotlin 只做绑定（`btnBack` / `swDeveloperMaster`）。
+2. **设置页入口行的 leading icon 颜色** —— 原 `android:tint="?attr/colorOnSurface"`，
+   同组其余行（Upgrade / Maintenance / Language / About）都是 `?attr/colorPrimary`。
+   深色主题下该行齿轮是灰的、没有主题蓝。像素采样（模拟器 1080×2280）：
+   该行 `blue_px=0`，其余行 `blue_px=758~1912`。改为 `?attr/colorPrimary`。
+3. **同一行 chevron 颜色** —— `?attr/colorOnSurface` → `?attr/dshIslandText`，与邻行统一。
+
+修后复采样：该行 `blue_px=1271`（与 Maintenance 完全相同）、
+chevron 区域 `bright=170`（与邻行 82 同口径，箭头已绘制）。
+
+### `.gitignore` 白名单
+`scripts/probes/_test_developer_options.py` 由 `#110` 引入但没进白名单，而
+`/scripts/probes/*` 会忽略它 —— 该文件在树里是 `git add -f` 的产物，与其余 136 个
+已跟踪探针的惯例不一致。补一行 `!/scripts/probes/_test_developer_options.py`。
+
+### 验证证据
+- **门禁（提交后全量复跑）**：`check-i18n` / `check-ui-tokens` / `count-catalog-limits` /
+  `check-no-bulk-perms` / `_test_developer_options` / `_test_data_import` /
+  `_test_settings_ux` / `_test_settings_theme_consistency` / `_test_style_tokens` /
+  `_test_island_expand_once` / `_test_island_panel_shadow` / `_test_island_side_panel` /
+  `_test_pet_overlay` —— **13 项全部 EXIT=0**。
+- **构建**：`-Ppackage=noruntime -PdebuggableRelease=true assembleRelease --offline`
+  → BUILD SUCCESSFUL，APK **43,941,365 B**，`lib/` 只有 `arm64-v8a`；
+  `classes4.dex` 含 `DeveloperOptionsActivity`，`resources.arsc` 含
+  `activity_developer_options`，`assets/market/catalog.json` 含 `masspedro`。
+- **模拟器实测**（`sdk_gphone64_x86_64` / `emulator-5558` / 1080×2280，`-Pabi=x86_64` 包）：
+  1. 设置 → About → 版本号 7 连击 → `shared_prefs/developer_options.xml` 变
+     `enabled=true`；返回设置页底部出现「Developer options / Optional tools and advanced controls」。
+  2. 点进 → 主开关关掉 → pref 变 `false`，自动返回设置页，该行消失。
+  3. 再 7 连击 → 该行重新出现。完整往返闭环。
+  4. 社区插件页搜 `masspedro` → 命中 `Masspedro/dsh-mcp-console` `v0.7.0-preview.1`，
+     描述与 catalog 一致（`#88` 的目录项在应用内真实可见）。
+- **未证边界**：真机 PLZ110（`192.168.101.21:9000`）当时处于锁屏（`deviceLocked=1`），
+  无法解锁，因此上述 UI 验收**只在模拟器**完成；arm64 包已构建但未装机复验。
+
+### 其余 4 个 PR 未合入的原因
+- **#113 `WIP: selectable user data backup`** —— 作者自标 `draft: true`，正文写明
+  「Import is deliberately disabled pending safe shutdown and durable rollback;
+  do not merge or use for restore」。代码里 `FullBackup.restoreSafetyReady()` 硬编码
+  `return false`，`import()` 第一句即抛 `IOException`；而合入后 `BackupActivity` 的
+  「导入数据」入口已从 `DataExport.import`（可用）改成 `FullBackup.import`（必失败）——
+  合入等于删掉现网可用的导入功能。**不合**。
+- **#111 设置项内联展开** —— `0642cbe7` 把 main 上 `d9b065c9` 加固过的 D1 断言
+  （锚定 `<stroke>` 标签内部再判宽度）改回全文匹配。最小破坏实测：把
+  `bg_card.xml` 的 `android:width="?attr/dshCardStroke"` 改成 `0dp`（描边真没了），
+  宽松判据仍返回通过，加固判据正确报红 —— 是假绿回归。功能部分可留，需作者 rebase 掉该提交。
+- **#112 / #102** —— 81 文件冲突，且 `docs/md3/` 43 文件 18484 行抓来的 Material 3 文档占
+  74% 体积；方向与 main 上 `c1f33fdc`/`6781e9b5` 已做的 MD3 适配重叠；`#112` 的 CI 是 0 checks。
+
+### 与并行会话的边界
+本轮只在 `main` 上做上述 3 个提交。合并期间 `git status` 始终只有既有的
+`?? docs/ui-preview/probe-opacity.mjs`（非本会话产物）。
+
+## 第一百三十四章（v1.6.0-beta.15 · 2026-11-16）推送 main + PR/分支/worktree 大清仓
+
+### 推送
+`git fetch origin`（0 behind）→ `git push origin main`，`04810982..8ad34f9a`，快进无冲突。
+远端 `main` 现为 `8ad34f9a`，本地与远端 `rev-list --left-right --count` = `0 0`。
+
+### PR 收口
+合入的 #110 / #88 在合并时已由 GitHub 自动置为 `closed + merged=True`
+（`merged_at=2026-11-16T12:46:12Z`，`merge_commit_sha` 分别是 `bf28ee04` / `60bbc60a`），
+无需手工关闭。当前 open PR 只剩 4 个：**#113（draft）/ #112 / #111 / #102**，
+不合的理由见第一百三十三章末节，本轮未改变判断。
+
+### 分支清理
+
+**本地分支 22 → 2，远端 4 → 1。**
+
+远端删了 3 个（`git push origin --delete`，全部 exit=0）：
+| 分支 | 删除前 SHA | 依据 |
+|---|---|---|
+| `feat/linux-workspace` | `84735c44` | `merge-base --is-ancestor` 判定全部提交已在 `origin/main` |
+| `fix/ext-symlink-and-plugin-ownership` | `3b7ab65a` | 同上 |
+| `feat/peer-sync` | `3df42f43` | 非严格祖先（2 个提交），但功能文件（`PeerSync.kt`/`PeerSyncActivity.kt`/`tools/peersync/*`）与 main 的 `78bf3c2f` 版**逐字节相同**，仅 AI_CONTEXT 章节编号不同（远端叫「一百〇七」，main 收在「一百一十一」） |
+
+本地删了 20 个，其中 12 个是 `merge-base --is-ancestor` 严格判定已并入 main 的：
+`feat/a11y-screen-ref`(5e59c778) / `feat/linux-workspace`(a1527fff) / `feat/upstream-rc3`(0789057a) /
+`fix/delete-residue`(c4bf0451) / `fix/onboarding-polish`(d0e76128) /
+`merge/linux-workspace-20261109`(14e9af8e) / `pr-95`(c40726ae) / `pr101`(53658cc0) /
+`pr103`(f0ec2c35) / `pr105`(712db706) / `pr88`(577e866f) / `pr89`(b6636629)。
+
+另有 8 个"内容已被 main 超越"的，删前逐个比过关键文件 blob 或标记串：
+- `_wip-full-1.5.0-beta.3`(d36ccdca) / `_wip-backup-1.5.0-beta.3`(83ae8755) —— 10-31 的 v1.5.0-beta.3
+  全量快照，对 main 是 `861/866 文件、−17.3 万/−17.4 万行`的整体回退（623 个 main 独有文件在快照里不存在）。
+- `fix/apt-nonroot`(b84183c2) —— MCS 标签漂移、link 复制兜底、glibc Node、DNS 自愈四件事，
+  main 已由 `66f28ddb` / `df92c053` / `5cf78a4b` 等独立落地；分支独有标记串
+  （`bootstrap marker says attempted`、`reset apt lists/partial`、`stillMissing`）在 main 的
+  `LinuxEnvironmentManager.kt` 全部命中。两个探针 `_test_linux_symlink_drift.py` /
+  `_test_linux_apt_nonroot.py` 也都在 main。
+- `fix/linux-workbench-e`(3d507025) —— 三笔提交中 `2677327a`/`baddf310` 已由 `328d25d7` 等
+  等价落地（AI_CONTEXT「一百〇七」明确记为 cherry-pick 方案）；分支相对 main 只剩旧配色注释。
+- `pr102`(f49be362) —— main 的 `40fca0df` 已按「只移植三条核心修法、不照搬会破坏既有能力的两处」移植，
+  探针 `_test_theme_flicker.py` 在 main。
+- `pr93v4`(ce58e47a) —— PR #93 的 `b6b036c0` 已合入，随后被 `60aed9c1` **Revert**，
+  后续由 `4be9534e`/`c1f33fdc`/`6781e9b5` 重做；分支独有 14 个提交在 main 无同主题对应，
+  属被放弃的实现路线。
+- `wip/snapshot-20261113`(88f8645b) —— `stash` 型快照分支（`On main: wip-snapshot-20261113`），
+  对 main 是 `411 文件 / +1917 −23060` 的回退。
+- `feat/peer-sync`(1db2d4a0) —— 见上方远端说明。
+
+**`pr93v4` 删除前先固化**：`/e/tmp/wt93v4` 里有 29 个**已 `git add` 但未提交**的文件
+（8 个新 cap：`BlePeripheralCap`/`BtHidCap`/`BtsnoopParser`/`ContextCap`/`HandOverlay`/
+`NetCap`/`PulseCap`/`ScreenWatchCap`，加 `scripts/fix-kotlin-string-newlines.py` 与 3 个探针）。
+直接 `worktree remove` 会丢掉它们，所以先在 worktree 里 `git commit` 成 `1f86f31d`
+（`wip(pr93v4): 暂存的能力改造 … 归档用，未验收`）再删。其中 7 个 cap 文件与 main 里同名文件
+**blob 完全一致**（已被后续提交收编），只有 `RadioCap`/`RecordCap`/`_test_net_block.py`
+等 18 个文件与 main 不同。
+
+### 备份
+删前打了 `E:/Deepeek harness/branches_backup_20261116.bundle`（122,423,980 B，`--all`），
+`git bundle verify` 输出 **"The bundle records a complete history"**，`list-heads` 含
+`refs/heads/pr93v4=1f86f31d` / `feat/peer-sync` / `wip/snapshot-20261113` /
+`feat/flutter-native-chat` / `main` 以及 `refs/pr/{102,111,112,113}`。
+注意：`git bundle create <file> <branch1> <branch2> ...` 在 Git for Windows 上把 `E:/...`
+的分支名列表误当成路径分隔，会报 `Use '--' to separate paths from revisions`，改用 `--all` 才成功。
+删后校验过 `b84183c2`/`3d507025`/`f49be362`/`83ae8755`/`d36ccdca` 的对象仍可用
+`git cat-file -e` 取到（对象库未 GC）。
+
+### worktree 清理
+38 → 21（含主仓）。删了 17 个：4 个挂已并入分支的
+（`wt-a11y` / `wt-rc3` / `wt-del` / `wt-merge`，均 `dirty=0`）、
+`E:/Deepeek harness/.worktrees/linux-ui`（挂 `fix/linux-workbench-e`，dirty=0）、
+`wt-apt` / `wt-peersync` / `wt93v4`（先提交再删）、`wt-merge110`（我昨晚 #110 试合的遗留），
+以及 8 个 `dirty=0` 的游离树（`wt-72` / `wt-final` / `wt-guard` / `wt-head2` / `wt-head3` /
+`wt-md3` / `wt-origin` / `wt-pre` / `wt-pre-c1f` / `wt-premd3` / `wt-release` / `wt-restore`…）。
+**保留 19 个 dirty 的游离树**（`wt-side` 61 项、`wt-m3b`/`wt-m3c` 各 37、`wt-m3` 36、
+`wt-gate` 24、`wt-runmode` 15、`wt-aimode` 13、`wt-ssh` 11 …）—— 这些是并行会话的在途草稿，
+不属于本会话产物，不动。
+
+`wt-sync` 的 `.git` 文件已不存在（`fatal: validation failed … does not exist`），
+`git worktree prune` 后仍列在 `worktree list` 里，属 gitdir 残留，无害。
+
+### 顺带清理
+- `git update-ref -d refs/pr/88` / `refs/pr/110`（对应 PR 已合并），
+  保留 `refs/pr/{102,111,112,113}`（仍 open，审核要用）。
+- `/e/tmp/wt-*.log` 五个编译日志（`wt-merge110-build` / `wt-pr110-compile` / `wt-pr111-compile` /
+  `wt-pr113-compile` / `wt-stack-build`）。
+
+### 保留项与理由
+- 本地分支只剩 `main` 与 `feat/flutter-native-chat`(831bd414，12 提交、337 文件、+41314 −10)——
+  后者是独立 Flutter 原生聊天宿主，未合且远端无备份，属活跃开发线。
+- tag 107 个全部保留。其中 `_pre_merge_main`(15600762)、`peersync-pre-rebase`(3df42f43) 仅本地有，
+  `runtime` 本地 `fa00dd36` 与远端 `5d63ddf2` 不同（本地更新）—— 都是回滚锚点，不删。
+- `stash@{0}`（`On main: system-toggles-wip`）保留。
+
+### 未做
+- 未清理 19 个 dirty 游离 worktree（并行会话在途）。
+- 未分区 `AI_CONTEXT.md` 的 14010 行（自定上限 300 行），这是长期待办。
+
+
+## 第一百三十五章（v1.6.0-beta.16 · 2026-11-17）Linux 工作台画面起不来的第四个真因：Xvfb 的 XKB 输出目录不存在
+
+**用户反馈**：Linux 工作台「点开始画面」仍然没有任何反应。上一版（beta.12）修掉的
+是 pkill 自杀 / 写死 :99 / 假成功三条，但真机上画面依旧不出。
+
+**真根因（真机判据实验，决定性）**：
+Xvfb 把 xkbcomp 的输出目录**编译写死**成 `XKB_OUTPUT_DIR=/var/lib/xkb/`
+（`strings /usr/bin/Xvfb` 里就是 `/var/lib/xkb/` 与 `/tmp/`），而这个目录在
+Alpine rootfs 里**不存在**。于是它内部的 `xkbcomp ... /var/lib/xkb/xkm/xxx.xkm`
+返回 1，Xvfb 直接
+
+```
+XKB: Failed to compile keymap
+Keyboard initialization failed. This could be a missing or incorrect setup of xkeyboard-config.
+(EE) Fatal server error: (EE) Failed to activate virtual core keyboard: 2
+```
+
+退出，**一个 socket 都不建**，x11frsrv 随后报 `X11FRSRV_FAIL open display`，
+界面上表现为「点了按钮什么都没有」。
+
+判据（同一 rootfs、同一 uid 10499、同一 `run-as app.dsh.mobile` 域，
+只改一个变量）：
+
+| 条件 | 结果 |
+|---|---|
+| `Xvfb :241`（目录不存在） | FAIL，报上面的 Fatal |
+| 加 `mkdir -p /var/lib/xkb` 后**参数一字未改** | `X271=OK`，socket 落地 |
+| 同 display 上跑 `/x11frsrv` | `X11FRSRV_KV display=:271 size=1280x720 fps=10`，`done seq=120 ok=120 fail=0`，共享文件 3686416 字节 |
+| `xkbcomp -xkm … /var/lib/xkb/t.xkm` | rc=1 |
+| `xkbcomp -xkm … /tmp/t.xkm`（对照） | rc=0，12152 字节 |
+
+**排查中被逐一排除的假设**（都留了证据，后续别再走）：
+1. 环境变量 —— `env -i PATH=… HOME=/root TMPDIR=/tmp Xvfb` 一样失败。
+2. 残留 socket / 选号 / `-nolock` —— beta.12 已修，与本因无关。
+3. `-xkbdir` 指定路径、把 `/usr/share/X11/xkb` 整树拷到 `/tmp` 或私有目录 —— 全 FAIL。
+4. `XKB_CONFIG_ROOT` 指到拷贝树 —— FAIL。
+5. `-extension XKEYBOARD` —— 报 `Extension "XKEYBOARD" can not be disabled`，不可运行时禁用。
+6. `-xkbmap` / `-kb` / `-config` / `-verbose` —— 本版 Xvfb 全部 `Unrecognized option`。
+7. SELinux —— `dmesg` 无 Xvfb 的 `avc: denied`；`su` / `run-as` / App 真实域三种域下
+   `xkbcomp` 独立跑都能产出 12 KB keymap。
+8. seccomp（`Seccomp: 2`，无 `sig=31`）、`popen` 被禁（C 小程序实测 popen 正常）、
+   进程数/RLIMIT（`Max processes 57203`）。
+
+**改动**（3 文件 +71 行）：
+- `app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt`：新增
+  `ensureXkbOutputDir(root)`，在 `installLinuxCompatShims()` 里无条件调用（幂等）。
+  部署期与「已 READY 早退」两条路径都会经过它，覆盖「rootfs 早就装好、不会再重解包」的情况。
+- `app/src/main/java/app/dsh/mobile/LinuxActivity.kt`：`startFrameServer()` 的 X11 分支
+  在起 Xvfb 前 `mkdir -p /var/lib/xkb`，不可写时兜底 `chmod 777`，并把
+  `XKBDIR=writable|not-writable` 与实际 `ls -ld` 一起放进失败回显。
+- `scripts/probes/_test_linux_frame_launch.py`：新增 J1~J4 四条断言（运行期 mkdir、
+  chmod 兜底 + 状态变量、失败回显带目录状态、部署期也建），探针从 18 条扩到 **22 条**。
+
+**验证**：
+- 探针 `python scripts/probes/_test_linux_frame_launch.py` → **22 checks / 0 failed**。
+- 变异反验：删掉运行期 `mkdir -p /var/lib/xkb` → J1 变红（rc=1）；删掉部署期
+  `ensureXkbOutputDir(root)` 调用 → J4 变红（rc=1）；恢复后复绿，两个文件按字节核对
+  与原字节完全一致（`act_bytes_equal=True envm_bytes_equal=True`）。
+- `python scripts/check-i18n.py` → All i18n checks passed。
+- `gradle -Ppackage=noruntime :app:assembleDebug :app:testDebugUnitTest` → BUILD SUCCESSFUL。
+- APK 已装进设备（`078ad25948935c31bd2158f5adc9bb7e`，与本地产物 md5 一致），
+  设备版本 391 / 1.6.0-beta.15。
+
+**未完成 / 阻塞**：
+- 装机后点按验收**没做成**：设备 192.168.101.21:9000 在 22:40 之后彻底掉线
+  （`ping` 100% 丢包、`adb connect` 10060、`adb mdns services` 也空了），
+  无法点「开始画面」看帧。上一版 beta.15 包上已复现过同样的 XKB Fatal，
+  这一版的两处 mkdir 都在，但**尚未在设备上验证出帧**。
+- 「换 sway/Wayland 方案」已探明成本更高：容器内 `/etc/resolv.conf` 是
+  `nameserver 127.0.0.1`，而 `DSH_DNS_PORT` 只在 `LinuxContainerRunner.doExec()`
+  里注入，`run-as` 手起的容器拿不到 → DNS 不通 → `apk add sway grim wtype`
+  反复 `temporary error`，只落下半个 sway（缺 libcairo / libevdev）。
+  这条备选暂不推进。
+
+## 第一百三十六章（v1.6.0-beta.16 · 2026-11-17）三条新 issue：#118 思考档位、#107 华为内核 polyfill、#119 用量浮层
+
+本轮把 2026-11-17 新报的三条 issue 逐条查到代码级根因并修复，每条都留下可复验探针与**可逆负对照**（改坏判据必须变红，否则判据在空转）。
+
+### #118 fast_mode 把会话钉死在「无思考」
+
+**现场**：`fast_mode(action="on")` 之后每一步都报
+`agent/request proposed reasoning effort "off" after step preparation fixed "adapter default"; use agent.model.select() before step preparation`，除 off 外思考档位全部失效，必须重启会话。
+
+**根因（与 issue 指向一致，但更靠前一层）**：引擎 0.2.2 起在 `@deepseek-ai/dsh-agent-loop` 的 `prepareRequest()` 里硬校验 `agent/request` 返回的 provider/model/reasoningEffort 必须与 step preparation 阶段定下的 selection 完全一致，不一致就 throw。正解是 `agent.model.select()`，且必须在 preparation 之前（`agent/pre-step`）。
+
+而 `app/src/main/assets/android-plugins/fast-mode.mjs` 靠**猜打包产物里的字面量**决定挂哪个钩子：读 `dsh-agent/lib/index.js` 里有没有 `var AgentModel = class`，命中挂 pre-step，没命中退回 `agent/request`。这个判据不是契约本身，只是某一次 bundler 输出格式的巧合：字面量一变而契约还在，就会把新引擎误判成老引擎，挂上必然 throw 的钩子。
+
+**修法**：判据改成直接读契约（`HARD_CONTRACT_MARKERS` 命中 `after step preparation fixed` 或 `use agent.model.select() before step preparation` 任一条），类名只作辅助信号；并规定**契约在就绝不退回 agent/request**（`usePreStep = hasAgentModel() || CONTRACT`）——宁可不改 effort，也不能挂错钩子。
+
+**验证**：
+- `scripts/probes/_test_fast_mode_engine_compat.py` → **41 / 0**（A3/A3b/A3c 反转：从「探测依据是 AgentModel 类」改成「探测依据是硬契约」，并显式断言不再靠巧合字面量）。
+- `scripts/probes/_fast_mode_runtime_test.mjs` → **30 / 0**，新增 D1~D6：字面量改成 `class AgentModel` 仍必须挂 pre-step、只剩契约（探不到类名）也必须挂、真·老引擎仍退回 `agent/request`。
+- 负对照：把判据改回旧逻辑 → D1~D5 变红（25/5）。
+
+### #107 华为内核 URL.canParse —— polyfill 写了，但没到现场
+
+**现场**：Android 10 / 华为 `com.huawei.webview 114.0.5.302`，对话页整列空白：`slot entry crashed in 'conversation.chat.node': TypeError: URL.canParse is not a function`。槽一崩，消息列表（含历史）整块不渲染。
+
+**根因不是「没写 polyfill」**：仓库 2026-11-08 就补了（`aabdef9f`），v5 一直由 `scripts/patch-webview-polyfill.py` 注入 `dist/index.html`。问题是三条链路各有洞：
+
+1. noruntime 包跨 APK 复用整份 runtime，旧磁盘上的 `dist/index.html` 不会被重打；
+2. index.html 是 Node 引擎运行期从磁盘读出来发的，**不是 APK asset**——「补丁在 asset 里」≠「WebView 拿到的 HTML 里有补丁」；
+3. `onPageFinished` + `evaluateJavascript` 太晚：module 脚本已经解析执行，polyfill 必须**同步**出现在首个 `type="module"` 之前。
+
+**修法（单一真源 + 三处兜底）**：
+- `patch-webview-polyfill.py` 新增 `--asset-out`，把 `POLYFILL` 常量原样导出成 asset；Kotlin / asset 里禁止第二份实现。
+- `app/build.gradle.kts` 的 `prepareRuntimeAssets` 调它生成 `js/legacy-webview-polyfill.html`，失败即 `GradleException`（不许静默产出空文件）。
+- 新增 `engine/WebViewPolyfill.kt`：比较**整块字节**且要求位置在首个 module 之前；`patchHtml` 先整块剥离旧 vN 再插入（不叠加）；`healInstalled` 临时文件 + `ATOMIC_MOVE` 原子替换。
+- `RuntimeInstaller` 在**复用**与**安装完成**两条路径都调 `healInstalled`。
+- `MainActivity` 新增 `shouldInterceptRequest` → `interceptWebUiDocument`：只拦引擎健康端口的回环 GET 首页、只处理 200 + text/html、不跟重定向、复制认证与 Cookie、**重算 Content-Length**，异常一律返回 null 走原生（不白屏）。
+
+**验证**：
+- 新增 `scripts/probes/_test_webview_polyfill_delivery.py` → **38 / 0**：A 单一真源、B 真跑 `--asset-out`（含「导出与常量逐字节一致」「顶层立即执行」）、C 自反证（canParse 改名 / 删 structuredClone 定义 / 包进 DOMContentLoaded / 丢版本标记 → 判据必须变红）、D 落地链路、E 单测案例齐备。
+- 单测 `WebViewPolyfillTest` 四条（早于 module、旧块替换、晚置/重复块修复、非 module 文档不动）→ `:app:testDebugUnitTest` **68 / 0**（全仓 6 个测试类）。
+- `scripts/probes/_test_webview_polyfill_gate.py` → **35 / 0**：新增豁免规则（仅 `app/src/test/` 且文件里显式写 `dsh-polyfill-version-fixture` 才放行测试样本里的版本字面量），负对照验证两个条件缺一即变红。
+
+### #119 Android 上「用量」图标点了没反应
+
+**现场**：每条消息操作行最后那个无标签图标（本轮用量）在 Android 上点击无任何反应；同排复制/好评/差评/分支全部正常；引擎日志 +0 字节、WebView console 0 error；桌面版同一按钮正常弹卡片 ⇒ **平台特定**。
+
+**根因（代码级）**：引擎 0.2.2-rc.3 把浮层定位从「JS 量测 + 内联坐标」（rc.1 的 `useAnchoredPosition` + `MEASURE_STYLE{visibility:hidden}`）换成**纯 CSS anchor positioning**：trigger 外层 span 带 `anchor-name`，面板带 `position-anchor`，CSS 里写 `top:max(12px,var(--dsh-frame-overlay-top,12px))`、`bottom:max(12px,calc(anchor(top) + 8px))`、`left:max(12px,anchor(left))`、`position-area:none`、`position-try-fallbacks:--dsh-stat-*`。
+
+**CSS anchor positioning 是 Chrome 125+ 的能力**，而 Android WebView 普遍更老（#107 那位是 114）。老内核把这些声明整条丢弃，面板只剩 `position:fixed`。
+
+**实测（Chrome 157 + rc.3 真 CSS，412×915 手机视口；把含 `anchor()` 的声明按老解析器语义剥离）**：
+
+| 场景 | 面板落点 | 与 trigger 距离 |
+|---|---|---|
+| 新内核（CSS 锚点生效） | (56, 682) | 上方 8px，正确 |
+| 老内核（声明被丢弃） | (100, 12) | 视口顶边，离 trigger **678px** |
+| 老内核 + 本轮兜底 | (12, 682) | 上方 8px，正确 |
+
+即：老内核上面板不是不渲染，而是被钉在视口顶部（`--dsh-frame-overlay-top` 更大时还会压到顶栏/状态栏下面）——用户视线在屏幕底部，看到的就是「点了没反应」。
+
+**修法**：新增客户端插件包 `app/src/main/assets/android-plugins/chat-anchor-fallback/`（package.json / index.js / client.js），只在 `CSS.supports("position-anchor: --x") === false` 时接管：监听 body 新增的 `[role=dialog]`（跳过 `aria-modal="true"`，且必须存在 `[aria-haspopup="dialog"][aria-expanded="true"]` 的 trigger 才动），用 trigger 的 `getBoundingClientRect()` 算视口内坐标（优先上方、越界夹取），写**内联 !important**——内联 !important 在层叠里高于任何作者样式表 !important，因此也压得过 mobile-layout 插件按文本关键词给「统计胶囊详情」写的固定定位规则。新内核完全 idle。已登记进 `EngineConfig.kt` 的 overlay insert 与目录部署清单。
+
+**验证**：
+- 新增 `scripts/probes/_test_chat_anchor_fallback.py` → **24 / 0**（形态 / 能力门禁 / 保守性 / 行为 / 负对照三条）。
+- 新增 `scripts/probes/_chat_anchor_fallback_runtime_test.mjs` → **24 / 0**：假 DOM 真跑 client.js 钩子（新内核不订阅、老内核摆位、滚动重摆、收起脱钩、卸载断开）。
+- 真实浏览器端到端：老解析器 CSS + 强制 `CSS.supports` 返回 false → 装插件后面板从 (100,12) 变成 (12,682)，`gapToTrigger: 8`，`data-dsh-anchor-fallback` 标记就位。
+- 负对照：去掉能力门禁 / 去掉视口夹取 / 不看 trigger 展开态 → 运行期判据全部变红。
+
+**未完成**：
+- 三条都**未在真机验收**（本机无 adb、无可用设备）。#107 的自愈与拦截只能在装机后看 `WebViewPolyfill` / `polyfill document:` 日志确认；#119 的兜底在华为 114 内核上仍需实机点一次。
+- #108（40MB 会话发消息必 TRANSPORT）本轮未处理。
+
+**改动文件**：
+- #118：`app/src/main/assets/android-plugins/fast-mode.mjs`、`scripts/probes/_test_fast_mode_engine_compat.py`、`scripts/probes/_fast_mode_runtime_test.mjs`
+- #107：`scripts/patch-webview-polyfill.py`、`app/build.gradle.kts`、`app/src/main/java/app/dsh/mobile/engine/WebViewPolyfill.kt`（新）、`app/src/main/java/app/dsh/mobile/engine/RuntimeInstaller.kt`、`app/src/main/java/app/dsh/mobile/MainActivity.kt`、`app/src/test/java/app/dsh/mobile/engine/WebViewPolyfillTest.kt`（新）、`scripts/probes/_test_webview_polyfill_delivery.py`（新）、`scripts/probes/_test_webview_polyfill_gate.py`
+- #119：`app/src/main/assets/android-plugins/chat-anchor-fallback/`（新，三件套）、`app/src/main/java/app/dsh/mobile/engine/EngineConfig.kt`、`scripts/probes/_test_chat_anchor_fallback.py`（新）、`scripts/probes/_chat_anchor_fallback_runtime_test.mjs`（新）
+
+---
+
+## 第一百三十七章（v1.6.0-beta.16 · 2026-11-17）WebView 版本声明盘点：两笔账混成一句，注释落后常量两版
+
+**问题（用户提问驱动）**：问「MD 上声明的 WebView 版本是多少？有没有冲突」。答案是**有冲突，两处**，且性质不同——一处是注释没跟着常量改，一处是把 JS 门槛与 CSS 门槛混成了一句「85」。
+
+### 权威真源（扫描结论，值未改）
+
+| 位置 | 内容 |
+|---|---|
+| `app/src/main/java/app/dsh/mobile/WebViewDiagnostics.kt:75` | `const val MIN_CHROME = 85`（唯一真源） |
+| `app/src/main/java/app/dsh/mobile/AppGate.kt:41` | `const val MIN_WEBVIEW_CHROME = WebViewDiagnostics.MIN_CHROME` |
+| 门禁调用点 | `MainActivity.kt:3313`、`service/EngineService.kt:323,341` |
+| `app/build.gradle.kts:230,240,243` | `minSdk = 26` / `targetSdk = 28` / `compileSdk = 36` |
+
+### 冲突 1（已修）：`AppGate.kt` 注释停在 v1.6.8 的 94，常量已回落到 85
+
+`git blame` 证据：`AppGate.kt:34-37` 那段「v1.6.8 由 85 修正为 94」来自 `50d74042`（2026-11-05 抬到 94）；`WebViewDiagnostics.kt:75` 的 85 来自 `699ceedf`（同日回落到 85）。**常量回了，注释没回**——照注释读代码的人会以为门槛是 94，实际放行 85。
+
+改法：注释改写成完整沿革并钉住「85 为什么能成立」：
+- 85 → 94（`50d74042`）：上游**未转译**产物含 `class static {}`（Chrome 94），语法层 polyfill 补不了，85–93 会「通过门禁 → 解析期 SyntaxError → 白屏」。
+- 94 → 85（`699ceedf`）：构建期 `scripts/patch-webview-syntax-floor.py` 用 esbuild `--target=chrome85` 重转译入口 chunk，把 `static {}` 降级掉。
+- 补两条警告：(a) 85 的前提是那个转译步骤真跑了，由 `scripts/probes/_test_webview_syntax_floor.mjs` 对 runtime 里的入口 chunk 做 AST 扫描守着——关掉步骤，实际门槛弹回 94 而常量还是 85；(b) CSS 门槛尚未纳入门禁。
+
+### 冲突 2（已文档化）：JS 门槛 85 vs CSS 门槛 125，两笔账写成同一句
+
+实测扫描上游样式表 `/e/tmp/rc3/deepseek-ai-dsh-web-frontend-0.2.2-rc.3/package/dist/assets/index-CSAdOBx6.css`（92,250 B）：
+
+| 特性 | 处数 | 所需 Chrome |
+|---|---|---|
+| CSS anchor positioning（`anchor()` / `position-anchor` / `position-try` / `position-area` / `anchor-name`） | **34** | **125** |
+| `@position-try` | 8 | 125 |
+| `color-mix()` | **10** | **111** |
+| `:has()` | **18** | **(105)** |
+| `:is()/:where()` | 39 | 88 |
+| `scrollbar-gutter` | 1 | 94 |
+| `overscroll-behavior` | 4 | 63 |
+| `dvh` 单位 | **0** | — |
+
+关键不是「CSS 也要 125 所以门槛错了」，而是**降级形态不同**：JS 语法门槛不够 = **白屏**（拦得住，必须拦）；CSS 特性门槛不够 = **静默降级**——不报错、不白屏，但 `color-mix()` 整条声明被丢（如 `background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)` 无纯色兜底 → 背景变透明）、`:has()` 整条不匹配、`anchor()` 被丢后浮层失去相对触发点定位。所以 `MIN_CHROME = 85` 本身没错，错的是**文档把它当总门槛在说**。
+
+另一条佐证（与 #119 同源）：上游 `._portal_70kcw_43` 在老内核上只剩 `position:fixed;bottom:12px;right:12px;margin:0;width:max-content;height:fit-content;z-index:1100`（`top`/`left` 被丢）→ 菜单贴视口右下角。
+
+写入位置：`README.md:137`（门槛分两笔账）、`README.md:581`（新增边界条目「WebView 的 CSS 门槛低于 JS 门槛」，含实测坐标 (100,12) / 678px）、`README_EN.md` 与 `README.de.md` 的 Limits/Grenzen 各补一条。
+
+### 数字陈旧（已修）
+
+`README_EN.md:318` / `README.de.md:307` 原写「13 modern APIs」。实测 `scripts/patch-webview-polyfill.py`：**21 个 `def(...)` 安装 + 1 个 `globalThis.structuredClone` = 22 次安装**；去重口径见下：
+
+> 计数口径：**安装点 22 处**（21 个 `def()` 调用 + `globalThis.structuredClone`；`grep -c "def("` 得 22 是因为把 `function def(obj, name, value)` 的定义行也算进去了）；**API 名去重 20 个**（19 个 def 方法名 + `structuredClone`，其中 `groupBy` 分挂 `Object` 与 `Map`、`any`/`timeout`/`abort`/`throwIfAborted` 亦同名分挂）。文档统一写「20 modern APIs / 22 installations」。
+
+已改 EN/DE 两处并点出 `URL.canParse`、`Object.groupBy`。
+
+### 自检注释的语义偏差（已修，未改探测范围）
+
+`MainActivity.kt:3995` 原文「引擎实际需要 Chrome 126（pdf.js 用 URL.parse）」，与 `MIN_CHROME = 85` 矛盾。改清语义：`need` 表里 9 项是「**未装 polyfill 时**各 API 的原生门槛」，用途是判断「polyfill 补上没有」（缺项打 `polyfill=MISSING:…` → 问题在交付链路而非内核太老），**不是门禁阈值**；并补一条「本探针只覆盖 JS API，`:has()` / `color-mix()` / `anchor()` 查不到，自检全绿不代表样式正确」。探测条目**未增删**。
+
+### 未发现冲突（记录以免重复查）
+
+- `docs/LAN_WEBUI.md:77`、`docs/LAN_WEBUI.en.md:81`、`docs/SSH.md:257,278` 都写 Chrome 85+，与常量一致。
+- `docs/release-notes/RELEASE_NOTES_v1.3.1/1.3.2/1.4.0.md` 的 85 是历史版本说明，不改。
+- `chat-perf/client.js:26,82,86` 自带 85→98 两级降级说明，与门槛一致。
+- 仓库 `app/src/main/assets/` 下 **0 个 `.css`**；提到 `position-anchor` 的只有新建的 `chat-anchor-fallback/client.js`（13 处，全在注释与能力探测里）。即上游 CSS 门槛不进我们的产物，只影响 WebView 渲染上游页面。
+
+### 验证
+
+- 全量探针 `scripts/probes/_test_*.py`：**140 PASS / 0 FAIL / 1 SKIP**（SKIP 为 `_test_corepack_hardlink.py`，noruntime 无 `assets/runtime.zip`，CI 同样跳过）。
+- `check-i18n.py` All i18n checks passed（58 扩展名目齐）；`check-ui-tokens.py` All UI token checks passed（`152 android:tint / 0 app:tint`）。
+- `gradle.bat -p . -Pabi=arm64-v8a -Ppackage=noruntime :app:assembleDebug :app:testDebugUnitTest` → **BUILD SUCCESSFUL in 30s**；单测 **68 / 0**（6 个测试类）。
+- ⚠️ 仓库**不含** `gradle-wrapper.jar`（二进制不入库，CI 用 `gradle/actions/setup-gradle`）。本机可用：`/c/Users/Qt/.gradle/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1/bin/gradle.bat`。`./gradlew` 不存在。
+
+### 改动文件
+
+- `app/src/main/java/app/dsh/mobile/AppGate.kt`（注释改写，值未动）
+- `app/src/main/java/app/dsh/mobile/MainActivity.kt`（`WEBVIEW_SELFCHECK_JS` KDoc 语义澄清，探测条目未动）
+- `README.md`（137 行门槛双账 + 581 行 CSS 边界条目）
+- `README_EN.md`、`README.de.md`（Limits/Grenzen 各补一条 + 修正 13→20 APIs）
+
+### 未完成 / 待决策
+
+- 是否把 CSS 能力（`:has()` / `color-mix()` / `anchor()`）纳入 `WEBVIEW_SELFCHECK_JS` 或门禁 —— 属产品决策（抬 `MIN_CHROME` 会砍掉大批现役设备），本轮只文档化，未改行为。
+- 三条 issue（#118/#107/#119）与本章改动**均未推送** origin（`origin/main = 8ad34f9a`），本机无真机，真机验收仍欠。
+

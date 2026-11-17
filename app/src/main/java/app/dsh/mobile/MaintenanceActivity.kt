@@ -1,6 +1,5 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -630,5 +629,4 @@ class MaintenanceActivity : ThemedActivity() {
         refreshPluginKill()
     }
 
-    /** 统一弹窗样式：覆盖自绘圆角背景 */
 }

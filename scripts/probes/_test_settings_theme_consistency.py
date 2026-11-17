@@ -46,7 +46,8 @@ m = re.search(r'<style\s+name="Theme\.Dsh"\s+parent="([^"]+)"', themes)
 check("[A1] 存在 Theme.Dsh 且声明 parent", m is not None)
 if m:
     parent = m.group(1)
-    check("[A2] parent 是 Material 3 DayNight", "Theme.Material3.DayNight" in parent, parent)
+    # 单主题收敛后 parent 是 Material3.Light/Dark（values / values-night 各一份）
+    check("[A2] parent 是 Material 3 主题", "Theme.Material3." in parent, parent)
 check("[A3] 不再有 Theme.*.MD3 副本主题",
       re.search(r'<style\s+name="Theme\.[\w.]+\.MD3"', themes) is None)
 # 夜间配色必须有 values-night/colors.xml。允许项目显式提供夜间 Theme.Dsh，
@@ -67,6 +68,11 @@ for p in glob.glob(os.path.join(RES, "layout", "activity_*.xml")):
     need |= set(re.findall(r'\?attr/(color\w+)', read(p)))
 # android: 命名空间的属性（colorBackground 等）由平台提供
 missing = sorted(need - mapped)
+# colorTertiary 等角色允许由配色覆盖层（ThemeOverlay.Dsh.Palette.*）提供
+_overlays = ""
+for _f in glob.glob(os.path.join(RES, "values", "md3_palettes.xml")):
+    _overlays += read(_f)
+missing = [c for c in missing if c not in _overlays]
 check("[B1] 布局用到的 MD3 语义色都被主题映射", not missing, "缺: %s" % missing[:8])
 check("[B2] 关键色阶齐全",
       {"colorPrimary", "colorOnSurface", "colorSurface",
@@ -90,16 +96,18 @@ for loc in ("values", "values-night"):
     check(f"[C2] {loc} 主题定义全部风格令牌", declared <= mapped_tokens,
           str(sorted(declared - mapped_tokens)))
 themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
-check("[C3] 风格覆盖层不替换 Activity 主题",
-      "followsStyle && appliedUiStyle == StylePref.Style.MATERIAL" in themed
-      and "theme.applyStyle(styleOverlay, true)" in themed)
+# 经典风格已删除：全站固定单一 Material 3 主题，配色覆盖层在 setTheme 之后应用。
+check("[C3] 单主题 + 配色覆盖层在 setTheme 之后应用",
+      "setTheme(R.style.Theme_Dsh)" in themed
+      and "val paletteOverlay = ThemeAccent.overlayRes(this)" in themed
+      and "theme.applyStyle(paletteOverlay, true)" in themed)
 
-# ---------- [D] Activity 不自己 setTheme ----------
+# ---------- [D] setTheme 只出现在 ThemedActivity ----------
 bad = []
 for p in glob.glob(os.path.join(JAVA, "*.kt")):
-    if re.search(r"^\s*setTheme\(", read(p), re.M):
+    if re.search(r"^\s*setTheme\(", read(p), re.M) and os.path.basename(p) != "ThemedActivity.kt":
         bad.append(os.path.basename(p))
-check("[D1] Activity 不调用 setTheme（否则冲掉动态取色覆盖层）", not bad, str(bad))
+check("[D1] 只有 ThemedActivity 调用 setTheme", not bad, str(bad))
 
 # ---------- [E] 动态取色注册在 Application ----------
 dshapp = read(os.path.join(JAVA, "DshApp.kt"))

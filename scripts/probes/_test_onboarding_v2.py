@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""引导页 v2（欢迎页 + 八步、双形态）回归门禁。
+"""引导页 v2（封面 + 八步，双形态）回归门禁。
 
 ## 这份探针守什么
 
@@ -7,7 +7,7 @@
 再往前丢过 Root 二次确认。所以这里不测「页面长什么样」，
 只测**改了会静默坏掉的行为**：
 
-1. 九页顺序与步骤定义一一对应，欢迎页不计入八步；
+1. 封面及八步顺序与页面 View 一一对应（少一个就会漏页且不报错）；
 2. 平板/手机双形态的判据在（>=600dp 走侧栏，否则走胶囊 + 抽屉）；
 3. 配色真的重涂到按钮与进度条（v1.5.x 的真 bug：只改卡片文字）；
 4. 方向页有真机预览控件且真的联动（不是一张静态图）；
@@ -27,6 +27,7 @@
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 APP = os.path.join(ROOT, "app", "src", "main")
@@ -92,6 +93,7 @@ check("cover and eight steps are declared in order", tuple(step_ids) == expected
       "found: %r" % (step_ids,))
 for pid in expected_pages:
     check("layout declares %s" % pid, '@+id/%s"' % pid in layout)
+    check("activity binds %s" % pid, 'R.id.%s' % pid in act)
 check("progress max excludes the cover", "progress.max = steps.size - 1" in act)
 go_to = fn_body(act, "private fun goTo(")
 check("progress and step hint exclude the cover",
@@ -237,10 +239,14 @@ finish = fn_body(act, "private fun finishOnboarding()")
 check("back key still completes onboarding from the first page",
       "if (page > 0)" in back_pressed and "goTo(page - 1)" in back_pressed
       and "finishOnboarding()" in back_pressed and "commitNow()" in finish)
+# 步骤抽屉是 BottomSheetDialog，不是 View.VISIBLE 的普通容器
 check("back key closes the drawer first",
       "stepsDrawer?.isShowing == true" in back_pressed and "openStepsDrawer(false)" in back_pressed)
 check("root double warning preserved",
-      bool(re.search(r'warnRoot\s*\{\s*warnRootAgain\s*\{[^}]*commitNow\(\)', finish, re.S)))
+      re.search(r"if \(selectedPriv == PrivMode\.ROOT && rootAvailable\)\s*\{"
+                r"[\s\S]*?warnRoot\s*\{\s*warnRootAgain\s*\{"
+                r"[\s\S]*?commitNow\(\)", finish) is not None
+      or bool(re.search(r'warnRoot\s*\{\s*warnRootAgain\s*\{[^}]*commitNow\(\)', finish, re.S)))
 check("root warning text preserved", "ob_priv_root_paths_warn" in act)
 check("root probe stays off the main thread",
       'Thread({' in act and '"probe-root"' in act)
@@ -302,9 +308,15 @@ if m_radius and m_box:
     radius_detail = "gradientRadius=%s%s vs %sdp box (bare number = px)" % (
         m_radius.group(1), unit or "", m_box.group(1))
 check("done glow radius has a unit and fills its box", radius_ok, radius_detail)
-# 呼吸放大到 1.12 倍会超出 200dp 的 FrameLayout；父级裁剪会把光晕切出方边。
-m_done = re.search(r'<FrameLayout\b[^>]*android:clipChildren="false"[^>]*>\s*<View\s+android:id="@\+id/doneGlow"', layout, re.S)
-check("done page does not clip the breathing glow", bool(m_done))
+# 呼吸放大到 1.12 倍会超出包裹它的 FrameLayout；直接父级不能裁剪。
+android_id = "{http://schemas.android.com/apk/res/android}id"
+clip_children = "{http://schemas.android.com/apk/res/android}clipChildren"
+layout_tree = ET.fromstring(layout)
+done = next((e for e in layout_tree.iter() if e.get(android_id) == "@+id/pageDone"), None)
+glow_parent = next((p for p in done.iter() if any(
+    c.get(android_id) == "@+id/doneGlow" for c in p)), None) if done is not None else None
+check("done page does not clip the breathing glow",
+      glow_parent is not None and glow_parent.get(clip_children) == "false")
 
 # (b) 能力开关行：文字列紧贴开关，长副标题会一直顶到开关边上。
 cap_row = fn_body(act, "private fun capRow(")
@@ -317,7 +329,7 @@ check("capability text keeps a gap before the switch",
 scrolls = re.findall(r'<ScrollView\b[^>]*>', layout)
 faded = [s for s in scrolls if 'android:requiresFadingEdge="vertical"' in s
          and 'android:fadingEdgeLength="' in s]
-check("nine scrolling pages exist", len(scrolls) == 9, "found %d" % len(scrolls))
+check("nine scrolling pages exist", len(scrolls) == len(expected_pages), "found %d" % len(scrolls))
 check("every scrolling page fades at its edges",
       len(scrolls) > 0 and len(faded) == len(scrolls),
       "%d/%d ScrollViews fade" % (len(faded), len(scrolls)))

@@ -7,7 +7,7 @@
     android:shape="rectangle">
     <solid android:color="@android:color/transparent" />
     <stroke
-        android:width="1dp"
+        android:width="?attr/dshCardStroke"
         android:color="?attr/dshStroke" />
-    <corners android:radius="@dimen/md3_card_radius" />
+    <corners android:radius="?attr/dshCardRadius" />
 </shape>

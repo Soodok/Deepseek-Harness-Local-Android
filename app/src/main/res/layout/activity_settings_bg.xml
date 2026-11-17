@@ -36,11 +36,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -135,11 +135,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -207,11 +207,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -329,11 +329,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -403,11 +403,11 @@
                 android:layout_marginTop="12dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface"
                 app:rippleColor="?attr/colorPrimary">
 
                 <LinearLayout
