@@ -9,7 +9,7 @@ import path from "node:path";
 
 import {
   BlobStore, captureBaseline, detectConflicts, diffTurn, planRewind,
-  readManifests, restoreFile, scanTree, writeManifest, sha256, looksBinary,
+  readManifests, restoreFile, rewindForkFirst, scanTree, writeManifest, sha256, looksBinary,
 } from "../../../app/src/main/assets/android-plugins/turn-rewind/core.js";
 
 /** 建一个临时工作区。 */
@@ -205,4 +205,62 @@ test("单文件超限标记 oversized，不中断其余文件", async () => {
   const scan = await scanTree(cwd, { maxFileBytes: 16 });
   assert.equal(scan.files.get("big.bin").oversized, true);
   assert.equal(scan.files.get("small.txt").oversized, undefined);
+});
+
+test("fork 失败时一个文件都不动，撤回不会造成不可见的数据改动", async () => {
+  const cwd = await workspace();
+  const sessionDir = await snapRoot();
+  const store = new BlobStore(sessionDir);
+  await fsp.writeFile(path.join(cwd, "f.txt"), "base");
+  await record(sessionDir, cwd, 1, async () => { await fsp.writeFile(path.join(cwd, "f.txt"), "agent"); }, store);
+
+  const manifests = await readManifests(sessionDir);
+  const planned = planRewind(manifests, 1);
+  let restored = 0;
+  const outcome = await rewindForkFirst({
+    plan: { items: planned.plan, conflicts: [], restore: async () => { restored += 1; return { ok: true }; } },
+    fork: async () => { throw Object.assign(new Error("gateway refused"), { code: "fork-failed" }); },
+    restore: async (entry) => { restored += 1; return await restoreFile({ cwd, store, item: entry.item }); },
+  });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.error.code, "fork-failed");
+  assert.equal(restored, 0, "fork 失败后不应有任何文件被还原");
+  assert.equal(await fsp.readFile(path.join(cwd, "f.txt"), "utf8"), "agent");
+});
+
+test("撤回先 fork 再还原文件：还原发生在 fork 成功之后", async () => {
+  const cwd = await workspace();
+  const sessionDir = await snapRoot();
+  const store = new BlobStore(sessionDir);
+  await fsp.writeFile(path.join(cwd, "f.txt"), "base");
+  await record(sessionDir, cwd, 1, async () => { await fsp.writeFile(path.join(cwd, "f.txt"), "agent"); }, store);
+
+  const order = [];
+  const manifests = await readManifests(sessionDir);
+  const planned = planRewind(manifests, 1);
+  const outcome = await rewindForkFirst({
+    plan: { items: planned.plan, conflicts: [] },
+    fork: async () => { order.push("fork"); return { sessionId: "child" }; },
+    restore: async (entry) => {
+      order.push("restore:" + await fsp.readFile(path.join(cwd, "f.txt"), "utf8"));
+      return await restoreFile({ cwd, store, item: entry.item });
+    },
+  });
+
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(order, ["fork", "restore:agent"]);
+  assert.equal(await fsp.readFile(path.join(cwd, "f.txt"), "utf8"), "base");
+});
+
+test("只撤回文本时不碰任何文件", async () => {
+  let restored = 0;
+  const outcome = await rewindForkFirst({
+    plan: undefined,
+    fork: async () => ({ sessionId: "child" }),
+    restore: async () => { restored += 1; return { ok: true }; },
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.files.applied, false);
+  assert.equal(restored, 0);
 });

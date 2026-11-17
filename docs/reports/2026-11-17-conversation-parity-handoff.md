@@ -1,8 +1,8 @@
-# 会话平权交接（2026-11-18，beta.50）
+# 会话平权交接（2026-11-18，beta.51）
 
 ## 一句话状态
 
-七个消息动作（复制/撤回/编辑/点赞/踩/重新输出/分享）在 Android 应用内 WebView 与 Flutter 原生两端均已完成实机点验，全部读写 DSH 权威后端；文件回滚的新建/修改/删除/外部冲突四种场景都有设备级真实样例。自动化门禁 427 项 Flutter 测试 + 34 项插件测试 + analyze + Gradle 全绿。
+七个消息动作（复制/撤回/编辑/点赞/踩/重新输出/分享）在 Android 应用内 WebView 与 Flutter 原生两端均已完成实机点验，全部读写 DSH 权威后端；文件回滚的新建/修改/删除/改名/二进制/外部冲突六种场景都有设备级真实样例；撤回执行顺序已改为先行 fork、成功后才还原文件（fork 失败不再造成不可见改动）。自动化门禁 427 项 Flutter 测试 + 37 项插件测试 + analyze + Gradle 全绿。
 
 ## 交付物
 
@@ -10,8 +10,8 @@
 | --- | --- |
 | 仓库 | E:/tmp/wt-flutter-native-chat（分支 feat/flutter-native-chat，基线 556ef615ac5162347ea205fd602301622d99d6f1） |
 | APK | app/build/outputs/apk/debug/app-debug.apk |
-| 大小 / SHA-256 | 248168526 B / 02b3ddf4a46d26bb9bf71615bc10e3b4a34daa8d172a658590537350e2a1e182 |
-| 版本 | versionCode 425 / versionName 1.6.0-beta.50 |
+| 大小 / SHA-256 | 248169662 B / 4ecec00f2d75fcdc1703491076684ba34fa16c25f3fd74c05b4749aecd4e4f35 |
+| 版本 | versionCode 426 / versionName 1.6.0-beta.51 |
 | ABI | 仅 x86_64（-Pabi=x86_64 -Ptarget-platform=android-x64） |
 | 安装 | adb -s emulator-5570 install -r -t -d <apk>（-t 必需；-d 因设备上曾有 versionCode 430 的其他工作树包） |
 | 设备 | 专用 AVD dsh_flutter_20261116 / emulator-5570 / 1080x2340 |
@@ -55,7 +55,7 @@
 2. 偶发降级启动 missing=[directoryPickerController,workspaceRegistry,workspaceController]，冷启后恢复 ok=true。
 3. 设备上曾装着其他工作树（E:/tmp/wt-island2，versionCode 430）的 APK，导致插件一度「未进 bundle」。出现同现象先核 dumpsys versionCode。
 4. 设备无模型凭据；本轮用设备已配的 gpt-6-luna（用户授权），在线回合均为真实模型请求。
-5. 文件改名（rename）与二进制文件回滚只有离线单测，未在设备造真实样例。
+5. 文件回滚已在设备造出六种真实样例（新建/修改/删除/改名/二进制/外部冲突，见 validation 3.2）；仍缺「权限不足 / 磁盘配额 / 部分失败重试」的真实故障注入，这部分只有离线单测。
 6. Web / 原生切换动效只做目视与时序判断，未录逐帧视频。
 7. ARM 真机、TalkBack、硬件键盘遍历未验。
 
@@ -64,7 +64,7 @@
 1. RewindOutcome.parse 的冲突兼容（flutter_ui/lib/src/transport/native_action_transport.dart）：现在先读 files.conflicts、空则读顶层 conflicts，是否还有第三种形状没覆盖。
 2. MessageActions.planForFresh 的失败路径：Host 读不到时不弹框、只提示，是否会让人误以为按钮无响应。
 3. ChatShell._freshPlan 与 _regenerate 的重复查询：_regenerate 内部又调了一次 planForFresh，可否复用以免两次 RPC。
-4. turn-rewind index.js 的 rewind：先回滚文件再 fork，若 fork 失败则文件已改而会话没分叉——是否要调整顺序或补偿。
+4. ~~rewind 先回滚文件再 fork~~ **beta.51 已修**：改为「冲突预检（只读）→ fork → 还原文件」，顺序由 core.rewindForkFirst 承担并有三例单测锁定。复核时请确认：①fork 成功后还原过程中若某文件失败，此时会话已分叉而文件只回滚了一部分，界面是否把 skipped 清单讲清楚；②是否还需要给「fork 成功但还原失败」补一条补偿/提示路径。
 5. client.js 与 Flutter 端 describeChanges/planFrom 的文案口径是否仍完全一致。
 
 ## 文档索引

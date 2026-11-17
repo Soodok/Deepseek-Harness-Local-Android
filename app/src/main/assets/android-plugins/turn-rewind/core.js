@@ -435,6 +435,52 @@ function latestStateFor(manifests, rel) {
 }
 
 /**
+ * 撤回的执行顺序：**先 fork 会话，成功之后才动文件**。
+ *
+ * 顺序是契约的一部分，不能颠倒。fork 是整条链路上最可能失败的一步
+ * （会话不存在、网关拒绝、并发写冲突都会让它抛），而还原文件是写磁盘。
+ * 旧实现先还原文件再 fork：一旦 fork 失败，用户的文件已经被改回去、会话
+ * 却没有分叉——界面报"失败"，实际已经造成了不可见的数据改动；更糟的是
+ * 重试时那次自己写回去的内容会被冲突检测当成"回合之后被外部改过"，
+ * 于是撤回永远卡在冲突上。
+ *
+ * 这条规则只靠顺序保证，所以把顺序本身做成可注入依赖的纯流程，测试才
+ * 能把它打红（见 core.test.mjs 的「fork 失败时一个文件都不动」与
+ * 「撤回先 fork 再还原文件」两例）。
+ *
+ * @param {object} input - { plan, force, fork, restore }。
+ *   plan 为 undefined 表示这次不回滚文件（只撤回文本）。
+ * @returns {Promise<object>} { ok: true, forked, files } 或 { ok: false, error }。
+ */
+export async function rewindForkFirst(input) {
+  const plan = input.plan;
+  const force = input.force === true;
+  const restore = input.restore;
+  let forked;
+  try {
+    forked = await input.fork();
+  } catch (error) {
+    // 失败必须就地返回：此时还什么都没写，用户的文件保持原样。
+    return { ok: false, error: error };
+  }
+  const files = { applied: false, restored: [], skipped: [], conflicts: [] };
+  if (plan !== undefined) {
+    for (const item of plan.items) {
+      if (force && plan.conflicts.some((c) => c.path === item.path)) {
+        files.skipped.push({ path: item.path, reason: "conflict-skipped" });
+        continue;
+      }
+      const outcome = await restore({ item: item });
+      if (outcome.ok) files.restored.push(outcome);
+      else files.skipped.push({ path: outcome.path, reason: outcome.reason ?? outcome.action });
+    }
+    files.applied = true;
+    files.conflicts = plan.conflicts;
+  }
+  return { ok: true, forked: forked, files: files };
+}
+
+/**
  * 还原一个文件到目标状态。
  * @param {object} input - cwd / store / item。
  * @returns {Promise<object>} 单项结果。

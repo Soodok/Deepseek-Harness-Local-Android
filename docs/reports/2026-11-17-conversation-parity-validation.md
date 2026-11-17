@@ -11,6 +11,10 @@
 | node --test client.test.mjs core.test.mjs | 0 | 34 tests / 34 pass / 0 fail |
 | node --check .../turn-rewind/client.js | 0 | 语法通过 |
 | gradle :app:assembleDebug（beta.50） | 0 | BUILD SUCCESSFUL in 2m 11s |
+| flutter analyze --no-pub（beta.51） | 0 | No issues found!（1.3s） |
+| flutter test --concurrency=1（beta.51） | 0 | 427 tests passed（/tmp/ft_b51b.log） |
+| node --test client.test.mjs core.test.mjs（beta.51） | 0 | 37 tests / 37 pass / 0 fail |
+| gradle :app:assembleDebug（beta.51） | 0 | BUILD SUCCESSFUL in 34s |
 
 构建命令（JAVA_HOME=D:/新建文件夹/jbr，ANDROID_HOME=E:/Android/Sdk）：
 
@@ -40,6 +44,8 @@ gradle.bat --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx1536m -Dfile.enc
 
 本轮新增 8 例：编辑态挂在 fork 会话上、取消编辑还原草稿、保留草稿带进 fork、被拒的编辑不留编辑态、编辑横条可取消、编辑横条浮层与 rc.2 令牌、回答身份读 finalNode、系统分享走原生桥。各自负对照均打红后还原。
 
+beta.51 在 core.test.mjs 增 3 例（共 14 例）：fork 失败时一个文件都不动 / 撤回先 fork 再还原文件（断言调用顺序） / 只撤回文本时不碰任何文件。负对照三次均打红后还原：①把还原循环挪到 fork 之前 → 顺序断言 actual 变成 [restore:agent, fork]；②fork 失败后继续走还原、最后才报错 → 「fork 失败时一个文件都不动」红（13 pass / 1 fail）；③fork 失败被吞掉当成功 → 同例红。
+
 ## 3. 设备实机验收
 
 ### 3.1 原生端（Flutter，NativeChatActivity）
@@ -58,13 +64,15 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 | 保存到文件 | 点「保存」 | /sdcard/Download/NATIVE_ACTIONS_OK.txt 106 B，内容为问+答（/tmp/n_save2.png） |
 | 重新输出 | 点「重新输出（回滚这一轮的文件改动）」→ 确认 | 确认框「将回滚 1 个文件的改动」→ receipt {turn:10, files:{applied:true, restored:[{path:native-rollback.txt, action:deleted, ok:true}]}}（/tmp/b49_re2.png、/tmp/b49_re3.png） |
 
-### 3.2 文件回滚四种场景（设备级真实样例）
+### 3.2 文件回滚六种场景（设备级真实样例）
 
 | 场景 | 造数据方式 | 撤回后 | receipt |
 | --- | --- | --- | --- |
 | 新建文件 | 让模型 write 出 native-rollback.txt = NATIVE-V1 | 文件被删除 | action=deleted, ok=true（/tmp/b49_rt.png、/tmp/b49_rt2.png） |
 | 修改文件 | 让模型把 mod-demo.txt 从 MOD-V1 改成 MOD-V2 | 内容还原为 MOD-V1，文件仍在 | action=restored, ok=true（/tmp/b49_m3.png、/tmp/b49_m6.png） |
 | 删除文件 | 让模型 bash rm 删掉 mod-demo.txt | 文件被恢复，内容 MOD-V1 | action=restored, ok=true（/tmp/b49_d7.png） |
+| 改名（mv） | 让模型 bash mv ./cg.txt ./renamed.txt | renamed.txt 被删除、cg.txt 被恢复（内容 EXTERNAL-CG）；确认框写「将回滚 2 个文件的改动」 | restored:[{path:cg.txt, action:restored}, {path:renamed.txt, action:deleted}]（/tmp/ren1.png、/tmp/ren2.png、/tmp/ren3.png） |
+| 二进制删除 | adb 造 bin.dat = 字节 00 01 02 42 49 4e 56 31 ff（9 B），让模型 bash 删除 | 字节级还原，撤回后 sha256 = 02c87b81138cd938bfdc579ccd68d1e3e07b57550945b4f528a0cacf9d512e3f，与 manifest 的 before.blob 完全一致 | action=restored, ok=true；turn manifest before={size:9, binary:true}（/tmp/bin7.png、/tmp/bin9.png） |
 | 外部冲突 | 模型写 cg.txt 后用 adb 改成 EXTERNAL-CG 再撤回 | 文件保持 EXTERNAL-CG，界面红条「这些文件在这一轮之后被改过，没有覆盖：cg.txt」 | status=conflict, conflicts=[{path:cg.txt, reason:changed-after-turn}]（/tmp/b50_cg2.png） |
 
 注意：冲突场景第一次尝试时工作目录写错（native-ui-check 而非会话真实 cwd workspaces），那次提示里的文件名是空的——正是 beta.50 修掉的 RewindOutcome.parse 缺陷；换到正确 cwd 后复测通过。
@@ -80,6 +88,17 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 | 分享 | 预览显示问+答；保存到 /sdcard/Download/DSH MOBILE/dsh-conversation.txt（77 B）；系统分享唤起 ChooserActivity（/tmp/b47_a1.png） |
 | 文件回滚 | 造 rollback-demo.txt 后撤回，receipt {turn:7, files:{applied:true, restored:[{path:rollback-demo.txt, action:deleted}]}}，工作区文件消失 |
 
+### 3.5 beta.51：撤回顺序与小屏/大字适配（设备级）
+
+| 场景 | 操作 | 结果与证据 |
+| --- | --- | --- |
+| 先 fork 后还原（正常路径回归） | Web 端让模型 write 出 order-demo.txt=ORDER-V1（manifest turn 9 status=created），再点该轮「撤回」并确认 | receipt files/dsh-home/turn-rewind/session-c7bfed23-…/rewinds/rewind-mwl305f8-tj3x09.json = {"status":"rewound","childSessionId":"session-f8d9c815-2768-4a12-ad6a-b40334e782c5","turn":9,"files":{"applied":true,"restored":[{"path":"order-demo.txt","action":"deleted","ok":true}],"skipped":[],"conflicts":[]}}；order-demo.txt 已删除（/tmp/b51_4.png 确认框「将回滚 1 个文件的改动」、/tmp/b51_7.png） |
+| 大字（font_scale 1.30）下编辑横条 | 点「编辑这条消息」→「开始编辑」 | 横条 getBoundingClientRect = [16,559,398,39]，position:absolute 浮在输入卡片上方；elementFromPoint 命中 dsh-rw-editing-text（不是被压住的输入框）；文字「正在编辑这条消息，发送会从这里继续」可读（/tmp/font6.png） |
+| 大字 + 小屏（720x1280 @320dpi，视口 400x643） | 同上 | 横条 rect = [16,461,361,40]，同样 position:absolute 且命中自身；点 × 后横条消失、草稿原样回到输入框（/tmp/small6.png、/tmp/small7.png） |
+| 减少动效 | settings put global animator_duration_scale 0（并同关 transition/window）后重开应用 | 会话列表、抽屉、编辑横条均正常出现，无残留中间态（/tmp/font1.png） |
+
+注：以上三项测完已把 wm size / wm density / font_scale / 三个动画倍率全部还原（wm size reset、wm density reset、font_scale 1.0、动画值 1）。
+
 ### 3.4 会话入口与切换
 
 - 抽屉列出真实引擎会话，只显示人类可读标题（多行均为 KEEP_THIS_DRAFT 这类真实首条消息），无 session 标识、无 cwd（/tmp/b50_10.png）。
@@ -94,6 +113,7 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 
 ## 5. 未覆盖
 
-- 文件改名、二进制文件回滚：仅离线单测。
+- 文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」只有离线单测，没有设备级真实故障注入。
+- fork 失败的真实故障注入：只有离线单测（core.test.mjs 三例 + 三次负对照），没在设备上造出 fork 真实失败的场景。
 - 切换动效：未录逐帧视频。
 - ARM 真机、TalkBack、硬件键盘遍历、全部主题像素对比。

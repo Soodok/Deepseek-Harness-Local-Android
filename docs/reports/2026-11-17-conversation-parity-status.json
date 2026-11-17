@@ -1,6 +1,6 @@
 {
-  "stage": "beta50 已装机并完成双端实机验收；实现/验收/交接三份文档已写；本地提交 cc6fff75（未 push）",
-  "updatedAt": "2026-11-18T02:41:00+08:00",
+  "stage": "beta51 实机：双端功能点验、文件回滚六种真实样例、撤回顺序改为先 fork 后还原（含三次负对照）与小屏/大字/减少动效适配全部完成；文档与本地提交完成（未 push），待 Lead 统合与 GLM 复核。",
+  "updatedAt": "2026-11-18T03:30:00+08:00",
   "branch": "feat/flutter-native-chat",
   "baseHead": "556ef615ac5162347ea205fd602301622d99d6f1",
   "repo": "E:/tmp/wt-flutter-native-chat",
@@ -67,6 +67,13 @@
       "bytes": 248168526,
       "sha256": "02b3ddf4a46d26bb9bf71615bc10e3b4a34daa8d172a658590537350e2a1e182",
       "note": "冲突响应兼容：turn-rewind 的 conflict 结果把 conflicts 放顶层，原来只读 files.conflicts 导致提示里没有文件名"
+    },
+    {
+      "name": "1.6.0-beta.51",
+      "code": 426,
+      "bytes": 248169662,
+      "sha256": "4ecec00f2d75fcdc1703491076684ba34fa16c25f3fd74c05b4749aecd4e4f35",
+      "note": "撤回改为先 fork 会话、成功后才还原文件（fork 失败不再产生不可见改动）"
     }
   ],
   "completed": [
@@ -137,6 +144,22 @@
     {
       "item": "外部冲突检测：文件在回合后被外部改过时不覆盖、如实列出路径",
       "evidence": "beta50：外部把 cg.txt 改成 EXTERNAL-CG 后撤回，红条「这些文件在这一轮之后被改过，没有覆盖：cg.txt」，文件内容仍为 EXTERNAL-CG（/tmp/b50_cg2.png）；beta49 上同一路径曾显示空文件名，即本次修的缺陷"
+    },
+    {
+      "item": "原生端文件回滚：改名与二进制文件设备级真实样例",
+      "evidence": "改名：模型 bash mv ./cg.txt ./renamed.txt，确认框「将回滚 2 个文件的改动」，撤回后 renamed.txt 删除、cg.txt 恢复（EXTERNAL-CG），receipt restored:[{cg.txt,restored},{renamed.txt,deleted}]（/tmp/ren1.png、/tmp/ren2.png、/tmp/ren3.png）。二进制：adb 造 bin.dat=00 01 02 42 49 4e 56 31 ff（9 B），模型 bash 删除 → manifest {size:9,binary:true,before.blob:02c87b81…}；撤回后字节逐一还原，sha256=02c87b81138cd938bfdc579ccd68d1e3e07b57550945b4f528a0cacf9d512e3f 与 before.blob 完全一致，receipt {turn:5,files:{applied:true,restored:[{path:bin.dat,action:restored,ok:true}]}}（/tmp/bin7.png、/tmp/bin9.png）"
+    },
+    {
+      "item": "撤回时已有草稿的两种处理在设备上真实可用",
+      "evidence": "确认框「输入框里已经有草稿」下两项「用这条消息替换草稿」「保留草稿，把这条消息接在后面」；选后者撤回后草稿 tttt… 原样保留、回填文本接在下一行（/tmp/bin7.png、/tmp/bin9.png）"
+    },
+    {
+      "item": "撤回执行顺序改为先行 fork、成功后才还原文件",
+      "evidence": "core.js 新增 rewindForkFirst（顺序即契约）；index.js 的 rewind 改为「冲突预检（只读）→ fork → 还原」；core.test.mjs 新增 3 例，三次负对照均打红后还原；设备回归 receipt rewind-mwl305f8-tj3x09.json 显示 applied:true 且 order-demo.txt 被删除（/tmp/b51_4.png、/tmp/b51_7.png）"
+    },
+    {
+      "item": "小屏 / 大字 / 减少动效下的编辑横条适配",
+      "evidence": "font_scale 1.30 时横条 rect=[16,559,398,39]、position:absolute、elementFromPoint 命中 dsh-rw-editing-text（/tmp/font6.png）；720x1280@320dpi（视口 400x643）下 rect=[16,461,361,40]，点 × 后横幅消失且草稿原样回填（/tmp/small6.png、/tmp/small7.png）；animator_duration_scale=0 时界面正常（/tmp/font1.png）；测完已全部还原"
     }
   ],
   "checks": [
@@ -194,6 +217,26 @@
       "cmd": "gradle :app:assembleDebug (beta50)",
       "exit": 0,
       "note": "BUILD SUCCESSFUL in 2m 11s"
+    },
+    {
+      "cmd": "flutter analyze --no-pub (beta51)",
+      "exit": 0,
+      "note": "No issues found! (1.3s)"
+    },
+    {
+      "cmd": "flutter test --concurrency=1 (beta51)",
+      "exit": 0,
+      "note": "427 tests passed (/tmp/ft_b51b.log)；首次全量跑出现过一次 LoopbackDshHost 桩的 Bad state: Cannot add new events after calling close，单文件重跑与该次重跑均通过，与本轮 JS 改动无关"
+    },
+    {
+      "cmd": "node --test client.test.mjs core.test.mjs (beta51)",
+      "exit": 0,
+      "note": "37 tests / 37 pass / 0 fail"
+    },
+    {
+      "cmd": "gradle :app:assembleDebug (beta51)",
+      "exit": 0,
+      "note": "BUILD SUCCESSFUL in 34s"
     }
   ],
   "knownLimitations": [
@@ -201,13 +244,13 @@
     "曾出现降级启动：missing=[directoryPickerController,workspaceRegistry,workspaceController]，冷启后恢复 ok=true。",
     "设备上曾被其他工作树（E:/tmp/wt-island2，versionCode 430）的 APK 覆盖，导致本轮插件一度「未进 bundle」。用 adb install -d 降级装回后 normal。",
     "设备默认无模型凭据；本轮验收使用设备已配置的 gpt-6-luna（用户授权），所有在线回合均为真实模型请求（非 fixture）。",
-    "文件改名（rename）与二进制文件的回滚仍只有离线单测覆盖，未在设备上造真实样例。",
-    "「切换 Web / 原生动效」只做目视与时序判断，未录制视频级逐帧证据。"
+    "「切换 Web / 原生动效」只做目视与时序判断，未录制视频级逐帧证据。",
+    "文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」路径只有离线单测，未在设备上做真实故障注入。",
+    "fork 失败的真实故障注入只有离线单测（core.test.mjs + 三次负对照），没在设备上造出 fork 真实失败场景。"
   ],
   "blockers": [],
   "next": [
-    "补改名/二进制文件的设备级真实样例",
-    "交 Lead 统合与 GLM 复核"
+    "交 Lead 统合与 GLM 复核（本轮实现与设备验收已完成）"
   ],
   "commit": "7dd77329"
 }

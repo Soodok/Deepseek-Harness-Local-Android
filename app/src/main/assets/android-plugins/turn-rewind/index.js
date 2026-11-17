@@ -30,7 +30,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   BlobStore, DEFAULT_LIMITS, captureBaseline, detectConflicts, diffTurn,
-  planRewind, readManifests, referencedBlobs, restoreFile, writeManifest,
+  planRewind, readManifests, referencedBlobs, restoreFile, rewindForkFirst, writeManifest,
 } from "./core.js";
 
 /** Cordis 插件名。 */
@@ -414,47 +414,49 @@ export async function apply(ctx) {
     const boundary = target.seq - 1;
     if (boundary < 0) return rejected("no-prefix");
 
-    let fileResult = { applied: false, restored: [], skipped: [], conflicts: [] };
+    // 冲突预检放在 fork 之前：它只读磁盘，不产生任何改动，先拦下来可以省掉
+    // 一次注定要撤销的 fork。
+    let planned;
     if (includeFiles) {
       const manifests = await readManifests(sessionDirOf(sessionId));
       if (manifests.length > 0) {
         const cwd = stored.header.cwd;
         if (cwd === undefined) return rejected("no-cwd");
-        const planned = planRewind(manifests, turnOfTarget);
-        fileResult.conflicts = await detectConflicts({ cwd: cwd, plan: planned.plan });
-        if (fileResult.conflicts.length > 0 && !force) {
+        const plan = planRewind(manifests, turnOfTarget);
+        const conflicts = await detectConflicts({ cwd: cwd, plan: plan.plan });
+        if (conflicts.length > 0 && !force) {
           return success({
             status: "conflict",
             turn: turnOfTarget,
-            conflicts: fileResult.conflicts,
-            turnCount: planned.turns.length,
+            conflicts: conflicts,
+            turnCount: plan.turns.length,
           });
         }
         const store = storeOf(sessionId);
-        for (const item of planned.plan) {
-          if (force && fileResult.conflicts.some((c) => c.path === item.path)) {
-            fileResult.skipped.push({ path: item.path, reason: "conflict-skipped" });
-            continue;
-          }
-          const outcome = await restoreFile({ cwd: cwd, store: store, item: item });
-          if (outcome.ok) fileResult.restored.push(outcome);
-          else fileResult.skipped.push({ path: outcome.path, reason: outcome.reason ?? outcome.action });
-        }
-        fileResult.applied = true;
-      } else {
-        fileResult.applied = false;
+        planned = {
+          items: plan.plan,
+          conflicts: conflicts,
+          restore: (entry) => restoreFile({ cwd: cwd, store: store, item: entry.item }),
+        };
       }
     }
 
     const controller = ctx.get("sessionController");
     if (controller === undefined) return rejected("fork-unavailable");
-    let forked;
-    try {
-      forked = await controller.fork({ sessionId: sessionId, atSeq: boundary });
-    } catch (error) {
+    // fork 在还原文件之前（core.rewindForkFirst 的注释说明了为什么顺序不能反）。
+    const outcome = await rewindForkFirst({
+      plan: planned,
+      force: force,
+      fork: () => controller.fork({ sessionId: sessionId, atSeq: boundary }),
+      restore: planned === undefined ? undefined : planned.restore,
+    });
+    if (!outcome.ok) {
+      const error = outcome.error;
       const code = error && typeof error === "object" && typeof error.code === "string" ? error.code : "fork-failed";
       return rejected(code, { message: error instanceof Error ? error.message : String(error) });
     }
+    const forked = outcome.forked;
+    const fileResult = outcome.files;
     const value = Object.freeze({
       status: "rewound",
       sessionId: sessionId,
