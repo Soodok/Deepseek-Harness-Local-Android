@@ -6,15 +6,32 @@
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
+    <!-- MD3 顶栏：小标题左对齐，与正文同 16dp 基线 -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        app:navigationIcon="@drawable/ic_back"
-        app:navigationIconTint="?attr/colorOnSurface"
-        app:title="@string/setting_settings_bg_page"
-        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
-        app:titleTextColor="?attr/colorOnSurface" />
+        android:layout_height="64dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:text="@string/setting_settings_bg_page"
+            android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:textColor="?attr/colorOnSurface" />
+    </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
@@ -36,11 +53,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -95,7 +112,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="200dp"
                             android:layout_marginTop="16dp"
-                            android:background="?attr/colorSurfaceVariant"
+                            android:background="@drawable/bg_md3_icon_chip"
                             android:contentDescription="@string/setting_status_preview"
                             android:scaleType="centerCrop" />
 
@@ -135,11 +152,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -207,11 +224,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -297,22 +314,20 @@
                                 android:textAllCaps="false" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        <EditText
+                            android:id="@+id/editBgBlur"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="48dp"
                             android:layout_marginTop="12dp"
-                            android:hint="@string/setting_bg_blur_value">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/editBgBlur"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:inputType="number"
-                                android:maxLength="3"
-                                android:singleLine="true"
-                                android:textAppearance="?attr/textAppearanceBodyLarge" />
-                        </com.google.android.material.textfield.TextInputLayout>
+                            android:hint="@string/setting_bg_blur_value"
+                            android:inputType="number"
+                            android:maxLength="3"
+                            android:singleLine="true"
+                            android:paddingHorizontal="16dp"
+                            android:background="@drawable/bg_md3_input"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textColorHint="?attr/colorOnSurfaceVariant" />
 
                         <com.google.android.material.slider.Slider
                             android:id="@+id/seekBgBlur"
@@ -329,11 +344,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -403,11 +418,11 @@
                 android:layout_marginTop="12dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardCornerRadius="?attr/dshCardRadius"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:strokeColor="?attr/dshStroke"
+                app:strokeWidth="?attr/dshCardStroke"
+                app:cardBackgroundColor="?attr/dshSurface"
                 app:rippleColor="?attr/colorPrimary">
 
                 <LinearLayout

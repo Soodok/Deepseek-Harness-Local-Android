@@ -6,7 +6,7 @@
     android:shape="rectangle">
     <solid android:color="?attr/dshSurface" />
     <stroke
-        android:width="1dp"
+        android:width="?attr/dshCardStroke"
         android:color="?attr/dshStroke" />
-    <corners android:radius="18dp" />
+    <corners android:radius="?attr/dshCardRadius" />
 </shape>

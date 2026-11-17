@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material 弹窗的统一主题（v1.8.1）。
+
+  ## 为什么必须走主题，而不是在 show 之后换背景
+
+  v1.7.9 起 showMd3() 在 setOnShowListener 里做
+  `window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)`。
+  那是**窗口已经 attach 之后**才改背景 —— 触发一次 decor requestLayout，
+  而 Material 原本的窗口背景是
+  `MaterialDialogs.insetDrawable(MaterialShapeDrawable, backgroundInsets)`，
+  带 24dp/80dp 的 inset。换成不含 inset 的纯 shape 之后，背景可绘制区域
+  从「窗口内缩一圈」变成「整个窗口」，面板在首帧之后突然变大。
+
+  真机录屏逐帧实测（1080x2280，6 帧内）：面板高度从 49px 涨到 174px
+  （归一化 190 高），也就是用户报的「先在上面闪一下，然后再归位到中间」。
+
+  ## 修法
+
+  把容器色、圆角、inset 全部交给 Material 在 builder 构造期读取
+  （MaterialAlertDialogBuilder 的构造函数会读 backgroundInset* 与
+  backgroundTint），首帧即终态，运行期不再动背景。
+-->
+<resources>
+
+    <!-- 容器：填充色跟随风格令牌，圆角跟随形态令牌，四边 inset 对称 24dp -->
+    <style name="DshMaterialAlertDialog" parent="MaterialAlertDialog.Material3">
+        <item name="backgroundTint">?attr/dshDialogBg</item>
+        <!-- 默认 80dp 的上下 inset 是 Material 2 时代给键盘留的，太夸张；
+             对称 24dp 才是 M3 弹窗的观感，也避免「面板只占一小块」 -->
+        <item name="backgroundInsetStart">24dp</item>
+        <item name="backgroundInsetEnd">24dp</item>
+        <item name="backgroundInsetTop">24dp</item>
+        <item name="backgroundInsetBottom">24dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Dsh.Dialog</item>
+    </style>
+
+    <!-- 弹窗圆角 = 卡片圆角令牌（经典 18dp / MD3 24dp），跟随界面风格 -->
+    <style name="ShapeAppearance.Dsh.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">?attr/dshCardRadius</item>
+    </style>
+
+    <!-- MaterialAlertDialogBuilder 从当前 Activity 主题取这个 overlay -->
+    <style name="ThemeOverlay.Dsh.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="alertDialogStyle">@style/DshMaterialAlertDialog</item>
+        <item name="colorSurfaceContainerHigh">?attr/dshDialogBg</item>
+        <item name="colorOnSurface">?attr/dshTextPrimary</item>
+        <item name="colorOnSurfaceVariant">?attr/dshTextSecondary</item>
+        <item name="colorPrimary">?attr/dshAccent</item>
+        <item name="colorOutline">?attr/dshDivider</item>
+    </style>
+
+</resources>

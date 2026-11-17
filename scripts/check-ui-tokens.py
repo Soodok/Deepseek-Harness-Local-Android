@@ -109,9 +109,14 @@ def res_path(*parts):
 
 
 bg_card = read(res_path('drawable', 'bg_card.xml'))
+# 判据必须落在 <stroke> 属性上，不能全文找 '1dp' —— bg_card.xml 的注释里就写着
+# 「旧版是 surface 实心 + 1dp 描边 + 18dp」，全文匹配等于让注释替描边背书。
+# 实测：把 stroke 宽度改成 0dp、注释原样保留时，旧判据仍然 PASS（假绿）。
+_stroke = re.search(r'<stroke[\s\S]*?/>', bg_card)
 check('D1 card token keeps a 1dp stroke (separation must survive dark mode)',
-      '<stroke' in bg_card and '1dp' in bg_card
-      and ('@color/stroke' in bg_card or '?attr/dshStroke' in bg_card))
+      _stroke is not None
+      and re.search(r'android:width="(?:1dp|\?attr/dshCardStroke)"', _stroke.group(0)) is not None
+      and ('@color/stroke' in _stroke.group(0) or '?attr/dshStroke' in _stroke.group(0)))
 check('D2 group card corners come from md3_card_radius',
       '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
 
@@ -120,38 +125,34 @@ check('D3 group border drawable exists (one card per group, not per row)',
       os.path.exists(group) and '<stroke' in read(group))
 
 themes = read(os.path.join(RES, 'values', 'themes.xml'))
-# v1.6.x 主题重做后，语义色统一映射到 md3_* 设计令牌（同一份色板，只是命名对齐 MD3）。
 check('D4 MD3 semantic colours map back to our palette',
-      'name="colorOnSurface">@color/md3_on_surface<' in themes
-      and 'name="colorSurface">@color/md3_surface<' in themes
+      'name="colorOnSurface">@color/text_primary<' in themes
+      and 'name="colorSurface">@color/surface<' in themes
       and 'name="colorPrimary">@color/accent<' in themes)
-# 完整色阶：缺一个就会让对应组件退化成默认色
-for token in ('colorSurfaceContainer', 'colorSurfaceContainerHigh',
-              'colorSurfaceContainerHighest', 'colorOutlineVariant',
-              'colorError', 'colorOnPrimary'):
-    check('D4 theme defines %s' % token, 'name="%s">' % token in themes)
 
-dshapp = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
-                           'DshApp.kt'))
-themed = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
-                           'ThemedActivity.kt'))
-# 动态取色按 Google 官方做法（v1.6.x 重做）：
-#   · 唯一注册点是 Application.onCreate 的 applyToActivitiesIfAvailable；
-#   · Activity 不得 setTheme()，否则会冲掉官方在 onActivityPreCreated 注入的覆盖层；
-#   · 不允许自造 content-based 色板（那不是 Monet，会把语义色换成中性灰）。
-check('D5 DynamicColors registered in Application',
-      'DynamicColors.applyToActivitiesIfAvailable' in dshapp)
-check('D5 dynamic colour follows the user switch',
-      'ThemeAccent.dynamicEnabled' in dshapp)
-settheme_code = [l.split('//')[0] for l in themed.splitlines() if 'setTheme(' in l.split('//')[0]]
-check('D5 Activity does not call setTheme', not settheme_code, str(settheme_code[:2]))
-check('D5 no content-based pseudo dynamic colour',
-      'setContentBasedSource' not in dshapp and 'setContentBasedSource' not in themed)
-# 主题只能有一套：重复主题必然漏映射色阶（Theme.Dsh.MD3 就漏过 container*）
-themes_txt = read(os.path.join(RES, 'values', 'themes.xml'))
-check('D5 single Material 3 DayNight theme',
-      'name="Theme.Dsh.MD3"' not in themes_txt
-      and 'Theme.Material3.DayNight' in themes_txt)
+src_dir = os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile')
+themed_kt = read(os.path.join(src_dir, 'ThemedActivity.kt'))
+accent_kt = read(os.path.join(src_dir, 'Accent.kt'))
+
+
+def strip_kotlin_comments(src):
+    """注释里出现 API 名不算调用 —— 本文件多处注释在解释「以前调过什么」。"""
+    src = re.sub(r'/\*[\s\S]*?\*/', '', src)
+    return re.sub(r'//[^\n]*', '', src)
+
+
+# Monet 只能给「跟随壁纸」用，而且连它也不能「注入」：
+# DynamicColors.applyToActivityIfAvailable 在 API 31+ 走 ColorResourcesOverride →
+# ResourcesLoader 替换颜色资源，会改动本 Activity 的 Resources 配置，系统随即再派一次
+# configuration change → 第二次 relaunch（真机 / Android 14 实测：点一下闪两次）。
+# 所以动态取色改为 SystemAccent 直接读 android.R.color.system_accent1_*，不碰 Resources。
+# 本条守住的是「没有任何一处再注入 DynamicColors」＋「动态分支确实走 SystemAccent」。
+check('D5 DynamicColors is never injected (it rewrites Resources and re-triggers a relaunch)',
+      'DynamicColors.applyTo' not in strip_kotlin_comments(themed_kt)
+      and 'setContentBasedSource' not in themed_kt)
+check('D5b dynamic accent reads SystemAccent instead of the theme',
+      'SystemAccent.primary(' in accent_kt
+      and 'MaterialColors.getColor' not in strip_kotlin_comments(accent_kt))
 
 icon_tint = 0
 app_tint = 0

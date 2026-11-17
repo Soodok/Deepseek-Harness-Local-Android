@@ -1539,6 +1539,7 @@
     <string name="linux_screen_stop_sub">Остановить сервер кадров, последний кадр сохраняется</string>
     <string name="linux_screen_started">Сервер кадров запущен: /framesrv 1280x720</string>
     <string name="linux_screen_start_failed">Сервер кадров не запустился: %1$s</string>
+    <string name="linux_screen_missing_gui">Образ контейнера не содержит GUI, либо пакеты GUI не установлены. Переключите карточку дистрибутива на «Alpine · GUI» и дождитесь завершения установки (Xvfb + xterm), затем повторите.</string>
     <string name="linux_screen_stopped">Сервер кадров остановлен</string>
     <string name="linux_screen_stop_failed">Не удалось остановить: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
@@ -1714,6 +1715,10 @@
     <string name="asr_local_set_default">Сделать по умолчанию</string>
     <string name="asr_local_self_check">Самопроверка</string>
     <string name="asr_local_need_install">Сначала установите распознаватель речи</string>
+    <string name="asr_local_state_outdated">Требуется обновление</string>
+    <string name="asr_local_desc_outdated">Установленный распознаватель старше требуемого этой страницей, поэтому действия в один тап (сделать системным / самопроверка / состояние модели) недоступны. Обновите ниже — уже скачанные модели сохранятся.</string>
+    <string name="asr_local_need_update">Сначала обновите распознаватель речи</string>
+    <string name="asr_local_action_failed">Это действие не поддерживается установленной версией</string>
     <string name="setting_linux_ssh">SSH-среда для разработки</string>
     <string name="setting_linux_ssh_sub">Разрешить ПК подключаться прямо в контейнер Linux по обычному SSH</string>
     <string name="linux_ssh_consent">Это открывает порт 2222 в локальной сети и запускает SSH-сервер внутри приложения. Любой в той же Wi-Fi, кто знает пароль, сможет выполнять команды в контейнере Linux.\n\nВключайте только в доверенных сетях и выключайте, когда закончите.</string>
@@ -1957,4 +1962,12 @@
     <string name="style_sub_classic">Классический · холодный сине-серый</string>
     <string name="style_classic">Классический</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Параметры разработчика</string>
+    <string name="developer_options_sub">Дополнительные инструменты и расширенные настройки</string>
+    <string name="developer_options_intro">Небольшой набор дополнительных инструментов для любознательных пользователей и расширенной настройки.</string>
+    <string name="developer_options_enabled_sub">Отключите, чтобы снова скрыть параметры разработчика.</string>
+    <string name="developer_options_security_note">Включение этого меню не предоставляет Root, Shizuku или другие системные разрешения. Для каждой операции по-прежнему требуется отдельная проверка авторизации.</string>
+    <string name="developer_options_unlocked">Параметры разработчика включены. Они доступны в разделе Настройки → Система.</string>
+    <string name="developer_options_disabled_toast">Параметры разработчика скрыты. Чтобы снова открыть их, коснитесь сведений о версии семь раз.</string>
 </resources>

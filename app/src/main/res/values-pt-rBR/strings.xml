@@ -1499,6 +1499,7 @@
     <string name="linux_screen_stop_sub">Parar o serviço de quadros, manter o último</string>
     <string name="linux_screen_started">Serviço de quadros iniciado: /framesrv 1280x720</string>
     <string name="linux_screen_start_failed">Falha ao iniciar o serviço de quadros: %1$s</string>
+    <string name="linux_screen_missing_gui">A imagem do contêiner não é uma compilação com GUI, ou os pacotes de GUI estão faltando. Mude o cartão da distribuição para “Alpine · GUI”, aguarde a instalação (Xvfb + xterm) e tente novamente.</string>
     <string name="linux_screen_stopped">Serviço de quadros parado</string>
     <string name="linux_screen_stop_failed">Falha ao parar: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
@@ -1681,6 +1682,10 @@
     <string name="asr_local_set_default">Definir padrão</string>
     <string name="asr_local_self_check">Autoteste</string>
     <string name="asr_local_need_install">Instale o reconhecedor primeiro</string>
+    <string name="asr_local_state_outdated">Atualização necessária</string>
+    <string name="asr_local_desc_outdated">O reconhecedor instalado é mais antigo que o exigido por esta página, então as ações de um toque (definir como padrão / autoteste / status do modelo) não estão disponíveis. Atualize abaixo — os modelos já baixados são mantidos.</string>
+    <string name="asr_local_need_update">Atualize o reconhecedor primeiro</string>
+    <string name="asr_local_action_failed">Esta ação não está disponível nesta versão do reconhecedor</string>
     <string name="setting_linux_ssh">Ambiente SSH</string>
     <string name="setting_linux_ssh_sub">Permitir que um PC entre direto no contêiner Linux via SSH padrao</string>
     <string name="linux_ssh_consent">Isto abre a porta 2222 e executa um servidor SSH dentro do app. Quem estiver na mesma Wi-Fi e souber a senha pode executar comandos no contêiner Linux.\n\nAtive apenas em redes confiaveis e desative ao terminar.</string>
@@ -1917,4 +1922,12 @@
     <string name="style_sub_classic">Clássico · cinza-azulado frio</string>
     <string name="style_classic">Clássico</string>
     <string name="style_material">Material 3</string>
+
+    <string name="developer_options_title">Opções do desenvolvedor</string>
+    <string name="developer_options_sub">Ferramentas opcionais e controles avançados</string>
+    <string name="developer_options_intro">Uma pequena coleção de ferramentas opcionais para usuários curiosos e configurações avançadas.</string>
+    <string name="developer_options_enabled_sub">Desative para ocultar novamente as opções do desenvolvedor.</string>
+    <string name="developer_options_security_note">Ativar este menu não concede Root, Shizuku nem outras permissões do sistema. Cada operação continua exigindo sua própria autorização.</string>
+    <string name="developer_options_unlocked">Opções do desenvolvedor ativadas. Acesse em Configurações → Sistema.</string>
+    <string name="developer_options_disabled_toast">Opções do desenvolvedor ocultadas. Toque sete vezes nas informações da versão para mostrá-las novamente.</string>
 </resources>
