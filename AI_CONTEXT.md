@@ -14307,7 +14307,7 @@ Keyboard initialization failed. This could be a missing or incorrect setup of xk
 
 `README_EN.md:318` / `README.de.md:307` 原写「13 modern APIs」。实测 `scripts/patch-webview-polyfill.py`：**21 个 `def(...)` 安装 + 1 个 `globalThis.structuredClone` = 22 次安装**；去重口径见下：
 
-> 计数口径：安装次数 **22**；「宿主 + 方法」组合去重 **20**；纯方法名去重 **19**（`groupBy` 挂 `Object` 与 `Map` 两处，`any`/`timeout`/`abort`/`throwIfAborted` 亦同名分挂）。三个数字都对，差别在口径——文档统一写「20 modern APIs / 22 installations」。
+> 计数口径：**安装点 22 处**（21 个 `def()` 调用 + `globalThis.structuredClone`；`grep -c "def("` 得 22 是因为把 `function def(obj, name, value)` 的定义行也算进去了）；**API 名去重 20 个**（19 个 def 方法名 + `structuredClone`，其中 `groupBy` 分挂 `Object` 与 `Map`、`any`/`timeout`/`abort`/`throwIfAborted` 亦同名分挂）。文档统一写「20 modern APIs / 22 installations」。
 
 已改 EN/DE 两处并点出 `URL.canParse`、`Object.groupBy`。
 
