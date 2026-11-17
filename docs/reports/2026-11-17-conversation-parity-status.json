@@ -1,6 +1,6 @@
 {
   "stage": "beta52 实机：双端功能点验、文件回滚六种真实样例、撤回顺序（先 fork 后还原）、小屏/大字/减少动效适配、失败原因可读化全部完成；文档与本地提交完成（未 push），待 Lead 统合与 GLM 复核。",
-  "updatedAt": "2026-11-18T04:00:00+08:00",
+  "updatedAt": "2026-11-18T04:20:00+08:00",
   "branch": "feat/flutter-native-chat",
   "baseHead": "556ef615ac5162347ea205fd602301622d99d6f1",
   "repo": "E:/tmp/wt-flutter-native-chat",
@@ -284,5 +284,5 @@
   "next": [
     "交 Lead 统合与 GLM 复核（本轮实现与设备验收已完成）"
   ],
-  "commit": "3e0ac27e（beta.52 实现 61074bfc、撤回顺序 58a1e6ba；工作树仅剩 .superpowers/brainstorm/ 未跟踪，按要求保留不提交）"
+  "commit": "0ffce704（HEAD；beta.52 实现 61074bfc、撤回顺序 58a1e6ba、文档 afff2120/3e0ac27e/5e0e3427/108759e8；工作树仅剩 .superpowers/brainstorm/ 未跟踪，按要求保留不提交）"
 }
