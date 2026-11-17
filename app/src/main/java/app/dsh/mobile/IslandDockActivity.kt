@@ -57,7 +57,6 @@ class IslandDockActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (styleNeedsRecreate()) return
         OrientationPrefs.applyToSettingsPage(this)
         refresh()
     }
