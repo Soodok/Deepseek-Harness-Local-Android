@@ -37,12 +37,22 @@ class ChatMessage {
     required this.text,
     this.isStreaming = false,
     this.notice,
+    this.seq,
+    this.messageId,
   });
 
   final String id;
   final ChatRole role;
   final String text;
   final bool isStreaming;
+
+  /// Durable journal sequence of the event this row came from. Rewind addresses
+  /// messages by exact seq, so a row without one cannot be retracted.
+  final int? seq;
+
+  /// The assistant message identity the Host records feedback against. Only
+  /// assistant rows carry one; it is not a display value.
+  final String? messageId;
 
   /// Structured turn ending shown as its own card. Only [ChatRole.notice] rows
   /// carry one; the label behind it comes from durable journal metadata.
@@ -54,6 +64,8 @@ class ChatMessage {
     text: text ?? this.text,
     isStreaming: isStreaming ?? this.isStreaming,
     notice: notice,
+    seq: seq,
+    messageId: messageId,
   );
 
   @override
@@ -63,10 +75,13 @@ class ChatMessage {
       other.role == role &&
       other.text == text &&
       other.isStreaming == isStreaming &&
-      other.notice == notice;
+      other.notice == notice &&
+      other.seq == seq &&
+      other.messageId == messageId;
 
   @override
-  int get hashCode => Object.hash(id, role, text, isStreaming, notice);
+  int get hashCode =>
+      Object.hash(id, role, text, isStreaming, notice, seq, messageId);
 }
 
 class ToolRun {

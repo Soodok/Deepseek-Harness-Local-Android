@@ -1,12 +1,22 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../state/chat_controller.dart';
+import '../state/message_actions.dart';
 import '../theme/dsh_theme.dart';
 import 'conversation_flow.dart';
 
 class MessageList extends StatelessWidget {
-  const MessageList({super.key, required this.controller});
+  const MessageList({
+    super.key,
+    required this.controller,
+    this.actions,
+    this.editingMessageId,
+  });
   final ChatController controller;
+
+  /// Bubble actions, or null on a surface with no Host records behind it.
+  final MessageActionBindings? actions;
+  final String? editingMessageId;
 
   @override
   Widget build(BuildContext context) {
@@ -16,6 +26,8 @@ class MessageList extends StatelessWidget {
       messages: state.messages,
       tools: state.tools,
       hideDockContent: true,
+      actions: actions,
+      editingMessageId: editingMessageId,
       empty:
           state.approval == null && state.question == null && !state.needsResync
           ? const _EmptyConversation()

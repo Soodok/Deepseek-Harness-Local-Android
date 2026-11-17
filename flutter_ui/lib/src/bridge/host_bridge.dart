@@ -141,6 +141,58 @@ class HostBridge {
     }
   }
 
+  /// Hand text to the platform share sheet. False means no chooser opened, so
+  /// the caller can offer the local preview/download path instead.
+  static Future<bool> shareText(String text, {String? subject}) async {
+    if (text.trim().isEmpty) return false;
+    try {
+      return await _channel.invokeMethod<bool>('shareText', {
+            'text': text,
+            if (subject != null && subject.trim().isNotEmpty) 'subject': subject,
+          }) ==
+          true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Ask the platform's file picker to save text where the person chooses.
+  static Future<bool> saveText(String text, {String? suggestedName}) async {
+    if (text.trim().isEmpty) return false;
+    try {
+      return await _channel.invokeMethod<bool>('saveText', {
+            'text': text,
+            if (suggestedName != null && suggestedName.trim().isNotEmpty)
+              'suggestedName': suggestedName,
+          }) ==
+          true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// The Session the Android side already had open, if it came from the Web
+  /// shell. Null means "no handoff": the caller must not invent one.
+  static Future<String?> readInitialSessionId() async {
+    try {
+      final raw = await _channel.invokeMethod<Object?>('initialSession');
+      return raw is String && raw.trim().isNotEmpty ? raw : null;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Tell the Android side which Session this screen is showing, so switching
+  /// back to the Web shell opens that same Session instead of the latest one.
+  static Future<bool> reportSession(String sessionId) =>
+      _open('setSession', {'sessionId': sessionId});
+
   static Future<bool> openWebFallback() async {
     try {
       await _channel.invokeMethod<void>('openWebFallback');

@@ -90,4 +90,43 @@ void main() {
     );
     expect(() => EngineSession.fromResponse({}), throwsFormatException);
   });
+
+  test('catalog reads the durable title projection and never exposes ids as names', () {
+    final rows = EngineSession.fromResponse({
+      'items': [
+        {
+          'sessionId': 'session-abc',
+          'updatedAt': 3,
+          'cwd': '/data/project',
+          'blank': false,
+          'projections': {
+            'kind': 'sequenced',
+            'asOfSeq': 12,
+            'values': {'title': '  整理本周作业  '},
+          },
+        },
+        {
+          'sessionId': 'session-empty',
+          'updatedAt': 2,
+          'blank': true,
+          'projections': {'values': {'title': null}},
+        },
+        {'sessionId': 'session-untitled', 'updatedAt': 1},
+      ],
+    });
+    expect(rows.map((r) => r.displayName), ['整理本周作业', '新的对话', '未命名对话']);
+    // 名字里不允许出现会话标识或工作目录。
+    for (final row in rows) {
+      expect(row.displayName.contains('session-'), isFalse);
+      expect(row.displayName.contains('/data'), isFalse);
+      expect(row.displayName.contains('project'), isFalse);
+    }
+  });
+  test('a missing or malformed title projection is not invented', () {
+    expect(EngineSession.readTitle(null), isNull);
+    expect(EngineSession.readTitle({'values': {}}), isNull);
+    expect(EngineSession.readTitle({'values': {'title': 7}}), isNull);
+    expect(EngineSession.readTitle({'values': {'title': '   '}}), isNull);
+    expect(EngineSession.readTitle({'title': 'flat'}), isNull);
+  });
 }

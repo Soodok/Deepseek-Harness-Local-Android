@@ -1,0 +1,213 @@
+{
+  "stage": "beta50 已装机并完成双端实机验收；实现/验收/交接三份文档已写；本地提交 cc6fff75（未 push）",
+  "updatedAt": "2026-11-18T02:41:00+08:00",
+  "branch": "feat/flutter-native-chat",
+  "baseHead": "556ef615ac5162347ea205fd602301622d99d6f1",
+  "repo": "E:/tmp/wt-flutter-native-chat",
+  "versions": [
+    {
+      "name": "1.6.0-beta.37",
+      "code": 412,
+      "bytes": 248160582,
+      "sha256": "4ef40a4d1e15ac4738b176f618c3101ed44eb174dae6e68f6064e5f1b555d228"
+    },
+    {
+      "name": "1.6.0-beta.42",
+      "code": 417,
+      "note": "双端撤回首次真正成功 fork"
+    },
+    {
+      "name": "1.6.0-beta.43",
+      "code": 418,
+      "bytes": 248162918,
+      "sha256": "d42817e165e5ccc800695005701167cd2c77affc801eb476981c179edd1ec9a1"
+    },
+    {
+      "name": "1.6.0-beta.44",
+      "code": 419,
+      "bytes": 248164102,
+      "sha256": "e5aaa3bcf2908770c643767ec2aee57c6ff6bc2b666c1036c53d2ddb7bc0c27c"
+    },
+    {
+      "name": "1.6.0-beta.45",
+      "code": 420,
+      "bytes": 248165134,
+      "sha256": "3661a39c1408fff95c908eeca252ec6f424b0a8e8cf2435276e556b0fc1e2e5a",
+      "note": "Web 编辑态挂分叉会话"
+    },
+    {
+      "name": "1.6.0-beta.46",
+      "code": 421,
+      "bytes": 248165766,
+      "sha256": "1c40da8f8784621c99b563a7d4f4264fed46c7ca84367e0a58520fe04eda2373",
+      "note": "编辑横条浮到输入卡片上方 + rc.2 真实主题令牌"
+    },
+    {
+      "name": "1.6.0-beta.47",
+      "code": 422,
+      "sha256": "a6e089e1b42b9c3f40f6c72f8d465a25176427d9e333b425af29d002f23eabc3",
+      "note": "回答身份改读 data.finalNode（分享/重新输出定位修复）"
+    },
+    {
+      "name": "1.6.0-beta.48",
+      "code": 423,
+      "sha256": "52e4fe0d3cc9a75405a7e54e076e4e203ea4a30c0dc7974c0130f0d0cebf0688",
+      "note": "新增 ShareBridge（DshAndroidShare）：系统分享走真实 ACTION_SEND"
+    },
+    {
+      "name": "1.6.0-beta.49",
+      "code": 424,
+      "bytes": 248168550,
+      "sha256": "fd52492121a5721a1ba2d73fc3f680ad7552fcab0fd80895c40c2385cbfc569d",
+      "note": "原生端撤回/编辑/重新输出前向 Host 现查回合表（修「这一段没有改动文件」谎报）"
+    },
+    {
+      "name": "1.6.0-beta.50",
+      "code": 425,
+      "bytes": 248168526,
+      "sha256": "02b3ddf4a46d26bb9bf71615bc10e3b4a34daa8d172a658590537350e2a1e182",
+      "note": "冲突响应兼容：turn-rewind 的 conflict 结果把 conflicts 放顶层，原来只读 files.conflicts 导致提示里没有文件名"
+    }
+  ],
+  "completed": [
+    {
+      "item": "turn-rewind 内置 DSH 插件（宿主 TurnRewindService + Web 客户端扩展 + core 快照/回滚）",
+      "evidence": "app/src/main/assets/android-plugins/turn-rewind/{core.js,index.js,client.js,package.json}"
+    },
+    {
+      "item": "插件离线单测（client+core 合计 34 例，全部通过）",
+      "evidence": "docs/reports/2026-11-17-conversation-parity-plugin-test/，node --test client.test.mjs core.test.mjs → 34 pass / 0 fail"
+    },
+    {
+      "item": "Flutter 消息动作层（复制/撤回/编辑/点赞/踩/重新输出/分享）",
+      "evidence": "flutter_ui/lib/src/state/message_actions.dart 等"
+    },
+    {
+      "item": "Android 分享与保存到文件的 HostBridge 通道（原生端）",
+      "evidence": "NativeChatActivity.kt shareText/saveText"
+    },
+    {
+      "item": "新增 ShareBridge：WebView 内「系统分享」可用",
+      "evidence": "app/src/main/java/app/dsh/mobile/engine/ShareBridge.kt + MainActivity.kt:936 注册 DshAndroidShare；设备实机弹出 ChooserActivity（/tmp/b48_share1.png），cache/shared/dsh-conversation-20261117-170024.txt 77 字节"
+    },
+    {
+      "item": "Web 端编辑横条可见/可取消/草稿还原",
+      "evidence": "beta48 /tmp/b46_n1.png（横条浮于输入卡片上方）、/tmp/b46_s2.png（取消后横条消失、草稿 KEEP_THIS_DRAFT 回到输入框）"
+    },
+    {
+      "item": "Web 端点赞/踩走真实 messageFeedback/put",
+      "evidence": "CDP Network 抓到 POST /api/messageFeedback/put，rpcId 02198774…；aria-label 变为「取消标记」"
+    },
+    {
+      "item": "Web 端重新输出默认回滚后重发",
+      "evidence": "确认框「重新输出这一轮？」→ 发送 → 页面先回滚到该轮起点并重发，输入框清空、出现停止按钮，最终生成新回答（17:03）"
+    },
+    {
+      "item": "Web 端分享：预览 + 保存到文件 + 系统分享",
+      "evidence": "/tmp/b47_a1.png 预览「问：KEEP_THIS_DRAFT / 答：…」；保存到 /sdcard/Download/DSH MOBILE/dsh-conversation.txt（77 字节）；系统分享唤起 com.android.intentresolver/.ChooserActivity"
+    },
+    {
+      "item": "文件回滚真实生效（删除新建文件）",
+      "evidence": "turn-rewind 记录 {\"status\":\"rewound\",\"turn\":7,\"files\":{\"applied\":true,\"restored\":[{\"path\":\"rollback-demo.txt\",\"action\":\"deleted\",\"ok\":true}]}}；设备上 files/dsh-home/native-ui-check/ 回滚后为空目录"
+    },
+    {
+      "item": "原生端撤回/编辑/复制已实机通过（beta44）",
+      "evidence": "/tmp/b44_ra.png、/tmp/b44_e2.png、/tmp/b44_e6.png"
+    },
+    {
+      "item": "原生抽屉显示真实会话标题、无 session id、无 cwd",
+      "evidence": "/tmp/beta37_drawer.png、/tmp/beta42_nat1.png"
+    },
+    {
+      "item": "原生端回合快照表现查修复：页面打开后才结束的回合也能看到文件改动",
+      "evidence": "MessageActions.planForFresh + ChatShell._freshPlan；beta49 实机点验 —— 撤回确认框「将回滚 1 个文件的改动」（/tmp/b49_rt.png），确认后 native-rollback.txt 被真实删除且 receipt applied:true（/tmp/b49_rt2.png）；重新输出确认框同样「将回滚 1 个文件的改动」（/tmp/b49_re2.png），receipt 记录 turn 10 applied:true（/tmp/b49_re3.png）"
+    },
+    {
+      "item": "原生端点赞/踩走真实 messageFeedback",
+      "evidence": "点「有帮助」后图标高亮并弹「已点赞」；会话日志 session-28c94a43… 第 87 条事件 type=feedback/message-put，item={messageId:553ba79b-…, rating:positive, version:3c7c5653-…}（/tmp/n1.png）"
+    },
+    {
+      "item": "原生端分享：预览面板 + 系统分享 + 保存到文件",
+      "evidence": "面板显示「问：NATIVE_ACTIONS_OK / 答：Acknowledged…」四键（/tmp/n_share1.png）；系统分享唤起 com.android.intentresolver/.ChooserActivity（/tmp/n_share2.png）；「保存」落到 /sdcard/Download/NATIVE_ACTIONS_OK.txt（106 字节，内容为问+答，/tmp/n_save2.png）"
+    },
+    {
+      "item": "原生端文件回滚：新建后撤回=删除、修改后撤回=还原原内容、删除后撤回=恢复文件",
+      "evidence": "turn 12 created → 撤回后 receipt {action:deleted}；turn 13 modified → 撤回后 mod-demo.txt 由 MOD-V2 还原为 MOD-V1，receipt {action:restored}；turn 14 deleted → 撤回后 mod-demo.txt 恢复，receipt {action:restored}（/tmp/b49_m3.png、/tmp/b49_m6.png、/tmp/b49_d7.png）"
+    },
+    {
+      "item": "外部冲突检测：文件在回合后被外部改过时不覆盖、如实列出路径",
+      "evidence": "beta50：外部把 cg.txt 改成 EXTERNAL-CG 后撤回，红条「这些文件在这一轮之后被改过，没有覆盖：cg.txt」，文件内容仍为 EXTERNAL-CG（/tmp/b50_cg2.png）；beta49 上同一路径曾显示空文件名，即本次修的缺陷"
+    }
+  ],
+  "checks": [
+    {
+      "cmd": "node --test client.test.mjs core.test.mjs",
+      "exit": 0,
+      "note": "34 tests / 34 pass / 0 fail；新增三个可打红用例：编辑横条浮层+lc.2 令牌、回答身份读 finalNode、系统分享走原生桥；各自负对照均打红后已还原"
+    },
+    {
+      "cmd": "node --check app/src/main/assets/android-plugins/turn-rewind/client.js",
+      "exit": 0,
+      "note": "语法通过"
+    },
+    {
+      "cmd": "flutter analyze --no-pub",
+      "exit": 0,
+      "note": "No issues found!（beta44 轮次）"
+    },
+    {
+      "cmd": "flutter test --concurrency=1",
+      "exit": 0,
+      "note": "423 tests passed（beta44 轮次）"
+    },
+    {
+      "cmd": "gradle :app:assembleDebug (beta48)",
+      "exit": 0,
+      "note": "BUILD SUCCESSFUL in 2m 56s"
+    },
+    {
+      "cmd": "flutter test --concurrency=1 (beta49)",
+      "exit": 0,
+      "note": "425 tests passed（/tmp/fulltest_b49.log）"
+    },
+    {
+      "cmd": "flutter analyze --no-pub (beta49)",
+      "exit": 0,
+      "note": "No issues found! (28.2s)"
+    },
+    {
+      "cmd": "gradle :app:assembleDebug (beta49)",
+      "exit": 0,
+      "note": "BUILD SUCCESSFUL in 3m 31s"
+    },
+    {
+      "cmd": "flutter test --concurrency=1 (beta50)",
+      "exit": 0,
+      "note": "427 tests passed（/tmp/fulltest_b50.log）"
+    },
+    {
+      "cmd": "flutter analyze --no-pub (beta50)",
+      "exit": 0,
+      "note": "No issues found!"
+    },
+    {
+      "cmd": "gradle :app:assembleDebug (beta50)",
+      "exit": 0,
+      "note": "BUILD SUCCESSFUL in 2m 11s"
+    }
+  ],
+  "knownLimitations": [
+    "引擎在模拟器上每约 60–80 秒自行退出并自愈重启（logcat: engine exited: status=0 signal=0），界面会被重建；属引擎/宿主层既有问题，超出本轮授权范围。",
+    "曾出现降级启动：missing=[directoryPickerController,workspaceRegistry,workspaceController]，冷启后恢复 ok=true。",
+    "设备上曾被其他工作树（E:/tmp/wt-island2，versionCode 430）的 APK 覆盖，导致本轮插件一度「未进 bundle」。用 adb install -d 降级装回后 normal。",
+    "设备默认无模型凭据；本轮验收使用设备已配置的 gpt-6-luna（用户授权），所有在线回合均为真实模型请求（非 fixture）。",
+    "文件改名（rename）与二进制文件的回滚仍只有离线单测覆盖，未在设备上造真实样例。",
+    "「切换 Web / 原生动效」只做目视与时序判断，未录制视频级逐帧证据。"
+  ],
+  "blockers": [],
+  "next": [
+    "补改名/二进制文件的设备级真实样例",
+    "交 Lead 统合与 GLM 复核"
+  ],
+  "commit": "cc6fff75"
+}

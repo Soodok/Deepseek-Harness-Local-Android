@@ -318,6 +318,7 @@ class DshSessionProjection {
                 id: id,
                 role: kind == 'user' ? ChatRole.user : ChatRole.system,
                 text: text,
+                seq: seq,
               ),
             );
         case 'assistant/message':
@@ -325,7 +326,13 @@ class DshSessionProjection {
           final text = _blocksText(message['content']);
           if (text.isNotEmpty)
             messages.add(
-              ChatMessage(id: id, role: ChatRole.assistant, text: text),
+              ChatMessage(
+                id: id,
+                role: ChatRole.assistant,
+                text: text,
+                seq: seq,
+                messageId: _string(message['id']),
+              ),
             );
         case 'system/message':
         case 'developer/message':

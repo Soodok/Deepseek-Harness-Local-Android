@@ -3,12 +3,11 @@ import 'dart:async';
 import 'package:dsh_native_chat/src/bridge/engine_sessions_native.dart';
 import 'package:dsh_native_chat/src/bridge/engine_sessions_stub.dart' as stub;
 import 'package:dsh_native_chat/src/bridge/host_bridge.dart';
-import 'package:dsh_native_chat/src/model/engine_session.dart';
 import 'package:dsh_native_chat/src/state/settings_controller.dart';
 import 'package:dsh_native_chat/src/transport/dsh_rpc_connection.dart';
 import 'package:dsh_native_chat/src/transport/native_session_transport.dart';
 import 'package:dsh_native_chat/src/ui/chat_shell.dart';
-import 'package:dsh_native_chat/src/ui/engine_session_picker.dart';
+import 'package:dsh_native_chat/src/ui/overflow_title.dart';
 import 'package:dsh_native_chat/src/ui/settings/settings_page.dart';
 import 'package:dsh_native_chat/src/ui/settings/settings_scope.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,20 +24,27 @@ class _Rpc extends DshRpcConnection {
   Future<Object?>? creation;
   bool closed = false;
   bool failCreation = false;
+  bool failCatalog = false;
+
   @override
   Future<void> connect() async {}
+
   @override
   Future<Object?> call(String endpoint, Map<String, Object?> args) async {
     calls.add((endpoint: endpoint, args: args));
     switch (endpoint) {
       case 'session/list':
+        if (failCatalog) {
+          throw const DshRpcException('test/catalog-failed', 'catalog offline');
+        }
         return catalog == null ? {'items': []} : await catalog!;
       case 'session/create':
-        if (failCreation)
+        if (failCreation) {
           throw const DshRpcException(
             'test/create-failed',
             'directory unavailable',
           );
+        }
         return creation == null ? {'sessionId': 'parent'} : await creation!;
       case 'session/state':
         return {
@@ -95,376 +101,298 @@ HostInfo _host(String token, {bool available = true}) => HostInfo(
   state: available ? 'healthy' : 'starting',
   available: available,
 );
+
+Map<String, Object?> _row(
+  String id, {
+  String? title,
+  num updatedAt = 1,
+  bool openable = true,
+  bool blank = false,
+}) => {
+  'sessionId': id,
+  'updatedAt': updatedAt,
+  'cwd': '/engine/project',
+  'blank': blank,
+  if (!openable) 'formatStatus': 'migration-required',
+  if (title != null)
+    'projections': {
+      'kind': 'sequenced',
+      'asOfSeq': 1,
+      'values': {'title': title},
+    },
+};
+
 Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 350));
+  // Startup also waits (bounded) for the Session handoff, so settle past it.
+  await tester.pump(const Duration(milliseconds: 600));
 }
 
-Future<void> _create(WidgetTester tester, String cwd) async {
-  await tester.tap(find.byKey(const ValueKey('engine-new-session')));
-  await _settle(tester);
-  await tester.enterText(find.byKey(const ValueKey('engine-cwd')), cwd);
-  await tester.tap(find.byKey(const ValueKey('engine-create-confirm')));
-  await _settle(tester);
-}
+NativeSessionTransport _transport(WidgetTester tester) =>
+    tester.widget<ChatShell>(find.byType(ChatShell)).controller.transport
+        as NativeSessionTransport;
 
 void main() {
   testWidgets(
-    'empty catalog offers creation and retains the legacy open action',
+    'an empty catalogue starts a blank Session with no directory form',
     (tester) async {
-      var created = 0;
-      EngineSession? opened;
+      final peer = _Rpc();
       await tester.pumpWidget(
         MaterialApp(
-          home: EngineSessionPicker(
-            load: () async => const [],
-            onOpen: (row) async {
-              opened = row;
-            },
-            onCreate: () async {
-              created++;
-            },
-          ),
+          home: EngineHome(host: _host('blank'), createRpc: (_) => peer),
         ),
       );
       await _settle(tester);
-      expect(find.text('暂时没有可打开的主会话'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('engine-new-session')));
-      await _settle(tester);
-      expect(created, 1);
-      expect(opened, isNull);
-    },
-  );
-
-  testWidgets(
-    'unavailable native home never opens RPC and exposes recovery actions',
-    (tester) async {
-      var opened = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: EngineHome(
-            host: _host('unused', available: false),
-            createRpc: (_) {
-              opened++;
-              return _Rpc();
-            },
-          ),
-        ),
-      );
-      await _settle(tester);
-      expect(opened, 0);
-      expect(find.textContaining('等待本机引擎'), findsOneWidget);
-      expect(find.byKey(const ValueKey('engine-settings')), findsOneWidget);
-      expect(find.byKey(const ValueKey('engine-web')), findsOneWidget);
-      expect(find.byKey(const ValueKey('engine-new-session')), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'first creation requires an absolute engine cwd and opens a real interactive shell',
-    (tester) async {
-      final peers = <_Rpc>[];
-      await tester.pumpWidget(
-        MaterialApp(
-          home: EngineHome(
-            host: _host('first'),
-            createRpc: (_) {
-              final peer = _Rpc();
-              peers.add(peer);
-              return peer;
-            },
-          ),
-        ),
-      );
-      await _settle(tester);
-      await tester.tap(find.byKey(const ValueKey('engine-new-session')));
-      await _settle(tester);
+      expect(find.byType(ChatShell), findsOneWidget);
+      expect(_transport(tester).sessionId, 'parent');
+      expect(_transport(tester).enableInteractions, isTrue);
+      // The Host owns the working directory: nothing is invented here, so the
+      // request carries no cwd and the UI never asks for a path.
       expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('engine-cwd')))
-            .controller!
-            .text,
-        isEmpty,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('engine-cwd')),
-        'relative',
-      );
-      await tester.tap(find.byKey(const ValueKey('engine-create-confirm')));
-      await _settle(tester);
-      expect(find.textContaining('绝对路径'), findsWidgets);
-      expect(
-        peers.single.calls.where((c) => c.endpoint == 'session/create'),
-        isEmpty,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('engine-cwd')),
-        '/data/project',
-      );
-      await tester.tap(find.byKey(const ValueKey('engine-create-confirm')));
-      await _settle(tester);
-      expect(
-        peers.first.calls.lastWhere((c) => c.endpoint == 'session/create').args,
+        peer.calls.lastWhere((c) => c.endpoint == 'session/create').args,
         {
-          'request': {'cwd': '/data/project'},
+          'request': <String, Object?>{},
         },
       );
-      final shell = tester.widget<ChatShell>(find.byType(ChatShell));
-      final transport = shell.controller.transport as NativeSessionTransport;
-      expect(transport.sessionId, 'parent');
-      expect(transport.enableInteractions, isTrue);
-      expect(shell.disposeController, isTrue);
-      expect(shell.onOpenEngineSessions, isNotNull);
-      expect(shell.onNewSession, isNotNull);
-      // A hosted conversation reaches the session list through its own drawer,
-      // never through a back arrow in the top bar.
-      await tester.tap(find.byKey(const ValueKey('session-menu')));
-      await _settle(tester);
-      expect(find.byType(Drawer), findsOneWidget);
-      expect(find.text('返回会话列表'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('engine-sessions')));
-      await _settle(tester);
-      expect(find.byType(EngineSessionPicker), findsOneWidget);
-      expect(peers.last.closed, isTrue);
+      expect(find.byKey(const ValueKey('engine-cwd')), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await _settle(tester);
-      expect(peers.every((p) => p.closed), isTrue);
+      expect(peer.closed, isTrue);
     },
   );
 
   testWidgets(
-    'rotation drops old dialog and late creation without opening a stale session',
+    'the catalogue opens its newest Session directly, without a picker',
     (tester) async {
-      final old = _Rpc();
-      final fresh = _Rpc();
-      final pending = Completer<Object?>();
-      old.creation = pending.future;
-      DshRpcConnection factory(String url) => url.contains('old') ? old : fresh;
-      Widget app(HostInfo host) => MaterialApp(
-        home: EngineHome(host: host, createRpc: factory),
+      final peer = _Rpc()
+        ..catalog = Future.value({
+          'items': [
+            _row('older', title: '旧对话', updatedAt: 1),
+            _row('newer', title: '新对话', updatedAt: 9),
+          ],
+        });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(host: _host('direct'), createRpc: (_) => peer),
+        ),
       );
-      await tester.pumpWidget(app(_host('old')));
       await _settle(tester);
-      await _create(tester, '/old/project');
+      expect(find.byType(ChatShell), findsOneWidget);
+      expect(_transport(tester).sessionId, 'newer');
       expect(
-        old.calls.where((c) => c.endpoint == 'session/create'),
-        hasLength(1),
+        peer.calls.where((c) => c.endpoint == 'session/create'),
+        isEmpty,
       );
-      await tester.pumpWidget(app(_host('new')));
-      await _settle(tester);
-      expect(old.closed, isTrue);
-      pending.complete({'sessionId': 'stale'});
-      await _settle(tester);
-      expect(find.byType(ChatShell), findsNothing);
-      expect(fresh.calls.where((c) => c.endpoint == 'session/create'), isEmpty);
-      await tester.tap(find.byKey(const ValueKey('engine-new-session')));
-      await _settle(tester);
-      await tester.pumpWidget(app(_host('third', available: false)));
-      await _settle(tester);
-      expect(find.byKey(const ValueKey('engine-cwd')), findsNothing);
-      expect(fresh.closed, isTrue);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
-  testWidgets('old catalog completion cannot replace the new host catalog', (
+  testWidgets('the drawer lists Sessions by title only and switches', (
+    tester,
+  ) async {
+    final catalog = _Rpc()
+      ..catalog = Future.value({
+        'items': [
+          _row('first', title: '整理一下周报', updatedAt: 2),
+          _row('second', title: '排查构建失败', updatedAt: 1),
+        ],
+      });
+    final peers = <_Rpc>[catalog];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EngineHome(
+          host: _host('drawer'),
+          createRpc: (_) {
+            // The home's own catalogue peer is the one prepared above; every
+            // conversation gets a fresh peer.
+            if (peers.length == 1) return catalog;
+            final peer = _Rpc();
+            peers.add(peer);
+            return peer;
+          },
+        ),
+      ),
+    );
+    await _settle(tester);
+    expect(_transport(tester).sessionId, 'first');
+    await tester.tap(find.byKey(const ValueKey('session-menu')));
+    await _settle(tester);
+    expect(find.byType(Drawer), findsOneWidget);
+    // Human names only: rows render a title, never a Session identity or cwd.
+    final labels = tester
+        .widgetList<OverflowTitle>(find.byType(OverflowTitle))
+        .map((title) => title.text)
+        .toList();
+    expect(labels, containsAll(['整理一下周报', '排查构建失败']));
+    expect(
+      labels.any(
+        (label) => label.contains('session') || label.contains('/engine/project'),
+      ),
+      isFalse,
+    );
+    expect(find.textContaining('/engine/project'), findsNothing);
+    expect(find.textContaining('session-'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('session-row-second')));
+    await _settle(tester);
+    expect(_transport(tester).sessionId, 'second');
+    expect(peers.first.closed, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _settle(tester);
+    expect(peers.every((p) => p.closed), isTrue);
+  });
+
+  testWidgets(
+    'sessions that require migration are skipped, never opened blind',
+    (tester) async {
+      final peer = _Rpc()
+        ..catalog = Future.value({
+          'items': [_row('locked', title: '待迁移', openable: false)],
+        });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(host: _host('locked'), createRpc: (_) => peer),
+        ),
+      );
+      await _settle(tester);
+      expect(_transport(tester).sessionId, 'parent');
+      expect(find.byKey(const ValueKey('engine-cwd')), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('an unreadable catalogue offers retry and invents no Session', (
+    tester,
+  ) async {
+    final peer = _Rpc()..failCatalog = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EngineHome(host: _host('broken'), createRpc: (_) => peer),
+      ),
+    );
+    await _settle(tester);
+    expect(find.byType(ChatShell), findsNothing);
+    expect(find.textContaining('会话列表读取失败'), findsOneWidget);
+    expect(
+      peer.calls.where((c) => c.endpoint == 'session/create'),
+      isEmpty,
+    );
+    peer.failCatalog = false;
+    await tester.tap(find.byKey(const ValueKey('engine-bootstrap-retry')));
+    await _settle(tester);
+    expect(find.byType(ChatShell), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'a blank Session that cannot be created keeps the failure visible',
+    (tester) async {
+      final peer = _Rpc()..failCreation = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(host: _host('nofail'), createRpc: (_) => peer),
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(ChatShell), findsNothing);
+      expect(find.textContaining('新建会话失败'), findsOneWidget);
+      expect(find.byKey(const ValueKey('engine-bootstrap-retry')), findsOne);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('host status updates without opening a new connection', (
+    tester,
+  ) async {
+    var count = 0;
+    Widget app(String state) => MaterialApp(
+      home: EngineHome(
+        host: HostInfo(webUrl: '', state: state, available: false),
+        createRpc: (_) {
+          count++;
+          return _Rpc();
+        },
+      ),
+    );
+    await tester.pumpWidget(app('starting'));
+    await _settle(tester);
+    await tester.pumpWidget(app('failed'));
+    await _settle(tester);
+    expect(find.text('引擎状态：failed'), findsOneWidget);
+    expect(count, 0);
+  });
+
+  testWidgets('unavailable native home never opens RPC', (tester) async {
+    var opened = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EngineHome(
+          host: _host('unused', available: false),
+          createRpc: (_) {
+            opened++;
+            return _Rpc();
+          },
+        ),
+      ),
+    );
+    await _settle(tester);
+    expect(opened, 0);
+    expect(find.textContaining('等待本机引擎'), findsOneWidget);
+    expect(find.byKey(const ValueKey('engine-settings')), findsOneWidget);
+    expect(find.byKey(const ValueKey('engine-web')), findsOneWidget);
+  });
+
+  testWidgets('rotation drops a late catalogue and closes the old peer', (
     tester,
   ) async {
     final pending = Completer<Object?>();
     final old = _Rpc()..catalog = pending.future;
     final fresh = _Rpc()
       ..catalog = Future.value({
-        'items': [
-          {'sessionId': 'fresh', 'updatedAt': 1, 'cwd': '/fresh'},
-        ],
+        'items': [_row('fresh', title: '新的对话')],
       });
-    DshRpcConnection factory(String url) => url.contains('old') ? old : fresh;
-    Widget app(String token) => MaterialApp(
-      home: EngineHome(host: _host(token), createRpc: factory),
-    );
-    await tester.pumpWidget(app('old'));
-    await tester.pump();
-    await tester.pumpWidget(app('new'));
+    DshRpcConnection factory(String url) =>
+        url.contains('old') ? old : fresh;
+    Widget app(HostInfo host) =>
+        MaterialApp(home: EngineHome(host: host, createRpc: factory));
+    await tester.pumpWidget(app(_host('old')));
+    await _settle(tester);
+    await tester.pumpWidget(app(_host('new')));
     await _settle(tester);
     pending.complete({
-      'items': [
-        {'sessionId': 'stale', 'updatedAt': 2},
-      ],
+      'items': [_row('stale', title: '过期对话')],
     });
     await _settle(tester);
-    expect(find.text('fresh'), findsOneWidget);
-    expect(find.text('stale'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets(
-    'home settings reuse the shared settings page before any session exists',
-    (tester) async {
-      final peer = _Rpc();
-      final settings = SettingsController(FakeService());
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SettingsScope(
-            controller: settings,
-            child: EngineHome(host: _host('settings'), createRpc: (_) => peer),
-          ),
-        ),
-      );
-      await _settle(tester);
-      await tester.tap(find.byKey(const ValueKey('engine-settings')));
-      await _settle(tester);
-      expect(find.byType(SettingsPage), findsOneWidget);
-      expect(peer.calls.where((c) => c.endpoint == 'session/create'), isEmpty);
-      await tester.pumpWidget(const SizedBox.shrink());
-      settings.dispose();
-    },
-  );
-
-  testWidgets(
-    'existing session opens without create, chat can create again with its cwd',
-    (tester) async {
-      final catalog = _Rpc()
-        ..catalog = Future.value({
-          'items': [
-            {
-              'sessionId': 'existing',
-              'updatedAt': 3,
-              'cwd': '/existing/project',
-            },
-          ],
-        });
-      final peers = <_Rpc>[catalog];
-      await tester.pumpWidget(
-        MaterialApp(
-          home: EngineHome(
-            host: _host('chat'),
-            createRpc: (_) {
-              if (peers.length == 1 && catalog.calls.isEmpty) return catalog;
-              final peer = _Rpc();
-              peers.add(peer);
-              return peer;
-            },
-          ),
-        ),
-      );
-      await _settle(tester);
-      await tester.tap(find.byKey(const ValueKey('engine-session-existing')));
-      await _settle(tester);
-      final shell = tester.widget<ChatShell>(find.byType(ChatShell));
-      expect(
-        (shell.controller.transport as NativeSessionTransport).sessionId,
-        'existing',
-      );
-      expect(
-        catalog.calls.where((c) => c.endpoint == 'session/create'),
-        isEmpty,
-      );
-      shell.onNewSession!();
-      await _settle(tester);
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('engine-cwd')))
-            .controller!
-            .text,
-        '/existing/project',
-      );
-      await tester.tap(find.byKey(const ValueKey('engine-create-confirm')));
-      await _settle(tester);
-      expect(
-        (tester.widget<ChatShell>(find.byType(ChatShell)).controller.transport
-                as NativeSessionTransport)
-            .sessionId,
-        'parent',
-      );
-      expect(peers[1].closed, isTrue);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await _settle(tester);
-    },
-  );
-
-  testWidgets(
-    'creation failure retains the directory and allows explicit retry',
-    (tester) async {
-      final catalog = _Rpc()..failCreation = true;
-      var count = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: EngineHome(
-            host: _host('retry'),
-            createRpc: (_) => count++ == 0 ? catalog : _Rpc(),
-          ),
-        ),
-      );
-      await _settle(tester);
-      await _create(tester, '/project');
-      expect(find.byType(ChatShell), findsNothing);
-      expect(find.textContaining('directory unavailable'), findsOneWidget);
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('engine-cwd')))
-            .controller!
-            .text,
-        '/project',
-      );
-      catalog.failCreation = false;
-      await tester.tap(find.byKey(const ValueKey('engine-create-confirm')));
-      await _settle(tester);
-      expect(find.byType(ChatShell), findsOneWidget);
-      expect(
-        catalog.calls.where((c) => c.endpoint == 'session/create'),
-        hasLength(2),
-      );
-      await tester.pumpWidget(const SizedBox.shrink());
-      await _settle(tester);
-    },
-  );
-
-  testWidgets('active conversation closes when the Host becomes unavailable', (
-    tester,
-  ) async {
-    final peers = <_Rpc>[];
-    DshRpcConnection factory(String url) {
-      final peer = _Rpc();
-      peers.add(peer);
-      return peer;
-    }
-
-    Widget app(HostInfo host) => MaterialApp(
-      home: EngineHome(host: host, createRpc: factory),
-    );
-    await tester.pumpWidget(app(_host('active')));
+    expect(old.closed, isTrue);
+    expect(_transport(tester).sessionId, 'fresh');
+    await tester.pumpWidget(app(_host('third', available: false)));
     await _settle(tester);
-    await _create(tester, '/project');
-    expect(find.byType(ChatShell), findsOneWidget);
-    await tester.pumpWidget(app(_host('active', available: false)));
-    await _settle(tester);
+    expect(fresh.closed, isTrue);
     expect(find.byType(ChatShell), findsNothing);
-    expect(peers.every((p) => p.closed), isTrue);
-    expect(find.textContaining('等待本机引擎'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-    'host status updates without opening a new connection for the same URL',
-    (tester) async {
-      var count = 0;
-      Widget app(String state) => MaterialApp(
-        home: EngineHome(
-          host: HostInfo(webUrl: '', state: state, available: false),
-          createRpc: (_) {
-            count++;
-            return _Rpc();
-          },
+  testWidgets('home settings reuse the shared settings page', (tester) async {
+    final peer = _Rpc()..failCatalog = true;
+    final settings = SettingsController(FakeService());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScope(
+          controller: settings,
+          child: EngineHome(host: _host('settings'), createRpc: (_) => peer),
         ),
-      );
-      await tester.pumpWidget(app('starting'));
-      await _settle(tester);
-      await tester.pumpWidget(app('failed'));
-      await _settle(tester);
-      expect(find.text('引擎状态：failed'), findsOneWidget);
-      expect(count, 0);
-    },
-  );
+      ),
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('engine-settings')));
+    await _settle(tester);
+    expect(find.byType(SettingsPage), findsOneWidget);
+    expect(
+      peer.calls.where((c) => c.endpoint == 'session/create'),
+      isEmpty,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    settings.dispose();
+  });
 
   testWidgets('stub home explicitly requires Android', (tester) async {
     await tester.pumpWidget(

@@ -273,14 +273,31 @@ android {
         // 模型胶囊 34dp 表面/48dp 触控；自绘原生模糊玻璃 + 页面柔光背景；
         // 子代理入口按真实目录出现/消失；发送与停止合并为同一槽位（停止防连点、失败可重试）。
         // v1.6.0-beta.36 (2026-11-17 14:04): model labels, turn notices, compact settings and persisted display size.
-        versionCode = 411
+        // v1.6.0-beta.42 (2026-11-17 21:28): the Connection channel nests the
+        // plugin's own {ok,value} inside its {ok,value}; both layers are unwrapped.
+        // v1.6.0-beta.45 (2026-11-17 23:20): Web 端编辑态挂在分叉会话上、取消编辑
+        // 把草稿还回输入框，并在输入区画出可取消的编辑横条。
+        // v1.6.0-beta.46 (2026-11-18 00:20): 编辑横条改浮在输入卡片上方（原先留在零高
+        // 锚点的常规流里，压住输入框文字、点不中）；主题色改用 rc.2 真实存在的
+        // --dsw-alias-* 令牌（原 --dsh-ink/--dsh-paper 在浅色主题下是白字压浅蓝）。
+        // v1.6.0-beta.47 (2026-11-18 00:40): 回答身份改读 data.finalNode（rc.2 真实形状），
+        // 修好 Web 端分享误报"没有正文"与重新输出/撤回定位不到回合。
+        // v1.6.0-beta.48 (2026-11-18 00:50): 新增 ShareBridge（DshAndroidShare）——WebView
+        // 没有 navigator.share，应用的「系统分享」现在走真实 ACTION_SEND + FileProvider。
+        // v1.6.0-beta.49 (2026-11-18 01:36): 原生端撤回/编辑/重新输出前向 Host 现查回合表
+        // （原先只在页面绑定那一刻读一次，页面打开后才结束的回合不在表里，确认框会谎报
+        // "这一段没有改动文件"，而 Host 其实有该回合的文件快照）。
+        // v1.6.0-beta.50 (2026-11-18 02:16): 冲突响应兼容——turn-rewind 的 conflict 结果把
+        // conflicts 放在顶层（没有 files 键），原来只读 files.conflicts，导致提示
+        // "这些文件在这一轮之后被改过，没有覆盖：" 后面没有任何文件名。
+        versionCode = 425
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.36"
+        versionName = "1.6.0-beta.50"
 
         ndk {
             abiFilters += listOf(targetAbi)

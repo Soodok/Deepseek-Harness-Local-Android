@@ -52,6 +52,7 @@ class ComposerSurface extends StatelessWidget {
     required this.controls,
     this.focusNode,
     this.onSubmitted,
+    this.onChanged,
     this.leading = const [],
   });
   final TextEditingController textController;
@@ -60,6 +61,10 @@ class ComposerSurface extends StatelessWidget {
   final List<Widget> controls, leading;
   final FocusNode? focusNode;
   final VoidCallback? onSubmitted;
+
+  /// Reports typing so the owning draft can follow it. Null keeps the field's
+  /// text private to the widget.
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) => GlassPanel(
@@ -95,6 +100,7 @@ class ComposerSurface extends StatelessWidget {
               isDense: true,
               contentPadding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
             ),
+            onChanged: onChanged,
             onSubmitted: onSubmitted == null ? null : (_) => onSubmitted!(),
           ),
           const SizedBox(height: 14),

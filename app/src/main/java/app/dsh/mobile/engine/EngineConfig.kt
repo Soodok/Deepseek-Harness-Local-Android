@@ -1603,6 +1603,16 @@ object EngineConfig {
             |# window.__dshResume so MainActivity.onResume can wake it after a freeze.
             |    - id: android-resume-reconnect
             |      name: ./android-plugins/resume-reconnect/index.js
+            |# Turn rewind (2026-11-17): the authoritative backend for retracting one
+            |# message and for "output again". rc.2 ships no undo, and the human
+            |# transcript only reads append-surface events, so a retraction must not
+            |# hide or truncate the log: it forks the Session just before the target
+            |# message (session/fork atSeq) and restores the files that Turn changed
+            |# from this plugin's own snapshot store. The original branch is kept, so
+            |# the retraction stays auditable. Both clients call one contract:
+            |# turnRewind/list and turnRewind/rewind.
+            |    - id: android-turn-rewind
+            |      name: ./android-plugins/turn-rewind/index.js
             |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
             |# sidebar into a drawer and also registered a session-delete route plus
             |# response compression; in practice it produced many bugs (vanishing quick
@@ -1655,6 +1665,7 @@ object EngineConfig {
             listOf(
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
                 "resume-reconnect" to listOf("package.json", "index.js", "client.js"),
+                "turn-rewind" to listOf("package.json", "index.js", "client.js", "core.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")

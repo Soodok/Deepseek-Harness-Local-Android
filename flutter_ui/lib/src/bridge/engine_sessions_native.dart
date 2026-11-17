@@ -2,13 +2,16 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../model/chat_model.dart';
 import '../model/engine_session.dart';
 import '../model/settings_model.dart';
 import '../state/chat_controller.dart';
+import '../state/composer_draft.dart';
+import '../state/native_conversation_actions.dart';
 import '../transport/dsh_rpc_connection.dart';
+import '../transport/native_action_transport.dart';
 import '../transport/native_session_transport.dart';
 import '../ui/chat_shell.dart';
-import '../ui/engine_session_picker.dart';
 import '../ui/settings/settings_detail_pages.dart';
 import '../ui/settings/settings_home.dart';
 import '../ui/settings/settings_page.dart';
@@ -30,6 +33,20 @@ class EngineSessionService {
   Future<List<EngineSession>> list() async => EngineSession.fromResponse(
     await rpc.call('session/list', {'_request': <String, Object?>{}}),
   );
+
+  /// Create a Session without naming a directory: the Host applies its own
+  /// default working directory, so no value is invented on this side.
+  Future<String> createBlank() async {
+    final value = await rpc.call('session/create', {
+      'request': <String, Object?>{},
+    });
+    if (value is! Map ||
+        value['sessionId'] is! String ||
+        (value['sessionId'] as String).trim().isEmpty) {
+      throw const FormatException('Invalid DSH created session identity');
+    }
+    return value['sessionId'] as String;
+  }
 
   static bool validCwd(String cwd) =>
       cwd.isNotEmpty &&
@@ -171,10 +188,44 @@ class _EngineHomeContent extends StatefulWidget {
 class _EngineHomeContentState extends State<_EngineHomeContent> {
   ChatController? _controller;
   DshRpcConnection? _chatRpc;
-  String _cwd = '';
-  bool _creating = false;
+  NativeConversationActions? _actions;
+  /// One composer draft for the whole home: a rewind fills it and the next
+  /// step opens the forked Session, which rebuilds the shell around it.
+  final ComposerDraft _draft = ComposerDraft();
+  String? _currentSessionId;
+  List<EngineSession> _sessions = const [];
+  bool _sessionsLoading = false;
+  String? _sessionsError;
+  bool _bootstrapping = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_bootstrap());
+  }
+
+  @override
+  void dispose() {
+    _draft.dispose();
+    _closeChatPeer();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EngineHomeContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.rpc != widget.rpc) {
+      _controller = null;
+      _currentSessionId = null;
+      _sessions = const [];
+      _sessionsError = null;
+      _closeChatPeer();
+      unawaited(_bootstrap());
+    }
+  }
 
   void _closeChatPeer() {
+    _actions = null;
     final peer = _chatRpc;
     _chatRpc = null;
     if (peer != null) {
@@ -183,15 +234,102 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
     }
   }
 
-  void _showList() {
+  /// A drawer row or the startup step asked for a Session; nothing else opens one.
+  ///
+  /// The catalogue is the only source of identity. When it is empty the Host is
+  /// asked for a blank Session with no directory value of our own choosing, so
+  /// the engine's own default applies instead of an invented path.
+  Future<void> _bootstrap() async {
+    final rpc = widget.rpc;
+    if (rpc == null || _bootstrapping) return;
+    _bootstrapping = true;
+    try {
+      // The catalogue and the handoff are independent reads, issued together so
+      // startup costs one round trip. The handoff is bounded: a host that never
+      // answers (an older build, a test harness) must not delay the first
+      // Session, and a missing handoff simply means "no Session was carried".
+      final handoff = HostBridge.readInitialSessionId().timeout(
+        const Duration(milliseconds: 400),
+        onTimeout: () => null,
+      );
+      final results = await Future.wait<Object?>([
+        _loadSessions(rpc),
+        handoff,
+      ]);
+      if (!mounted || !widget.current()) return;
+      final rows = results[0] as List<EngineSession>?;
+      final handedOver = results[1] as String?;
+      if (rows == null) return;
+      final carried = handedOver == null
+          ? null
+          : rows
+                .where((row) => row.openable && row.id == handedOver)
+                .firstOrNull;
+      if (carried != null) {
+        unawaited(_open(carried));
+        return;
+      }
+      final target = rows.where((row) => row.openable).firstOrNull;
+      if (target != null) {
+        unawaited(_open(target));
+        return;
+      }
+      await _createBlank(rpc);
+    } finally {
+      _bootstrapping = false;
+    }
+  }
+
+  Future<List<EngineSession>?> _loadSessions(DshRpcConnection rpc) async {
+    setState(() {
+      _sessionsLoading = true;
+      _sessionsError = null;
+    });
+    try {
+      final rows = await EngineSessionService(rpc).list();
+      if (!mounted || !widget.current() || !identical(rpc, widget.rpc)) {
+        return null;
+      }
+      setState(() {
+        _sessions = rows;
+        _sessionsLoading = false;
+      });
+      return rows;
+    } on Object catch (error) {
+      if (!mounted || !widget.current() || !identical(rpc, widget.rpc)) {
+        return null;
+      }
+      setState(() {
+        _sessionsLoading = false;
+        _sessionsError = '会话列表读取失败：' + error.toString();
+      });
+      return null;
+    }
+  }
+
+  Future<void> _refreshSessions() async {
+    final rpc = widget.rpc;
+    if (rpc == null) return;
+    await _loadSessions(rpc);
+  }
+
+  Future<void> _createBlank(DshRpcConnection rpc) async {
+    final String id;
+    try {
+      id = await EngineSessionService(rpc).createBlank();
+    } on Object catch (error) {
+      if (mounted && widget.current()) {
+        setState(() => _sessionsError = '新建会话失败：' + error.toString());
+      }
+      return;
+    }
     if (!mounted || !widget.current()) return;
-    _closeChatPeer();
-    setState(() => _controller = null);
-    // ChatShell owns and disposes the previous controller on unmount.
+    await _open(EngineSession(id: id, updatedAt: 0, blank: true));
   }
 
   Future<void> _open(EngineSession row) async {
     if (!mounted || !widget.current() || !row.openable) return;
+    if (row.id == _currentSessionId && _controller != null) return;
     final rpc = widget.createPeer();
     final controller = ChatController(
       NativeSessionTransport(
@@ -202,30 +340,60 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
     );
     _closeChatPeer();
     _chatRpc = rpc;
-    if (EngineSessionService.validCwd(row.cwd)) _cwd = row.cwd;
-    setState(() => _controller = controller);
+    final actions = NativeConversationActions(
+      transport: NativeMessageActions(rpc, sessionId: row.id),
+      openForkHandler: _openFork,
+    );
+    setState(() {
+      _controller = controller;
+      _actions = actions;
+      _currentSessionId = row.id;
+    });
+    // Keep the native side's idea of "the open Session" current, so switching
+    // back to the Web shell opens this same Session, not the latest one.
+    unawaited(HostBridge.reportSession(row.id));
+    // The row's own title can lag the catalogue after the first turn; refresh
+    // so the drawer names the Session the way the Host does.
+    if ((row.title ?? '').isEmpty) unawaited(_refreshSessions());
   }
 
-  Future<void> _newSession() async {
-    if (_creating || widget.rpc == null || !widget.current()) return;
-    _creating = true;
-    try {
-      final created = await showDialog<({String id, String cwd})>(
-        context: context,
-        useRootNavigator: false,
-        builder: (_) => _CreateSessionDialog(
-          service: EngineSessionService(widget.rpc!),
-          initialCwd: _cwd,
-          current: widget.current,
-        ),
-      );
-      if (!mounted || !widget.current() || created == null) return;
-      await _open(
-        EngineSession(id: created.id, cwd: created.cwd, updatedAt: 0),
-      );
-    } finally {
-      _creating = false;
+  /// Open the Session a rewind produced and, when [prompt] is not empty, send
+  /// it there once that Session can accept a prompt.
+  ///
+  /// The forked Session is a real Session on the Host, so it is opened the same
+  /// way a drawer row is — through the catalogue identity, never by guesswork.
+  Future<bool> _openFork(String sessionId, String prompt) async {
+    if (!mounted || !widget.current()) return false;
+    var row = _sessions.where((item) => item.id == sessionId).firstOrNull;
+    row ??= EngineSession(
+      id: sessionId,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      blank: prompt.isEmpty,
+    );
+    await _open(row);
+    if (prompt.trim().isEmpty) return true;
+    final controller = _controller;
+    if (controller == null) return false;
+    // The transport connects asynchronously; wait for a state that can send.
+    final ready = await _awaitSendable(controller);
+    if (!ready) {
+      if (mounted && widget.current()) {
+        setState(() => _sessionsError = '新会话已打开，但暂时不能发送，请稍后重试');
+      }
+      return false;
     }
+    return controller.sendPrompt(prompt);
+  }
+
+  /// Wait until the open Session reports a state that accepts a prompt.
+  Future<bool> _awaitSendable(ChatController controller) async {
+    for (var attempt = 0; attempt < 40; attempt++) {
+      if (controller.canSend) return true;
+      if (controller.state.status == ChatStatus.error) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted || !widget.current()) return false;
+    }
+    return false;
   }
 
   void _settings() {
@@ -237,7 +405,9 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.rpc == null) {
+    final rpc = widget.rpc;
+    final controller = _controller;
+    if (rpc == null || controller == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('本机引擎')),
         body: SafeArea(
@@ -247,11 +417,31 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.hourglass_empty, size: 40),
+                  if (rpc == null)
+                    const Icon(Icons.hourglass_empty, size: 40)
+                  else
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    ),
                   const SizedBox(height: 16),
-                  Text(widget.error ?? '等待本机引擎就绪'),
+                  Text(
+                    rpc == null
+                        ? (widget.error ?? '等待本机引擎就绪')
+                        : (_sessionsError ?? '正在准备会话…'),
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 8),
                   Text('引擎状态：' + widget.host.state),
+                  if (rpc != null && _sessionsError != null) ...[
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      key: const ValueKey('engine-bootstrap-retry'),
+                      onPressed: () => unawaited(_bootstrap()),
+                      child: const Text('重试'),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   FilledButton.icon(
                     key: const ValueKey('engine-settings'),
@@ -271,129 +461,24 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
         ),
       );
     }
-    final controller = _controller;
-    return PopScope(
-      canPop: controller == null,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && controller != null) _showList();
-      },
-      child: controller == null
-          ? EngineSessionPicker(
-              load: EngineSessionService(widget.rpc!).list,
-              onOpen: _open,
-              onCreate: _newSession,
-              onSettings: _settings,
-              onWebFallback: () => openSettingsWeb(context),
-            )
-          : ChatShell(
-              key: ObjectKey(controller),
-              controller: controller,
-              disposeController: true,
-              hostInfo: widget.host,
-              onNewSession: () => unawaited(_newSession()),
-              onOpenEngineSessions: _showList,
-              onOpenWebFallback: () => openSettingsWeb(context),
-            ),
+    return ChatShell(
+      key: ObjectKey(controller),
+      controller: controller,
+      disposeController: true,
+      hostInfo: widget.host,
+      currentSessionId: _currentSessionId,
+      sessions: _sessions,
+      sessionsLoading: _sessionsLoading,
+      sessionsError: _sessionsError,
+      onRefreshSessions: () => unawaited(_refreshSessions()),
+      onOpenSession: (row) => unawaited(_open(row)),
+      onNewSession: () => unawaited(_createBlank(rpc)),
+      actions: _actions,
+      draft: _draft,
+      onOpenForkSession: _openFork,
+      onOpenWebFallback: () => openSettingsWeb(context),
     );
   }
-}
-
-class _CreateSessionDialog extends StatefulWidget {
-  const _CreateSessionDialog({
-    required this.service,
-    required this.initialCwd,
-    required this.current,
-  });
-  final EngineSessionService service;
-  final String initialCwd;
-  final bool Function() current;
-  @override
-  State<_CreateSessionDialog> createState() => _CreateSessionDialogState();
-}
-
-class _CreateSessionDialogState extends State<_CreateSessionDialog> {
-  late final _cwd = TextEditingController(text: widget.initialCwd);
-  bool _busy = false;
-  String? _error;
-  @override
-  void dispose() {
-    _cwd.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (_busy || !widget.current()) return;
-    final cwd = _cwd.text;
-    if (!EngineSessionService.validCwd(cwd)) {
-      setState(() => _error = '请输入引擎工作目录的合法绝对路径');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final id = await widget.service.create(cwd);
-      if (!mounted || !widget.current()) return;
-      Navigator.of(context).pop((id: id, cwd: cwd));
-    } catch (e) {
-      if (mounted && widget.current()) {
-        setState(() {
-          _busy = false;
-          _error = '新建失败：$e';
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !_busy,
-    child: AlertDialog(
-      title: const Text('新建真实会话'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('填写引擎所在环境的工作目录绝对路径。不存在的目录将由引擎尝试创建；请确认该目录可用。'),
-            const SizedBox(height: 16),
-            TextField(
-              key: const ValueKey('engine-cwd'),
-              controller: _cwd,
-              enabled: !_busy,
-              autofocus: true,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: const InputDecoration(
-                labelText: '工作目录',
-                helperText: '使用引擎中的路径',
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          key: const ValueKey('engine-create-confirm'),
-          onPressed: _busy ? null : _submit,
-          child: Text(_busy ? '创建中…' : '创建并打开'),
-        ),
-      ],
-    ),
-  );
 }
 
 /// Uses the same account/settings state and page as the conversation drawer.

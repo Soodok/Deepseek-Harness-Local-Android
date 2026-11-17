@@ -28,6 +28,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.OpenBridge
 import app.dsh.mobile.engine.RepoConfig
+import app.dsh.mobile.engine.ShareBridge
 import app.dsh.mobile.engine.RuntimeInstaller
 import app.dsh.mobile.engine.WebViewDownloader
 import app.dsh.mobile.engine.EngineSupervisor
@@ -93,6 +94,15 @@ class MainActivity : ThemedActivity() {
      */
     @Volatile private var backMobile = false
     @Volatile private var backConsumable = false
+
+    /**
+     * 原生会话页切回来时带来的 DSH 会话标识（一次性的）。
+     *
+     * 拿到后不猜、不改写历史：等页面加载完成，把官方持久化的「当前会话」
+     * 改成它再重新加载一次，WebUI 自己就会打开这个会话。取用即清空，
+     * 避免后续每次 onPageFinished 都重放一次。
+     */
+    @Volatile private var handoffSessionId: String? = null
 
     /** 上一次「再按一次退出」的时刻（elapsedRealtime，不受用户改系统时间影响）。 */
     private var lastBackAt = 0L
@@ -214,6 +224,8 @@ class MainActivity : ThemedActivity() {
         // 任何 await 引擎状态的 UI 逻辑之前 —— 这样 Chromium 的 700ms
         // 初始化与引擎启动并行，而不是串行叠加。
         preheatWebView()
+        // 冷启动也可能带着会话交接（原生会话页在后台被回收后切回来）。
+        takeSessionHandoff()
         // 读回用户保存的页面缩放与屏幕朝向偏好
         readUiPrefs()
         applyOrientation(orientationMode)
@@ -248,8 +260,17 @@ class MainActivity : ThemedActivity() {
             startActivity(Intent(this, TerminalActivity::class.java))
         }
         // 独立 Native Chat：Flutter 对话页，不改变现有 WebView 主入口
+        // 灵岛入口：带上 Web 当前正在看的会话，原生页直接承接，不经过选择页。
         findViewById<View>(R.id.btnNativeChat).setOnClickListener {
-            startActivity(Intent(this, NativeChatActivity::class.java))
+            readCurrentWebSession { sessionId ->
+                startActivity(
+                    Intent(this, NativeChatActivity::class.java).apply {
+                        if (!sessionId.isNullOrBlank()) {
+                            putExtra(NativeChatActivity.EXTRA_SESSION_ID, sessionId)
+                        }
+                    },
+                )
+            }
         }
         // 齿轮按钮：跳转独立设置页
         findViewById<View>(R.id.btnMore).setOnClickListener {
@@ -389,6 +410,75 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        takeSessionHandoff()
+    }
+
+    /**
+     * 读 WebUI 此刻正在看的会话标识。
+     *
+     * 直接问页面自己的持久化（`localStorage['dsh.sessions.current']`，与
+     * 用户手选会话写的是同一个键），不解析 DOM 标题、不猜"最近会话"。
+     * 页面还没加载完或没有选择时回调 null，原生页会按引擎自己的目录决定。
+     */
+    private fun readCurrentWebSession(onResult: (String?) -> Unit) {
+        val view = if (::webView.isInitialized) webView else null
+        if (view == null) {
+            onResult(null)
+            return
+        }
+        val js = """
+            (function () {
+              try {
+                var raw = window.localStorage.getItem('dsh.sessions.current');
+                if (!raw) return '';
+                var value = JSON.parse(raw);
+                return value && typeof value.sessionId === 'string' ? value.sessionId : '';
+              } catch (error) { return ''; }
+            })();
+        """.trimIndent()
+        runCatching {
+            view.evaluateJavascript(js) { raw ->
+                onResult(jsString(raw).takeIf { it.isNotBlank() })
+            }
+        }.onFailure {
+            logWebView("read current session failed: ${it.message}")
+            onResult(null)
+        }
+    }
+
+    /** 从 Intent 里取一次会话交接（原生会话页切回来时带的那一个）。 */
+    private fun takeSessionHandoff() {
+        val carried = intent?.getStringExtra(NativeChatActivity.EXTRA_SESSION_ID)
+            ?.takeIf { it.isNotBlank() }
+        intent?.removeExtra(NativeChatActivity.EXTRA_SESSION_ID)
+        if (carried != null) handoffSessionId = carried
+    }
+
+    /**
+     * 让 WebUI 打开交接来的会话。
+     *
+     * 走的是 WebUI 自己的持久化入口（`localStorage['dsh.sessions.current']`，
+     * 与用户手选会话写的是同一个键），改完重新加载一次让工作区按这个选择
+     * 恢复。不是 DOM 猜测、也不是改历史记录：刷新后界面上就是那个会话。
+     */
+    private fun applySessionHandoff(view: WebView) {
+        val sessionId = handoffSessionId ?: return
+        handoffSessionId = null
+        val quoted = org.json.JSONObject.quote(sessionId)
+        val js = """
+            (function () {
+              try {
+                var next = JSON.stringify({ sessionId: $quoted });
+                var now = window.localStorage.getItem('dsh.sessions.current');
+                if (now === next) return 'same';
+                window.localStorage.setItem('dsh.sessions.current', next);
+                window.location.reload();
+                return 'reload';
+              } catch (error) { return 'failed:' + error.message; }
+            })();
+        """.trimIndent()
+        runCatching { view.evaluateJavascript(js, null) }
+            .onFailure { logWebView("session handoff failed: ${it.message}") }
     }
 
     /** 点「已下载完成」通知进来：直接提交安装（有权限/闸门检查，见 UpdateDialogs）。 */
@@ -841,6 +931,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             OpenBridge(applicationContext),
             "DshAndroidOpen",
         )
+        // 2026-11-18：WebView 没有 W3C Web Share（navigator.share 为 undefined），
+        // 插件里的「系统分享」在应用内无处可去。这条桥走真实的 ACTION_SEND +
+        // FileProvider，与 LogViewer 的分享是同一套（cache/shared 子树只读授权）。
+        webView.addJavascriptInterface(
+            ShareBridge(applicationContext),
+            "DshAndroidShare",
+        )
         // 返回栈桥（手机形态布局插件专用）：页面把「当前能不能安全回退」上报
         // 到这里。没有这个桥时 onBackPressed 只能猜（canGoBack），一旦 WebView
         // 历史里混入跨文档条目，返回就变成整页重载。
@@ -926,6 +1023,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // dropPreheatHistory 的注释，早调清不掉。
                 dropPreheatHistory()
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
+                // 原生会话页切回来：先把当前会话落到 WebUI 自己的持久化里。
+                applySessionHandoff(view)
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
                 // v1.4.17（issue #37）：注入 blob 下载桥。每次页面加载后都要重新注入
                 //（导航/刷新会重置页面 JS 环境）。桥只拦 a[download] 且 href 为 blob:

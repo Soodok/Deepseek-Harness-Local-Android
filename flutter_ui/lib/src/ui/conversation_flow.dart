@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
+import '../state/message_actions.dart';
 import '../theme/dsh_theme.dart';
+import 'message_action_bar.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'execution_group.dart';
 import 'tool_run_card.dart';
@@ -20,6 +22,8 @@ class ConversationFlow extends StatefulWidget {
     this.empty,
     this.hideDockContent = false,
     this.listKey = const ValueKey('conversation-list'),
+    this.actions,
+    this.editingMessageId,
   });
 
   final Object? conversationIdentity;
@@ -29,6 +33,13 @@ class ConversationFlow extends StatefulWidget {
   final Widget? empty;
   final bool hideDockContent;
   final Key listKey;
+
+  /// Bubble actions for this transcript. Null renders the rows without them,
+  /// which is what a read-only surface (a subagent view, a preview) wants.
+  final MessageActionBindings? actions;
+
+  /// The message currently open for editing, so exactly one bubble is marked.
+  final String? editingMessageId;
 
   @override
   State<ConversationFlow> createState() => _ConversationFlowState();
@@ -134,7 +145,12 @@ class _ConversationFlowState extends State<ConversationFlow> {
     for (final message in widget.messages) {
       rows.add((
         key: ValueKey('message-' + message.id),
-        build: (_) => ConversationMessage(message: message),
+        build: (_) => ConversationMessage(
+          message: message,
+          actions: widget.actions,
+          editing: widget.editingMessageId != null &&
+              widget.editingMessageId == message.id,
+        ),
       ));
       addGroup('message-' + message.id, byMessage[message.id] ?? const []);
     }
@@ -171,36 +187,93 @@ class _ConversationFlowState extends State<ConversationFlow> {
 }
 
 class ConversationMessage extends StatelessWidget {
-  const ConversationMessage({super.key, required this.message});
+  const ConversationMessage({
+    super.key,
+    required this.message,
+    this.actions,
+    this.editing = false,
+  });
+
   final ChatMessage message;
+  final MessageActionBindings? actions;
+
+  /// True for the message currently opened in the composer.
+  final bool editing;
+
   @override
   Widget build(BuildContext context) {
     final notice = message.notice;
     if (message.role == ChatRole.notice && notice != null) {
       return TurnNoticeCard(notice: notice);
     }
-    if (message.role == ChatRole.user) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
-          margin: const EdgeInsets.only(top: 18, bottom: 6, left: 32),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: DshPalette.of(context).userWash,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: SelectableText(
-            message.text,
-            style: TextStyle(
-              color: DshPalette.of(context).ink,
-              fontSize: 16.5,
-              height: 1.55,
-            ),
+    if (message.role == ChatRole.user) return _userBubble(context);
+    return _answer(context);
+  }
+
+  /// A person's own message: tapping the bubble edits it, and the two icons
+  /// below it copy or retract the whole Turn from here.
+  Widget _userBubble(BuildContext context) {
+    final palette = DshPalette.of(context);
+    final bindings = actions;
+    // Editing is only meaningful for a durable message: a row the Host has not
+    // recorded cannot be rewound, so tapping it must not open a dead end.
+    final canEdit = bindings != null && message.seq != null && !editing;
+    final bubble = Container(
+      key: ValueKey('message-bubble-' + message.id),
+      constraints: const BoxConstraints(maxWidth: 500),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: editing
+            ? palette.userWash.withValues(alpha: .55)
+            : palette.userWash,
+        borderRadius: BorderRadius.circular(20),
+        border: editing
+            ? Border.all(color: palette.ice.withValues(alpha: .55))
+            : null,
+      ),
+      child: SelectableText(
+        message.text,
+        // The text field owns tap handling for selection, so the edit request
+        // rides on the field's own callback instead of a parent detector.
+        onTap: canEdit ? () => bindings.edit(message) : null,
+        style: TextStyle(color: palette.ink, fontSize: 16.5, height: 1.55),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 18, bottom: 6, left: 32),
+            child: bubble,
           ),
         ),
-      );
-    }
+        if (bindings != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: UserMessageActions(
+              keySuffix: '-' + message.id,
+              copied: bindings.wasCopied(message.id),
+              onCopy: () => bindings.copy(message),
+              // Copy needs only the text; retracting needs the Host's seq.
+              onRetract: message.seq == null || bindings.isBusy(message.id)
+                  ? null
+                  : () => bindings.retract(message),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// An answer: the five actions appear once the Turn has actually finished, so
+  /// a running answer never shows a button that would act on a partial result.
+  Widget _answer(BuildContext context) {
+    final palette = DshPalette.of(context);
+    final bindings = actions;
+    final settled = bindings != null &&
+        !message.isStreaming &&
+        (message.messageId ?? '').isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(top: 22, bottom: 12),
       child: Column(
@@ -208,16 +281,29 @@ class ConversationMessage extends StatelessWidget {
         children: [
           SelectableText(
             message.text.isEmpty && message.isStreaming ? '…' : message.text,
-            style: TextStyle(
-              color: DshPalette.of(context).ink,
-              fontSize: 17,
-              height: 1.7,
-            ),
+            style: TextStyle(color: palette.ink, fontSize: 17, height: 1.7),
           ),
           if (message.isStreaming)
             const Padding(
               padding: EdgeInsets.only(top: 10),
               child: _StreamingMark(),
+            ),
+          if (settled)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: AssistantMessageActions(
+                keySuffix: '-' + message.id,
+                copied: bindings.wasCopied(message.id),
+                rating: bindings.ratingOf(message.messageId),
+                busy: bindings.isBusy(message.id),
+                onCopy: () => bindings.copy(message),
+                onLike: () => bindings.like(message),
+                onDislike: () => bindings.dislike(message),
+                onRegenerate: bindings.regenerate == null
+                    ? null
+                    : () => bindings.regenerate!(message),
+                onShare: () => bindings.share(message),
+              ),
             ),
         ],
       ),

@@ -4,6 +4,7 @@ import '../model/chat_model.dart';
 import '../model/composer_model.dart';
 import '../model/model_display.dart';
 import '../state/chat_controller.dart';
+import '../state/composer_draft.dart';
 import '../bridge/attachment_picker.dart';
 import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
@@ -13,9 +14,26 @@ import 'composer_dock.dart';
 import 'permission_icon.dart';
 
 class Composer extends StatefulWidget {
-  const Composer({super.key, required this.controller, this.availableHeight});
+  const Composer({
+    super.key,
+    required this.controller,
+    this.availableHeight,
+    this.draft,
+    this.editing = false,
+    this.onCancelEdit,
+  });
   final ChatController controller;
   final double? availableHeight;
+
+  /// The shell-owned draft. When given, the field is a view of it: an action
+  /// that fills the composer (retract, edit, restore) reaches this field through
+  /// the draft's revision, and typing writes back without a round trip.
+  final ComposerDraft? draft;
+
+  /// True while an existing message is being edited; the input shows the
+  /// cancel affordance instead of pretending this is a fresh prompt.
+  final bool editing;
+  final VoidCallback? onCancelEdit;
   @override
   State<Composer> createState() => _ComposerState();
 }
@@ -25,8 +43,46 @@ class _ComposerState extends State<Composer> {
   final _focusNode = FocusNode();
   bool _picking = false;
   bool _sending = false;
+
+  /// The draft revision this field has already adopted. An action that writes
+  /// the draft bumps it; until the field adopts that revision, text typed in
+  /// between must not be overwritten.
+  int _adoptedRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.draft?.addListener(_adoptDraft);
+    _adoptDraft();
+  }
+
+  @override
+  void didUpdateWidget(covariant Composer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.draft != widget.draft) {
+      oldWidget.draft?.removeListener(_adoptDraft);
+      widget.draft?.addListener(_adoptDraft);
+      _adoptDraft();
+    }
+  }
+
+  void _adoptDraft() {
+    final draft = widget.draft;
+    if (draft == null) return;
+    if (draft.revision == _adoptedRevision && _textController.text == draft.text)
+      return;
+    _adoptedRevision = draft.revision;
+    if (_textController.text == draft.text) return;
+    _textController.value = TextEditingValue(
+      text: draft.text,
+      selection: TextSelection.collapsed(offset: draft.text.length),
+    );
+    if (draft.text.isNotEmpty) _focusNode.requestFocus();
+  }
+
   @override
   void dispose() {
+    widget.draft?.removeListener(_adoptDraft);
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -41,7 +97,14 @@ class _ComposerState extends State<Composer> {
     setState(() => _sending = true);
     final sent = await widget.controller.sendPrompt(value);
     if (!mounted) return;
-    if (sent && _textController.text == value) _textController.clear();
+    if (sent && _textController.text == value) {
+      final draft = widget.draft;
+      if (draft != null) {
+        draft.clear();
+      } else {
+        _textController.clear();
+      }
+    }
     setState(() => _sending = false);
     _focusNode.requestFocus();
   }
@@ -98,12 +161,18 @@ class _ComposerState extends State<Composer> {
                     ? controller.sendNextQueued
                     : null,
               ),
+            if (widget.editing)
+              _EditingBar(
+                key: const ValueKey('composer-editing'),
+                onCancel: widget.onCancelEdit,
+              ),
             ComposerSurface(
               textController: _textController,
               focusNode: _focusNode,
               inputKey: const ValueKey('composer-input'),
-              hintText: '给 DSH 发消息',
+              hintText: widget.editing ? '修改这条消息' : '给 DSH 发消息',
               onSubmitted: _send,
+              onChanged: (value) => widget.draft?.record(value),
               leading: [
                 if (controller.attachments.isNotEmpty)
                   ConstrainedBox(
@@ -335,6 +404,48 @@ class _QueueTray extends StatelessWidget {
               ),
               child: const Text('发送下一条'),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+/// The one line above the input that makes edit mode unmistakable, with the
+/// only way out that keeps the original message untouched.
+class _EditingBar extends StatelessWidget {
+  const _EditingBar({super.key, required this.onCancel});
+
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = DshPalette.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+      decoration: BoxDecoration(
+        color: palette.ice.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.ice.withValues(alpha: .35)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.edit_outlined, size: 16, color: palette.ice),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '正在编辑这条消息，发送会从这里继续',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: palette.inkSoft, fontSize: 12.5),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('composer-cancel-edit'),
+            tooltip: '取消编辑',
+            onPressed: onCancel,
+            icon: Icon(Icons.close_rounded, size: 18, color: palette.inkSoft),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           ),
         ],
       ),
