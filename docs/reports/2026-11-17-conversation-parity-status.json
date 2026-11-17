@@ -284,5 +284,5 @@
   "next": [
     "交 Lead 统合与 GLM 复核（本轮实现与设备验收已完成）"
   ],
-  "commit": "0ffce704（HEAD；beta.52 实现 61074bfc、撤回顺序 58a1e6ba、文档 afff2120/3e0ac27e/5e0e3427/108759e8；工作树仅剩 .superpowers/brainstorm/ 未跟踪，按要求保留不提交）"
+  "commit": "beta.52 功能提交 61074bfc、撤回顺序修正 58a1e6ba；文档提交 5e0e3427/afff2120/3e0ac27e/108759e8/0ffce704；此后仅本状态文件自身的字段更新。工作树仅剩 .superpowers/brainstorm/ 未跟踪（按要求保留不提交），未 push/merge/发布。"
 }
