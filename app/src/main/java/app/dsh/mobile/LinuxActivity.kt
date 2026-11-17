@@ -560,6 +560,16 @@ class LinuxActivity : ThemedActivity() {
             if [ -z "${'$'}DISP" ]; then echo DSHFRAME_FAIL no-free-display; exit 0; fi
             mkdir -p /tmp/.X11-unix 2>/dev/null
             chmod 1777 /tmp/.X11-unix 2>/dev/null
+            # Xvfb hardcodes XKB_OUTPUT_DIR=/var/lib/xkb/ (see "strings Xvfb").
+            # When that directory is missing or not writable, its xkbcomp call
+            # fails and the server dies with "Failed to activate virtual core
+            # keyboard" before creating any socket. Create it and report the
+            # state we actually got, so a future failure says which it was.
+            mkdir -p /var/lib/xkb 2>/dev/null
+            # A previous run as another uid may have left it unwritable; the
+            # chmod is best-effort (it fails harmlessly when we do not own it).
+            [ -w /var/lib/xkb ] || chmod 777 /var/lib/xkb 2>/dev/null
+            if [ -w /var/lib/xkb ]; then XKBDIR=writable; else XKBDIR=not-writable; fi
             export DISPLAY=:${'$'}DISP
             echo "${'$'}DISP" > $displayFile
             BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${'$'}shared 2>/dev/null | tr -d ' ')
@@ -583,6 +593,7 @@ class LinuxActivity : ThemedActivity() {
               i=${'$'}((i+1))
             done
             echo DSHFRAME_FAIL no-frame
+            echo "--- xkbdirectory: ${'$'}XKBDIR (${'$'}(ls -ld /var/lib/xkb 2>&1))"
             echo "--- xvfb:"; head -6 /tmp/xvfb.log 2>/dev/null
             echo "--- x11frsrv:"; head -6 /tmp/x11frsrv.log 2>/dev/null
             echo "--- xterm:"; head -4 /tmp/xterm.log 2>/dev/null

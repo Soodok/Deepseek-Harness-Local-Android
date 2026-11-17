@@ -32,6 +32,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ACT = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/LinuxActivity.kt")
+ENVM = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt")
 
 checks = []
 
@@ -195,6 +196,33 @@ ck("H8 状态文件在 App 私有 files（bind 进容器），不放容器 /tmp"
 ck("I1 单函数体不超过 260 行（脚本膨胀是危险的信号）",
    len(start_fs.split("\n")) <= 260,
    "startFrameServer = %d 行" % len(start_fs.split("\n")))
+
+# ---------------------------------------------------------------- J. Xvfb 的 XKB 输出目录
+# 2026-11-16 真机定位的第四个静默失败，与前三条同一症状（点了没反应）：
+# Xvfb 把 xkbcomp 的输出写死到 XKB_OUTPUT_DIR=/var/lib/xkb/，而 Alpine
+# rootfs 里没有这个目录 → xkbcomp 返回 1 → Xvfb 报
+#   (EE) Fatal server error: (EE) Failed to activate virtual core keyboard: 2
+# 直接退出，一个 socket 都不建。判据必须锁住「建这个目录」这一步本身，
+# 否则以后有人把 mkdir 删掉，探针仍然全绿（前三条断言它都还满足）。
+ck("J1 启动前建出 /var/lib/xkb（Xvfb 写死的 XKB_OUTPUT_DIR）",
+   "mkdir -p /var/lib/xkb" in code_start,
+   "缺这一步 Xvfb 必挂在 Failed to activate virtual core keyboard")
+
+ck("J2 目录不可写时兜底 chmod，并记录实际可写性",
+   "chmod 777 /var/lib/xkb" in code_start and "XKBDIR=" in code_start,
+   "上一轮换过 uid 会留下不可写目录，静默失败最难查")
+
+ck("J3 失败回显带 xkb 目录状态，不只堆三份日志",
+   "xkbdirectory:" in code_start,
+   "")
+
+envm = read(ENVM)
+code_envm = strip_comments(envm)
+ck("J4 部署期也建一次（已 READY 的 rootfs 不会重走运行期）",
+   "fun ensureXkbOutputDir" in code_envm
+   and 'File(root, "var/lib/xkb")' in code_envm
+   and "ensureXkbOutputDir(root)" in code_envm,
+   "只在运行期 mkdir 会漏掉「rootfs 已部署」这条路径")
 
 # ---------------------------------------------------------------- 输出
 failed = 0

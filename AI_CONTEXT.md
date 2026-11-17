@@ -14106,3 +14106,77 @@ chevron 区域 `bright=170`（与邻行 82 同口径，箭头已绘制）。
 - 未清理 19 个 dirty 游离 worktree（并行会话在途）。
 - 未分区 `AI_CONTEXT.md` 的 14010 行（自定上限 300 行），这是长期待办。
 
+
+## 第一百三十五章（v1.6.0-beta.16 · 2026-11-17）Linux 工作台画面起不来的第四个真因：Xvfb 的 XKB 输出目录不存在
+
+**用户反馈**：Linux 工作台「点开始画面」仍然没有任何反应。上一版（beta.12）修掉的
+是 pkill 自杀 / 写死 :99 / 假成功三条，但真机上画面依旧不出。
+
+**真根因（真机判据实验，决定性）**：
+Xvfb 把 xkbcomp 的输出目录**编译写死**成 `XKB_OUTPUT_DIR=/var/lib/xkb/`
+（`strings /usr/bin/Xvfb` 里就是 `/var/lib/xkb/` 与 `/tmp/`），而这个目录在
+Alpine rootfs 里**不存在**。于是它内部的 `xkbcomp ... /var/lib/xkb/xkm/xxx.xkm`
+返回 1，Xvfb 直接
+
+```
+XKB: Failed to compile keymap
+Keyboard initialization failed. This could be a missing or incorrect setup of xkeyboard-config.
+(EE) Fatal server error: (EE) Failed to activate virtual core keyboard: 2
+```
+
+退出，**一个 socket 都不建**，x11frsrv 随后报 `X11FRSRV_FAIL open display`，
+界面上表现为「点了按钮什么都没有」。
+
+判据（同一 rootfs、同一 uid 10499、同一 `run-as app.dsh.mobile` 域，
+只改一个变量）：
+
+| 条件 | 结果 |
+|---|---|
+| `Xvfb :241`（目录不存在） | FAIL，报上面的 Fatal |
+| 加 `mkdir -p /var/lib/xkb` 后**参数一字未改** | `X271=OK`，socket 落地 |
+| 同 display 上跑 `/x11frsrv` | `X11FRSRV_KV display=:271 size=1280x720 fps=10`，`done seq=120 ok=120 fail=0`，共享文件 3686416 字节 |
+| `xkbcomp -xkm … /var/lib/xkb/t.xkm` | rc=1 |
+| `xkbcomp -xkm … /tmp/t.xkm`（对照） | rc=0，12152 字节 |
+
+**排查中被逐一排除的假设**（都留了证据，后续别再走）：
+1. 环境变量 —— `env -i PATH=… HOME=/root TMPDIR=/tmp Xvfb` 一样失败。
+2. 残留 socket / 选号 / `-nolock` —— beta.12 已修，与本因无关。
+3. `-xkbdir` 指定路径、把 `/usr/share/X11/xkb` 整树拷到 `/tmp` 或私有目录 —— 全 FAIL。
+4. `XKB_CONFIG_ROOT` 指到拷贝树 —— FAIL。
+5. `-extension XKEYBOARD` —— 报 `Extension "XKEYBOARD" can not be disabled`，不可运行时禁用。
+6. `-xkbmap` / `-kb` / `-config` / `-verbose` —— 本版 Xvfb 全部 `Unrecognized option`。
+7. SELinux —— `dmesg` 无 Xvfb 的 `avc: denied`；`su` / `run-as` / App 真实域三种域下
+   `xkbcomp` 独立跑都能产出 12 KB keymap。
+8. seccomp（`Seccomp: 2`，无 `sig=31`）、`popen` 被禁（C 小程序实测 popen 正常）、
+   进程数/RLIMIT（`Max processes 57203`）。
+
+**改动**（3 文件 +71 行）：
+- `app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt`：新增
+  `ensureXkbOutputDir(root)`，在 `installLinuxCompatShims()` 里无条件调用（幂等）。
+  部署期与「已 READY 早退」两条路径都会经过它，覆盖「rootfs 早就装好、不会再重解包」的情况。
+- `app/src/main/java/app/dsh/mobile/LinuxActivity.kt`：`startFrameServer()` 的 X11 分支
+  在起 Xvfb 前 `mkdir -p /var/lib/xkb`，不可写时兜底 `chmod 777`，并把
+  `XKBDIR=writable|not-writable` 与实际 `ls -ld` 一起放进失败回显。
+- `scripts/probes/_test_linux_frame_launch.py`：新增 J1~J4 四条断言（运行期 mkdir、
+  chmod 兜底 + 状态变量、失败回显带目录状态、部署期也建），探针从 18 条扩到 **22 条**。
+
+**验证**：
+- 探针 `python scripts/probes/_test_linux_frame_launch.py` → **22 checks / 0 failed**。
+- 变异反验：删掉运行期 `mkdir -p /var/lib/xkb` → J1 变红（rc=1）；删掉部署期
+  `ensureXkbOutputDir(root)` 调用 → J4 变红（rc=1）；恢复后复绿，两个文件按字节核对
+  与原字节完全一致（`act_bytes_equal=True envm_bytes_equal=True`）。
+- `python scripts/check-i18n.py` → All i18n checks passed。
+- `gradle -Ppackage=noruntime :app:assembleDebug :app:testDebugUnitTest` → BUILD SUCCESSFUL。
+- APK 已装进设备（`078ad25948935c31bd2158f5adc9bb7e`，与本地产物 md5 一致），
+  设备版本 391 / 1.6.0-beta.15。
+
+**未完成 / 阻塞**：
+- 装机后点按验收**没做成**：设备 192.168.101.21:9000 在 22:40 之后彻底掉线
+  （`ping` 100% 丢包、`adb connect` 10060、`adb mdns services` 也空了），
+  无法点「开始画面」看帧。上一版 beta.15 包上已复现过同样的 XKB Fatal，
+  这一版的两处 mkdir 都在，但**尚未在设备上验证出帧**。
+- 「换 sway/Wayland 方案」已探明成本更高：容器内 `/etc/resolv.conf` 是
+  `nameserver 127.0.0.1`，而 `DSH_DNS_PORT` 只在 `LinuxContainerRunner.doExec()`
+  里注入，`run-as` 手起的容器拿不到 → DNS 不通 → `apk add sway grim wtype`
+  反复 `temporary error`，只落下半个 sway（缺 libcairo / libevdev）。
+  这条备选暂不推进。

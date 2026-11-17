@@ -278,14 +278,21 @@ android {
         // ② 启动期按安装清单 + 上游已知布局补回存量扩展缺失的入口链；
         // ③ binutils 补声明名 → 上游名别名（ar→gar / nm→gnm / objdump→gobjdump /
         //    strip→gstrip / ld→ld.bfd），健康检查不再永远报 Main executables missing (5)。
-        // versionCode 继续单调递增：375 → … → 389 → 390 → 391。
-        versionCode = 391
+        // v1.6.0-beta.16（2026-11-17）：Linux 工作台画面起不来 —— 第四个真因
+        // 「Xvfb 的 XKB 输出目录不存在」。Xvfb 把 xkbcomp 的输出写死到
+        // XKB_OUTPUT_DIR=/var/lib/xkb/，Alpine rootfs 里没有这个目录 →
+        // xkbcomp 返回 1 → Xvfb 报 Failed to activate virtual core keyboard
+        // 直接退出，一个 socket 都不建，界面上就是「点了开始画面没反应」。
+        // 部署期（ensureXkbOutputDir）+ 运行期（startFrameServer）各补一次
+        // mkdir，失败回显带 xkb 目录状态。
+        // versionCode 继续单调递增：375 → … → 390 → 391 → 392。
+        versionCode = 392
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.15"
+        versionName = "1.6.0-beta.16"
 
         ndk {
             abiFilters += listOf(targetAbi)
