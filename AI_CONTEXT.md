@@ -14403,3 +14403,81 @@ Keyboard initialization failed. This could be a missing or incorrect setup of xk
 - **未真机验收**（本机无 adb、无设备）。装机后应核对：引擎冷启、对话页出流、用量浮层定位（#119）、华为 114 内核下 `polyfill document:` 日志（#107）。
 - x86_64 变体未打（只做了 arm64-v8a，真机主流）。
 
+
+## 第一百三十九章（v1.6.0-beta.17 待发 · 2026-11-18）深色主题「收起后小球不显示」：纯黑压深色页面 1.15:1
+
+### 现象与来源
+社区用户报「顶部『引擎已就绪』条正常，点收起后小球不显示；重启 App 条回得来，再收起又没了」，
+稳定复现（不是偶发）。社区给的绕过方案是强杀 App 阻止退出时回写 `island_along_ratio`，
+并判定根因是 ratio 被拖到屏幕边缘导致收起态算到屏幕外。
+
+### 已排除的假设（逐条有证据，勿重验）
+- **ratio 越界**：`IslandChrome.kt:116` 已 `ratio.coerceIn(0f, 1f)`，
+  `y = (safe + r * ((parentH - h - safe) - safe).coerceAtLeast(0))`，结构上不可能出屏。
+  真机 dump（改动前）`handleBar bounds=[0,2221][101,2392]`，屏幕 1216×2640 —— **把手在屏内**。
+- **停靠边**：模拟器（x86_64、1080×2340、density 440）上 TOP / LEFT / RIGHT、
+  ratio=0.5 与 1.0 全部正常出把手（LEFT ratio=1.0 → `[0,2021][72,2142]`）。
+- **withEndAction 被打断**：v1.7.13 已改成状态驱动 + 唯一渲染入口 `renderIslandVisibility()`；
+  且用户报的是「每次都失败」，不是偶发，动画打断解释不了。
+
+### 真根因（实测）
+深色主题下收起态把手是 **纯黑 `#000000`（`IslandPalette.DARK.handle`）压在深色页面上**，
+且 `DARK.outline = 0` **完全不描边**：
+
+| 背景 | 实测色 | 纯黑把手对比度 |
+|---|---|---|
+| 深色页面 | `rgb(21,21,23)` = `#151517` | **1.15:1** |
+| 深色卡片 | `rgb(44,44,46)` = `#2C2C2E` | 1.51:1 |
+
+WCAG 对 UI 元素边界要求 3:1。把手内部只有 8dp 核心点（`island_core = #59FFFFFF` → 实测 `(89,89,89)`）
+对深色页面 2.60:1，也不够。**把手确实在，只是与页面同色。**
+
+XML 原始 `res/drawable/bg_dynamic_island_dot.xml` 本来就有 `stroke 0.5dp island_ring_stroke`
++ 外环 `island_ring_soft`，但代码生成的背景（`collapsedHandleBackground` /
+`sideHandleBackground` / `floatingHandleBackground`）只 `setColor` + 可选 `setStroke(outline)`，
+深色时 outline=0 → 那一圈整个丢了。
+
+浅色主题反而是对的（v1.7.13 已修）：填充 `#F1F5F9` + 描边 `#7B8899` 实测 2px，对纯白 3.61:1。
+
+### 修法
+`IslandChrome.kt` 的 `DARK.outline` 由 `0` 改成 `0xFF7B8899`（与浅色同色，不改 handle 填充 ——
+用户明确要求过不要改把手颜色）。该色对**所有**可能背景都过 3:1：
+
+| 背景 | 对比度 |
+|---|---|
+| 深色页面 `#151517` | 5.06:1 |
+| 深色 surface `#161D29` | 4.69:1 |
+| surface_alt `#1B2330` | 4.38:1 |
+| md3_container `#232629` | 4.22:1 |
+| 深色卡片 `#2C2C2E` | 3.86:1 |
+| 纯黑填充（描边 vs 填充） | 5.82:1 |
+
+### 同步改掉的断言（原口径与新结论冲突）
+- `scripts/jvm/BehaviourTest.kt` `:902` 原为 `check(d.outline == 0, "dark handle keeps the old look")`
+  → 改为 `check(d.outline != 0, ...)`，并新增三条：深色描边对 `#151517`、对 `#2C2C2E`、
+  对黑色填充各 ≥3:1。
+- `scripts/probes/_test_island_panel_shadow.py` 原为「DARK still does not draw an outline (user: 不描边)」
+  → 改为「两种主题都必须非 0」+「`outline = 0,` 不得出现」。
+  用户说的「不描边」针对的是**侧边面板**（`IslandSidePanel.panelBackground()` 那行注释），
+  不是收起态把手 —— 这条口径以前被误推到把手上了。
+
+### 验证
+- JVM 全量：`bash scripts/run-a11y-jvm-test.sh` → **passed=2405 failed=0**（基线 2402 + 新增 3）。
+- **负对照**：把 `DARK.outline` 改回 `0` → **4 条变红**：
+  `dark handle has an outline too` / `dark outline is visible on the dark page (#151517), got 1.151524411986597` /
+  `dark outline is visible on a dark card (#2C2C2E), got 1.5068187347721467` / `dark outline separates from the black handle fill`。
+  还原后重跑全绿。
+- 全量探针 141 个全过；`check-i18n.py`、`check-ui-tokens.py` 全过。
+- **模拟器实测**（隔离树 `E:/tmp/wt-island2`，x86_64，versionCode 430，`emulator-5570`）：
+  - 深色 + LEFT：y=1200 横扫实测 `x=0 (123,136,153)` → `x=2 (0,0,0)` → `x=70 (123,136,153)` → `x=72 (19,19,21)`，
+    即**两侧各 2px `#7B8899` 描边**，页面 `#151517`。
+  - 深色 + TOP 收起：`x=479 (123,136,153)` → `x=481 (0,0,0)` … `x=598 (123,136,153)`，同样成立。
+  - 浅色 + LEFT：`x=0 (123,136,153)` → `x=2 (241,245,249)` … 与改前一致，无回归。
+
+### 未覆盖 / 待确认
+- **未真机验收**（用户明确要求不要动他的手机）。若社区用户复现，需先确认他的
+  `theme_mode`（`shared_prefs/dsh_ui.xml`）：只有深色主题才吃到这个修复；
+  浅色主题下把手本来就带 `#7B8899` 描边，若浅色也「看不见」则是另一个问题。
+- 版本号未动（仍是 `versionCode 392 / 1.6.0-beta.16`），验证构建用的是隔离树的 430。
+  发版时按 `docs/RELEASE.md` 抬到 393。
+

@@ -899,7 +899,12 @@ object BehaviourTest {
         check(l.handle == 0xFFF1F5F9.toInt(), "light handle keeps the user-approved fill")
         check(d.handle == 0xFF000000.toInt(), "dark handle unchanged")
         check(l.outline != 0, "light handle has an outline (fill alone can vanish on a page)")
-        check(d.outline == 0, "dark handle keeps the old look (no outline added)")
+        // ⚠️ v1.7.20（用户报「点收起后小球不显示」，深色主题）：
+        // 这里原来断言 dark outline == 0，即「深色不描边」。实测那个前提是错的 ——
+        // 深色 handle 是纯黑 #000000，页面是 #151517，对比度只有 1.15:1
+        // （对卡片 #2C2C2E 也只有 1.51:1），把手在深色页面上就是看不见。
+        // 深色同样必须有描边，判据改为「两种主题的 outline 都要够」。
+        check(d.outline != 0, "dark handle has an outline too (black on #151517 is 1.15:1)")
         check(
             IslandPalette.contrast(l.outline, l.handle) >= 3.0,
             "outline is visible against the handle fill (>=3:1 for a UI boundary), got " +
@@ -908,6 +913,22 @@ object BehaviourTest {
         check(
             IslandPalette.contrast(l.outline, 0xFFFFFFFF.toInt()) >= 3.0,
             "outline is visible on a white page too",
+        )
+        // 深色描边要同时对「深色页面底色」和「深色卡片底」达标 —— 把手压在
+        // 任意网页/卡片上，两者都可能是背景。
+        check(
+            IslandPalette.contrast(d.outline, 0xFF151517.toInt()) >= 3.0,
+            "dark outline is visible on the dark page (#151517), got " +
+                IslandPalette.contrast(d.outline, 0xFF151517.toInt()),
+        )
+        check(
+            IslandPalette.contrast(d.outline, 0xFF2C2C2E.toInt()) >= 3.0,
+            "dark outline is visible on a dark card (#2C2C2E), got " +
+                IslandPalette.contrast(d.outline, 0xFF2C2C2E.toInt()),
+        )
+        check(
+            IslandPalette.contrast(d.outline, d.handle) >= 3.0,
+            "dark outline separates from the black handle fill",
         )
         // 整块（填充 + 描边）对白色网页的综合对比度必须够，不能只靠描边勉强
         check(
