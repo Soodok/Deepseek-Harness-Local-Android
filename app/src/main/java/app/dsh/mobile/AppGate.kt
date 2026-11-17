@@ -30,11 +30,26 @@ object AppGate {
     /**
      * 最低 WebView 内核版本（Chrome 大版本）。
      *
-     * ⚠️ v1.6.8：由 85 修正为 **94**。旧值 85 是错的 —— 85 只是「API 层门槛」
-     * （`String#replaceAll`），而 bundle 里还有 polyfill 补不了的**语法层**特性，
-     * 其中门槛最高的是 `class static {}` 静态块（Chrome 94）。用 85 会让
-     * Chrome 85–93 的设备**通过门禁然后白屏**，比直接提示更糟。
-     * 完整实测依据见 [WebViewDiagnostics.MIN_CHROME] 的注释。
+     * ## 沿革（别只看这条注释就改值）
+     * · 原值 85：只按「API 层门槛」定（`String#replaceAll` = 85，polyfill 可补）。
+     * · v1.6.8（`50d74042`）临时抬到 **94**：上游**未转译**产物含 `class static {}`
+     *   （Chrome 94），语法层 polyfill 补不了，85–93 会「通过门禁 → 解析期
+     *   SyntaxError → 白屏」。
+     * · v1.6.9（`699ceedf`）回落 **85**：构建期改用
+     *   `scripts/patch-webview-syntax-floor.py` 以 esbuild `--target=chrome85`
+     *   重新转译入口 chunk，把 `static {}` 降级掉 —— 语法门槛回到 85，与 API 门槛
+     *   对齐，85–93 的设备是真的能用，不再需要拦。
+     *
+     * ⚠️ 所以「85」成立的前提是**那个转译步骤真的跑了**。它被
+     * `scripts/probes/_test_webview_syntax_floor.mjs` 守在产品上（对 runtime 里的
+     * 入口 chunk 做 AST 扫描，实测门槛 > 常量就红）。若哪天关掉该步骤，实际门槛会
+     * 弹回 94 而常量还是 85，低版本设备又变成「通过门禁然后白屏」。
+     *
+     * ⚠️ 另有一个**尚未纳入门禁**的维度：CSS 特性门槛（见 README 边界一节）。
+     * JS 侧能到 85，但上游 CSS 用到 `:has()`(105) / `color-mix()`(111) /
+     * `anchor()`+`position-try`(125)，在 85–124 上是**静默降级**（不报错、不白屏，
+     * 但样式与弹层定位失效）。抬 MIN_CHROME 会砍掉大量现有设备，属产品决策，
+     * 目前用客户端插件兜底（`chat-anchor-fallback`），未改本常量。
      *
      * 保留这个常量名是为了不动调用方（引擎服务等），值统一指向诊断模块的单一真源。
      */

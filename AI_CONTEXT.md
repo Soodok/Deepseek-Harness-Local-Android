@@ -14257,3 +14257,87 @@ Keyboard initialization failed. This could be a missing or incorrect setup of xk
 - #118：`app/src/main/assets/android-plugins/fast-mode.mjs`、`scripts/probes/_test_fast_mode_engine_compat.py`、`scripts/probes/_fast_mode_runtime_test.mjs`
 - #107：`scripts/patch-webview-polyfill.py`、`app/build.gradle.kts`、`app/src/main/java/app/dsh/mobile/engine/WebViewPolyfill.kt`（新）、`app/src/main/java/app/dsh/mobile/engine/RuntimeInstaller.kt`、`app/src/main/java/app/dsh/mobile/MainActivity.kt`、`app/src/test/java/app/dsh/mobile/engine/WebViewPolyfillTest.kt`（新）、`scripts/probes/_test_webview_polyfill_delivery.py`（新）、`scripts/probes/_test_webview_polyfill_gate.py`
 - #119：`app/src/main/assets/android-plugins/chat-anchor-fallback/`（新，三件套）、`app/src/main/java/app/dsh/mobile/engine/EngineConfig.kt`、`scripts/probes/_test_chat_anchor_fallback.py`（新）、`scripts/probes/_chat_anchor_fallback_runtime_test.mjs`（新）
+
+---
+
+## 第一百三十七章（v1.6.0-beta.16 · 2026-11-17）WebView 版本声明盘点：两笔账混成一句，注释落后常量两版
+
+**问题（用户提问驱动）**：问「MD 上声明的 WebView 版本是多少？有没有冲突」。答案是**有冲突，两处**，且性质不同——一处是注释没跟着常量改，一处是把 JS 门槛与 CSS 门槛混成了一句「85」。
+
+### 权威真源（扫描结论，值未改）
+
+| 位置 | 内容 |
+|---|---|
+| `app/src/main/java/app/dsh/mobile/WebViewDiagnostics.kt:75` | `const val MIN_CHROME = 85`（唯一真源） |
+| `app/src/main/java/app/dsh/mobile/AppGate.kt:41` | `const val MIN_WEBVIEW_CHROME = WebViewDiagnostics.MIN_CHROME` |
+| 门禁调用点 | `MainActivity.kt:3313`、`service/EngineService.kt:323,341` |
+| `app/build.gradle.kts:230,240,243` | `minSdk = 26` / `targetSdk = 28` / `compileSdk = 36` |
+
+### 冲突 1（已修）：`AppGate.kt` 注释停在 v1.6.8 的 94，常量已回落到 85
+
+`git blame` 证据：`AppGate.kt:34-37` 那段「v1.6.8 由 85 修正为 94」来自 `50d74042`（2026-11-05 抬到 94）；`WebViewDiagnostics.kt:75` 的 85 来自 `699ceedf`（同日回落到 85）。**常量回了，注释没回**——照注释读代码的人会以为门槛是 94，实际放行 85。
+
+改法：注释改写成完整沿革并钉住「85 为什么能成立」：
+- 85 → 94（`50d74042`）：上游**未转译**产物含 `class static {}`（Chrome 94），语法层 polyfill 补不了，85–93 会「通过门禁 → 解析期 SyntaxError → 白屏」。
+- 94 → 85（`699ceedf`）：构建期 `scripts/patch-webview-syntax-floor.py` 用 esbuild `--target=chrome85` 重转译入口 chunk，把 `static {}` 降级掉。
+- 补两条警告：(a) 85 的前提是那个转译步骤真跑了，由 `scripts/probes/_test_webview_syntax_floor.mjs` 对 runtime 里的入口 chunk 做 AST 扫描守着——关掉步骤，实际门槛弹回 94 而常量还是 85；(b) CSS 门槛尚未纳入门禁。
+
+### 冲突 2（已文档化）：JS 门槛 85 vs CSS 门槛 125，两笔账写成同一句
+
+实测扫描上游样式表 `/e/tmp/rc3/deepseek-ai-dsh-web-frontend-0.2.2-rc.3/package/dist/assets/index-CSAdOBx6.css`（92,250 B）：
+
+| 特性 | 处数 | 所需 Chrome |
+|---|---|---|
+| CSS anchor positioning（`anchor()` / `position-anchor` / `position-try` / `position-area` / `anchor-name`） | **34** | **125** |
+| `@position-try` | 8 | 125 |
+| `color-mix()` | **10** | **111** |
+| `:has()` | **18** | **(105)** |
+| `:is()/:where()` | 39 | 88 |
+| `scrollbar-gutter` | 1 | 94 |
+| `overscroll-behavior` | 4 | 63 |
+| `dvh` 单位 | **0** | — |
+
+关键不是「CSS 也要 125 所以门槛错了」，而是**降级形态不同**：JS 语法门槛不够 = **白屏**（拦得住，必须拦）；CSS 特性门槛不够 = **静默降级**——不报错、不白屏，但 `color-mix()` 整条声明被丢（如 `background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)` 无纯色兜底 → 背景变透明）、`:has()` 整条不匹配、`anchor()` 被丢后浮层失去相对触发点定位。所以 `MIN_CHROME = 85` 本身没错，错的是**文档把它当总门槛在说**。
+
+另一条佐证（与 #119 同源）：上游 `._portal_70kcw_43` 在老内核上只剩 `position:fixed;bottom:12px;right:12px;margin:0;width:max-content;height:fit-content;z-index:1100`（`top`/`left` 被丢）→ 菜单贴视口右下角。
+
+写入位置：`README.md:137`（门槛分两笔账）、`README.md:581`（新增边界条目「WebView 的 CSS 门槛低于 JS 门槛」，含实测坐标 (100,12) / 678px）、`README_EN.md` 与 `README.de.md` 的 Limits/Grenzen 各补一条。
+
+### 数字陈旧（已修）
+
+`README_EN.md:318` / `README.de.md:307` 原写「13 modern APIs」。实测 `scripts/patch-webview-polyfill.py`：**21 个 `def(...)` 安装 + 1 个 `globalThis.structuredClone` = 22 次安装**；去重口径见下：
+
+> 计数口径：安装次数 **22**；「宿主 + 方法」组合去重 **20**；纯方法名去重 **19**（`groupBy` 挂 `Object` 与 `Map` 两处，`any`/`timeout`/`abort`/`throwIfAborted` 亦同名分挂）。三个数字都对，差别在口径——文档统一写「20 modern APIs / 22 installations」。
+
+已改 EN/DE 两处并点出 `URL.canParse`、`Object.groupBy`。
+
+### 自检注释的语义偏差（已修，未改探测范围）
+
+`MainActivity.kt:3995` 原文「引擎实际需要 Chrome 126（pdf.js 用 URL.parse）」，与 `MIN_CHROME = 85` 矛盾。改清语义：`need` 表里 9 项是「**未装 polyfill 时**各 API 的原生门槛」，用途是判断「polyfill 补上没有」（缺项打 `polyfill=MISSING:…` → 问题在交付链路而非内核太老），**不是门禁阈值**；并补一条「本探针只覆盖 JS API，`:has()` / `color-mix()` / `anchor()` 查不到，自检全绿不代表样式正确」。探测条目**未增删**。
+
+### 未发现冲突（记录以免重复查）
+
+- `docs/LAN_WEBUI.md:77`、`docs/LAN_WEBUI.en.md:81`、`docs/SSH.md:257,278` 都写 Chrome 85+，与常量一致。
+- `docs/release-notes/RELEASE_NOTES_v1.3.1/1.3.2/1.4.0.md` 的 85 是历史版本说明，不改。
+- `chat-perf/client.js:26,82,86` 自带 85→98 两级降级说明，与门槛一致。
+- 仓库 `app/src/main/assets/` 下 **0 个 `.css`**；提到 `position-anchor` 的只有新建的 `chat-anchor-fallback/client.js`（13 处，全在注释与能力探测里）。即上游 CSS 门槛不进我们的产物，只影响 WebView 渲染上游页面。
+
+### 验证
+
+- 全量探针 `scripts/probes/_test_*.py`：**140 PASS / 0 FAIL / 1 SKIP**（SKIP 为 `_test_corepack_hardlink.py`，noruntime 无 `assets/runtime.zip`，CI 同样跳过）。
+- `check-i18n.py` All i18n checks passed（58 扩展名目齐）；`check-ui-tokens.py` All UI token checks passed（`152 android:tint / 0 app:tint`）。
+- `gradle.bat -p . -Pabi=arm64-v8a -Ppackage=noruntime :app:assembleDebug :app:testDebugUnitTest` → **BUILD SUCCESSFUL in 30s**；单测 **68 / 0**（6 个测试类）。
+- ⚠️ 仓库**不含** `gradle-wrapper.jar`（二进制不入库，CI 用 `gradle/actions/setup-gradle`）。本机可用：`/c/Users/Qt/.gradle/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1/bin/gradle.bat`。`./gradlew` 不存在。
+
+### 改动文件
+
+- `app/src/main/java/app/dsh/mobile/AppGate.kt`（注释改写，值未动）
+- `app/src/main/java/app/dsh/mobile/MainActivity.kt`（`WEBVIEW_SELFCHECK_JS` KDoc 语义澄清，探测条目未动）
+- `README.md`（137 行门槛双账 + 581 行 CSS 边界条目）
+- `README_EN.md`、`README.de.md`（Limits/Grenzen 各补一条 + 修正 13→20 APIs）
+
+### 未完成 / 待决策
+
+- 是否把 CSS 能力（`:has()` / `color-mix()` / `anchor()`）纳入 `WEBVIEW_SELFCHECK_JS` 或门禁 —— 属产品决策（抬 `MIN_CHROME` 会砍掉大批现役设备），本轮只文档化，未改行为。
+- 三条 issue（#118/#107/#119）与本章改动**均未推送** origin（`origin/main = 8ad34f9a`），本机无真机，真机验收仍欠。
+

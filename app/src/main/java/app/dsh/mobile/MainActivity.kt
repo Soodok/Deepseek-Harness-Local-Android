@@ -3992,8 +3992,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         /**
          * 环境自检脚本：报告 WebView 版本与引擎所需关键 API 是否存在。
-         * 引擎实际需要 Chrome 126（pdf.js 用 URL.parse），polyfill 可补 API 但补不了语法
-         * （`??=` 需 Chrome 85，语法错误会导致白屏 —— 那种情况日志里会看到 SyntaxError）。
+         *
+         * 语义要对齐 [app.dsh.mobile.WebViewDiagnostics.MIN_CHROME] = 85，别写成「需要 126」：
+         * 上游产物里门槛最高的单点是 `URL.parse`（Chrome 126，pdf.js 用），但它在 85 上由
+         * polyfill 补齐（见 `scripts/patch-webview-polyfill.py` 的 22 次安装），语法层
+         * 则由 `scripts/patch-webview-syntax-floor.py` 用 esbuild 转译掉 `static {}`。
+         * 所以这里的 `need` 表是「**未装 polyfill 时**各 API 的原生门槛」，用于判断
+         * 「polyfill 到底补上没有」，不是门禁阈值 —— 缺项时日志打 `polyfill=MISSING:…`，
+         * 说明注入没生效（问题在交付链路，不是内核太老）。
+         *
+         * ⚠️ 覆盖范围只到 **JS API**。`:has()` / `color-mix()` / `anchor()` 这类 CSS
+         * 能力本探针查不到（polyfill 也补不了），它们在内核 85–124 上是静默降级——
+         * 自检全绿不代表样式正确，见 README「边界」。
          */
         private const val WEBVIEW_SELFCHECK_JS = """
 (function () {

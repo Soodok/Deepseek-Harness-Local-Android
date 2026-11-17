@@ -134,6 +134,8 @@
 
 另有一条：前端注入 **polyfill**，把 WebView 门槛从 Chrome 126 **拉回 85**——国产 ROM 常见的 96 实测可用。
 
+> 门槛分两笔账，别混：**JS 侧**（语法 + API）确实是 85，构建期用 esbuild 把 `static {}` 转译掉、再补 20 项现代 API（22 次安装，`Object.groupBy` / `Map.groupBy` 各算一处同名 API），`MIN_CHROME = 85` 就是按它定的；**CSS 侧**做不到 85 —— 上游样式表用了 `:has()`（105）、`color-mix()`（111）、`anchor()` + `position-try`（125），在 85–124 上是**静默降级**（不报错、不白屏，但部分样式与弹层定位失效，例如 `anchor()` 缺失时弹出面板会落到视口顶部）。抬门槛会砍掉一大批现役设备，所以选择留在 85 并用客户端插件兜底已知的定位缺口，详见「边界」。
+
 ---
 
 ## 二、手机上真的能编译
@@ -575,6 +577,8 @@ Windows Git Bash 用 `gradle.bat` 替代 `./gradlew`。
 **长任务不等于永不中断。** 前台服务 + 监督器尽力保活，但用户强停、极端省电策略、厂商冻结后台（如 `OplusHansManager`）、设备重启、Root 操作杀进程都会断。断了要重新派发。
 
 **无障碍读不全所有界面。** 纯 Canvas、游戏画面、部分受保护页面没有可用节点树，程序会按层降级（节点树 → OCR → 图标几何 → 帧差），但仍不能把所有图形界面变成可靠的结构化信息。
+
+**WebView 的 CSS 门槛低于 JS 门槛。** `MIN_CHROME = 85` 守的是 JS 侧（语法转译 + API polyfill，见 `WebViewDiagnostics.kt:75` 与 `_test_webview_syntax_floor.mjs`）。CSS 侧上游用了 `:has()`（Chrome 105）、`color-mix()`（111）、CSS anchor positioning（`anchor()` / `position-anchor` / `position-try`，**125**）——这些 polyfill 补不了，在 85–124 的内核上**静默降级**：不报错、不白屏，但选择器不匹配、颜色表达式失效、弹层拿不到相对触发点的坐标。实测（Chrome 157 + rc.3 真 CSS、412×915）：`anchor()` 声明被丢弃后，本轮用量面板落在 (100, 12) 即**视口顶边**，离触发按钮 678px。目前用客户端插件兜底已定位的那一处（`chat-anchor-fallback`），其余 CSS 降级仅影响观感，不改功能；抬门槛属产品决策，未做。
 
 **不该拿它做的事。** 不要用虚拟 HID / 无障碍 / Root 绕过风控、欺骗用户、操作未授权设备。项目**不提供**让注入输入「不可检测」的实现。
 
