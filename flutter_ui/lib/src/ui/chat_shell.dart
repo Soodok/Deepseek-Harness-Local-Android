@@ -10,6 +10,7 @@ import 'runtime_panel.dart';
 import 'subagent_panel.dart';
 import '../state/chat_controller.dart';
 import 'settings/settings_home.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import 'composer.dart';
 import 'message_list.dart';
@@ -224,7 +225,12 @@ class _TopBar extends StatelessWidget {
                           ),
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 10),
-                            minimumSize: const Size(0, 48),
+                            // Width follows the row; the height stays a real
+                            // 48dp target at every display size.
+                            minimumSize: DshDisplayScope.targetSize(
+                              context,
+                              width: 0,
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,

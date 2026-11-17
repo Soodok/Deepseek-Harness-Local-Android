@@ -583,13 +583,18 @@ void main() {
       _conversation(const [], modelLabel: 'deepseek-v4.1-flash'),
     );
     await _pumpPage(tester, _agent('review', '代码检查', address: _child), service);
-    // The value shown is exactly the one the Host reported for that child.
+    // The capsule paints the shortened brand token, while the value the Host
+    // reported for that child stays available as the tooltip/semantics label.
     final chip = find.byKey(const ValueKey('subagent-model-readonly'));
     expect(chip, findsOneWidget);
     expect(
-      find.descendant(of: chip, matching: find.text('deepseek-v4.1-flash')),
+      find.descendant(of: chip, matching: find.text('ds-v4.1-flash')),
       findsOneWidget,
     );
+    final pill = tester.widget<ComposerModelPill>(
+      find.descendant(of: chip, matching: find.byType(ComposerModelPill)),
+    );
+    expect(pill.semanticLabel, 'deepseek-v4.1-flash');
     // It is inert: tapping it opens no sheet and the model selector entry that
     // the parent composer has does not exist here at all.
     await tester.tap(find.byType(ComposerModelPill));

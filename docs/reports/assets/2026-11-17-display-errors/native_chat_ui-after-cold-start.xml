@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="mode">light</string>
+    <string name="mood">sand</string>
+    <string name="displaySize">compact</string>
+</map>

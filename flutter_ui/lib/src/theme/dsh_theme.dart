@@ -284,13 +284,37 @@ class DshPalette {
 class DshTheme {
   const DshTheme._();
 
-  static ThemeData light({DshMood mood = DshMood.mist}) =>
-      _build(DshPalette.colorsFor(mood, Brightness.light), Brightness.light);
-  static ThemeData dark({DshMood mood = DshMood.mist}) =>
-      _build(DshPalette.colorsFor(mood, Brightness.dark), Brightness.dark);
-  static ThemeData _build(DshColors colors, Brightness brightness) {
+  /// [displayFactor] is the in-app display size dividing this theme's logical
+  /// units. Minimum button sizes are expressed against it so a control still
+  /// paints a real 48dp touch target when the canvas is scaled down; the
+  /// default 1 keeps the plain design values for isolated tests.
+  static ThemeData light({
+    DshMood mood = DshMood.mist,
+    double displayFactor = 1,
+  }) => _build(
+    DshPalette.colorsFor(mood, Brightness.light),
+    Brightness.light,
+    displayFactor,
+  );
+  static ThemeData dark({
+    DshMood mood = DshMood.mist,
+    double displayFactor = 1,
+  }) => _build(
+    DshPalette.colorsFor(mood, Brightness.dark),
+    Brightness.dark,
+    displayFactor,
+  );
+  static ThemeData _build(
+    DshColors colors,
+    Brightness brightness,
+    double displayFactor,
+  ) {
     final ink = colors.ink;
     final paper = colors.paper;
+    // Real device dp, converted into the logical units this theme lays out in.
+    double touch(double dp) => dp / displayFactor;
+    final minSquare = Size(touch(48), touch(48));
+    final minWide = Size(touch(64), touch(48));
     final scheme =
         ColorScheme.fromSeed(
           seedColor: colors.ice,
@@ -335,17 +359,20 @@ class DshTheme {
         thickness: 0.6,
         space: 0.6,
       ),
+      // Rows may be as dense as the design wants, but never below a real 48dp
+      // target once the display canvas has scaled them down.
+      listTileTheme: ListTileThemeData(minTileHeight: touch(48)),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           foregroundColor: ink,
-          minimumSize: const Size(48, 48),
+          minimumSize: minSquare,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: colors.ice,
           foregroundColor: colors.paperDeep,
-          minimumSize: const Size(64, 48),
+          minimumSize: minWide,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           textStyle: const TextStyle(
             fontSize: 14.5,
@@ -359,7 +386,7 @@ class DshTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: ink,
-          minimumSize: const Size(64, 48),
+          minimumSize: minWide,
           side: BorderSide(color: colors.line),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           textStyle: const TextStyle(
@@ -374,7 +401,7 @@ class DshTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: colors.ice,
-          minimumSize: const Size(64, 48),
+          minimumSize: minWide,
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),

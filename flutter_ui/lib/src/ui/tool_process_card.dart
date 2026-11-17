@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
 import '../model/tool_content.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 
 Duration _motionFor(BuildContext context) =>
@@ -270,7 +271,9 @@ class _ProcessSection extends StatelessWidget {
             onTap: onToggle,
             borderRadius: BorderRadius.circular(8),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48),
+              constraints: BoxConstraints(
+                minHeight: DshDisplayScope.minTargetOf(context),
+              ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -430,7 +433,7 @@ class _TextOutput extends StatelessWidget {
 }
 
 ButtonStyle _actionStyle(BuildContext context) => TextButton.styleFrom(
-  minimumSize: const Size(48, 48),
+  minimumSize: DshDisplayScope.targetSize(context),
   padding: const EdgeInsets.symmetric(horizontal: 8),
   foregroundColor: DshPalette.of(context).inkSoft,
   textStyle: const TextStyle(fontSize: 12.5),

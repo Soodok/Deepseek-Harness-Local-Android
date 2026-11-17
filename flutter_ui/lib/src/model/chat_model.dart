@@ -1,6 +1,9 @@
 import 'tool_content.dart';
+import 'turn_notice.dart';
 
-enum ChatRole { user, assistant, system }
+/// [notice] is a device-rendered turn card, not model output: the text of such
+/// a row is never shown as speech.
+enum ChatRole { user, assistant, system, notice }
 
 enum ToolStatus { running, complete, failed, cancelled }
 
@@ -33,6 +36,7 @@ class ChatMessage {
     required this.role,
     required this.text,
     this.isStreaming = false,
+    this.notice,
   });
 
   final String id;
@@ -40,11 +44,16 @@ class ChatMessage {
   final String text;
   final bool isStreaming;
 
+  /// Structured turn ending shown as its own card. Only [ChatRole.notice] rows
+  /// carry one; the label behind it comes from durable journal metadata.
+  final TurnNotice? notice;
+
   ChatMessage copyWith({String? text, bool? isStreaming}) => ChatMessage(
     id: id,
     role: role,
     text: text ?? this.text,
     isStreaming: isStreaming ?? this.isStreaming,
+    notice: notice,
   );
 
   @override
@@ -53,10 +62,11 @@ class ChatMessage {
       other.id == id &&
       other.role == role &&
       other.text == text &&
-      other.isStreaming == isStreaming;
+      other.isStreaming == isStreaming &&
+      other.notice == notice;
 
   @override
-  int get hashCode => Object.hash(id, role, text, isStreaming);
+  int get hashCode => Object.hash(id, role, text, isStreaming, notice);
 }
 
 class ToolRun {
@@ -144,6 +154,7 @@ class ChatEvent {
     this.choices = const [],
     this.multiSelect = false,
     this.draftKey,
+    this.notice,
   });
 
   const ChatEvent.actionWithdrawn({
@@ -175,6 +186,7 @@ class ChatEvent {
     required ChatRole role,
     required String text,
     required bool done,
+    TurnNotice? notice,
   }) : this._(
          kind: ChatEventKind.delta,
          generation: generation,
@@ -183,6 +195,7 @@ class ChatEvent {
          role: role,
          text: text,
          done: done,
+         notice: notice,
        );
 
   const ChatEvent.toolStarted({
@@ -314,4 +327,7 @@ class ChatEvent {
   final List<String> choices;
   final bool multiSelect;
   final String? draftKey;
+
+  /// Structured turn ending carried by the delta that introduces the card.
+  final TurnNotice? notice;
 }

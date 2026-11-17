@@ -1,0 +1,48 @@
+{
+  "repository": "https://github.com/jakubkrehel/skills",
+  "commit": "6c2120103600407a1a9986afd834e73144ef8998",
+  "license": "MIT",
+  "usage": "Local read-only UI review; no global installation or app dependency added.",
+  "skills": [
+    {
+      "path": "skills/interface-review/SKILL.md",
+      "gitBlob": "3b14135fedc6ba71738070312024a0931d50cff1",
+      "sha256": "976098555c7fe5dc0d082d70fd37b579f7513eb84a653d1abec8e347c80e32c1"
+    },
+    {
+      "path": "skills/better-interface/SKILL.md",
+      "gitBlob": "11a75671a0cca1d24aeb6d70007aff6079c85696",
+      "sha256": "915ed5dc1442d9b78782900ff8b62160133362a2fe23998917814bfb6422869e"
+    },
+    {
+      "path": "skills/better-accessibility/SKILL.md",
+      "gitBlob": "919aff85f66061c116b50f5dd78c695f32147cb0",
+      "sha256": "84fbeaf664029100430699c812785b7ad61fb27e9fc55151c8471cb82040b790"
+    },
+    {
+      "path": "skills/better-layout/SKILL.md",
+      "gitBlob": "6d6663c8a94f1f2369a053002b9b619c63abb982",
+      "sha256": "1fd79a2e688288bb31427511e862154788f7cede16f09227fe78e3bfeab67a7a"
+    },
+    {
+      "path": "skills/better-writing/SKILL.md",
+      "gitBlob": "54f93d31197446fc5b4d8645fddaa3ec91baa5c2",
+      "sha256": "109e4337da3621410c225b137d4683d8c246ca06071990a22882376ad60ec6e3"
+    },
+    {
+      "path": "skills/better-typography/SKILL.md",
+      "gitBlob": "843e22d6c32b930d8aa225d7150201bf6f6c80b6",
+      "sha256": "8f00a576f6c8d2f8d72dfbffe765ce569982509d01533ea5881de6e1918d3a68"
+    },
+    {
+      "path": "skills/better-colors/SKILL.md",
+      "gitBlob": "e0b3049b65a4e369217ca5f67b89ad3adf311fa0",
+      "sha256": "2fc5964fe9adae02e8ba4d80d40ad85d23da227f3eab3b55e06c7df0ac7e7652"
+    },
+    {
+      "path": "skills/better-ui/SKILL.md",
+      "gitBlob": "b8abea328cfc49549423adce6674af7f50cce044",
+      "sha256": "2d5f9fa4f3bbf045da914349b6e5fde559c947e5323968350b65bb2cdc6b3e4f"
+    }
+  ]
+}

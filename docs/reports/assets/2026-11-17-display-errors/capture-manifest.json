@@ -1,0 +1,296 @@
+{
+  "artifactSha256": "25521c852d5ea858f7484019abc7ae31602e1a518ea6734ef392dbc8ff31befe",
+  "device": "emulator-5570",
+  "physicalSize": [
+    1080,
+    2340
+  ],
+  "densityDpi": 440,
+  "files": [
+    {
+      "file": "beta36-start-screen.png",
+      "bytes": 80544,
+      "sha256": "5bc93199a68f05c3d27721c2c1a9c1997a87d597368674f43058c4580aa8adc4"
+    },
+    {
+      "file": "beta36-native-direct.png",
+      "bytes": 95545,
+      "sha256": "bc0025fb33e0f09e098bcff621257de1f18361f7f8518f0c512f566388744c62"
+    },
+    {
+      "file": "beta36-chat-standard.png",
+      "bytes": 262355,
+      "sha256": "3c48a06145dcc7ba94a1048cc073ceaacee4a95576ae25eddbc6d87ca54b8d9c"
+    },
+    {
+      "file": "beta36-error-details.png",
+      "bytes": 274379,
+      "sha256": "899bb4e97aa587ed0d1efb45a7531a59be18ede356eda6dde8d2fe87d412f15f"
+    },
+    {
+      "file": "beta36-error-copy.png",
+      "bytes": 292206,
+      "sha256": "2b313d2157edd79d862786cf0fe86b83694f647a94e37a5a79b4dc4d63b8c73d"
+    },
+    {
+      "file": "beta36-drawer.png",
+      "bytes": 137850,
+      "sha256": "2ee5da1f8f9d807fd1d1fe83dc0de0f269e984d47b8e11a223dcdaab143df9c7"
+    },
+    {
+      "file": "beta36-account-menu.png",
+      "bytes": 133109,
+      "sha256": "5470ee5f8f7c44acabb55779057ca43b400cffd8bf035f8c827638f958a476f6"
+    },
+    {
+      "file": "beta36-settings-standard.png",
+      "bytes": 165628,
+      "sha256": "f887c5a133f2d9542b26145dcf4a7fc4185326db890de3fa090edc00abfd8e15"
+    },
+    {
+      "file": "beta36-settings-options.png",
+      "bytes": 163550,
+      "sha256": "4f60b1ff1dfb13ecb99554f86105b45105992bf955ae046a0b907669299dc2c9"
+    },
+    {
+      "file": "beta36-personalization-standard.png",
+      "bytes": 182368,
+      "sha256": "2cfcefd52f21d21eb47a3e34408109159015bd267b70794bb35adc7b61288a47"
+    },
+    {
+      "file": "beta36-personalization-compact.png",
+      "bytes": 204033,
+      "sha256": "b1d575c6529b22d4ebfafb55f0a0e1790e723c9624dc3c73dca6eaa48fcd3b77"
+    },
+    {
+      "file": "beta36-personalization-relaxed.png",
+      "bytes": 179636,
+      "sha256": "a889ef617d78dbb1f661d09dbc52f479fe027753fc9005742cdd7742ebb21ee0"
+    },
+    {
+      "file": "beta36-settings-compact-options.png",
+      "bytes": 170619,
+      "sha256": "0df43d7fac8cc5a2cd1d5ced3f661789dcf08770125bcca0d7c95bc550f52a7e"
+    },
+    {
+      "file": "beta36-chat-compact.png",
+      "bytes": 258160,
+      "sha256": "64a01cf254f2c16699df526da6c221804a1c3f5b0b76acea7ad2d503fcbd7714"
+    },
+    {
+      "file": "beta36-models-compact.png",
+      "bytes": 215346,
+      "sha256": "1c363028098a1746999dcaccdc3b5bc9c1a5a8350dfccec853c8e5013a2d329a"
+    },
+    {
+      "file": "beta36-keyboard-compact.png",
+      "bytes": 250906,
+      "sha256": "5740f4cac666b137ef19d33512be5eba7cf29657f3d01318c05be56ede36e6bf"
+    },
+    {
+      "file": "beta36-personalization-relaxed-with-draft.png",
+      "bytes": 179757,
+      "sha256": "e6e9ac2867665712b1751683ed98ac3a076aab5a1300803b0a639e557469c017"
+    },
+    {
+      "file": "beta36-draft-preserved-relaxed.png",
+      "bytes": 283287,
+      "sha256": "bbfebdbbc7c95b3e4a2b70507b103661e2b9539963e149c93a35f719b2199703"
+    },
+    {
+      "file": "beta36-keyboard-relaxed-with-draft.png",
+      "bytes": 284046,
+      "sha256": "ff0323645e4a483da59f1daa7ffc1bacfea9aa2795831a177a88cff557cd7aca"
+    },
+    {
+      "file": "beta36-personalization-compact-with-draft.png",
+      "bytes": 203843,
+      "sha256": "871f21e944e55603430aae171f967b5e9775add417c13237d89e9b3a45674589"
+    },
+    {
+      "file": "beta36-draft-preserved-compact.png",
+      "bytes": 250975,
+      "sha256": "abc833db90a491fed289eec1a5ff59abe046dd656c962626087b17c538ff988b"
+    },
+    {
+      "file": "beta36-keyboard-compact-with-draft.png",
+      "bytes": 251850,
+      "sha256": "f54a7ab546fae95492a9ff408559508e6e0a2248b3eecfebee622538f88a61ce"
+    },
+    {
+      "file": "beta36-test-draft-cleared.png",
+      "bytes": 244483,
+      "sha256": "bf16dbefdec5085dcc112acab498af4123e02a9c08e526267d9d9d8ff6d3ad53"
+    },
+    {
+      "file": "beta36-system-font-2x.png",
+      "bytes": 119003,
+      "sha256": "c57fa77b8cdcdce2ef7301b67c55f1fda139a372b43d3e6903057ccaf8c0b6c3"
+    },
+    {
+      "file": "beta36-system-font-2x-chat.png",
+      "bytes": 266510,
+      "sha256": "cc4da692ab549ff2f7179be21aa5e597c2ec7b1d66ca2033cf9c5d2c312fb81f"
+    },
+    {
+      "file": "beta36-system-font-restored.png",
+      "bytes": 91294,
+      "sha256": "51a77ed103b9588c3ba849d92c5f75d41bbc8d7fee363e41c490b6f3bff3f1d8"
+    },
+    {
+      "file": "beta36-cold-main.png",
+      "bytes": 80705,
+      "sha256": "af4e75ad13a6d455cc07140241799f85222c86f4a994ce6613b8ac04bc1261b0"
+    },
+    {
+      "file": "beta36-cold-native-home.png",
+      "bytes": 92181,
+      "sha256": "9377b4db2dabdc5378e0e6e7a2f4decd03854fe3f9258a1034ade35108bde328"
+    },
+    {
+      "file": "beta36-cold-restored-compact.png",
+      "bytes": 247125,
+      "sha256": "c611279e4120bb2bc49fe75161919328363c08141b65c42366f83312fdee38e4"
+    },
+    {
+      "file": "beta36-native-home.xml",
+      "bytes": 5649,
+      "sha256": "f693f110ec3f28275ab747979c9a8c27c6c4f3867fb17e94d5933d93691da3ac"
+    },
+    {
+      "file": "beta36-chat-standard.xml",
+      "bytes": 736,
+      "sha256": "ff1ed0c364a1c20488f748819a25760349bdeab9dae7f407d4952d2bab7506aa"
+    },
+    {
+      "file": "beta36-error-details.xml",
+      "bytes": 9720,
+      "sha256": "a1920bbdf99e8f7ff0f7e36ebb11ca3a3851c0033ff711228b13dd15f2006dde"
+    },
+    {
+      "file": "beta36-error-copy.xml",
+      "bytes": 10065,
+      "sha256": "fdb753138d72aafa3977ee1b87904ebb9a8d784a9e8650b3497b497026cea16b"
+    },
+    {
+      "file": "beta36-drawer.xml",
+      "bytes": 7218,
+      "sha256": "d4498f381c87cb753b12367c2077807dcd75f95ca17cf33474fee8819e425c32"
+    },
+    {
+      "file": "beta36-account-menu.xml",
+      "bytes": 3938,
+      "sha256": "3cb8941f9847c9e432845b680841c0e4e7b0c6c33d5c2a08131a43d0ca5d7ab3"
+    },
+    {
+      "file": "beta36-settings-standard.xml",
+      "bytes": 8752,
+      "sha256": "bcb7435f8e2c8f9f916a216c9f5624a6c0b1f348b1a847cc68f579051cf1c606"
+    },
+    {
+      "file": "beta36-settings-options.xml",
+      "bytes": 8449,
+      "sha256": "ed7fb7410cc11a7b0a9847ed298bcd4bd5b5551a21215ab55b8c85f7fa273f03"
+    },
+    {
+      "file": "beta36-personalization-standard.xml",
+      "bytes": 10833,
+      "sha256": "d78149773ba32a477588e4a282a4eb15129cedbb3b5f19a0ba5bef126aae3a85"
+    },
+    {
+      "file": "beta36-personalization-compact.xml",
+      "bytes": 11257,
+      "sha256": "a7d147fa241d7854fc37806d24b4b19841cdbe094caac1b4e3249bdb383238f9"
+    },
+    {
+      "file": "beta36-personalization-relaxed.xml",
+      "bytes": 10521,
+      "sha256": "a9c2801ac6c62544a815fc9cfcfe6da7a7af4e2571ffee6b5327bb3fa668bbb1"
+    },
+    {
+      "file": "beta36-settings-compact-options.xml",
+      "bytes": 9148,
+      "sha256": "c5d7141947767463bd981c5812626f1fcad7523abe4537232942e294108f247c"
+    },
+    {
+      "file": "beta36-chat-compact.xml",
+      "bytes": 10071,
+      "sha256": "2d2fbfcc9f2bcc80c602066d1c253af2e8eee7bae8c3213fa8325b33e5bf78b9"
+    },
+    {
+      "file": "beta36-models-compact.xml",
+      "bytes": 5244,
+      "sha256": "bc13fde632030cd32cd464f003728e124c8b957f5917ab0a41f1f80714fccc1e"
+    },
+    {
+      "file": "beta36-keyboard-compact.xml",
+      "bytes": 8603,
+      "sha256": "70d010477eb415d4a3d7fd6204f520eb3933033b56e5dc3ba1cf1629a8e34a22"
+    },
+    {
+      "file": "beta36-personalization-relaxed-with-draft.xml",
+      "bytes": 10520,
+      "sha256": "17736315a7d575979a3318992b7a80901570e03b1e72e5c5c05486f3a963681b"
+    },
+    {
+      "file": "beta36-draft-preserved-relaxed.xml",
+      "bytes": 8273,
+      "sha256": "fb7ce3b1a0e2789f98e95449d88f8db13b8f2f96d6476f1ed1cf0be6dc817775"
+    },
+    {
+      "file": "beta36-keyboard-relaxed-with-draft.xml",
+      "bytes": 8273,
+      "sha256": "fb7ce3b1a0e2789f98e95449d88f8db13b8f2f96d6476f1ed1cf0be6dc817775"
+    },
+    {
+      "file": "beta36-personalization-compact-with-draft.xml",
+      "bytes": 11256,
+      "sha256": "b9457e94161c695f709833febf1c62f0b7bbfbe82e19d612b3b4de63319e3d49"
+    },
+    {
+      "file": "beta36-draft-preserved-compact.xml",
+      "bytes": 8603,
+      "sha256": "70d010477eb415d4a3d7fd6204f520eb3933033b56e5dc3ba1cf1629a8e34a22"
+    },
+    {
+      "file": "beta36-keyboard-compact-with-draft.xml",
+      "bytes": 8603,
+      "sha256": "70d010477eb415d4a3d7fd6204f520eb3933033b56e5dc3ba1cf1629a8e34a22"
+    },
+    {
+      "file": "beta36-test-draft-cleared.xml",
+      "bytes": 8586,
+      "sha256": "728dc48caf17e4a27eb9a9f4f52cb0ffa664a37e02f9ebe8575f533ced9e3018"
+    },
+    {
+      "file": "beta36-system-font-2x.xml",
+      "bytes": 5648,
+      "sha256": "8dbb7f461b18abbd21efd41d47e3dfe6a17308e9135570f50c332f2648885d85"
+    },
+    {
+      "file": "beta36-system-font-2x-chat.xml",
+      "bytes": 9180,
+      "sha256": "1d38913bf879774d30b3caf41d85503885212bed0c6d6f8fba27ca5c620c213a"
+    },
+    {
+      "file": "beta36-system-font-restored.xml",
+      "bytes": 4894,
+      "sha256": "37e566beed3d357951c19240efafe11a7b3f34295ccd50728ea9c345f0a5b0f4"
+    },
+    {
+      "file": "beta36-cold-main.xml",
+      "bytes": 2891,
+      "sha256": "d1aa635f57492cfacd307ba820ff860e705157cb8935ba90ff0c0ca03b7c0a3e"
+    },
+    {
+      "file": "beta36-cold-native-home.xml",
+      "bytes": 5649,
+      "sha256": "6c927189a0d573cc49ef0faec2521739e553ca74562356117b4a4bbd45392d41"
+    },
+    {
+      "file": "beta36-cold-restored-compact.xml",
+      "bytes": 10519,
+      "sha256": "71c1693859cfe9436f61ceb76da1a352ae1462ecf4b65e7fc8a37f05a62d5f8f"
+    }
+  ]
+}

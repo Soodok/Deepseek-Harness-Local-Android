@@ -611,8 +611,22 @@ void main() {
         seen.any((e) => e.kind == ChatEventKind.turnComplete),
         kind == 'completed',
       );
-      if (kind == 'error') expect(state.error, contains('provider failed'));
-      if (kind != 'completed') expect(state.messages.last.text, contains(kind));
+      // A turn ending is durable conversation content, never a transport
+      // failure: the connection banner and its retry stay out of it.
+      expect(state.error, isNull);
+      expect(seen.where((e) => e.kind == ChatEventKind.error), isEmpty);
+      if (kind == 'completed') {
+        expect(state.messages.where((m) => m.role == ChatRole.notice), isEmpty);
+      } else {
+        final notice = state.messages.last.notice!;
+        expect(state.messages.last.role, ChatRole.notice);
+        expect(notice.kind.name, isNotEmpty);
+        if (kind == 'error') {
+          expect(notice.code, 'PROVIDER');
+          expect(notice.message, contains('provider failed'));
+          expect(notice.isFailure, isTrue);
+        }
+      }
       expect(state.messages.every((m) => !m.isStreaming), isTrue);
     }
   });

@@ -1,0 +1,136 @@
+{
+  "base": "59f59401533784c00c4b0446fc5b4e392e2c4a41",
+  "versionCode": 411,
+  "versionName": "1.6.0-beta.36",
+  "apkSha256": "25521c852d5ea858f7484019abc7ae31602e1a518ea6734ef392dbc8ff31befe",
+  "files": [
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "91d8f8b357d61ca580dc97df9e52e2bc712bfd69cef292d80f3901b01c24f680"
+    },
+    {
+      "path": "app/src/main/java/app/dsh/mobile/NativeChatActivity.kt",
+      "sha256": "1e73cea6c91b062e156cbb9de41df3b17b24b42bbbe26b2b9b4474cca1535551"
+    },
+    {
+      "path": "flutter_ui/lib/main.dart",
+      "sha256": "5a8d4900046d5cfe076890a6d08b524ca37de6c94ef5f79c6f0e1f92017a9701"
+    },
+    {
+      "path": "flutter_ui/lib/src/bridge/host_bridge.dart",
+      "sha256": "09da96b915a77be63d4c7186fce336639488052b8574b25b524f133d5fe37550"
+    },
+    {
+      "path": "flutter_ui/lib/src/model/chat_model.dart",
+      "sha256": "d213375d7cfa6d0c86124ef1cfb7868ed31f265fd63269ffd41433303ae582ca"
+    },
+    {
+      "path": "flutter_ui/lib/src/model/model_display.dart",
+      "sha256": "fc77fd818f637fd5b8a36ba346afaa26cc002ad4fecce6a7470488bfb8a7bbb0"
+    },
+    {
+      "path": "flutter_ui/lib/src/model/turn_notice.dart",
+      "sha256": "ff98dc0abdf8f73c6e96ca413b517ba157ac43e19ae65bff117c6a30b0aa9921"
+    },
+    {
+      "path": "flutter_ui/lib/src/state/chat_reducer.dart",
+      "sha256": "a8869c29cf643f8854b76a7cf11d51241c01ff62fa3bffdae7f3d20d50fa6660"
+    },
+    {
+      "path": "flutter_ui/lib/src/theme/display_scale.dart",
+      "sha256": "8c6eb1a9a6a6fe1bd49a9b7c5da01f2c0599750fd97e7ea8507bb2d2688d453a"
+    },
+    {
+      "path": "flutter_ui/lib/src/theme/dsh_theme.dart",
+      "sha256": "1db12f92c4db75862a9bac0e4a65a18c66ba155077d8a86d5bc66021d7740bcb"
+    },
+    {
+      "path": "flutter_ui/lib/src/transport/dsh_session_projection.dart",
+      "sha256": "e2922d9172a2b8251c024d6898806a4e145f9ed4d71b920324828cc0ab6979e0"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/action_cards.dart",
+      "sha256": "14fd0ee764c90fea71e8cfbaa65d5139731f83561a448f44a9799c9c55302d35"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/chat_shell.dart",
+      "sha256": "d3051da6357d09b41ef16f80fd540b7dbdccf67e2d0da4a83ef72dc6b86d80ea"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/composer.dart",
+      "sha256": "56f855cbf98314edbc67785a460096778565920cf6a95e96f876fc8346b007d9"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/composer_dock.dart",
+      "sha256": "c089510f0b8df0c879c385ad68834cbc7fb4d365d37223b14aaabd8b048fd4bd"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/composer_surface.dart",
+      "sha256": "28d5e0666cd0a923c33120f5cce7bb0894ef9370c4f037887be948bcfce4e60b"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/conversation_flow.dart",
+      "sha256": "a571e5e05ca7a80a23f7b7aaafc0e1db3e794a51b47f8f1d19091253f75fc792"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/execution_group.dart",
+      "sha256": "47b7b90449fc1f716be597c90ed4c95e2fb0c21ea9526e8f71ca17964fe49e0d"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/settings/settings_detail_pages.dart",
+      "sha256": "5bdcd5dea9bc61a5ab2b51ece1b6524aa748317d740cde074a02144ccd6b6a30"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/settings/settings_page.dart",
+      "sha256": "cad5d94a5cfcc838aa397a811d1c79be3751ecebb7461fe4dc05e073414baab0"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/subagent_panel.dart",
+      "sha256": "c70e86ae3156c692b9fb29ae5f760392957a4b0896ee65e1e0060f2a1cb61da2"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/tool_content_view.dart",
+      "sha256": "8349d779818cbabaf7b81c2cc8ae0790ea90d208c051f28d201498ee297c862c"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/tool_process_card.dart",
+      "sha256": "66a00c732e9d74d8902f05bd310bf27e1ec116798c91b2f5a359dc99dbec54cf"
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/turn_notice_card.dart",
+      "sha256": "51600e93b6b7d8419e8d06b46513f04d5d8ab9fa9e5cf1915b27aaff90619d77"
+    },
+    {
+      "path": "flutter_ui/test/display_scale_test.dart",
+      "sha256": "a8804cf9b0d8f3bcf4ad2e7fc01387270b5c77d9f5cd7e6f3b82eb03df8ab690"
+    },
+    {
+      "path": "flutter_ui/test/display_size_ui_test.dart",
+      "sha256": "1540c08a80fe1bb6e0b94249d45e9737a888b061f75114539d319fee2e956014"
+    },
+    {
+      "path": "flutter_ui/test/dsh_session_projection_test.dart",
+      "sha256": "4c525681afffdc14e5f8a17eb66858399877c1bacc0e9659019bd676473c7b47"
+    },
+    {
+      "path": "flutter_ui/test/model_display_test.dart",
+      "sha256": "17c1b39f919429377a5d0e683b718ba27b901e9031c8da318237c84dd115bba3"
+    },
+    {
+      "path": "flutter_ui/test/settings_readability_test.dart",
+      "sha256": "43d9cb433c6a390b9c1dc7ec54756b89ed02472962db3f3069b75ee4c1ed481b"
+    },
+    {
+      "path": "flutter_ui/test/subagent_panel_test.dart",
+      "sha256": "5808068679776038c16c87aefd8c37227f9be577896416e3a8631a9df2bfbfc2"
+    },
+    {
+      "path": "flutter_ui/test/turn_error_projection_test.dart",
+      "sha256": "517b66bc032b63692dce0666f9a55a3be8ce3d740ed6526f9ac52fe054c3a3d5"
+    },
+    {
+      "path": "flutter_ui/test/turn_notice_card_test.dart",
+      "sha256": "9e16abd85fcc33d03d6e54e24f133038ce66394b9e1f75a0428cf17efa2d5853"
+    }
+  ]
+}

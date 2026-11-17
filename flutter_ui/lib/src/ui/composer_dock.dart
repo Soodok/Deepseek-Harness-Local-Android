@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart' hide StepState;
 import '../model/chat_model.dart';
 import '../model/tool_content.dart';
 import '../state/chat_controller.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import 'action_cards.dart';
 
@@ -304,7 +305,7 @@ class _DockHeader extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 48,
+        height: DshDisplayScope.minTargetOf(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(

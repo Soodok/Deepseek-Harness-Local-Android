@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
+import '../model/model_display.dart';
 import '../model/subagent_model.dart';
 import '../model/tool_content.dart';
 import '../state/chat_controller.dart';
 import '../state/subagent_controller.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import '../transport/dsh_transport.dart';
 import 'chat_shell.dart' show ChatLayout;
@@ -234,7 +236,9 @@ class _AgentRow extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               key: ValueKey('subagent-open-' + agent.id),
-              style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+              style: TextButton.styleFrom(
+                minimumSize: DshDisplayScope.targetSize(context),
+              ),
               onPressed: onOpen,
               icon: const Icon(Icons.chat_bubble_outline, size: 18),
               label: const Text('进入对话'),
@@ -442,6 +446,8 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
           ),
         )
         .toList(growable: false);
+    // The child's own model, display only; abbreviation never touches the id.
+    final modelLabel = child?.conversation?.modelLabel;
     final header = <Widget>[
       if (fixture) Text('fixture 演示：以下为演示子会话内容。', style: _meta(context)),
       Text(
@@ -454,14 +460,15 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
             : '历史对话',
         style: _meta(context),
       ),
-      if (child?.conversation?.modelLabel != null)
+      if (modelLabel != null)
         Padding(
           key: const ValueKey('subagent-model-readonly'),
           padding: const EdgeInsets.only(top: 6),
           child: Align(
             alignment: Alignment.centerLeft,
             child: ComposerModelPill(
-              label: child!.conversation!.modelLabel!,
+              label: displayModelLabel(modelLabel),
+              semanticLabel: modelLabel,
               onPressed: null,
               enabled: false,
             ),
@@ -486,7 +493,9 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
               ),
               TextButton(
                 key: const ValueKey('subagent-retry'),
-                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                style: TextButton.styleFrom(
+                  minimumSize: DshDisplayScope.targetSize(context),
+                ),
                 onPressed: child.loading ? null : child.start,
                 child: const Text('重试'),
               ),

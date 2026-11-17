@@ -1,0 +1,39 @@
+{
+  "files": [
+    {
+      "file": "android-beta36-lead-flutter.log",
+      "source": "E:/tmp/native-chat-web-preview/android-beta36-lead-flutter.log",
+      "sourceSha256": "1b170526c0119664a4c9a85e19759fe716770c36042011d91ec21d3c18d7b4ca",
+      "archiveSha256": "1b170526c0119664a4c9a85e19759fe716770c36042011d91ec21d3c18d7b4ca",
+      "normalization": "CRLF to LF; trailing horizontal whitespace removed in archive only"
+    },
+    {
+      "file": "android-beta36-lead-analyze.log",
+      "source": "E:/tmp/native-chat-web-preview/android-beta36-lead-analyze.log",
+      "sourceSha256": "260087af151330a3a2613bebd9417f7fcf13daa0783bae952cd5599df6f840d8",
+      "archiveSha256": "f06055a87ce0a48d609794bc99edf57db3990329b4a53d7fab1f7150cc0863a4",
+      "normalization": "CRLF to LF; trailing horizontal whitespace removed in archive only"
+    },
+    {
+      "file": "android-beta36-build.log",
+      "source": "E:/tmp/native-chat-web-preview/android-beta36-build.log",
+      "sourceSha256": "0ee161517b305cda9b163998a3ebd1a424b7b5075bf24f2278224f7c0e6756c6",
+      "archiveSha256": "e25a0fece78b994ab136d0e6e1928e852bd15a9978a77b15f9ee395c6e8ea01c",
+      "normalization": "CRLF to LF; trailing horizontal whitespace removed in archive only"
+    },
+    {
+      "file": "android-beta36-review-flutter.log",
+      "source": "E:/tmp/native-chat-web-preview/android-beta36-review-flutter.log",
+      "sourceSha256": "15e2fec188e2ab29021a06de5f041ee5ab231fbbc754e8a1fcec3eed4694076e",
+      "archiveSha256": "15e2fec188e2ab29021a06de5f041ee5ab231fbbc754e8a1fcec3eed4694076e",
+      "normalization": "CRLF to LF; trailing horizontal whitespace removed in archive only"
+    },
+    {
+      "file": "android-beta36-review-analyze.log",
+      "source": "E:/tmp/native-chat-web-preview/android-beta36-review-analyze.log",
+      "sourceSha256": "50cee3e0b4ff061d59a7c0f9d04bab7e84cd81474aaff0a0a7b48ddc94c71adf",
+      "archiveSha256": "3c745d713ee8badfedc85ff6f771747b510b0a3fccf458a03ea1d39676d4cc8b",
+      "normalization": "CRLF to LF; trailing horizontal whitespace removed in archive only"
+    }
+  ]
+}

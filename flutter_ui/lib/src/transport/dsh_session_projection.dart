@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../model/chat_model.dart';
 import '../model/tool_content.dart';
+import '../model/turn_notice.dart';
 import 'dsh_rpc_connection.dart';
 
 /// Pure adapter from an addressed DSH journal to the existing immutable UI model.
@@ -57,6 +58,9 @@ class DshSessionProjection {
           final events = _publish();
           if (event['type'] == 'turn/end') {
             final reason = _object(data?['reason']);
+            // A terminal turn failure is durable conversation content, not a
+            // transport failure: it becomes its own card in the transcript and
+            // never raises the connection banner or invents a retry.
             if (reason?['kind'] == 'completed') {
               events.add(
                 ChatEvent.turnComplete(
@@ -64,8 +68,6 @@ class DshSessionProjection {
                   sequence: _sequence++,
                 ),
               );
-            } else if (reason?['kind'] == 'error') {
-              events.add(error(_turnEndText(reason, data)));
             }
           }
           return events;
@@ -331,13 +333,17 @@ class DshSessionProjection {
           // Validate the envelope so a malformed frame still fails the projection.
           _requiredObject(data['message']);
         case 'turn/end':
-          final reason = _object(data['reason']);
-          if (reason?['kind'] != 'completed')
+          // The card is built from the durable reason only. A completion is
+          // reported by turnComplete, a user/parent stop leaves no error card,
+          // and every remaining ending keeps its structured facts.
+          final notice = _turnEndNotice(_object(data['reason']), data);
+          if (notice != null)
             messages.add(
               ChatMessage(
                 id: id,
-                role: ChatRole.system,
-                text: _turnEndText(reason, data),
+                role: ChatRole.notice,
+                text: notice.message,
+                notice: notice,
               ),
             );
         case 'assistant/attempt':
@@ -468,7 +474,24 @@ class DshSessionProjection {
       );
     }
     if (running && messages.isNotEmpty && !messages.any((m) => m.isStreaming)) {
-      messages[messages.length - 1] = messages.last.copyWith(isStreaming: true);
+      // The live cursor belongs to model or activity output only. A turn card is
+      // a closed record of a past turn and a user bubble is not "being written",
+      // so when neither exists the running turn gets its own activity row.
+      final tail = messages.lastIndexWhere(
+        (m) => m.role == ChatRole.assistant || m.role == ChatRole.system,
+      );
+      if (tail >= 0) {
+        messages[tail] = messages[tail].copyWith(isStreaming: true);
+      } else if (!messages.any((m) => m.id == sessionId + ':activity')) {
+        messages.add(
+          ChatMessage(
+            id: sessionId + ':activity',
+            role: ChatRole.system,
+            text: '',
+            isStreaming: true,
+          ),
+        );
+      }
     }
     if (!running) {
       for (var i = 0; i < messages.length; i++) {
@@ -521,6 +544,7 @@ class DshSessionProjection {
             role: message.role,
             text: message.text.substring(previous?.text.length ?? 0),
             done: !message.isStreaming,
+            notice: message.notice,
           ),
         );
       }
@@ -572,17 +596,32 @@ class DshSessionProjection {
         (replace ||
             old?.running != next.running ||
             events.any((e) => e.kind == ChatEventKind.toolStarted))) {
-      final message = next.messages.last;
-      events.add(
-        ChatEvent.delta(
-          generation: generation,
-          sequence: _sequence++,
-          messageId: message.id,
-          role: message.role,
-          text: '',
-          done: !next.running,
-        ),
+      // Reassert on the row that can legitimately stream, never on a turn card
+      // or a user bubble: those are closed records, not live output. When no
+      // such row exists the real state is already published by the snapshot or
+      // the tool events, so nothing is invented here.
+      final streamable = next.messages.lastIndexWhere(
+        (m) => m.role == ChatRole.assistant || m.role == ChatRole.system,
       );
+      // No streamable row is fine while running (the activity row owns the
+      // cursor); when the turn is over, the closing delta must still land so a
+      // reducer that was told "streaming" returns to ready.
+      final index = streamable >= 0
+          ? streamable
+          : (next.running ? -1 : next.messages.length - 1);
+      if (index >= 0) {
+        final message = next.messages[index];
+        events.add(
+          ChatEvent.delta(
+            generation: generation,
+            sequence: _sequence++,
+            messageId: message.id,
+            role: message.role,
+            text: '',
+            done: !next.running,
+          ),
+        );
+      }
     }
     if (_interaction != null) events.add(_interactionEvent());
     _published = next;
@@ -620,6 +659,29 @@ int _cursor(Object? value) {
 
 int _integerOr(Object? value) => value is int ? value : 0;
 
+/// Codes whose payload can echo a credential, a masked key or an account token.
+/// Their detail is reduced to the code itself: the details panel is selectable
+/// and copyable, so it must not carry what [_failureText] already refuses to
+/// repeat.
+const _credentialFailureCodes = <String>{
+  'MISSING_CREDENTIAL',
+  'NO_CREDENTIAL_STORE',
+  'INVALID_CREDENTIAL',
+  'ACCOUNT_TOKEN_INVALID',
+  'AUTH',
+  'ACCOUNT_SIGN_IN_REQUIRED',
+};
+
+/// The expandable payload for a failure. Credential failures keep only their
+/// code; every other cause keeps its full diagnostics so it stays debuggable.
+String _failureDetail(Map<String, Object?> failure) {
+  final code = _string(failure['code']);
+  if (code != null && _credentialFailureCodes.contains(code)) {
+    return jsonEncode({'code': code});
+  }
+  return jsonEncode(failure);
+}
+
 /// Names a known credential failure in the user's terms instead of echoing a
 /// provider diagnostic, while leaving every other cause intact.
 String _failureText(Map<String, Object?> failure) {
@@ -651,28 +713,73 @@ String _failureText(Map<String, Object?> failure) {
   return message == null ? code : message + '（' + code + '）';
 }
 
-/// Turn endings other than completion stay visible, but as a readable sentence.
-String _turnEndText(Map<String, Object?>? reason, Map<String, Object?>? data) {
-  final kind = _string(reason?['kind']) ?? 'unknown';
-  final label = '回合结束（' + kind + '）';
+/// Terminal turn endings as structured cards, mirroring the DSH rules: a
+/// recorded error, a sign-out cancellation and a crash-interrupted turn are
+/// failures; a user or parent stop is only a stop; completions add nothing.
+TurnNotice? _turnEndNotice(
+  Map<String, Object?>? reason,
+  Map<String, Object?>? data,
+) {
   switch (reason?['kind']) {
     case 'error':
-      return label +
-          '：' +
-          _failureText(_object(reason?['error']) ?? data ?? const {});
+      final failure = _object(reason?['error']) ?? data ?? const {};
+      return TurnNotice(
+        kind: TurnNoticeKind.failed,
+        message: _failureText(failure),
+        code: _string(failure['code']),
+        detail: _failureDetail(failure),
+      );
     case 'aborted':
-      final cause = _object(_object(reason?['reason'])?['reason']);
-      return label + (cause == null ? '' : '：' + _failureText(cause));
+      final cause = _object(reason?['reason']);
+      if (cause?['kind'] == 'hook' &&
+          cause?['reason'] == 'deepseek-account/signed-out')
+        return const TurnNotice(
+          kind: TurnNoticeKind.signedOut,
+          message: '账号已退出登录，这一轮已停止。',
+          code: 'ACCOUNT_SIGNED_OUT',
+        );
+      return TurnNotice(
+        kind: TurnNoticeKind.stopped,
+        message: switch (cause?['kind']) {
+          'parent' => '父会话结束了这一轮。',
+          'user' => '你停止了这一轮。',
+          _ => '这一轮已停止。',
+        },
+        detail: cause == null ? '' : jsonEncode(cause),
+      );
     case 'interrupted':
-      return label + '：DSH 进程在本回合结束前退出。';
+      return const TurnNotice(
+        kind: TurnNoticeKind.interrupted,
+        message: 'DSH 进程在这一轮结束前退出。',
+        code: 'INTERRUPTED',
+      );
     case 'max-tokens':
-      return label + '：已达到本次输出的令牌上限。';
+      return const TurnNotice(
+        kind: TurnNoticeKind.maxTokens,
+        message: '已达到本次输出的令牌上限，可以继续输入。',
+      );
     case 'blocked':
-      return label + '：回合被阻止，没有继续执行。';
+      return const TurnNotice(
+        kind: TurnNoticeKind.blocked,
+        message: '这一轮被阻止，没有继续执行。',
+      );
     case 'forked':
-      return label + '：回合已分叉。';
+      return const TurnNotice(
+        kind: TurnNoticeKind.forked,
+        message: '这一轮已在分叉点关闭。',
+      );
+    case 'completed':
+      return null;
+    default:
+      // An ending this client does not know still gets a neutral row instead of
+      // disappearing; the raw reason stays available in the details.
+      final payload = reason ?? data;
+      return TurnNotice(
+        kind: TurnNoticeKind.other,
+        message: '这一轮已结束（' + (_string(reason?['kind']) ?? 'unknown') + '）。',
+        detail: payload == null ? '' : jsonEncode(payload),
+      );
   }
-  return label + (reason == null && data != null ? '：' + jsonEncode(data) : '');
 }
 
 Map<String, Object?> _event(Object? raw) {

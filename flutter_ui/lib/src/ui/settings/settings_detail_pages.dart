@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../bridge/host_bridge.dart';
 import '../../model/settings_model.dart';
 import '../../state/chat_controller.dart';
+import '../../theme/display_scale.dart';
 import '../../theme/dsh_theme.dart';
 import '../composer_sheets.dart';
 
@@ -12,16 +13,54 @@ class PersonalizationPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final appearance = DshAppearance.maybeOf(context);
     final colors = DshPalette.of(context);
+    final size = DshDisplayScope.sizeOf(context);
+    final onSizeChanged = DshDisplayScope.onChangedOf(context);
     return _SettingsDetail(
       title: '个性化主题',
       children: [
+        const _SectionTitle('显示大小'),
+        _SettingsGroup(
+          children: [
+            for (final option in DshDisplaySize.values)
+              ListTile(
+                key: ValueKey('settings-display-' + option.wireValue),
+                // The canvas paints 52 logical units as 46.8dp at the compact
+                // size, so the row asks for a real 48dp target instead.
+                minTileHeight: DshDisplayScope.atLeastTarget(context, 52),
+                title: Text(option.label),
+                subtitle: Text(_displayHint(option)),
+                trailing: Icon(
+                  size == option
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: size == option ? colors.ice : colors.inkFaint,
+                ),
+                onTap: onSizeChanged == null
+                    ? null
+                    : () => onSizeChanged(option),
+              ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 10, 6, 0),
+          child: Text(
+            // Plain product language: what changes for the reader, not how the
+            // canvas is implemented. A disabled group cannot promise a switch
+            // that this environment does not have.
+            onSizeChanged == null
+                ? '当前环境不支持调整显示大小。'
+                : '调整文字和控件大小，不影响系统设置；仍遵循系统字体大小。',
+            style: TextStyle(color: colors.inkSoft, fontSize: 12, height: 1.5),
+          ),
+        ),
+        const SizedBox(height: 24),
         const _SectionTitle('外观模式'),
         _SettingsGroup(
           children: [
             for (final mode in ThemeMode.values)
               ListTile(
                 key: ValueKey('settings-theme-' + mode.name),
-                minTileHeight: 64,
+                minTileHeight: DshDisplayScope.atLeastTarget(context, 52),
                 title: Text(switch (mode) {
                   ThemeMode.system => '跟随系统',
                   ThemeMode.light => '浅色',
@@ -61,7 +100,7 @@ class PersonalizationPage extends StatelessWidget {
                           ? null
                           : () => appearance.onMoodChanged?.call(mood),
                       child: Padding(
-                        padding: const EdgeInsets.all(18),
+                        padding: const EdgeInsets.all(14),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -93,7 +132,7 @@ class PersonalizationPage extends StatelessWidget {
                                   ),
                               ],
                             ),
-                            const SizedBox(height: 18),
+                            const SizedBox(height: 12),
                             Wrap(
                               crossAxisAlignment: WrapCrossAlignment.center,
                               spacing: 8,
@@ -150,7 +189,7 @@ class ModelConfigurationPage extends StatelessWidget {
             for (final model in controller.models)
               ListTile(
                 key: ValueKey('settings-model-' + model.id),
-                minTileHeight: 72,
+                minTileHeight: 58,
                 title: Text(model.label),
                 subtitle: Text(model.id),
                 trailing: controller.selectedModelId == model.id
@@ -173,7 +212,7 @@ class ModelConfigurationPage extends StatelessWidget {
         _SettingsGroup(
           children: [
             ListTile(
-              minTileHeight: 72,
+              minTileHeight: 58,
               leading: const Icon(Icons.tune_rounded),
               title: const Text('完整模型配置'),
               subtitle: const Text('在 Web UI 管理提供商、API Key 和模型参数'),
@@ -200,7 +239,7 @@ class PermissionsSettingsPage extends StatelessWidget {
         _SettingsGroup(
           children: [
             ListTile(
-              minTileHeight: 80,
+              minTileHeight: 60,
               leading: const Icon(Icons.shield_outlined),
               title: const Text('当前会话访问范围'),
               subtitle: Text(controller.permissionLabel),
@@ -214,7 +253,7 @@ class PermissionsSettingsPage extends StatelessWidget {
         _SettingsGroup(
           children: [
             ListTile(
-              minTileHeight: 80,
+              minTileHeight: 60,
               leading: const Icon(Icons.phonelink_lock_rounded),
               title: const Text('应用权限中心'),
               subtitle: const Text('系统权限、设备能力与引擎权限'),
@@ -239,6 +278,12 @@ class PermissionsSettingsPage extends StatelessWidget {
     ),
   );
 }
+
+String _displayHint(DshDisplaySize size) => switch (size) {
+  DshDisplaySize.compact => '90%，信息更密，一屏看到更多',
+  DshDisplaySize.standard => '100%，默认大小',
+  DshDisplaySize.relaxed => '110%，字与控件都更大',
+};
 
 Future<void> _openHost(BuildContext context, Future<bool> opening) async {
   final opened = await opening;
@@ -268,7 +313,7 @@ class _SettingsDetail extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
               children: children,
             ),
           ),
@@ -283,7 +328,7 @@ class _SectionTitle extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+    padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
     child: Text(
       text,
       style: TextStyle(

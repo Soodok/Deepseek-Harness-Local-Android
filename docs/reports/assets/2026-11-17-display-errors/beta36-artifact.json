@@ -1,0 +1,19 @@
+{
+  "file": "E:\\tmp\\native-chat-web-preview\\dsh-native-chat-beta36-x86_64-full.apk",
+  "size": 248050674,
+  "sha256": "25521c852d5ea858f7484019abc7ae31602e1a518ea6734ef392dbc8ff31befe",
+  "abis": [
+    "x86_64"
+  ],
+  "runtime": [
+    {
+      "entry": "assets/runtime.zip",
+      "size": 138391732,
+      "sha256": "0b693c76ae829035bb9c2f74ebaa869ad3f7abd086c97840d861bbf80c5e92a9"
+    }
+  ],
+  "versionName": "1.6.0-beta.36",
+  "versionCode": 411,
+  "variant": "full x86_64 debug",
+  "device": "emulator-5570"
+}

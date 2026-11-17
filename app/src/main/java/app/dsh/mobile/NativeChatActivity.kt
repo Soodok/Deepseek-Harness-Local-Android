@@ -32,6 +32,21 @@ class NativeChatActivity : FlutterActivity() {
                             result.success(getSharedPreferences("native_chat_ui", MODE_PRIVATE).edit().putString("mode", mode).putString("mood", mood).commit())
                         }
                     }
+                    "readDisplaySize" -> {
+                        val prefs = getSharedPreferences("native_chat_ui", MODE_PRIVATE)
+                        result.success(prefs.getString("displaySize", "standard"))
+                    }
+                    "writeDisplaySize" -> {
+                        val size = call.argument<String>("size")
+                        if (size !in setOf("compact", "standard", "relaxed")) {
+                            result.error("display/invalid", "Unknown display size", null)
+                        } else {
+                            result.success(
+                                getSharedPreferences("native_chat_ui", MODE_PRIVATE)
+                                    .edit().putString("displaySize", size).commit(),
+                            )
+                        }
+                    }
                     "engineInfo" -> result.success(engineInfo())
                     "webUrl" -> result.success(supervisorOrNull()?.webUrl().orEmpty())
                     "engineState" -> result.success(engineState())

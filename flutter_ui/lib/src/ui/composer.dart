@@ -2,8 +2,10 @@ import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
 import '../model/composer_model.dart';
+import '../model/model_display.dart';
 import '../state/chat_controller.dart';
 import '../bridge/attachment_picker.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import 'composer_surface.dart';
 import 'composer_sheets.dart';
@@ -185,13 +187,14 @@ class _ComposerState extends State<Composer> {
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: ComposerModelPill(
-                      pillKey: const ValueKey('composer-model'),
-                      label: controller.modelLabel,
-                      onPressed: () => showModelSelector(context, controller),
-                    ),
+                  child: ComposerModelPill(
+                    pillKey: const ValueKey('composer-model'),
+                    // The capsule shows a shortened brand token; the full
+                    // name stays available as the semantic/tooltip label and
+                    // the identifier behind the selection is unchanged.
+                    label: displayModelLabel(controller.modelLabel),
+                    semanticLabel: controller.modelLabel,
+                    onPressed: () => showModelSelector(context, controller),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -327,7 +330,9 @@ class _QueueTray extends StatelessWidget {
             message: error ?? (onSend == null ? '当前轮结束后可发送' : '立即发送队首消息'),
             child: TextButton(
               onPressed: onSend,
-              style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+              style: TextButton.styleFrom(
+                minimumSize: DshDisplayScope.targetSize(context, width: 64),
+              ),
               child: const Text('发送下一条'),
             ),
           ),

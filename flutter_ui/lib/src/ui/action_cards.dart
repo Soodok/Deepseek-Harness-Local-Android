@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 
 class ApprovalCard extends StatelessWidget {
@@ -67,14 +68,16 @@ class ApprovalCard extends StatelessWidget {
             children: [
               FilledButton(
                 key: const ValueKey('approval-approve'),
-                style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+                style: FilledButton.styleFrom(
+                  minimumSize: DshDisplayScope.targetSize(context),
+                ),
                 onPressed: busy ? null : onApprove,
                 child: const Text('允许继续'),
               ),
               OutlinedButton(
                 key: const ValueKey('approval-stop'),
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(48, 48),
+                  minimumSize: DshDisplayScope.targetSize(context),
                 ),
                 onPressed: busy ? null : onStop,
                 child: const Text('停止'),
@@ -217,7 +220,7 @@ class _QuestionCardState extends State<QuestionCard>
             key: ValueKey('question-choice-$index'),
             onPressed: widget.busy ? null : () => _toggleChoice(index),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size(48, 48),
+              minimumSize: DshDisplayScope.targetSize(context),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               alignment: Alignment.centerLeft,
               foregroundColor: DshPalette.of(context).ink,
@@ -309,7 +312,9 @@ class _QuestionCardState extends State<QuestionCard>
             children: [
               Expanded(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 48),
+                  constraints: BoxConstraints(
+                    minHeight: DshDisplayScope.minTargetOf(context),
+                  ),
                   child: TextField(
                     key: const ValueKey('question-input'),
                     controller: _answerController,
@@ -347,7 +352,7 @@ class _QuestionCardState extends State<QuestionCard>
                   foregroundColor: DshPalette.of(context).paper,
                   disabledBackgroundColor: DshPalette.of(context).surfaceRaised,
                   disabledForegroundColor: DshPalette.of(context).inkFaint,
-                  minimumSize: const Size(48, 48),
+                  minimumSize: DshDisplayScope.targetSize(context),
                 ),
                 onPressed: widget.busy || _answer.isEmpty ? null : _submit,
                 icon: const Icon(Icons.arrow_upward_rounded),

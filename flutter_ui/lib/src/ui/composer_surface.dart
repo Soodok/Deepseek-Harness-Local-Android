@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/dsh_theme.dart';
+import '../theme/display_scale.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'glass_panel.dart';
 
@@ -156,7 +157,7 @@ class ComposerActionButton extends StatelessWidget {
           disabledBackgroundColor: DshPalette.of(context).ink
               .withValues(alpha: .06),
           disabledForegroundColor: DshPalette.of(context).inkFaint,
-          minimumSize: const Size(48, 48),
+          minimumSize: DshDisplayScope.targetSize(context),
         ),
         onPressed: canStop ? onStop : null,
         icon: stopInFlight
@@ -179,7 +180,7 @@ class ComposerActionButton extends StatelessWidget {
           foregroundColor: Colors.white,
           disabledBackgroundColor: DshPalette.of(context).sendBlueMuted,
           disabledForegroundColor: DshPalette.of(context).inkFaint,
-          minimumSize: const Size(48, 48),
+          minimumSize: DshDisplayScope.targetSize(context),
         ),
         icon: const Icon(Icons.arrow_upward_rounded, size: 26),
       ),
@@ -189,6 +190,11 @@ class ComposerActionButton extends StatelessWidget {
 
 /// Compact model capsule: a 34dp painted surface inside a 48dp touch target,
 /// so it reads lighter than the send button without shrinking the tap area.
+///
+/// The painted surface is content-sized and pinned to the leading edge: the old
+/// centred one floated to the middle of the free row space, which pushed the
+/// capsule away from the attach button. [semanticLabel] keeps the untruncated
+/// model name available even though only the short display label is painted.
 class ComposerModelPill extends StatelessWidget {
   const ComposerModelPill({
     super.key,
@@ -196,6 +202,7 @@ class ComposerModelPill extends StatelessWidget {
     required this.onPressed,
     this.enabled = true,
     this.pillKey,
+    this.semanticLabel,
   });
 
   static const double surfaceHeight = 34;
@@ -206,68 +213,99 @@ class ComposerModelPill extends StatelessWidget {
   final bool enabled;
   final Key? pillKey;
 
+  /// Full model name for accessibility and long-press, when [label] is short.
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final palette = DshPalette.of(context);
+    // The canvas scales the painted stadium and the type; the touch target is
+    // expressed in real dp so the compact size cannot shrink it below 48dp.
+    final touch = DshDisplayScope.atLeastTarget(context, touchHeight);
     final foreground = enabled ? palette.ink : palette.inkFaint;
-    // The ink well — and therefore the real tap target and semantics node —
-    // fills the whole 48dp row height; only the painted stadium inside it is
-    // 34dp. Painting the surface alone would leave the 7dp above and below
-    // unresponsive while still looking tappable.
-    return SizedBox(
-      key: pillKey,
-      height: touchHeight,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(touchHeight / 2),
-          child: Center(
-            child: Container(
-              key: const ValueKey('composer-model-surface'),
-              height: surfaceHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: palette.ink.withValues(alpha: .06),
-                borderRadius: BorderRadius.circular(surfaceHeight / 2),
-                border: Border.all(
-                  color: palette.ink.withValues(alpha: .13),
-                  width: 0.8,
+    final capsule = Container(
+      key: const ValueKey('composer-model-surface'),
+      height: surfaceHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: palette.ink.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(surfaceHeight / 2),
+        border: Border.all(
+          color: palette.ink.withValues(alpha: .13),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Flexible(
+            child: MediaQuery.withClampedTextScaling(
+              // The canvas already scales the capsule and its type by the
+              // same factor, so this cap only limits how far the *system* font
+              // setting may blow the one-line label out of the stadium.
+              maxScaleFactor: 1.2,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                textHeightBehavior: const TextHeightBehavior(
+                  leadingDistribution: TextLeadingDistribution.even,
+                  applyHeightToFirstAscent: true,
+                  applyHeightToLastDescent: true,
+                ),
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1,
+                  color: foreground,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Flexible(
-                    child: MediaQuery.withClampedTextScaling(
-                      maxScaleFactor: 1.2,
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: false,
-                        textHeightBehavior: const TextHeightBehavior(
-                          leadingDistribution: TextLeadingDistribution.even,
-                          applyHeightToFirstAscent: true,
-                          applyHeightToLastDescent: true,
-                        ),
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1,
-                          color: foreground,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
+            ),
+          ),
+          const SizedBox(width: 3),
+          Icon(
+            Icons.expand_more_rounded,
+            size: 16,
+            color: enabled ? palette.inkSoft : palette.inkFaint,
+          ),
+        ],
+      ),
+    );
+    final full = semanticLabel ?? label;
+    // The real tap target is exactly the capsule plus the 48dp minimum, pinned
+    // to the leading edge of the free row space. It is deliberately not the
+    // full expanded width: the key, the semantics node and the ink well must
+    // cover the same pixels, so a tap on its centre always lands.
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      // Tight around the target: the widget wrapper, the semantics node and the
+      // ink well all cover the same pixels, so a tap at the widget's centre is
+      // a tap on the capsule.
+      widthFactor: 1,
+      child: SizedBox(
+        key: pillKey,
+        height: touch,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: touch, minHeight: touch),
+          child: Semantics(
+            label: full,
+            button: enabled,
+            enabled: enabled,
+            child: Tooltip(
+              message: full,
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: enabled ? onPressed : null,
+                  borderRadius: BorderRadius.circular(touch / 2),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    widthFactor: 1,
+                    child: capsule,
                   ),
-                  const SizedBox(width: 3),
-                  Icon(
-                    Icons.expand_more_rounded,
-                    size: 16,
-                    color: enabled ? palette.inkSoft : palette.inkFaint,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -297,7 +335,7 @@ class ComposerSendButton extends StatelessWidget {
       foregroundColor: Colors.white,
       disabledBackgroundColor: DshPalette.of(context).sendBlueMuted,
       disabledForegroundColor: DshPalette.of(context).inkFaint,
-      minimumSize: const Size(48, 48),
+      minimumSize: DshDisplayScope.targetSize(context),
     ),
     onPressed: onPressed,
     icon: const Icon(Icons.arrow_upward_rounded, size: 26),

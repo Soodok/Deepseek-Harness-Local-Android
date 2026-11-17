@@ -5,6 +5,7 @@ import '../theme/dsh_theme.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'execution_group.dart';
 import 'tool_run_card.dart';
+import 'turn_notice_card.dart';
 
 /// The same lazy message and execution flow for parent and child conversations.
 /// [conversationIdentity] resets disclosure only when the actual source changes.
@@ -174,6 +175,10 @@ class ConversationMessage extends StatelessWidget {
   final ChatMessage message;
   @override
   Widget build(BuildContext context) {
+    final notice = message.notice;
+    if (message.role == ChatRole.notice && notice != null) {
+      return TurnNoticeCard(notice: notice);
+    }
     if (message.role == ChatRole.user) {
       return Align(
         alignment: Alignment.centerRight,

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 
 /// One disclosure for a contiguous set of tool records belonging to a message.
@@ -48,7 +49,8 @@ class ExecutionGroupHeader extends StatelessWidget {
         style: TextButton.styleFrom(
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(vertical: 8),
-          minimumSize: const Size(0, 48),
+          // Full row width, but never below a real 48dp target height.
+          minimumSize: DshDisplayScope.targetSize(context, width: 0),
           foregroundColor: DshPalette.of(context).inkSoft,
         ),
         child: Row(

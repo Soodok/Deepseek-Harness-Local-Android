@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../model/settings_model.dart';
+import '../../theme/display_scale.dart';
 import '../../theme/dsh_theme.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -107,7 +108,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 constraints: const BoxConstraints(maxWidth: 760),
                 child: SingleChildScrollView(
                   key: const PageStorageKey('settings-scroll'),
-                  padding: EdgeInsets.fromLTRB(inset, 8, inset, 32),
+                  padding: EdgeInsets.fromLTRB(inset, 6, inset, 28),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -126,25 +127,25 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 22),
+                        padding: const EdgeInsets.fromLTRB(4, 2, 4, 14),
                         child: Semantics(
                           header: true,
                           child: Text(
                             '设置',
                             style: TextStyle(
                               color: colors.ink,
-                              fontSize: 34,
+                              fontSize: 28,
                               height: 1.15,
                               fontWeight: FontWeight.w700,
-                              letterSpacing: -0.8,
+                              letterSpacing: -0.6,
                             ),
                           ),
                         ),
                       ),
                       _searchField(colors),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 14),
                       _profileSection(colors),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 14),
                       _usageSection(colors),
                       if (matches.isEmpty)
                         Padding(
@@ -177,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
     controller: _search,
     onChanged: (value) => setState(() => _query = value),
     textInputAction: TextInputAction.search,
-    style: TextStyle(color: colors.ink, fontSize: 16),
+    style: TextStyle(color: colors.ink, fontSize: 15),
     decoration: InputDecoration(
       hintText: '搜索设置',
       hintStyle: TextStyle(color: colors.inkSoft),
@@ -195,7 +196,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
       filled: true,
       fillColor: colors.surfaceRaised,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
@@ -222,7 +223,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? '连接账户，查看个人资料'
         : (profile.email.trim().isEmpty ? '已连接 DeepSeek 账户' : profile.email);
     final identity = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -236,12 +237,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   name,
                   style: TextStyle(
                     color: colors.ink,
-                    fontSize: 21,
+                    fontSize: 18,
                     height: 1.25,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 3),
                 Text(
                   subtitle,
                   style: TextStyle(
@@ -308,15 +309,15 @@ class _SettingsPageState extends State<SettingsPage> {
         uri.userInfo.isEmpty;
     Widget fallback() => SizedBox.expand(
       key: const ValueKey('settings-avatar-fallback'),
-      child: Icon(Icons.person_rounded, size: 32, color: colors.ice),
+      child: Icon(Icons.person_rounded, size: 26, color: colors.ice),
     );
     return Semantics(
       image: true,
       label: 'DeepSeek 个人资料头像',
       child: ExcludeSemantics(
         child: Container(
-          width: 64,
-          height: 64,
+          width: 52,
+          height: 52,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: colors.userWash,
@@ -326,9 +327,9 @@ class _SettingsPageState extends State<SettingsPage> {
               ? Image.network(
                   uri.toString(),
                   fit: BoxFit.cover,
-                  width: 64,
-                  height: 64,
-                  cacheWidth: 192,
+                  width: 52,
+                  height: 52,
+                  cacheWidth: 156,
                   errorBuilder: (context, error, stackTrace) => fallback(),
                 )
               : fallback(),
@@ -375,9 +376,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final error = _refreshError ?? widget.error;
     return Material(
       color: colors.surface,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -392,7 +393,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     'Token 记录',
                     style: TextStyle(
                       color: colors.ink,
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -468,7 +469,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 _number(total),
                 style: TextStyle(
                   color: colors.ink,
-                  fontSize: 30,
+                  fontSize: 24,
                   height: 1.25,
                   fontWeight: FontWeight.w600,
                 ),
@@ -725,7 +726,7 @@ class _SettingsPageState extends State<SettingsPage> {
       onTap: () => setState(() => _selectedDate = date),
       child: ExcludeSemantics(
         child: SizedBox(
-          height: 48,
+          height: DshDisplayScope.minTargetOf(context),
           width: double.infinity,
           child: InkWell(
             onTap: () => setState(() => _selectedDate = date),
@@ -784,12 +785,12 @@ class _SettingsPageState extends State<SettingsPage> {
   ) {
     final rows = group.destinations.where(matches.contains).toList();
     return Padding(
-      padding: const EdgeInsets.only(top: 28),
+      padding: const EdgeInsets.only(top: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
             child: Semantics(
               header: true,
               child: Text(
@@ -797,7 +798,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 style: TextStyle(
                   color: colors.inkSoft,
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),
@@ -812,7 +814,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _destination(rows[index], colors),
                   if (index + 1 < rows.length)
                     Padding(
-                      padding: const EdgeInsetsDirectional.only(start: 64),
+                      padding: const EdgeInsetsDirectional.only(start: 54),
                       child: Divider(
                         height: 1,
                         thickness: 0.5,
@@ -856,21 +858,21 @@ class _SettingsPageState extends State<SettingsPage> {
         if (!_blocked) widget.onOpen(destination);
       },
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64),
+        constraints: const BoxConstraints(minHeight: 56),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
                   color: tint.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(icon, size: 20, color: tint),
+                child: Icon(icon, size: 18, color: tint),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -879,18 +881,18 @@ class _SettingsPageState extends State<SettingsPage> {
                       destination.title,
                       style: TextStyle(
                         color: colors.ink,
-                        fontSize: 16,
-                        height: 1.4,
+                        fontSize: 15,
+                        height: 1.3,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 1),
                     Text(
                       destination.subtitle,
                       style: TextStyle(
                         color: colors.inkSoft,
                         fontSize: 12,
-                        height: 1.5,
+                        height: 1.4,
                       ),
                     ),
                   ],
@@ -899,7 +901,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(width: 8),
               Icon(
                 Icons.chevron_right_rounded,
-                size: 20,
+                size: 18,
                 color: colors.inkSoft,
               ),
             ],
@@ -931,7 +933,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ? NoSplash.splashFactory
               : null,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+            // The canvas scales what is painted; the tap target stays a real
+            // 48dp on screen, so the compact size cannot arm a 43.2dp target.
+            constraints: BoxConstraints(
+              minHeight: DshDisplayScope.minTargetOf(context),
+              minWidth: DshDisplayScope.minTargetOf(context),
+            ),
             child: child,
           ),
         ),

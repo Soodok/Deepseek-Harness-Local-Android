@@ -106,6 +106,22 @@ class HostBridge {
   static Future<bool> writeAppearance(String mode, String mood) =>
       _open('writeAppearance', {'mode': mode, 'mood': mood});
 
+  /// The in-app display size lives beside the appearance keys in the same
+  /// "native_chat_ui" preferences file. A missing value is null, never a guess.
+  static Future<String?> readDisplaySize() async {
+    try {
+      final raw = await _channel.invokeMethod<Object?>('readDisplaySize');
+      return raw is String && raw.isNotEmpty ? raw : null;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  static Future<bool> writeDisplaySize(String size) =>
+      _open('writeDisplaySize', {'size': size});
+
   static Future<bool> openRuntimeSettings([String? target]) =>
       _open('openRuntimeSettings', target == null ? null : {'target': target});
   static Future<bool> openSettingsSection(SettingsDestination destination) =>

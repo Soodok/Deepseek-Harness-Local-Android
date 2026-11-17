@@ -155,6 +155,7 @@ class ChatReducer {
             role: event.role!,
             text: event.text,
             isStreaming: !event.done,
+            notice: event.notice,
           ),
         ],
       );

@@ -1,0 +1,69 @@
+{
+  "densityDpi": 440,
+  "devicePixelRatio": 2.75,
+  "rows": [
+    {
+      "size": "standard",
+      "displayRow": {
+        "boundsPx": [
+          44,
+          389,
+          1036,
+          573
+        ],
+        "heightDp": 66.9090909090909
+      },
+      "themeRow": {
+        "boundsPx": [
+          44,
+          1162,
+          1036,
+          1305
+        ],
+        "heightDp": 52
+      }
+    },
+    {
+      "size": "compact",
+      "displayRow": {
+        "boundsPx": [
+          40,
+          364,
+          1040,
+          530
+        ],
+        "heightDp": 60.36363636363637
+      },
+      "themeRow": {
+        "boundsPx": [
+          40,
+          1059,
+          1040,
+          1191
+        ],
+        "heightDp": 48
+      }
+    },
+    {
+      "size": "relaxed",
+      "displayRow": {
+        "boundsPx": [
+          48,
+          414,
+          1032,
+          617
+        ],
+        "heightDp": 73.81818181818181
+      },
+      "themeRow": {
+        "boundsPx": [
+          48,
+          1319,
+          1032,
+          1476
+        ],
+        "heightDp": 57.09090909090909
+      }
+    }
+  ]
+}

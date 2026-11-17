@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart' hide StepState;
 
 import '../model/tool_content.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 
 /// Presents only explicitly structured tool output; prose is never inspected.
@@ -408,7 +409,7 @@ Widget _action(
     key: ValueKey(key),
     onPressed: onPressed,
     style: TextButton.styleFrom(
-      minimumSize: const Size(48, 48),
+      minimumSize: DshDisplayScope.targetSize(context),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       foregroundColor: DshPalette.of(context).inkSoft,
       textStyle: const TextStyle(fontSize: 12.5),

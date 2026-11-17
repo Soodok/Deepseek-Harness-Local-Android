@@ -1,5 +1,54 @@
 # DSH Android · 交接文档
 
+## beta.36 最终验收与指定技能审查（2026-11-17）
+
+- 仅隔离树 E:/tmp/wt-flutter-native-chat，基线59f59401；主仓库与其他设备未写。四项需求已实现：模型胶囊贴左、DeepSeek仅显示缩写ds；结构化独立错误卡；设置选项与留白收紧；90%/100%/110%统一画布及Android持久化。
+- 用户指定 jakubkrehel/skills 已固定6c2120103600407a1a9986afd834e73144ef8998，用interface-review/better-interface及六领域规则，未全局安装。GLM两份原会话报告已归档并逐条核验：紧凑行46.8dp、原始认证详情、过小新增字号及签出/中断文案已修复；疑似activity空行不成立，DeepSeek子串缩写符合用户原需求。
+- Lead最终实跑396 tests（01:11，EXIT=0）、flutter analyze无问题（1.2s，EXIT=0）；Gradle BUILD SUCCESSFUL in3m9s，退出0。最终应用源码/配置/测试32文件hash见资产source-state.json。
+- APK E:/tmp/native-chat-web-preview/dsh-native-chat-beta36-x86_64-full.apk，248050674B，SHA-256 25521c852d5ea858f7484019abc7ae31602e1a518ea6734ef392dbc8ff31befe；code411/version1.6.0-beta.36，ZIP原生库仅x86_64，full debug非ARM发行包；内嵌runtime hash仍0b693c76ae829035bb9c2f74ebaa869ad3f7abd086c97840d861bbf80c5e92a9。
+- emulator-5570真实入口验收：保留会话历史错误显示独立卡；详情认证code-only、复制反馈；三档即时切换，主题行standard52/compact48/relaxed57.09dp；compact/relaxed两档Gboard避让及未发草稿保留；系统200%字号真实会话已看，最终恢复有效font_scale=1.0；冷启动Main COLD2507ms后原会话与compact/light/sand恢复。crash buffer0B仅为本次观察。
+- 29PNG/28XML及GLM报告、门禁、manifest已归档docs/reports/assets/2026-11-17-display-errors；报告docs/reports/2026-11-17-display-errors-validation.md / -review.md。专用模拟器已正常退出，AVD及安装数据保留。
+- 未测边界：不新增付费模型请求、不读写凭据；真实在线工具/审批/子会话/附件仍未验收。该设备目录只有Luna，ds缩写为单元/组件证据。TalkBack/硬件键盘遍历、全部主题像素对比、GPU性能与ARM真机未验收。
+- 后续首要任务：若继续完整产品验收，先在既有授权和模型预算内定位在线工具调用失败，再逐项验收审批/子会话；本轮UI完成不替代这些缺口。以下为实现阶段历史记录，构建前待办已由本节验收覆盖。
+
+### 历史：GLM复核后的四点修补
+
+- 范围：只改 E:/tmp/wt-flutter-native-chat，基线仍 59f59401；不提交、不 Gradle、不碰设备/凭据/在线请求；plan 未动。
+- ① 个性化页显示大小三行与主题三行：`minTileHeight: 52` 在 compact 画布下实测只有 **46.80dp**（standard 52 / relaxed 57.2），低于 48 触控下限；改为 `DshDisplayScope.atLeastTarget(context, 52)`，compact 变 53.33 逻辑 → 48.00 物理。
+- ② 认证错误详情泄密：`dsh_session_projection.dart` 原先 `detail: jsonEncode(failure)` 绕过 `_failureText` 脱敏，`reason.error.message` 与嵌套 `error.data`（accessToken 之类）原样进详情与复制文本。新增 `_credentialFailureCodes`（MISSING_CREDENTIAL / NO_CREDENTIAL_STORE / INVALID_CREDENTIAL / ACCOUNT_TOKEN_INVALID / AUTH / ACCOUNT_SIGN_IN_REQUIRED）与 `_failureDetail()`：命中时 detail 只留 `{"code":...}`，非认证错误仍保留完整诊断；可读文案分支不变。
+- ③ 字号：错误码 chip 11→12；设置分组标题 11.5→12、设置行副标题 11.5→12。搜索提示无自有 fontSize（继承输入框 15），未改，改由测试守 ≥12。
+- ④ 文案：signedOut 标题→「账号已退出，本轮已停止」、interrupted→「运行已中断」，stopped 仍「任务已停止」；新增 `TurnNotice.nextStep`（重新登录后重试 / 恢复后重试，其余空），卡片 key `turn-notice-next-step` 且进复制文本，stopped 无恢复提示。个性化说明改为「调整文字和控件大小，不影响系统设置；仍遵循系统字体大小。」；无 onChanged 时改「当前环境不支持调整显示大小。」。
+- 未处理（按指令不扩大）：mydeepseek 子串「疑似」、activity 空行。
+- 新增 `flutter_ui/test/settings_readability_test.dart`（5 条）；`turn_error_projection_test.dart` +4（含卡片复制断言）、`turn_notice_card_test.dart` +3。
+- 有效红：行高条修前 6 个 key 全 46.8 失败，负对照改回 52 再红、恢复后绿；脱敏 3 条修前真实输出含假 sentinel，负对照把 detail 改回 `jsonEncode(failure)` 再红、恢复后绿（只用假 sentinel，未读真实凭据）；标题/文案/chip 各条修前均红。
+- 门禁（串行，最终态）：完整 **396** 项 flutter test 通过（E:/tmp/native-chat-web-preview/android-beta36-review-flutter.log，末行 All tests passed!，TEST_EXIT=0）、flutter analyze No issues found（android-beta36-review-analyze.log，ANALYZE_EXIT=0）；改动文件 dart format 干净。仓库内 composer_action_matrix_test.dart / mobile_geometry_test.dart 原本就不符合格式化，未改不在范围。
+- 报告 docs/reports/2026-11-17-display-errors-implementation.md 第 5.1 节。
+- 待 Lead：构建安装真机验收与提交；未覆盖：真机运行、Gradle、在线模型请求。
+
+## 显示大小改为统一逻辑画布（2026-11-17 返工，DeepSeek 实现完成，未构建）
+
+- Lead 复核指出上一版「整体显示大小接线不足」：`DshDisplayScaler` 只 `copyWith(textScaler)`，全 lib 只有 composer 用了几何 factor，设置行/顶部栏/modal sheet/dialog/子会话几何并不随档位变化。已返工，上一版结论作废。
+- 新方案：Navigator 之上的统一逻辑画布 `DshDisplayCanvas`（`flutter_ui/lib/src/theme/display_scale.dart`）。`scale==1` 时 media 原样，否则 `MediaQuery.copyWith(size: size/factor, devicePixelRatio*factor, padding/viewPadding/viewInsets/systemGestureInsets 各 /factor)`，结构固定为 `MediaQuery → OverflowBox(topLeft) → Transform.scale(topLeft) → SizedBox.fromSize(logical.size)`。一处缩放覆盖设置行/图标/留白/对话卡/顶部栏/sheet/dialog/子会话；widget 链每次 build 一致，换档不 remount Navigator/route/State/焦点/草稿/滚动、不丢 overlay。
+- `textScaler` 完全不参与乘法：系统非线性 TextScaler 原样透传，缩放由绘制完成，文字不会被放大两次。**`DshScaledTextScaler` 整类删除**，Lead 指出的 clamp 双缩放 bug（base=2、factor=1.1、clamp(1.2) 时 scale(13)=28.6 vs 合法 15.6）随之消失，未留死代码。
+- 真实 48dp 触控下限：`DshDisplayScope.physicalTarget=48`、`minTargetOf=max(48, 48/factor)`、`atLeastTarget`、`targetSize(width:48)`。已铺到 composer 胶囊与 3 键、发送下一条、composer_dock、运行时选择器、execution_group、tool_process_card、tool_content_view、subagent_panel、action_cards（4 处）、turn_notice_card（详情/复制）、settings_page（`_action` 与用量格）；`dsh_theme.dart` 的按钮主题与 `listTileTheme` 也按 `dp/factor` 生成。compact 档下 48 逻辑单位只剩 43.2 物理 dp，因此下限是反向放大而不是直接沿用 48。
+- 门禁（串行）：完整 384 项 flutter test 通过（E:/tmp/native-chat-web-preview/android-beta36-scale-flutter.log，末行 EXIT 0）、flutter analyze No issues found（android-beta36-scale-analyze.log，EXIT 0）。
+- 有效红证据：把 `DshDisplayCanvas` 临时改为 `scale = 1.0` 复跑，`display_size_ui_test` 立刻 4 条变红（设置行高 50.4/56/61.6 退化为 56/56/56、换档后行高不再增长、sheet 标题不再缩小、320+2x 档几何失败），改回后 12 条全绿——证明断言挂在几何上而非文字上。
+- 测试覆盖（全部读真实全局 rect 并在该 rect 的 center `tapAt`）：设置目的地行 + 模型弹层选项行 + 弹层标题随档位精确变化；已推设置路由换档后页面未重挂载且新坐标可点；sheet 打开时换档仍可用；compact 下胶囊/发送/附件/设置行/错误卡详情与复制均 ≥48dp 且可点；padding.top=24 与 viewInsets.bottom=300 在两档都按物理像素落位；320×640 + 系统字号 2x + compact 无异常可操作。
+- 未覆盖（如实记录）：HostBridge 打开的原生 Android 页面（Web UI、系统权限/语言页）不受此画布缩放；Flutter AppBar/Material图标在画布内随档位变化；只有Android系统状态栏与导航栏不受应用画布缩放。画布改的是逻辑 MediaQuery 尺寸，故 `ChatLayout.gutter(width)` 之类按宽度分档的响应式判断会随之变化，属预期。
+- 报告 docs/reports/2026-11-17-display-errors-implementation.md（第 4.1/4.2/6 节为本轮返工内容）；计划 docs/reports/2026-11-17-display-errors-plan.md 未改动。
+- 待 Lead：GLM 复核、递增 beta36/code411、构建安装到 emulator-5570 并做真实三档大小/键盘/弹层验收与本地提交。未覆盖：真机运行、在线模型请求、Gradle 构建。
+
+## 模型标签/错误卡/设置密度/显示大小实现（2026-11-17，已被上一节取代）
+
+> 本节的第 ④ 项（DshDisplayScaler + DshScaledTextScaler）已被上方「统一逻辑画布」取代并删除，其余三项（胶囊左对齐与 ds 缩写、结构化错误卡、设置密度收紧）仍有效。
+
+- 基线 59f59401，分支 feat/flutter-native-chat；只写 E:/tmp/wt-flutter-native-chat（flutter_ui/lib、flutter_ui/test、app/src/main/java/app/dsh/mobile/NativeChatActivity.kt），主仓库与其他模拟器未动；未构建、未安装、未提交。
+- 本轮四项：① 模型胶囊改内容宽度贴左（原外层 Center 把它推到行中央，左缘离加号约 137dp），显示标签里 DeepSeek（大小写不敏感）缩为 ds，id/provider/wire 不变，完整名进 Tooltip/Semantics；② turn/end 失败改为结构化 `ChatRole.notice` 独立卡（失败/停止/退出登录/中断分类按 rc.2 turn-error 规则；用户与父会话停止为中性，不再发 ChatEvent.error、不再弹连接重试条），卡片含可读原因、代码、详情折叠与复制；③ 设置页与子页行高/字号/留白整体收紧（触控仍 ≥48dp）；④ 个性化新增 紧凑 90%/标准 100%/宽松 110%（档位与持久化/epoch/失败提示仍有效；缩放实现已被上方「统一逻辑画布」取代）。
+- 顺带修正：流式光标不再挂到已关闭的错误卡或用户气泡上，改由新的 activity 系统行承载；回合结束仍发关闭 delta，reducer 正常回 ready。
+- 门禁（串行）：完整 376 项 flutter test 通过（android-beta36-flutter.log，EXIT=0）、flutter analyze No issues found（android-beta36-analyze.log，EXIT=0）。新增 5 个测试文件，改动 dsh_session_projection_test 与 subagent_panel_test 的既有断言（契约变更后的真实断言）。
+- 报告 docs/reports/2026-11-17-display-errors-implementation.md；计划 docs/reports/2026-11-17-display-errors-plan.md 未改动。
+- 待 Lead：GLM 复核、递增 beta36/code411、构建安装到 emulator-5570 并做真实历史/三档大小/模型胶囊/键盘弹层验收与本地提交。未覆盖：真机运行、在线模型请求、Gradle 构建。
+
 ## Composer 细化与真实模型验收（2026-11-16 收尾复核，beta.35 已安装）
 
 - 基线 831bd414（beta.34/code409）；只写 E:/tmp/wt-flutter-native-chat，主仓库未动；设备只用 emulator-5570。
