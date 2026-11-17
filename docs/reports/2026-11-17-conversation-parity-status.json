@@ -170,7 +170,7 @@
     },
     {
       "item": "失败原因可读化：session-busy 等 kebab 错误码不再直接显示给用户",
-      "evidence": "插件 client.js 新增 ERROR_TEXT 映射与 readableError（ConfirmDialog 的 failPrefix 提示改走它），core/client 单测 39 pass；原生新增 flutter_ui/lib/src/state/failure_text.dart 的 readableFailure，message_actions.dart 八处 catch 全部改走它，message_actions_test 31 pass（新增 2 例 + 负对照）；设备 Web 端 beta52 实测提示为「撤回失败：这一轮还在进行，等它停下来再试。」（/tmp/b52_busy.png）"
+      "evidence": "插件 client.js 新增 ERROR_TEXT 映射与 readableError（ConfirmDialog 的 failPrefix 提示改走它），client/core 单测 39 pass；原生新增 flutter_ui/lib/src/state/failure_text.dart 的 readableFailure，message_actions.dart 八处 catch 全部改走它，message_actions_test 31 pass（新增 2 例 + 负对照）；设备实测仅在 Web 端抢到 session-busy 窗口，提示为「撤回失败：这一轮还在进行，等它停下来再试。」（/tmp/b52_busy.png）；原生端该路径只有单测覆盖"
     }
   ],
   "checks": [
