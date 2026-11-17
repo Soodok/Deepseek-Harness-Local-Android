@@ -118,6 +118,18 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 - 「新建会话」直接进入空会话，输入框可用，无需填工作目录；新会话 cwd 由引擎按工作区决定（实测两种：native-ui-check 与 workspaces）。
 - 灵动岛「切换原生对话」从 Web 直接进原生，承接当前会话；反向返回 Web 对齐同一会话。
 
+## 3.7 设备上留下的测试资产（未删除，可复核）
+
+下列文件是本轮做真实样例时造的，位于模拟器 AVD 的应用私有目录内（不是用户数据，也没有外部工作区被改）：
+
+| 路径（相对 app.dsh.mobile 私有根） | 来源 |
+| --- | --- |
+| files/dsh-home/workspaces/bin.dat | 二进制回滚样例（9 B：00 01 02 42 49 4e 56 31 ff），撤回后已还原 |
+| files/dsh-home/workspaces/cf .txt、renamed.txt | 外部冲突 / 改名样例的残留 |
+| files/dsh-home/turn-rewind/<sessionId>/{turns,blobs,rewinds} | 插件快照与撤回凭据（恢复记录，按要求保留） |
+
+未删除的理由：它们是本轮「文件回滚六种真实样例」的可复核凭据；AVD 是本任务专用、随时可重建，删掉反而失去证据。
+
 ## 4. 环境问题（非本轮引入）
 
 - 引擎在模拟器上每约 60–80 秒自行退出并自愈重启（logcat engine exited: status=0 signal=0），界面随之重建；期间原生页可能长时间停在「等待本机引擎就绪 / 引擎状态：Starting」。
