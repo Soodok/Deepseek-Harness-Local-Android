@@ -305,6 +305,16 @@ def patch_html(s: str) -> str:
     return s[:m.start()] + POLYFILL + '\n' + s[m.start():]
 
 
+def write_asset(path: str) -> None:
+    """把唯一真源 POLYFILL 导出为 Android assets，供宿主与运行时自愈共用。"""
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(POLYFILL)
+    print("polyfill asset generated:", path)
+
+
 def patch(root: str) -> None:
     html_path = os.path.join(root, *HTML_REL.split('/'))
     if not os.path.isfile(html_path):
@@ -348,6 +358,11 @@ if __name__ == '__main__':
     # --zip <runtime.zip>：对 zip 内 index.html 原地打补丁（构建门禁补救用）。
     raw = os.environ.get('DSH_PATCH_TARGET', '')
     argv = [a for a in sys.argv[1:]]
+    if argv[:1] == ['--asset-out']:
+        if len(argv) != 2:
+            sys.exit('usage: patch-webview-polyfill.py --asset-out <path>')
+        write_asset(argv[1])
+        sys.exit(0)
     if argv[:1] == ['--zip']:
         if len(argv) != 2:
             sys.exit('usage: patch-webview-polyfill.py --zip <runtime.zip>')

@@ -335,3 +335,12 @@ docs/ui-preview/.preview-server.json
 
 # #110 隐藏的开发者选项：7 连击解锁、陈旧入口自守、不绕过 CapabilityGate
 !/scripts/probes/_test_developer_options.py
+
+# WebView polyfill 交付链路探针（issue #107）：守住「patch 脚本是唯一真源、构建期
+# 导出 asset、运行期两条路径自愈、WebView 只拦引擎首页」这一整条链，以及
+# URL.canParse 不许被改名成没人用的名字（改名后现场照样 TypeError，探针要红）。
+!/scripts/probes/_test_webview_polyfill_delivery.py
+# 锚定浮层定位兜底探针（issue #119）：守住能力门禁（position-anchor）、只动
+# role=dialog 且非 aria-modal 的浮层、内联 !important 与视口夹取；含三条负对照。
+!/scripts/probes/_test_chat_anchor_fallback.py
+!/scripts/probes/_chat_anchor_fallback_runtime_test.mjs

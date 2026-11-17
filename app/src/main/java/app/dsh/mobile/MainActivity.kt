@@ -16,7 +16,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ImageView
@@ -29,6 +31,7 @@ import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.OpenBridge
 import app.dsh.mobile.engine.RepoConfig
 import app.dsh.mobile.engine.RuntimeInstaller
+import app.dsh.mobile.engine.WebViewPolyfill
 import app.dsh.mobile.engine.WebViewDownloader
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
@@ -44,6 +47,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * WebView 容器。
@@ -857,6 +863,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             "DshAndroidBack",
         )
         webView.webViewClient = object : WebViewClient() {
+            // onPageFinished/evaluateJavascript is too late for module initialization.
+            override fun shouldInterceptRequest(
+                view: WebView?, request: WebResourceRequest?,
+            ): WebResourceResponse? = interceptWebUiDocument(request)
+
             override fun onReceivedError(
                 view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?,
             ) {
@@ -989,6 +1000,72 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 super.doUpdateVisitedHistory(view, url, isReload)
                 updatePreviewChrome(url)
             }
+        }
+    }
+
+    /** Buffer only the engine index so the synchronous polyfill precedes module parsing. */
+    private fun interceptWebUiDocument(request: WebResourceRequest?): WebResourceResponse? {
+        if (request == null || !request.isForMainFrame || request.method != "GET") return null
+        val uri = request.url
+        val enginePort = (application as DshApp).supervisor.healthyPort
+        if (uri.scheme != "http" || uri.host !in setOf("127.0.0.1", "localhost") ||
+            enginePort <= 0 || uri.port != enginePort ||
+            uri.path !in setOf("", "/", "/index.html")
+        ) return null
+        var connection: HttpURLConnection? = null
+        return try {
+            val url = uri.toString()
+            val conn = (URL(url).openConnection() as HttpURLConnection).also { connection = it }
+            conn.connectTimeout = 5_000
+            conn.readTimeout = 10_000
+            conn.useCaches = false
+            // Let WebView handle redirects/auth/error responses with its own URL semantics.
+            conn.instanceFollowRedirects = false
+            val skipped = setOf(
+                "host", "connection", "content-length", "accept-encoding",
+                "if-none-match", "if-modified-since", "range", "if-range",
+            )
+            request.requestHeaders.forEach { (name, value) ->
+                if (name.lowercase(java.util.Locale.ROOT) !in skipped) conn.setRequestProperty(name, value)
+            }
+            val cookies = CookieManager.getInstance()
+            if (request.requestHeaders.keys.none { it.equals("Cookie", ignoreCase = true) }) {
+                cookies.getCookie(url)?.let { conn.setRequestProperty("Cookie", it) }
+            }
+            conn.setRequestProperty("Accept-Encoding", "identity")
+            val contentType = conn.contentType.orEmpty()
+            if (conn.responseCode != 200 ||
+                !contentType.substringBefore(';').trim().equals("text/html", ignoreCase = true) ||
+                !conn.contentEncoding.isNullOrBlank() && !conn.contentEncoding.equals("identity", true)
+            ) {
+                null
+            } else {
+                val charsetName = Regex("""(?i)charset\s*=\s*["']?([^;\s"']+)""")
+                    .find(contentType)?.groupValues?.get(1) ?: "UTF-8"
+                val charset = java.nio.charset.Charset.forName(charsetName)
+                val original = conn.inputStream.bufferedReader(charset).use { it.readText() }
+                val patched = WebViewPolyfill.patchHtml(this, original)
+                val bytes = patched.toByteArray(charset)
+                val headers = linkedMapOf<String, String>()
+                val removed = setOf("content-length", "content-encoding", "transfer-encoding", "connection", "set-cookie")
+                conn.headerFields.forEach { (name, values) ->
+                    if (name != null && name.lowercase(java.util.Locale.ROOT) !in removed) {
+                        headers[name] = values.joinToString(", ")
+                    }
+                    if (name != null && name.equals("Set-Cookie", true)) {
+                        values.forEach { cookies.setCookie(url, it) }
+                    }
+                }
+                headers["Content-Length"] = bytes.size.toString()
+                headers["Cache-Control"] = "no-store"
+                logWebView("polyfill document: " + if (patched == original) "present/unchanged" else "injected before modules")
+                WebResourceResponse("text/html", charset.name(), 200, "OK", headers, ByteArrayInputStream(bytes))
+            }
+        } catch (error: Exception) {
+            logWebView("polyfill document interception failed: " + error.javaClass.simpleName)
+            null
+        } finally {
+            connection?.disconnect()
         }
     }
 
