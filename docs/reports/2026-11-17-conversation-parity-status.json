@@ -284,5 +284,5 @@
   "next": [
     "交 Lead 统合与 GLM 复核（本轮实现与设备验收已完成）"
   ],
-  "commit": "61074bfc fix(chat-parity): 失败原因说人话（上一步 58a1e6ba 为撤回顺序修复；工作树仅剩 .superpowers/brainstorm/ 未跟踪，按要求保留不提交）"
+  "commit": "3e0ac27e（beta.52 实现 61074bfc、撤回顺序 58a1e6ba；工作树仅剩 .superpowers/brainstorm/ 未跟踪，按要求保留不提交）"
 }
