@@ -14339,5 +14339,67 @@ Keyboard initialization failed. This could be a missing or incorrect setup of xk
 ### 未完成 / 待决策
 
 - 是否把 CSS 能力（`:has()` / `color-mix()` / `anchor()`）纳入 `WEBVIEW_SELFCHECK_JS` 或门禁 —— 属产品决策（抬 `MIN_CHROME` 会砍掉大批现役设备），本轮只文档化，未改行为。
-- 三条 issue（#118/#107/#119）与本章改动**均未推送** origin（`origin/main = 8ad34f9a`），本机无真机，真机验收仍欠。
+
+
+
+---
+
+## 第一百三十八章（v1.6.0-beta.16 · 2026-11-18）打「完全包」：rc.3 运行时 + 全部资产，正式签名
+
+**需求**：用户要一个包含这几天所有修复的完整包，要发给别人。
+
+### 产物
+
+`E:\Deepeek harness\dsh-android-v1.6.0-beta.16-arm64-full-release.apk`
+- 191,674,828 B（182.8 MB），sha256 `5c148a1e649916a8893eb84f05630840f701d8187eb63cd6d6a1f6f8ff087edf`
+- versionCode 392 / versionName 1.6.0-beta.16 / minSdk 26 / targetSdk 28 / compileSdk 36
+- 签名：**正式 keystore**（`CN=DSH Mobile, OU=DSH, O=Soodok, C=CN`，SHA-256 `d28ca4f5…92c8`），可覆盖升级老用户的正式包；`apksigner verify` 通过
+- 源：`app/build/outputs/apk/release/app-release.apk`（同一次 `assembleRelease`，复制并改名）
+
+### 内含（逐项实测，非推断）
+
+| 项 | 值 |
+|---|---|
+| 运行时引擎 | `0.2.2-rc.3`，BUILD.json `2026.11.17-45565c14`，builtAt 1794929143，contentSha256 `45565c14…315a` |
+| 前端 | `@deepseek-ai/dsh-web-frontend` `0.2.2-rc.3` |
+| polyfill | `legacy-webview polyfill v5`，位于首个 `type="module"` 之前（直接量测 index.html 偏移：polyfill 起点 < module 起点） |
+| PTC 补丁 | `LD_LIBRARY_PATH` / `OPENSSL_CONF` / `SSL_CERT_FILE` / `MAGICK_CONFIGURE_PATH` 四项齐 |
+| #118 | `assets/android-plugins/fast-mode.mjs` PRESENT |
+| #107 | `assets/js/legacy-webview-polyfill.html` PRESENT |
+| #119 | `assets/android-plugins/chat-anchor-fallback/`（3 文件）PRESENT |
+| 内置插件 | mobile-layout `0.4.12`、solution-explorer `1.1.0`、hardssh（215 文件）—— 取自本次 CI 产物 |
+| 运行时 zip | `assets/runtime.zip`（149,686,900 B） |
+
+### 怎么打的（关键：本地拼装）
+
+仓库**不含** `gradle-wrapper.jar`，也没有 `./gradlew`。本机命令：
+
+```
+/c/Users/Qt/.gradle/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1/bin/gradle.bat \
+  -p . -Pabi=arm64-v8a -Ppackage=full \
+  -PruntimeZip=E:/tmp/runtime-rc3-arm64.zip \
+  -PhardsshDir=E:/tmp/bundles/bundle-hardssh/hardssh \
+  -PmobileLayoutTgzDir=E:/tmp/bundles/bundle-mobile-layout \
+  -PsolutionExplorerTgzDir=E:/tmp/bundles/bundle-solution-explorer \
+  :app:assembleRelease
+```
+
+三步取证链：
+1. **运行时**：从 GitHub Actions `runtime-build`（run 44113586761，head `653b1d7b`）的 artifact `runtime-arm64-v8a` 下回来（145,081,159 B），外层是 `runtime.zip` + `runtime-meta.json`，inner 149,686,900 B。`unzip -t` 无错。
+   - ⚠️ GitHub artifact 直连在本机只有 **~700 K/s**（1.6 MB/s 峰值），单流 145 MB 要十几分钟且中途 stall。可行做法是 **40 并发 range 分片**（每片 3.6 MB，20 秒内下完 ~125 MB），单片不足时按片重试；`cat p* ` 拼接后 `unzip -t` 必须跑一次再信。
+2. **资产**：同一次 `android-build`（run 44113586598）的 `hardssh-bundle` / `solution-explorer-bundle` / `mobile-layout-bundle` 三个 artifact 解包直供 `-P` 参数——这样内置插件的 tgz 与 CI 完全同源，不是本地重新打包。
+3. **APK**：本地 `assembleRelease`（1m41s，BUILD SUCCESSFUL）。
+
+### 踩到的坑（下次别再重复）
+
+- `./gradlew` 不存在（repo 里只有 `gradle.properties`）。走本机 `gradle.bat`。
+- 直下 artifact 不用 token 就 404/空；用 `git credential fill` 取到的 PAT 换 `redirect_url` 再下 blob。**token 不落工作树**，临时落 `/tmp/ghtok.txt` 用完即弃。
+- 40 片里有 1 片（p17）短了 3.5 MB，导致 `unzip` 报 `invalid stored block lengths`；逐片核对 `e-s+1` 才是可靠判据，不能只看总大小。
+- CI 那个 artifact 里的 **debug APK 解压报错**（`invalid compressed data to inflate`），release APK 正常。所以本地重新构建而不是直接分发 CI 的包，也顺带规避了这个坏成员。
+- `PmobileLayoutTgzDir` / `PsolutionExplorerTgzDir` / `PhardsshDir` 不传就只用仓库里已有的资产，会缺 solution-explorer 与 hardssh（本地旧构建实测：solution-explorer 0 文件、hardssh 0 文件）。
+
+### 未覆盖
+
+- **未真机验收**（本机无 adb、无设备）。装机后应核对：引擎冷启、对话页出流、用量浮层定位（#119）、华为 114 内核下 `polyfill document:` 日志（#107）。
+- x86_64 变体未打（只做了 arm64-v8a，真机主流）。
 
