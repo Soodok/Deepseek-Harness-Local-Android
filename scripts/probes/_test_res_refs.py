@@ -33,7 +33,15 @@ def collect(pattern, files):
     return out
 
 
-colors = collect(r'<color name="(\w+)"', "values*/colors.xml")
+# Android also defines color resources by filename, e.g. res/color/foo.xml
+# and its qualified variants such as res/color-night/foo.xml.
+colors = collect(r'<color name="(\w+)"', "values*/*.xml")
+colors |= {
+    os.path.splitext(os.path.basename(path))[0]
+    for directory in ("color", "color-*")
+    for path in glob.glob(os.path.join(RES, directory, "*.xml"))
+    if os.path.isfile(path)
+}
 dimens = collect(r'<dimen name="(\w+)"', "values*/*.xml")
 strings = collect(r'<string name="(\w+)"', "values*/strings.xml")
 styles = collect(r'<style name="([\w.]+)"', "values*/*.xml")
