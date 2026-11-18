@@ -14711,3 +14711,50 @@ gradle.bat --console=plain :app:assembleRelease -Pabi=arm64-v8a -Ppackage=full \
 - 超大包（含合并图片的导出）在手机上仍可能吃满内存：只把上限收到 256/64 MiB，没改成流式落盘（那是上游插件行为，不在本仓范围）。
 - `useRemoteAccess('deepseekChatImport/limits')` 只有 owner 可见；多用户模式下按钮对非 owner 不渲染（未实测）。
 - 未在移动布局插件（mobile-layout）下单独验侧栏上传按钮的可达性 —— 本次模拟器是标准布局。
+
+### 第五处：新增「热点回退」守卫探针 —— 让性能退化能打红
+
+这是本轮唯一不是提速、而是让同类问题**以后能被挡住**的改动。
+
+原有两类启动探针都管不了这件事：
+
+- `_test_startup_parallelization.py` 守**顺序**：谁在谁之前、并行块是不是三个任务；
+- `_test_boot_trace.py` 守**归因**：每步是不是自测耗时、遮罩字幕来源对不对。
+
+两者都跟耗时无关。所以「有人又把全树遍历加回来」这类改动只会让启动慢慢变慢，
+**所有门禁照样全绿** —— `log-sweep` 537ms 和 `guardian-restore` 247ms 就是这么攒起来的。
+
+新增 `scripts/probes/_test_boot_hotspots.py`（11 项），三条检查各对应一次实测修复：
+
+| 检查 | 对应修复 |
+|---|---|
+| `NOISE_DIRS` 存在且覆盖 node_modules / .node-compile-cache-native / .git | 剪枝名单 |
+| `walkLogFiles` 与 `findDirsNamed` **两个遍历器**都在递归前剪 | log-sweep 537→148ms |
+| `ProfileGuardian` 用单次 `isFile` 判存在，且之前没有 `listFiles` | guardian 247→117ms |
+| `resolveEarly` 存在、被 Application 调用、且只在 Linux 关闭时短路 | 模式判定前移 |
+
+**四条负对照全部打红**（实测，逐条改回再还原）：
+
+```
+walkLogFiles 去掉剪枝        -> 失败 1
+findDirsNamed 去掉剪枝       -> 失败 1
+guardian 回到 listFiles      -> 失败 2
+DshApp 去掉 resolveEarly     -> 失败 1
+还原后                       -> 通过 11 / 失败 0
+```
+
+注意第二个遍历器那条容易漏：只剪 `walkLogFiles` 会让探针仍然绿，因为 `findDirsNamed`
+还在跑全树。两条断言分开写就是为了逼住这个。
+
+**踩到的坑**：`.gitignore` 里有 `/scripts/probes/*`（只保留已跟踪的正式探针），
+新文件默认被忽略、`git status` 里是 `??` 但 `git add` 静默不生效 —— 必须显式加白名单
+`!/scripts/probes/_test_boot_hotspots.py`。CI 的 `i18n-check.yml:61` 会跑
+`_test_*.py` 全量循环，所以白名单一加就自动纳入门禁。
+
+### 全量探针
+
+按 CI 同样的方式跑（`for f in scripts/probes/_test_*.py`，跳过 pending 的 corepack）：
+
+```
+PASS=142  FAIL=0
+```
