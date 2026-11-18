@@ -49,7 +49,7 @@ checks = {
         and row.get(ANDROID + 'drawablePadding') == '20dp'
         and row.get('style') == '@style/Widget.Material3.CheckedTextView'
         and row.get(APP + 'drawableStartCompat') == '@drawable/abc_btn_radio_material'
-        and row.get(APP + 'drawableTint') == '@color/m3_radiobutton_button_tint',
+        and row.get(APP + 'drawableTint') == '@color/dialog_radio_tint',
     'progress ring and parent wrap actual measured size':
         all(node.get(ANDROID + dim) == 'wrap_content' for node in (ring, parent)
             for dim in ('layout_width', 'layout_height'))
