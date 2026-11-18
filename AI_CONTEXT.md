@@ -14606,3 +14606,88 @@ TOTAL               中位 5655ms     3730~3745ms   （省 ~33%）
 
 - JVM 行为测试 **passed=2405 failed=0**
 - 探针 17/0（parallelization）、36/0（trim）、32/0（boot-trace）
+
+## 第一百四十一章（v1.6.0-beta.17 · 2026-11-19）官方 chat 导出包导入：把「上游自带但默认不挂」的一层接进 Android
+
+**需求**（用户原话）：官方版 chat 被限额，官方也出了聊天内容移植功能 —— 看能不能把官方导出的聊天记录同步进 DSH，要**真实可用**。
+
+### 能力从哪来（不是我们写的）
+
+引擎运行时（0.2.2-rc.3 起）自带 `@deepseek-ai/dsh-deepseek-chat-import`（31 条目）。它提供三样东西：
+
+- 侧栏「新建会话」旁的一个上传按钮（`ctx.slots.inject('sidebar.session.action', …)`）；
+- `POST /api/deepseek-chat-import/archive?workspaceId=<id>&token=<TOKEN>` 路由，`content-type: application/octet-stream` 必填（否则 415），应答 `application/x-ndjson`（progress 行 + 恰好一行 outcome）；
+- `limits` 远程方法，浏览器侧先读它做体积预检。
+
+但该包自己的 `cordis.patch.yml` 注释写明 **「Shipped profiles do not include this layer」** —— 官方默认不挂载。所以 Android 侧要做的只有一件事：**决定在什么条件下替用户挂这一层**。
+
+### 为什么走 `--patch` 层，不走 profile bundle
+
+| 路线 | 问题 |
+|---|---|
+| profile bundle（写进 `profiles/web/package.json` 的 `dsh.profile.bundles`） | 包本体在**引擎目录**的 node_modules、不在 profile；pnpm 记账与插件页的升级/卸载语义全对不上 |
+| `--patch` 层（采用） | `packageDirFromAnchor` 从**安装目录的 node_modules** 解析包名（`@deepseek-ai/dsh/package.json` 的 dependencies 已声明它），不需要符号链接、不需要装 npm 包，随运行时升级自动跟上 |
+
+早期还写过 `engine/ProfileBundleList.kt`，bundle 路线作废后已删除（死代码不入库）。
+
+### 硬约束（每一条都是实测踩出来的）
+
+1. **层里包名必须带双引号**。裸写 `name: @deepseek-ai/dsh-deepseek-chat-import` → `YAMLException: bad indentation of a mapping entry` → **引擎直接起不来**。层文本由 `ChatImportLayer.body()` 拼固定字符串，JVM 单测 `pluginPackageIsQuotedInYaml` 守着（含反向断言：无引号形态不得出现）。
+2. **体积上限必须挂在 insert 条目的 `config` 上**。不写 config 就按上游桌面默认（`maxUploadBytes` 512 MiB / `maxEntryBytes` 256 MiB）跑，而上游把整包 `readBounded` 读进内存再解压、**不落盘** —— 手机上很容易 OOM。Android 侧取 256 MiB / 64 MiB。**宿主 A/B 实测**：同一个 73,400,774 B 条目的包，capped 层报 `declares 73400774 uncompressed bytes, more than the 67108864-byte entry limit`，plain 层正常导入 —— 拦截确实来自我们的 config，不是插件默认行为。
+3. **写层前必须先探测包在不在**（`lib/node_modules/@deepseek-ai/dsh-deepseek-chat-import/lib/index.js` isFile）。老运行时（rc.2 无此包）若硬写层，引擎每次启动都打 `dsh: warning: 1 entry did not activate`，而 `EngineTriage` 的 `PLUGIN_INACTIVE_MARKERS` 含子串 `did not activate` → 会把健康启动**误诊成插件失效**、建议隔离。探测不到就删掉残留层文件并记日志。
+4. **层文件落在 engineRoot**（`chat-import-layer.yml`），不是 filesDir：容器模式 `LinuxEngineLauncher` 把 patch 路径映射成 guest `/eng/<rel>`，只有 engine 目录下的文件在原生/容器两种模式都可达。
+5. **应用顺序**：ssh 层 → chat-import 层 → android overlay。适配层恒**最后**应用（后应用者生效），chat 层不钉任何 host 行。
+6. **开关默认关**。上游注释已说明 shipped profile 不含它，把它当可选能力、由用户在「备份与恢复」页拨开；这也等于给了个 kill switch。
+
+### 落地的形状
+
+| 位置 | 内容 |
+|---|---|
+| `engine/ChatImportLayer.kt`（新） | 纯 JVM object：包名 / 层文件名 / 探测路径 / 层 id / 两个上限常量 / `shouldProvide(enabled, pluginPresent)` / `body()` |
+| `engine/EngineConfig.kt` | `ensureChatImportLayer(ctx): File?` —— 探测 → 不满足就 `withdraw`（删残留），满足则全等比较后写盘 + `setReadable` |
+| `engine/EngineSupervisor.kt` | `patchPaths` 从 2 扩到 3，插在 ssh 与 overlay 之间 |
+| `DshApp.kt` | `KEY_CHAT_IMPORT = "deepseek_chat_import"`（缺省 false）+ 读写访问器 |
+| `BackupActivity.kt` + `activity_backup.xml` | 末行 `rowChatImport` + `swChatImport`；运行时缺包时开关**置灰**（能点亮但能力不存在比灰着更误导）；切换 → 写 prefs → 当场重写层 → 弹重启提示 |
+| 6 套 locale | `setting_chat_import` / `setting_chat_import_sub` / `setting_chat_import_restart_hint` |
+| `test/.../ChatImportLayerTest.kt`（新） | 8 个 @Test：引号、顶层序列 6 行、逐字节稳定、无 CJK、探测路径、真值表、文件名不含分隔符、上限低于桌面默认 |
+| `scripts/probes/_test_deepseek_chat_import.py`（新） | 43 条断言：A 层文本 / B EngineConfig 三态 / C Supervisor 顺序 / D 开关接线 / E 布局 / F 六 locale / G 单测 / H 负对照 |
+
+### 设备验收（emulator-5554，x86_64 / API 34，versionCode 393）
+
+装机自带 rc.3 x86_64 运行时（`-Pabi=x86_64 -PruntimeZip=E:/tmp/x86in/runtime.zip`，包内 `assets/runtime.zip` 149,195,874 B，BUILD.json `2026.11.17-8b1e8fc2`）后逐层取证：
+
+| 检查 | 结果 |
+|---|---|
+| 开关默认态 | 关（`dsh_ui.xml` 无 `deepseek_chat_import` 键），引擎目录无 `chat-import-layer.yml` |
+| 拨开开关 | prefs 写 `true`；层文件当场出现，内容含 `config: / maxUploadBytes: 268435456 / maxEntryBytes: 67108864` |
+| 重启引擎 | 进程 cmdline 实测：`web --patch …/chat-import-layer.yml --patch …/android-overlay.yml --no-open` —— **顺序正确** |
+| 引擎日志 | 只有 `EngineConfig: chat import layer ready: …`，**无** `did not activate` / `failed to import` |
+| 首页 | `html=51907 B`、`deepseek-chat-import` 命中 1；路由负对照 `/api/no-such-plugin/x` → **404** |
+| 侧栏按钮 | 抽屉里「New Session」右侧出现上传图标，点开是 `Import DeepSeek chat history` 对话框（文件选择器 → 工作区下拉 → Import） |
+| 真实导入（UI 路径） | 选 `deepseek_data-probe.zip`（783 B，v3 格式）→ **Imported 1 session into the probe-ws workspace.**；会话落盘 `sessions/--…probe-ws--/890b1d9c-f38c-4476-bf17-143220ff2c74` |
+| 会话内容 | zstd 双帧拆开 9 条事件（session / turn-start / step-start / system+user+assistant / step-end / turn-end / session-title）；用户「你好，帮我想个名字」与助手回复都在；侧栏两行、点开可见气泡与 `Completed in 1m 2s` |
+| 上限生效（upload） | 300 MiB 包 → `{"reason":"too-large","message":"the archive exceeds 268435456 bytes"}` |
+| 上限生效（entry） | 单条目声明 73,400,774 B → `skipped: "chat_sessions/c1.json declares 73400774 uncompressed bytes, more than the 67108864-byte entry limit"` |
+| 关掉开关 | prefs 写 `false`，层文件被**删除**（不是留着）；再拨开则重建 |
+
+### 关键结论（写给后续的人）
+
+- **`attachSession` 的 Windows 反斜杠问题在 Android 上不存在**。宿主（Windows）上该步稳定失败（`its cwd resolves to 'E:\tmp\…'`），Android 全 POSIX 路径 → `sessionIds:["12ddcda8-…"]` 正常返回、会话进工作区。此前「host 特有」的推测在设备上被证实。
+- **导出包时间字段两种都能吃**：字符串 RFC3339（`"2026-11-01T10:00:00.000Z"`）与数字毫秒都通（`parseExportTime` 用 `Date.parse`）。第一版 fixture 用了无时区的 ISO 串被拒为 invalid conversation —— 是 **fixture 的问题不是插件的问题**。
+- 会话文件是**多帧 zstd**（`session.v4.jsonl.zstd`：首帧 198 B 头 + 后续帧）。`zlib.zstdDecompressSync` 一次解只得到首帧，必须按 magic `0x28B52FFD` 切帧逐段解，才能看到 9 条事件。
+- 设备侧操作要点：抽屉按钮 `(62,122)`、会话行 `y≈924`；`adb push` 到 `/sdcard` 必须 `MSYS2_ARG_CONV_EXCL='*'` + `//sdcard/...` 双斜杠，否则 MSYS 改写成 `C:/Program Files/Git/sdcard/...`。
+- **验证期被并行会话打断过一次**：`DshApp.kt` 里的 `chatImportEnabled` / `setChatImportEnabled` / `KEY_CHAT_IMPORT` 在 00:19 前后被同工作区的另一轮提交（`a3b57d6a` perf(boot)）覆盖掉了，探针当场打红 3 条（「prefs 键存在」「缺省关闭」「读写访问器都在」）。重新补齐后 43/43 复绿、`BUILD SUCCESSFUL`。**教训**：这类「字段存在」断言在多会话工作区里有价值，不要因为「我刚写过」就跳过运行。
+
+### 门禁
+
+- 全量探针：`scripts/probes/_test_*.py` 除 CI 同款 SKIP（`_test_corepack_hardlink.py`）外全绿（FAILED_COUNT=0）
+- `check-i18n.py` / `check-ui-tokens.py` 全过（1876 键 6 套齐、153 android:tint / 0 app:tint）
+- JVM 单测 **76/0**（`ChatImportLayerTest` 8 条，含新增 `capsStayBelowTheDesktopDefaults`）
+
+### 未覆盖
+
+- **真机未验**（只有 x86_64 模拟器；本机无真实手机接入）。arm64 变体与真机内核未跑。
+- **debug 签名**：装机用 AGP 默认调试证书（`CN=Android Debug`），与已装正式包不同签名 → 本次是**先 uninstall 再 install**（清空 app 数据）。正式包升级不受影响（走 `keystore/`）。
+- 超大包（含合并图片的导出）在手机上仍可能吃满内存：只把上限收到 256/64 MiB，没改成流式落盘（那是上游插件行为，不在本仓范围）。
+- `useRemoteAccess('deepseekChatImport/limits')` 只有 owner 可见；多用户模式下按钮对非 owner 不渲染（未实测）。
+- 未在移动布局插件（mobile-layout）下单独验侧栏上传按钮的可达性 —— 本次模拟器是标准布局。
