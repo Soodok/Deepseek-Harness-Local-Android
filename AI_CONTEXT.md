@@ -14556,3 +14556,53 @@ TOTAL               5463~6951ms 中位 5655    4041~4595ms 中位 4494
 - 仍缺「启动耗时预算」型性能回归门禁：现有探针只守顺序与归因，**性能退化它不会红**
 - 真机 `192.168.101.21:9000` 已掉线，未做真机对照
 - 测量设备是模拟器 x86_64，数值不可直接与真机 ARM 对比
+
+### 第四处：guardian 恢复的 338 次目录枚举
+
+`ProfileGuardian.restoreQuarantinedBuiltinOverlays()` 原实现对每个 `@deepseek-ai` 包
+先 `listFiles()` 判断有无 `cordis.patch.yml`，缺了再 `listFiles()` 找 `.quarantine-*`。
+
+实测 engine 内置包有 **338 个**（`ls files/engine/lib/node_modules/@deepseek-ai | wc -l`），
+即 338 次目录枚举，而其中被隔离过的通常一个都没有。
+
+改成就地 `File(pkg, "cordis.patch.yml").isFile`（单次 stat）先判，只有真缺原文件的包才枚举。
+
+```
+guardian-restore   247ms → 117~122ms   （3 轮实测）
+```
+
+这个方法跑在冷启动的并行块里，而该块的墙钟 = 最慢那条，所以省下的就是启动延迟。
+
+### health-poll 的 2.8~3.4 秒：不是检测滞后，是引擎真的还没好
+
+用 `adb forward` + 逐 100ms 轮询做了三条时间线对照（一次冷启动）：
+
+```
+PORT_LISTENING   5096ms   <- 3080 开始监听
+NEW_TOKEN_LINE   5688ms   <- 引擎把带 token 的 WebUI 地址写进 engine.log
+HEALTH_STEP_DONE 5889ms   <- 我们判定就绪
+```
+
+端口就绪到判定完成只差 **~200ms**（就是 `extractTokenUrl` 那 2 次 100ms 重试），
+不存在「已经好了但我们没发现」的检测滞后。健康探针已经贴在引擎真实节奏上，
+剩下的 2.8~3.4 秒是引擎自己启动 Node + 加载 338 个插件 + 起 WebUI 的成本。
+
+**这条别再往探针侧优化了** —— 端口一 LISTEN 就返回是错的（安全审查 H2 要求
+`dsh web:` token 行也出现，防同源钓鱼），而那行本来就比端口晚 500~600ms。
+
+### 累计成果（4 轮改动后的稳态 3 轮）
+
+```
+                    最初基线        现在
+log-sweep           537.5ms 中位    127~201ms
+guardian-restore    247ms           117~122ms
+health-poll         4137~5274ms     2819~3423ms
+TOTAL               中位 5655ms     3730~3745ms   （省 ~33%）
+```
+
+`health-poll` 现在占总启动 **75%**，其余全部加起来只有约 900ms。
+
+### 门禁
+
+- JVM 行为测试 **passed=2405 failed=0**
+- 探针 17/0（parallelization）、36/0（trim）、32/0（boot-trace）
