@@ -81,6 +81,8 @@ for path in glob.glob(os.path.join(RES, "layout", "*.xml")):
                 continue
             if kind == "dimen" and name == "abc_select_dialog_padding_start_material":
                 continue  # AppCompat's Material dialog row spacing
+            if kind == "drawable" and name == "abc_btn_radio_material":
+                continue  # AppCompat's radio drawable; AAPT resolves it from the dependency.
             missing.add((os.path.basename(path), kind, name))
 
 check("布局里的资源引用都存在", not missing,
