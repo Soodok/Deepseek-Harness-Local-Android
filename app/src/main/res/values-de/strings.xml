@@ -162,6 +162,9 @@
 
             <string name="setting_config_files">Konfigurationsdateien</string>
     <string name="setting_config_files_sub">AGENTS.md, Arbeitsbereichsregister oder Plugin-Profil öffnen</string>
+    <string name="setting_chat_import">DeepSeek-Chats importieren</string>
+    <string name="setting_chat_import_sub">Ein aus der offiziellen DeepSeek-Chat-App exportiertes Archiv importieren</string>
+    <string name="setting_chat_import_restart_hint">Die Import-Schicht wird beim Engine-Start geladen. Engine jetzt neu starten?</string>
     <string name="config_files_none">Noch keine Konfigurationsdateien — starte zuerst den Motor</string>
     <string name="config_files_failed">Kann nicht geöffnet werden: %1$s</string>
 <string name="setting_import_data">Daten importieren</string>

@@ -159,6 +159,9 @@
 
             <string name="setting_config_files">Config files</string>
     <string name="setting_config_files_sub">Open AGENTS.md, workspace registry or plugin profile</string>
+    <string name="setting_chat_import">Import DeepSeek chat</string>
+    <string name="setting_chat_import_sub">Import an archive exported from the official DeepSeek chat app</string>
+    <string name="setting_chat_import_restart_hint">The import layer loads when the engine starts. Restart the engine now to apply?</string>
     <string name="config_files_none">No config files yet — start the engine once first</string>
     <string name="config_files_failed">Cannot open: %1$s</string>
 <string name="setting_import_data">Import data</string>

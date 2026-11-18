@@ -168,6 +168,23 @@ class DshApp : Application() {
         }
 
         /**
+         * 官方 DeepSeek chat 导出包导入开关（v1.6.0-beta.17）。
+         *
+         * 缺省**关**：这个能力对应引擎里多挂一层 patch 层（见 ChatImportLayer），
+         * 上游注释写明 shipped profile 不含该层，属于可选能力；用户从「备份与恢复」页拨开。
+         */
+        private const val KEY_CHAT_IMPORT = "deepseek_chat_import"
+
+        fun chatImportEnabled(context: android.content.Context): Boolean =
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_CHAT_IMPORT, false)
+
+        fun setChatImportEnabled(context: android.content.Context, on: Boolean) {
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_CHAT_IMPORT, on).apply()
+        }
+
+        /**
          * 访问密码：首次生成后固定（6 位纯数字验证码）。
          *
          * 历史：v1.2.161 起是 6 位数字；v1.4.46 安全审查 H1 因「代理端曾无速率限制，

@@ -1387,8 +1387,15 @@ class EngineSupervisor(private val ctx: Context) {
         //   ① 插件层：禁用 fs-sandbox/subprocess、插入 hardssh 接缝行
         //   ② Android 适配层：重复钉住关键 host 行（后应用者生效）
         // 插件缺失/链接失败时 ensureBundledSshPlugin 返回 null —— 引擎照常启动。
-        val patchPaths = ArrayList<String>(2)
+        //
+        // ② 官方 chat 导出包导入层（v1.6.0-beta.17）：只在用户拨开开关、且运行时里
+        //    真带了 @deepseek-ai/dsh-deepseek-chat-import 时才加。它的 insert 行不钉
+        //    任何 host 行，纯粹是「多挂一个可选插件」，所以排在适配层之前 ——
+        //    Android 适配层始终最后应用（后应用者生效），不依赖这一层是否存在。
+        val patchPaths = ArrayList<String>(3)
         runCatching { EngineConfig.ensureBundledSshPlugin(ctx)?.absolutePath }
+            .getOrNull()?.let { patchPaths.add(it) }
+        runCatching { EngineConfig.ensureChatImportLayer(ctx)?.absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }
         runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }

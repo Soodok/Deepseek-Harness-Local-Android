@@ -159,6 +159,9 @@
 
             <string name="setting_config_files">Файлы конфигурации</string>
     <string name="setting_config_files_sub">Открыть AGENTS.md, реестр рабочей области или профиль плагинов</string>
+    <string name="setting_chat_import">Импорт диалогов DeepSeek</string>
+    <string name="setting_chat_import_sub">Импорт архива, экспортированного из официального приложения DeepSeek</string>
+    <string name="setting_chat_import_restart_hint">Слой импорта загружается при запуске движка. Перезапустить движок сейчас?</string>
     <string name="config_files_none">Файлов конфигурации пока нет — сначала запустите движок</string>
     <string name="config_files_failed">Не удалось открыть: %1$s</string>
 <string name="setting_import_data">Импорт данных</string>

@@ -753,6 +753,9 @@
     <string name="setting_immersive_sub">Oculta a barra de status para as paginas preencherem a tela. A barra superior desvia automaticamente do recorte da camera. Deslize do topo para revelar a barra temporariamente.</string>
     <string name="setting_config_files">Arquivos de configuração</string>
     <string name="setting_config_files_sub">Abra AGENTS.md, o registro de espaços de trabalho ou o perfil de plugins</string>
+    <string name="setting_chat_import">Importar conversas do DeepSeek</string>
+    <string name="setting_chat_import_sub">Importa um arquivo exportado do aplicativo oficial de conversas do DeepSeek</string>
+    <string name="setting_chat_import_restart_hint">A camada de importação só é carregada quando o motor inicia. Reiniciar o motor agora?</string>
     <string name="config_files_none">Ainda não há arquivos de configuração — inicie o motor uma vez primeiro</string>
     <string name="config_files_failed">Não foi possível abrir: %1$s</string>
     <string name="setting_import_data">Importar dados</string>
