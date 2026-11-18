@@ -204,7 +204,7 @@
       "item": "失败原因可读化：session-busy 等 kebab 错误码不再直接显示给用户",
       "evidence": "插件 client.js 新增 ERROR_TEXT 映射与 readableError（ConfirmDialog 的 failPrefix 提示改走它），client/core 单测 39 pass；原生新增 flutter_ui/lib/src/state/failure_text.dart 的 readableFailure，message_actions.dart 八处 catch 全部改走它，message_actions_test 31 pass（新增 2 例 + 负对照）；设备实测仅在 Web 端抢到 session-busy 窗口，提示为「撤回失败：这一轮还在进行，等它停下来再试。」（/tmp/b52_busy.png）；原生端该路径只有单测覆盖"
     },
-    "Web->原生入场切换：PixelCopy 底图 + 独立子窗口 + Flutter 按帧淡化，设备录到 8 级可见过渡（beta.77）"
+    "Web->原生入场切换：PixelCopy 底图 + 独立子窗口 + Flutter 按帧淡化，设备录到 9 级可见过渡（k34.mp4）（beta.77）"
   ],
   "checks": [
     {
@@ -327,7 +327,7 @@
     "文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」路径只有离线单测，未在设备上做真实故障注入。",
     "fork 失败的真实故障注入只有离线单测（core.test.mjs + 三次负对照），没在设备上造出 fork 真实失败场景。",
     "其余已知失败码的可读文案（session-not-found / target-not-found 等）只有离线单测，设备上只实测了 session-busy。",
-    "原生页入场已是逐帧淡化（beta.77，k29.mp4：8 级可见过渡）；但 Web 侧退场没有动画（WebView 切后台被停掉），那 1-2 秒仍是最后一张 Web 画面，不是两端同时交叉。",
+    "原生页入场已是逐帧淡化（beta.77，k29.mp4：9 级可见过渡（k34.mp4））；但 Web 侧退场没有动画（WebView 切后台被停掉），那 1-2 秒仍是最后一张 Web 画面，不是两端同时交叉。",
     "冷启动帧率 3-5 帧/秒，12 步淡化的时间分辨率是每步 200-400ms，过渡分级不平滑；系统减少动效打开时按设计跳过（k30.mp4 单帧跳变）。"
   ],
   "blockers": [],
