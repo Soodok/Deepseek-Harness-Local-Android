@@ -1,5 +1,24 @@
 # DSH Android · 交接文档
 
+## 浮动玻璃输入区 + TurnNotice 折叠 + Web 结构化 turn-error（2026-11-18，beta.78）
+
+- 范围：只写 E:/tmp/wt-flutter-native-chat（feat/flutter-native-chat）；主仓库 E:/Deepeek harness/dsh-android 与他人工作树未动。未改 MainActivity/NativeChatActivity/转场、turn-rewind core.js/index.js、第三方缓存、全局配置。
+- 视觉改动（Terra 实现、本会话验证）：Composer 外壳内边距 14/12/8/8→12/8/6/6dp、圆角 28→22dp；新增仅输入区启用的 `composerGlass`（8px 局部模糊、填充 alpha 0.34、无描边无外阴影，减少动效/高对比走 alpha 0.97 fallback）；发送/停止视觉圆面 36dp + 图标 20dp、附件 34dp + 图标 20dp、权限 34dp + 原 DSH glyph 18dp；业务回调与 action slot 未变。
+- 触控地板（权威几何，Flutter painted 尺寸探针）：compact(0.9) send/attach/permission/model 均 **48.0x48.0dp**、standard(1.0) 48.0、relaxed(1.1) 52.8 —— 三档都 ≥48dp，`display_scale.dart` 的 minTargetOf/targetSize 按 48/factor 反向放大实现正确。设备 uiautomator 语义框（send 87x87px≈31.6dp）按绘制内容裁剪，不能用来判触控地板；另有点击实验佐证（点视觉圆面外侧仍触发、点模型胶囊左侧空白打开权限菜单）。
+- 视觉尺寸实测（emulator-5570，1080x2340 / density 440 = 2.75x，displaySize=standard，截图像素取色）：发送圆面 99x99px=**36.0dp**、附件 94x93px≈34dp、权限 93x93px≈34dp，三项与设计目标值一致。
+- 原生 TurnNotice：默认单行小字号摘要 + 状态图标 + chevron，整行可点展开原因/恢复建议/code/上游脱敏 detail/复制详情（≥48dp），再点收起。设备实测点整行出现「回合已分叉 / 这一轮已在分叉点关闭。/ 复制详情」，再点回单行（/tmp/notice_exp.png、/tmp/notice_col.png）。结构化判定不变，未用文本包含 error 判断。
+- Web 端已从「给建议」升级为**真实实现并真机验证**：turn-rewind/client.js 以 key `turn-error` 覆盖官方 conversation.chat.node 渲染器，注入与原生同构的 `.dsh-rw-notice`（折叠单行 height=48 / aria-expanded=false；展开显示「运行已中断」+ 原因 + 「恢复后重试。」+「代码：INTERRUPTED」+「复制详情」91.45x48；再点收起，.dsh-rw-notice-body 归零）。CDP 取证走 adb forward tcp:9333 localabstract:webview_devtools_remote_*（MainActivity.kt:789 在 debuggable 时已开 WebView 调试）。截图 /e/tmp/web_notice_collapsed.png、/e/tmp/web_notice_expanded.png。AUTH 载荷由上游脱敏后进 detail，未把凭据放进复制。
+- 修掉两处**假绿断言**（都已做负对照验证可打红）：
+  1. `display_size_ui_test.dart` 原断言 `tester.getRect(...).height >= 48` 读的是 logical 高度（compact 恒 53.3，拿掉地板仍绿）→ 新增 `_paintedSize()` 用 localToGlobal 求真实绘制尺寸，覆盖 model/send/attach/permission 四项宽高（≥48-0.01）。负对照：把 minTargetOf 改成 `=> physicalTarget;` → 43.2 < 47.99 失败。
+  2. `widget_test.dart` 第 2 个同名「a launch fade never fights the system reduced motion setting」pump 一次就结束，LaunchFade 里 `precacheImage(...).timeout(2500ms)` 定时器未完成 → 单独跑必红「A Timer is still pending even after the widget tree was disposed」（整体跑被后续用例时钟掩盖）。重命名为「a reduced-motion launch fade still hands the backdrop over」，显式 pump(3s)+pump(1s) 推完交接并断言淡出终态 0、含 releaseBackdrop、内容仍在。负对照：把 launch_fade.dart 的 releaseBackdrop 换成注释 → 「Actual: []」失败。
+- 门禁（串行，最终态 beta.78）：`dart format --output=none --set-exit-if-changed`（仅本轮改动的 9 个 dart 文件）EXIT=0（整个 lib+test 有 24-26 个 HEAD 既有格式漂移，与本轮无关，未擅自格式化）；`flutter analyze --no-pub` 退出 0「No issues found!」；`flutter test --concurrency=1` 退出 0「+434: All tests passed!」；`node --check client.js` EXIT=0；插件 `node --test` **46 pass / 0 fail**；Gradle `:app:clean :app:assembleDebug`（x86_64/full/rc.2 runtime）退出 0 BUILD SUCCESSFUL in 6m 12s（99 tasks: 58 executed, 41 up-to-date）。
+- APK：app/build/outputs/apk/debug/app-debug.apk，**248190718 B**，SHA-256 **3b13bb25ad86240952e181149872c26f57edcff76122fe309e4a4dbf46a56947**，versionCode 453 / versionName **1.6.0-beta.78**，ABI 仅 x86_64。安装仍须 `adb -s emulator-5570 install -r -t -d`（设备上有其他工作树更高 versionCode）。
+- 设备侧其它验收：减少动效（animator_duration_scale=0 重启）输入区 fallback 生效，composer 区域 p10/med/p90 亮度 30.3→44.7（/tmp/crop_glass_blur.png vs /tmp/crop_glass_fallback2.png），正文与输入文字可读；high_text_contrast_enabled=1 同走 calm 分支（/tmp/hc2.png）；1.5x 字体无裁切无 overflow（/tmp/big_font2.png）。测完全部还原（font_scale 1.0、三个动画倍率 1、high_text_contrast 0、displaySize compact）。
+- 未覆盖：AUTH 类脱敏与未知 code 兜底在**原生侧无真实载荷**（本机历史 turn 只有 forked 形态），证据仅来自 `turn_error_projection_test.dart`（断言 code 保留、message/detail/copied 不含 sentinel）；Web 侧真机只验到 INTERRUPTED；未做 TalkBack、ARM 物理机、长时间低帧率采样。
+- 回滚：仅回退本批未提交 diff，不要删/覆盖 `.superpowers/brainstorm/`（用户指定保留、不提交）。
+- 关键文件：flutter_ui/lib/src/ui/{composer,composer_surface,glass_panel,turn_notice_card}.dart、flutter_ui/lib/src/display/display_scale.dart、flutter_ui/test/{display_size_ui_test,widget_test,turn_notice_card_test,turn_error_projection_test,chat_screen_test}.dart、app/src/main/assets/android-plugins/turn-rewind/client.js、docs/reports/2026-11-17-conversation-parity-plugin-test/client.test.mjs、app/build.gradle.kts。
+- 细节与证据索引见 docs/reports/2026-11-18-floating-composer-handoff.md 与 docs/reports/2026-11-17-conversation-parity-status.json（19 个版本条目 / 29 条完成项 / 28 条检查 / 13 条限制）。
+
 ## 入场切换动效：Web→原生逐帧淡化（2026-11-18，beta.53→beta.77）
 
 - 需求：点灵动岛「切换原生对话」时 Web 自然消散、原生渐变浮现，不要硬切。

@@ -344,14 +344,20 @@ android {
         //   少任一步都会先露出空白页或多留一层覆盖。
         // · 淡化按渲染帧推进 12 步（Ticker），不按墙钟：冷启动 3~5 帧/秒，
         //   AnimationController 的墙钟折算会让第一个 tick 直接到 1.0，仍是一帧硬切。
-        versionCode = 452
+        // v1.6.0-beta.78 (2026-11-18 15:5x): 输入区改真透明玻璃悬浮（专用 composerGlass：
+        // 8px 局部模糊、alpha .34 填充、无描边无外阴影，减少动效/高对比走 .97 fallback），
+        // 发送/停止圆面 36dp 图标 20dp、权限与附件圆面 34dp（glyph 20/18dp），触控仍由
+        // 48dp 目标兜底；原生 TurnNotice 默认单行小字号摘要，整行点开才有原因/建议/代码/
+        // 脱敏详情/复制；Web 端把官方 conversation.chat.node 的 turn-error 那一格换成
+        // 同一套折叠提示（只换渲染器，脱敏沿用上游 displayFailure）。
+        versionCode = 453
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.77"
+        versionName = "1.6.0-beta.78"
 
         ndk {
             abiFilters += listOf(targetAbi)

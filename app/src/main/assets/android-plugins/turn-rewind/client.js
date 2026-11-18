@@ -126,6 +126,38 @@ window.__ModuleLoader__.load({
       ".dsh-rw-actions button[data-primary]{background:#5b9cf6;color:#fff}",
       ".dsh-rw-actions button:disabled{opacity:.5;cursor:default}",
       ".dsh-rw-note{font-size:12px;opacity:.6;margin-top:8px}",
+      ".dsh-rw-toast{display:flex;align-items:center;gap:7px;max-width:min(420px,calc(100vw - 32px));padding:7px 10px;border:1px solid color-mix(in srgb,var(--dsw-alias-label-tertiary,rgba(128,128,128,.85)) 22%,transparent);border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1,#1c1f24) 82%,transparent);color:var(--dsw-alias-label-primary,#e8eaee);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.35}",
+      ".dsh-rw-toast[data-error]{border-color:color-mix(in srgb,var(--dsw-alias-button-danger-fill,#c86565) 38%,transparent)}",
+      ".dsh-rw-toast-icon{width:16px;height:16px;flex:none;display:grid;place-items:center;color:var(--dsw-alias-button-danger-fill,#c86565);font-size:12px}",
+      // 回合结束提示：默认只有一行小字摘要，点开才给原因/建议/代码/复制。
+      // 与原生 TurnNoticeCard 同一套信息层级，数据来自官方 turn-error 节点，
+      // 不从正文或 toast 反推失败。
+      ".dsh-rw-notice{margin:8px 0 4px}",
+      ".dsh-rw-notice-row{display:flex;align-items:center;gap:7px;width:100%;",
+      "min-height:48px;padding:4px 6px;border:0;border-radius:8px;background:transparent;",
+      "color:var(--dsw-alias-label-secondary,rgba(200,204,210,.9));",
+      "font:inherit;font-size:12.5px;line-height:1.35;text-align:left;cursor:pointer}",
+      ".dsh-rw-notice-row:hover{background:rgba(128,128,128,.12)}",
+      ".dsh-rw-notice-row:focus-visible{outline:2px solid var(--dsw-alias-button-info-fill,#4176e6);outline-offset:1px}",
+      ".dsh-rw-notice-icon{width:15px;height:15px;flex:none;display:grid;place-items:center;",
+      "color:var(--dsw-alias-button-danger-fill,#c86565)}",
+      ".dsh-rw-notice[data-neutral] .dsh-rw-notice-icon{color:var(--dsw-alias-label-tertiary,rgba(128,128,128,.85))}",
+      ".dsh-rw-notice-summary{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".dsh-rw-notice-chevron{width:14px;height:14px;flex:none;opacity:.7;transition:transform .15s ease}",
+      ".dsh-rw-notice[data-expanded] .dsh-rw-notice-chevron{transform:rotate(180deg)}",
+      ".dsh-rw-notice-body{margin:2px 0 0 22px;padding:0 2px 4px}",
+      ".dsh-rw-notice-title{margin:0 0 3px;font-size:12.5px;font-weight:600;",
+      "color:var(--dsw-alias-label-primary,rgba(232,234,238,.95))}",
+      ".dsh-rw-notice-reason{margin:0;font-size:12.5px;line-height:1.5;",
+      "color:var(--dsw-alias-label-secondary,rgba(200,204,210,.9));overflow-wrap:anywhere}",
+      ".dsh-rw-notice-next{margin:5px 0 0;font-size:12.5px;line-height:1.5;",
+      "color:var(--dsw-alias-label-primary,rgba(232,234,238,.95))}",
+      ".dsh-rw-notice-code{margin:5px 0 0;font-family:ui-monospace,monospace;font-size:11.5px;",
+      "color:var(--dsw-alias-label-tertiary,rgba(128,128,128,.85));overflow-wrap:anywhere}",
+      ".dsh-rw-notice-copy{display:inline-flex;align-items:center;gap:5px;margin-top:6px;",
+      "min-height:48px;padding:0 12px;border:1px solid rgba(128,128,128,.28);",
+      "border-radius:9px;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer}",
+      ".dsh-rw-notice-copy:hover{background:rgba(128,128,128,.12)}",
       // 输入区那格的宿主锚点（官方 .GRgSLq_overlayAnchor）是
       // position:absolute; inset:0 0 auto; height:0——它只是个零高的定位参照，
       // 子节点若留在常规流里会从卡片顶部往下压，正好盖住输入框文字，行高也被
@@ -590,14 +622,15 @@ window.__ModuleLoader__.load({
           {
             style: {
               position: "fixed",
-              left: "50%",
-              bottom: 96,
-              transform: "translateX(-50%)",
+              bottom: "max(96px, calc(env(safe-area-inset-bottom) + 24px))",
               zIndex: 2147483100,
               display: "flex",
               flexDirection: "column",
               gap: 8,
               pointerEvents: "none",
+              left: "max(16px, env(safe-area-inset-left))",
+              right: "max(16px, env(safe-area-inset-right))",
+              alignItems: "center",
             },
           },
           list.map(function (item) {
@@ -605,18 +638,14 @@ window.__ModuleLoader__.load({
               "div",
               {
                 key: item.id,
-                style: {
-                  padding: "9px 15px",
-                  borderRadius: 12,
-                  fontSize: 13.5,
-                  lineHeight: 1.5,
-                  maxWidth: 420,
-                  background: item.isError ? "rgba(176,60,60,.94)" : "rgba(38,42,48,.94)",
-                  color: "#fff",
-                  boxShadow: "0 10px 30px rgba(0,0,0,.35)",
-                },
+                className: "dsh-rw-toast",
+                "data-error": item.isError ? "" : undefined,
+                role: item.isError ? "status" : undefined,
               },
-              item.text,
+              item.isError
+                ? h("span", { className: "dsh-rw-toast-icon", "aria-hidden": "true" }, "!")
+                : null,
+              h("span", { style: { minWidth: 0, overflowWrap: "anywhere" } }, item.text),
             );
           }),
         ),
@@ -880,6 +909,218 @@ window.__ModuleLoader__.load({
         },
         icon(props.glyph, 16),
       );
+    }
+
+    /**
+     * 回合结束提示的数据：官方 `turn-error` 节点已经过 `displayFailure` 脱敏。
+     *
+     * 节点里只有 {seq,time,turn,step,message,code}，没有原始 payload —— AUTH 类
+     * 失败在上游被削成 `{code:'AUTH', message:''}`，所以这里无论展开还是复制都
+     * 不可能带出凭据。本表只为已知 code 补一句人话与恢复建议；不认识的 code
+     * 只说"未知/可能"，不编原因。
+     */
+    var TURN_NOTICE = {
+      AUTH: {
+        title: "本轮运行失败",
+        reason: "API 密钥无效或已过期。",
+        next: "检查模型设置里的密钥后重试。",
+      },
+      ACCOUNT_SIGN_IN_REQUIRED: {
+        title: "账号需要登录",
+        reason: "这一轮要求账号认证，但当前没有可用的登录状态。",
+        next: "登录 DeepSeek 后重试。",
+      },
+      ACCOUNT_SIGNED_OUT: {
+        title: "账号已退出，本轮已停止",
+        reason: "你在这一轮结束前退出了 DeepSeek 登录。",
+        next: "重新登录后重试。",
+      },
+      INTERRUPTED: {
+        title: "运行已中断",
+        reason: "DSH 进程在本轮完成前退出，未完成的工具调用结果未知。",
+        next: "恢复后重试。",
+      },
+      QUOTA: { title: "本轮运行失败", reason: "当前请求的额度已用尽。", next: "" },
+      ACCOUNT_QUOTA: { title: "本轮运行失败", reason: "当前请求的额度已用尽。", next: "" },
+    };
+
+    /** 中性（非失败色）的两种结束：用户/父会话主动停止，或本轮已正常收尾。 */
+    var NEUTRAL_CODES = { ACCOUNT_SIGNED_OUT: true, INTERRUPTED: true };
+
+    /**
+     * 把官方 turn-error 节点折成提示要显示的四段文字。
+     *
+     * @param {object} node - turn-error 节点数据。
+     * @returns {{title: string, reason: string, next: string, code: string, neutral: boolean}}
+     */
+    function describeTurnError(node) {
+      var code = typeof node.code === "string" ? node.code : "";
+      var known = Object.prototype.hasOwnProperty.call(TURN_NOTICE, code)
+        ? TURN_NOTICE[code]
+        : null;
+      var message = typeof node.message === "string" ? node.message : "";
+      var reason;
+      if (known !== null) {
+        // 已知码优先用本地可读说法；服务端 message 只作为补充证据留在复制文本外。
+        reason = known.reason;
+      } else if (message !== "") {
+        reason = message;
+      } else if (code !== "") {
+        reason = "未知原因（只有错误码 " + code + "，没有可读说明）。";
+      } else {
+        reason = "未知原因（这一轮没有记录失败说明）。";
+      }
+      return {
+        title: known !== null ? known.title : "本轮运行失败",
+        reason: reason,
+        next: known !== null ? known.next : "",
+        code: code,
+        neutral: NEUTRAL_CODES[code] === true,
+      };
+    }
+
+    /** 摘要行：一行小字，优先可读原因，其次状态名。 */
+    function turnSummary(node) {
+      var described = describeTurnError(node);
+      if (described.reason !== "") return described.reason;
+      return described.title === "" ? "本轮运行失败" : described.title;
+    }
+
+    /**
+     * 回合结束提示（Web 表现层）。
+     *
+     * 替换官方 `conversation.chat.node` 的 `turn-error` 渲染器：契约写明"重复
+     * 注册同一个 key 会替换该 occupant"，而这里正是要换掉官方那块常驻的大段
+     * 失败面板。默认只画一行小字摘要 + 状态图标 + 箭头；整行可点开，展开后才有
+     * 原因、恢复建议、错误码与复制。数据全部来自官方节点，不从正文猜失败。
+     */
+    function TurnNoticeRow(props) {
+      var node = (props.node && props.node.data) || {};
+      var state = React.useState(false);
+      var copied = React.useState(false);
+      return noticeView(node, {
+        expanded: state[0],
+        onToggle: function () {
+          state[1](!state[0]);
+        },
+        copied: copied[0],
+        onCopy: function () {
+          copied[1](true);
+        },
+      });
+    }
+
+    /**
+     * 提示的纯渲染部分：展开与否、复制状态都由调用方给。
+     *
+     * 拆出来是为了能离线核对"折叠时只有一行"、"展开后才有代码与复制"这两条
+     * 契约 —— 组件里的 useState 在测试桩里不会真的改状态。
+     *
+     * @param {object} node - turn-error 节点数据（已由上游脱敏）。
+     * @param {{expanded:boolean,onToggle:Function,copied:boolean,onCopy:Function}} ui - 交互状态。
+     * @returns {object} React 元素。
+     */
+    function noticeView(node, ui) {
+      var described = describeTurnError(node);
+      var expanded = ui.expanded === true;
+      var isCopied = ui.copied === true;
+
+      var copyText = [
+        described.title,
+        described.reason,
+        described.next === "" ? null : described.next,
+        described.code === "" ? null : "代码：" + described.code,
+      ]
+        .filter(function (line) {
+          return line !== null && line !== "";
+        })
+        .join("\n");
+
+      return h(
+        "div",
+        {
+          className: "dsh-rw-notice",
+          "data-neutral": described.neutral ? "" : undefined,
+          "data-expanded": expanded ? "" : undefined,
+        },
+        h(
+          "button",
+          {
+            type: "button",
+            className: "dsh-rw-notice-row",
+            "aria-expanded": expanded ? "true" : "false",
+            title: expanded ? "收起这一轮的结束原因" : "展开这一轮的结束原因",
+            onClick: function () {
+              ui.onToggle();
+            },
+          },
+          h(
+            "span",
+            { className: "dsh-rw-notice-icon", "aria-hidden": "true" },
+            icon(
+              described.neutral
+                ? ["M12 4a8 8 0 1 0 8 8", "M12 8v4", "M12 16h.01"]
+                : ["M12 4l9 16H3z", "M12 10v4", "M12 17h.01"],
+              15,
+            ),
+          ),
+          h(
+            "span",
+            { className: "dsh-rw-notice-summary" },
+            turnSummary(node),
+          ),
+          h(
+            "span",
+            { className: "dsh-rw-notice-chevron", "aria-hidden": "true" },
+            icon(["M6 9l6 6 6-6"], 14),
+          ),
+        ),
+        expanded
+          ? h(
+              "div",
+              { className: "dsh-rw-notice-body" },
+              h("p", { className: "dsh-rw-notice-title" }, described.title),
+              h("p", { className: "dsh-rw-notice-reason" }, described.reason),
+              described.next === ""
+                ? null
+                : h("p", { className: "dsh-rw-notice-next" }, described.next),
+              described.code === ""
+                ? null
+                : h("p", { className: "dsh-rw-notice-code" }, "代码：" + described.code),
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: "dsh-rw-notice-copy",
+                  onClick: function () {
+                    void copyText2(copyText).then(function (ok) {
+                      if (ok) ui.onCopy();
+                    });
+                  },
+                },
+                h(
+                  "span",
+                  { "aria-hidden": "true" },
+                  icon(GLYPH.copy, 13),
+                ),
+                isCopied ? "已复制" : "复制详情",
+              ),
+            )
+          : null,
+      );
+    }
+
+    /**
+     * 复制提示文本。与 toast 版的 copyText 分开：这里静默成功（按钮自己回显"已复制"），
+     * 失败才用 toast 说明，避免展开一次就弹一条提示。
+     *
+     * @param {string} text - 要复制的文本。
+     * @returns {Promise<boolean>} 是否成功。
+     */
+    async function copyText2(text) {
+      var ok = await copyText(text);
+      if (!ok) notify("复制失败，请手动选择文本", true);
+      return ok;
     }
 
     /** 会话级上下文：动作实现 + 当前会话 id 的取值方式。 */
@@ -1451,6 +1692,20 @@ window.__ModuleLoader__.load({
         );
       });
 
+      // 回合结束提示：替换官方 `turn-error` 那一格。
+      //
+      // 官方渲染器（client-ui-chat `TurnErrorNodeView`）是一块常驻面板；
+      // 契约写明 keyed 槽"重复注册同一个 key 会替换 occupant"，且最低
+      // priority 者渲染（官方为 0，这里 -10）。只换"这一格由谁画"，节点数据、
+      // 脱敏（event-projection `displayFailure` 对 AUTH 只留 code）与分组都由
+      // 官方投影提供，本插件不重算失败分类。
+      ctx.slots.inject("conversation.chat.node", function () {
+        return ctx.slots.register(
+          { name: "conversation.chat.node", key: "turn-error", priority: -10 },
+          TurnNoticeRow,
+        );
+      });
+
       // 助手行：新增 id，不替换官方的 feedback 与 copy。
       ctx.slots.inject("conversation.chat.assistant-actions", function () {
         return ctx.slots.register(
@@ -1549,6 +1804,11 @@ window.__ModuleLoader__.load({
       css: function () {
         return CSS;
       },
+      /** 回合结束提示：官方 turn-error 节点 → 单行摘要/展开详情的折法。 */
+      TurnNoticeRow: TurnNoticeRow,
+      noticeView: noticeView,
+      describeTurnError: describeTurnError,
+      turnSummary: turnSummary,
     };
 
     return module.exports;

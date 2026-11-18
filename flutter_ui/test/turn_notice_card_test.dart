@@ -28,6 +28,17 @@ Future<void> _pump(WidgetTester tester, List<ChatMessage> messages) async {
   await tester.pump();
 }
 
+/// Opens the collapsed row when it is still closed. The row keeps its state
+/// across a rebuild, so the helper checks the painted result instead of
+/// assuming either state.
+Future<void> _expand(WidgetTester tester) async {
+  if (find.byKey(const ValueKey('turn-notice-copy')).evaluate().isNotEmpty) {
+    return;
+  }
+  await tester.tap(find.byKey(const ValueKey('turn-notice')));
+  await tester.pump();
+}
+
 void main() {
   testWidgets('a failed turn renders its own card with code and copy', (
     tester,
@@ -60,15 +71,14 @@ void main() {
     ]);
     expect(find.byKey(const ValueKey('turn-notice')), findsOneWidget);
     expect(find.byIcon(Icons.error_outline_rounded), findsOneWidget);
-    expect(find.text('本轮未能完成'), findsOneWidget);
     expect(find.textContaining('模型尚未配置'), findsOneWidget);
-    expect(find.text('MISSING_CREDENTIAL'), findsOneWidget);
-    // The card body is plain text, never selectable/model speech, and the
-    // details stay collapsed until asked for.
+    expect(find.byKey(const ValueKey('turn-notice-code')), findsNothing);
+    expect(find.byKey(const ValueKey('turn-notice-copy')), findsNothing);
     expect(find.byType(SelectableText), findsNothing);
     expect(find.byKey(const ValueKey('turn-notice-detail')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('turn-notice-detail-toggle')));
+    await tester.tap(find.byKey(const ValueKey('turn-notice')));
     await tester.pump();
+    expect(find.byKey(const ValueKey('turn-notice-code')), findsOneWidget);
     expect(find.byKey(const ValueKey('turn-notice-detail')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('turn-notice-copy')));
     await tester.pump();
@@ -85,12 +95,17 @@ void main() {
       ),
     ]);
     expect(find.byKey(const ValueKey('turn-notice')), findsOneWidget);
-    expect(find.text('任务已停止'), findsOneWidget);
+    // Collapsed, the row carries the readable reason; the state name follows
+    // once the row is opened.
+    expect(find.text('你停止了这一轮。'), findsOneWidget);
     final icon = tester.widget<Icon>(find.byIcon(Icons.stop_circle_outlined));
     expect(
       icon.color,
       DshPalette.colorsFor(DshMood.mist, Brightness.light).inkSoft,
     );
+    expect(find.byIcon(Icons.error_outline_rounded), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('turn-notice')));
+    await tester.pump();
     expect(find.text('任务已停止'), findsOneWidget);
   });
 
@@ -117,14 +132,14 @@ void main() {
     ]);
     expect(tester.takeException(), isNull);
     // Actions stay reachable with a real 48dp target under large text.
-    final copy = find.byKey(const ValueKey('turn-notice-copy'));
-    final toggle = find.byKey(const ValueKey('turn-notice-detail-toggle'));
-    expect(tester.getSize(copy).width, greaterThanOrEqualTo(48));
-    expect(tester.getSize(copy).height, greaterThanOrEqualTo(48));
+    final toggle = find.byKey(const ValueKey('turn-notice'));
     await tester.ensureVisible(toggle);
     await tester.pump();
     await tester.tap(toggle);
     await tester.pump();
+    final copy = find.byKey(const ValueKey('turn-notice-copy'));
+    expect(tester.getSize(copy).width, greaterThanOrEqualTo(48));
+    expect(tester.getSize(copy).height, greaterThanOrEqualTo(48));
     expect(find.byKey(const ValueKey('turn-notice-detail')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -145,6 +160,7 @@ void main() {
     // and the body must say what to do next.
     expect(find.text('任务已停止'), findsNothing);
     expect(find.textContaining('账号已退出'), findsWidgets);
+    await _expand(tester);
     expect(find.textContaining('重新登录后重试'), findsOneWidget);
 
     await _pump(tester, [
@@ -157,6 +173,7 @@ void main() {
       ),
     ]);
     expect(find.text('任务已停止'), findsNothing);
+    await _expand(tester);
     expect(find.textContaining('运行已中断'), findsWidgets);
     expect(find.textContaining('恢复后重试'), findsOneWidget);
   });
@@ -185,7 +202,11 @@ void main() {
         ),
       ),
     ]);
-    final chip = tester.widget<Text>(find.text('MISSING_CREDENTIAL'));
+    await _expand(tester);
+    final chip = tester.widget<Text>(
+      find.byKey(const ValueKey('turn-notice-code')),
+    );
+    expect(chip.data, contains('MISSING_CREDENTIAL'));
     expect(chip.style?.fontSize, greaterThanOrEqualTo(12));
   });
 
@@ -201,10 +222,7 @@ void main() {
       ),
     ]);
     expect(find.byKey(const ValueKey('turn-notice-code')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('turn-notice-detail-toggle')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('turn-notice')), findsOneWidget);
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
   });
 }

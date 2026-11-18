@@ -165,12 +165,16 @@ void main() {
     expect(opacityOf(), 0.0, reason: '淡完必须彻底让开，不能留一层盖住会话页');
   });
 
-  testWidgets('a launch fade never fights the system reduced motion setting', (
+  testWidgets('a reduced-motion launch fade still hands the backdrop over', (
     tester,
   ) async {
     const channel = MethodChannel('app.dsh.mobile/native_chat');
+    final calls = <String>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async => true);
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call.method);
+          return true;
+        });
     addTearDown(
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null),
@@ -184,15 +188,30 @@ void main() {
         ),
       ),
     );
-    // 减少动效：底图一帧就让开，不画任何渐变。
+    // 减少动效：底图一帧就让开，不画任何渐变。交接（解码 → 撤宿主覆盖层 →
+    // _play）是异步的，不推完时钟会在测试结束时留下 precache 的 2.5s 超时定时器，
+    // 于是 postTest 报 "A Timer is still pending"；那是测试自己的收尾问题，不是
+    // 组件缺陷，所以这里把交接真的推完再断言。
     await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 1));
     final fade = find.descendant(
       of: find.byType(LaunchFade),
       matching: find.byType(FadeTransition),
     );
+    // 淡出按帧推进时用 Opacity 而不是 FadeTransition，两种实现都只允许终态 0。
+    final opacity = find.descendant(
+      of: find.byType(LaunchFade),
+      matching: find.byType(Opacity),
+    );
     if (fade.evaluate().isNotEmpty) {
       expect(tester.widget<FadeTransition>(fade).opacity.value, 0.0);
     }
+    if (opacity.evaluate().isNotEmpty) {
+      expect(tester.widget<Opacity>(opacity).opacity, 0.0);
+    }
+    // 减少动效不等于跳过交接：宿主的覆盖层仍然要被撤，否则它会一直盖着会话页。
+    expect(calls, contains('releaseBackdrop'));
     expect(find.byKey(const Key('content')), findsOneWidget);
   });
 

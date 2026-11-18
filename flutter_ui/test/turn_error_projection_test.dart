@@ -309,6 +309,8 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('turn-notice')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('turn-notice-copy')));
     await tester.pump();
     expect(copied.single, contains('AUTH'));

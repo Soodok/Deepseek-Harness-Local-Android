@@ -68,8 +68,10 @@ class ComposerSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GlassPanel(
+    radius: 22,
+    composerGlass: true,
     child: Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -158,12 +160,12 @@ class ComposerActionButton extends StatelessWidget {
         key: stopKey,
         tooltip: stopInFlight ? '正在停止' : '停止执行',
         style: IconButton.styleFrom(
-          backgroundColor: DshPalette.of(context).ink.withValues(alpha: .10),
+          backgroundColor: Colors.transparent,
           foregroundColor: DshPalette.of(context).ink,
-          disabledBackgroundColor: DshPalette.of(context).ink
-              .withValues(alpha: .06),
+          disabledBackgroundColor: Colors.transparent,
           disabledForegroundColor: DshPalette.of(context).inkFaint,
           minimumSize: DshDisplayScope.targetSize(context),
+          padding: EdgeInsets.zero,
         ),
         onPressed: canStop ? onStop : null,
         icon: stopInFlight
@@ -172,7 +174,16 @@ class ComposerActionButton extends StatelessWidget {
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.stop_rounded, size: 24),
+            : Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: DshPalette.of(context).ink.withValues(alpha: .10),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Icon(Icons.stop_rounded, size: 20),
+              ),
       );
     }
     final waitingOnlyStop = running && !hasContent;
@@ -182,13 +193,25 @@ class ComposerActionButton extends StatelessWidget {
         key: sendKey,
         onPressed: !waitingOnlyStop && canSend && hasContent ? onSend : null,
         style: IconButton.styleFrom(
-          backgroundColor: DshPalette.of(context).sendBlue,
+          backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: DshPalette.of(context).sendBlueMuted,
+          disabledBackgroundColor: Colors.transparent,
           disabledForegroundColor: DshPalette.of(context).inkFaint,
           minimumSize: DshDisplayScope.targetSize(context),
+          padding: EdgeInsets.zero,
         ),
-        icon: const Icon(Icons.arrow_upward_rounded, size: 26),
+        icon: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: !waitingOnlyStop && canSend && hasContent
+                ? DshPalette.of(context).sendBlue
+                : DshPalette.of(context).sendBlueMuted,
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: const Icon(Icons.arrow_upward_rounded, size: 20),
+        ),
       ),
     );
   }

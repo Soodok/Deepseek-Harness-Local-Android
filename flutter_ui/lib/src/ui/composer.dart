@@ -69,7 +69,8 @@ class _ComposerState extends State<Composer> {
   void _adoptDraft() {
     final draft = widget.draft;
     if (draft == null) return;
-    if (draft.revision == _adoptedRevision && _textController.text == draft.text)
+    if (draft.revision == _adoptedRevision &&
+        _textController.text == draft.text)
       return;
     _adoptedRevision = draft.revision;
     if (_textController.text == draft.text) return;
@@ -246,12 +247,22 @@ class _ComposerState extends State<Composer> {
                       ? null
                       : _pick,
                   style: IconButton.styleFrom(
-                    backgroundColor: DshPalette.of(context).ink
-                        .withValues(alpha: .06),
+                    backgroundColor: Colors.transparent,
+                    padding: EdgeInsets.zero,
+                    minimumSize: DshDisplayScope.targetSize(context),
                   ),
-                  icon: Icon(
-                    _picking ? Icons.more_horiz_rounded : Icons.add_rounded,
-                    size: 27,
+                  icon: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: DshPalette.of(context).ink.withValues(alpha: .06),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      _picking ? Icons.more_horiz_rounded : Icons.add_rounded,
+                      size: 20,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -272,22 +283,32 @@ class _ComposerState extends State<Composer> {
                   tooltip: '工具权限：' + controller.permissionLabel,
                   onPressed: () => showPermissionSelector(context, controller),
                   style: IconButton.styleFrom(
-                    backgroundColor: DshPalette.of(context).ink
-                        .withValues(alpha: .06),
+                    backgroundColor: Colors.transparent,
+                    padding: EdgeInsets.zero,
+                    minimumSize: DshDisplayScope.targetSize(context),
                   ),
-                  icon: !controller.permissionKnown
-                      ? const Icon(Icons.help_outline)
-                      : DshPermissionIcon(
-                          glyph: switch (controller.permission) {
-                            ComposerPermission.readOnly =>
-                              DshPermissionGlyph.readOnly,
-                            ComposerPermission.workspaceWrite =>
-                              DshPermissionGlyph.workspaceWrite,
-                            ComposerPermission.fullAccess =>
-                              DshPermissionGlyph.fullAccess,
-                          },
-                          size: 22,
-                        ),
+                  icon: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: DshPalette.of(context).ink.withValues(alpha: .06),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: !controller.permissionKnown
+                        ? const Icon(Icons.help_outline, size: 18)
+                        : DshPermissionIcon(
+                            glyph: switch (controller.permission) {
+                              ComposerPermission.readOnly =>
+                                DshPermissionGlyph.readOnly,
+                              ComposerPermission.workspaceWrite =>
+                                DshPermissionGlyph.workspaceWrite,
+                              ComposerPermission.fullAccess =>
+                                DshPermissionGlyph.fullAccess,
+                            },
+                            size: 18,
+                          ),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 ValueListenableBuilder<TextEditingValue>(
@@ -410,6 +431,7 @@ class _QueueTray extends StatelessWidget {
     );
   }
 }
+
 /// The one line above the input that makes edit mode unmistakable, with the
 /// only way out that keeps the original message untouched.
 class _EditingBar extends StatelessWidget {

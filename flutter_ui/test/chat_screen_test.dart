@@ -51,6 +51,11 @@ void main() {
           )
           .first,
     );
+    // 输入区收紧后，滚到底时这一行仍可能被输入卡片压住一截，点击会落在
+    // 输入区上（tap 只警告不失败，随后"行没展开"才是真正的失败）。先把
+    // 它在列表里抬到完整可见，再点它 —— 断言的仍是"点这一行会展开"。
+    await tester.ensureVisible(trace);
+    await tester.pump();
     await tester.tap(trace);
     await tester.pump();
     expect(find.text('读取项目状态'), findsOneWidget);

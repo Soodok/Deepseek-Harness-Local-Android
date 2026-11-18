@@ -110,6 +110,16 @@ Future<({double row, double option, double heading, double left})> _measure(
   );
 }
 
+/// The size a control really occupies on the glass: the canvas paints the
+/// subtree through a [Transform], so the widget's own size is in logical units
+/// and must be converted before it can be compared with a dp floor.
+Size _paintedSize(WidgetTester tester, Finder finder) {
+  final box = tester.renderObject<RenderBox>(finder);
+  final topLeft = box.localToGlobal(Offset.zero);
+  final delta = box.localToGlobal(box.size.bottomRight(Offset.zero)) - topLeft;
+  return Size(delta.dx, delta.dy);
+}
+
 void main() {
   testWidgets('a stored compact size is applied to the whole app on start', (
     tester,
@@ -331,9 +341,19 @@ void main() {
     harness.install(tester);
     await tester.pumpWidget(const DshApp(preview: true));
     await _settle(tester);
-    for (final key in ['composer-model', 'composer-send', 'composer-attach']) {
-      final rect = tester.getRect(find.byKey(ValueKey(key)));
-      expect(rect.height, greaterThanOrEqualTo(48), reason: key);
+    // The canvas paints at 0.9, so a widget's own size (53.33 logical) is not
+    // what the finger touches. Measure the painted box in real dp; asserting
+    // the logical size alone stays green even if the floor is dropped, because
+    // 48 logical looks like "48" while the glass only gets 43.2dp.
+    for (final key in [
+      'composer-model',
+      'composer-send',
+      'composer-attach',
+      'composer-permission',
+    ]) {
+      final painted = _paintedSize(tester, find.byKey(ValueKey(key)));
+      expect(painted.height, greaterThanOrEqualTo(48 - .01), reason: key);
+      expect(painted.width, greaterThanOrEqualTo(48 - .01), reason: key);
     }
     // A tap at the painted centre reaches the capsule even though the whole
     // surface is drawn at 0.9.
@@ -412,16 +432,17 @@ void main() {
       ),
     );
     await _settle(tester);
-    final toggle = tester.getRect(
-      find.byKey(const ValueKey('turn-notice-detail-toggle')),
-    );
-    final copy = tester.getRect(find.byKey(const ValueKey('turn-notice-copy')));
-    expect(toggle.height, greaterThanOrEqualTo(48));
-    expect(copy.height, greaterThanOrEqualTo(48));
-    // Both answer a tap where they are painted, not where they used to be.
+    final toggle = tester.getRect(find.byKey(const ValueKey('turn-notice')));
+    // The canvas paints at 0.9, so the 48dp floor lands here as 53.33 logical
+    // units; the sub-nanometre shortfall is float noise on that division, not a
+    // smaller target, so the assertion keeps a tolerance far below one dp.
+    const floor = 48 - .001;
+    expect(toggle.height, greaterThanOrEqualTo(floor));
     await tester.tapAt(toggle.center);
     await _settle(tester);
     expect(find.byKey(const ValueKey('turn-notice-detail')), findsOneWidget);
+    final copy = tester.getRect(find.byKey(const ValueKey('turn-notice-copy')));
+    expect(copy.height, greaterThanOrEqualTo(floor));
     await tester.tapAt(copy.center);
     await _settle(tester);
     expect(copied.single, contains('MISSING_CREDENTIAL'));

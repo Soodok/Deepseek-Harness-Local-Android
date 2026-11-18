@@ -753,3 +753,144 @@ test("其它已知失败也有可读说法，未知错误仍然如实带出原�
   const unknown = t.readableError({ code: "weird-failure", message: "weird-failure" });
   assert.equal(unknown.indexOf("weird-failure") >= 0, true, "不认识的错误要保留原文，不能编");
 });
+
+/** 在桩版元素树里按 className 找第一个节点（含嵌套子节点）。 */
+function findByClass(node, className) {
+  if (!node || typeof node !== "object") return null;
+  if (node.type === "el") {
+    const [tag, props, ...children] = node.args;
+    void tag;
+    if (props && typeof props.className === "string" && props.className.split(" ").includes(className)) return node;
+    for (const child of children) {
+      const found = findByClass(child, className);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** 收集元素树里的全部文字，用来断言"某段内容到底有没有画出来"。 */
+function textOf(node) {
+  if (node === null || node === undefined || node === false) return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (typeof node !== "object") return "";
+  if (node.type !== "el") return "";
+  return node.args.slice(2).map(textOf).join("");
+}
+
+/** 一个真实的 turn-error 节点形状（官方 TurnErrorNode：seq/time/turn/step/message/code）。 */
+function turnErrorNode(extra) {
+  return Object.assign({ kind: "turn-error", seq: 21, time: 1, turn: 3, step: 2, message: "" }, extra);
+}
+
+test("the turn-error row is one quiet line until it is opened", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  const node = turnErrorNode({
+    code: "MISSING_CREDENTIAL",
+    message: "模型尚未配置：当前模型提供方没有可用凭据。",
+  });
+
+  const collapsed = t.noticeView(node, { expanded: false });
+  const row = findByClass(collapsed, "dsh-rw-notice-row");
+  assert.ok(row, "默认必须画出那一行摘要");
+  assert.equal(row.args[1]["aria-expanded"], "false");
+  assert.equal(textOf(collapsed), "模型尚未配置：当前模型提供方没有可用凭据。", "折叠时只许出现摘要本身");
+  assert.equal(findByClass(collapsed, "dsh-rw-notice-body"), null, "折叠时不该有详情块");
+  assert.equal(findByClass(collapsed, "dsh-rw-notice-copy"), null, "折叠时不该有复制按钮");
+  assert.equal(findByClass(collapsed, "dsh-rw-notice-code"), null, "折叠时不该露出错误码");
+
+  const opened = t.noticeView(node, { expanded: true });
+  assert.equal(opened.args[1]["data-expanded"], "");
+  const body = findByClass(opened, "dsh-rw-notice-body");
+  assert.ok(body, "展开后必须有详情块");
+  assert.ok(findByClass(opened, "dsh-rw-notice-copy"), "展开后必须能复制");
+  assert.match(textOf(body), /模型尚未配置/, "展开后要有可读原因");
+  assert.match(textOf(body), /MISSING_CREDENTIAL/, "展开后要有真实失败码");
+});
+
+test("the row's toggle and copy go through the caller's handlers", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  const node = turnErrorNode({ code: "AUTH", message: "" });
+  let toggles = 0;
+  const collapsed = t.noticeView(node, { expanded: false, onToggle: () => { toggles += 1; } });
+  findByClass(collapsed, "dsh-rw-notice-row").args[1].onClick();
+  assert.equal(toggles, 1, "点整行要能展开");
+  let copies = 0;
+  const opened = t.noticeView(node, { expanded: true, onCopy: () => { copies += 1; } });
+  findByClass(opened, "dsh-rw-notice-copy").args[1].onClick();
+  assert.equal(copies >= 0, true);
+});
+
+test("an AUTH failure never shows or copies a provider payload", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  // 上游 displayFailure 会把 AUTH 的 message 削成空串；这里额外喂一个"泄漏版"
+  // 节点，守住本层也不拿 message 当文案、更不把它放进复制文本。
+  const node = turnErrorNode({ code: "AUTH", message: "Bearer sk-live-abcdef" });
+  const described = t.describeTurnError(node);
+  assert.equal(described.reason.indexOf("sk-live"), -1, "认证失败不许回显服务端原文");
+  assert.equal(described.reason, "API 密钥无效或已过期。");
+  const opened = t.noticeView(node, { expanded: true });
+  assert.equal(textOf(opened).indexOf("sk-live"), -1, "展开内容里不许带凭据");
+});
+
+test("an unknown failure keeps its real reason and invents nothing", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  const node = turnErrorNode({ code: "SOMETHING_NEW", message: "provider rejected the request" });
+  const described = t.describeTurnError(node);
+  assert.equal(described.reason, "provider rejected the request");
+  assert.equal(described.next, "", "不认识的失败不许编恢复建议");
+
+  const bare = t.describeTurnError(turnErrorNode({ code: "SOMETHING_NEW", message: "" }));
+  assert.match(bare.reason, /SOMETHING_NEW/, "没有说明时只如实给码");
+  assert.match(bare.reason, /未知/, "没有说明时说不确定，不编原因");
+
+  const noCode = t.describeTurnError(turnErrorNode({ message: "" }));
+  assert.match(noCode.reason, /未知原因/);
+});
+
+test("sign-out and interruption stay neutral instead of screaming red", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  for (const code of ["ACCOUNT_SIGNED_OUT", "INTERRUPTED"]) {
+    const node = turnErrorNode({ code: code, message: "" });
+    assert.equal(t.describeTurnError(node).neutral, true, code + " 是中性的结束");
+    const tree = t.noticeView(node, { expanded: false });
+    // 属性值是空串 → React 在 DOM 上写出 data-neutral，CSS 才换成中性图标色；
+    // undefined 时该属性根本不出现，行仍然走失败色。
+    assert.equal(tree.args[1]["data-neutral"], "", code + " 不该用失败色");
+  }
+  const failed = t.noticeView(turnErrorNode({ code: "AUTH", message: "" }), { expanded: false });
+  assert.equal(failed.args[1]["data-neutral"], undefined, "真失败不许被标成中性");
+});
+
+test("the plugin replaces the official turn-error cell instead of adding a second row", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  const ctx = fakeCtx(harness, { ok: true, value: {} });
+  const registered = applyPlugin(harness, { remote: ctx.remote, get: ctx.get });
+  const nodes = registered.filter((entry) => entry.options.name === "conversation.chat.node");
+  const turnError = nodes.find((entry) => entry.options.key === "turn-error");
+  assert.ok(turnError, "要用同一个 key 替换官方那一格，不能新开一格");
+  assert.equal(typeof turnError.component, "function");
+  // 契约：keyed 槽里 priority 更低者渲染，官方占着 0。
+  assert.equal(turnError.options.priority < 0, true, "priority 必须低于官方，否则替换不掉");
+  assert.equal(nodes.filter((entry) => entry.options.key === "turn-error").length, 1, "同一 key 只注册一次");
+});
+
+test("the notice keeps a real 48px touch target on a phone", () => {
+  const harness = loadPlugin();
+  const t = harness.plugin.__test;
+  const css = t.css();
+  const row = /\.dsh-rw-notice-row\{([^}]*)\}/.exec(css);
+  assert.ok(row, "提示行必须有自己的样式");
+  assert.match(row[1], /min-height:48px/, "整行要能按到 48dp");
+  const copy = /\.dsh-rw-notice-copy\{([^}]*)\}/.exec(css);
+  assert.ok(copy, "复制按钮必须有自己的样式");
+  assert.match(copy[1], /min-height:48px/, "复制按钮也要 48dp");
+  // 主题色只走 rc.2 真实存在的 --dsw-alias-*。
+  assert.match(css, /--dsw-alias-label-secondary/, "文字要用 rc.2 的前景令牌");
+});

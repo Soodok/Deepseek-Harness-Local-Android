@@ -39,10 +39,25 @@ class DshGlassStyle {
   bool get blurs => blurSigma > 0;
 
   /// One deliberate tier: floating chrome (top bar, composer, sheets).
-  static DshGlassStyle resolve(BuildContext context, {double scale = 1}) {
+  static DshGlassStyle resolve(
+    BuildContext context, {
+    double scale = 1,
+    bool composer = false,
+  }) {
     final palette = DshPalette.of(context);
     final light = Theme.of(context).brightness == Brightness.light;
     final ink = light ? const Color(0xFF1D2320) : const Color(0xFF000000);
+    if (composer) {
+      return DshGlassStyle(
+        fill: palette.surface.withValues(alpha: .34),
+        fallbackFill: palette.surface.withValues(alpha: .97),
+        hairline: Colors.transparent,
+        rim: Colors.transparent,
+        blurSigma: 8 * scale,
+        saturation: 1,
+        shadows: const [],
+      );
+    }
     return light
         ? DshGlassStyle(
             fill: palette.surface.withValues(alpha: .62),
@@ -97,17 +112,21 @@ class GlassPanel extends StatelessWidget {
     required this.child,
     this.radius = 28,
     this.blurScale = 1,
+    this.composerGlass = false,
   });
 
   final Widget child;
   final double radius;
-
-  /// Global blur strength multiplier (0 disables); kept for host tuning.
   final double blurScale;
+  final bool composerGlass;
 
   @override
   Widget build(BuildContext context) {
-    final style = DshGlassStyle.resolve(context, scale: blurScale);
+    final style = DshGlassStyle.resolve(
+      context,
+      scale: blurScale,
+      composer: composerGlass,
+    );
     final calm =
         MediaQuery.disableAnimationsOf(context) ||
         MediaQuery.highContrastOf(context);
