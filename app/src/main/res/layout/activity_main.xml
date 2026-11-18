@@ -3,6 +3,7 @@
      的边界之外（elevation 阴影是向外扩散的），默认的裁剪会把它整片切掉 ——
      表现为「设了 elevation 却完全没有阴影」，而在真机上看不出任何报错。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
