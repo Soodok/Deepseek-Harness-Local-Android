@@ -14678,6 +14678,26 @@ TOTAL               中位 5655ms     3730~3745ms   （省 ~33%）
 - 设备侧操作要点：抽屉按钮 `(62,122)`、会话行 `y≈924`；`adb push` 到 `/sdcard` 必须 `MSYS2_ARG_CONV_EXCL='*'` + `//sdcard/...` 双斜杠，否则 MSYS 改写成 `C:/Program Files/Git/sdcard/...`。
 - **验证期被并行会话打断过一次**：`DshApp.kt` 里的 `chatImportEnabled` / `setChatImportEnabled` / `KEY_CHAT_IMPORT` 在 00:19 前后被同工作区的另一轮提交（`a3b57d6a` perf(boot)）覆盖掉了，探针当场打红 3 条（「prefs 键存在」「缺省关闭」「读写访问器都在」）。重新补齐后 43/43 复绿、`BUILD SUCCESSFUL`。**教训**：这类「字段存在」断言在多会话工作区里有价值，不要因为「我刚写过」就跳过运行。
 
+### 产物（可直接分发）
+
+`E:/Deepeek harness/dsh-android-v1.6.0-beta.17-arm64-full-release.apk`
+- 191,678,030 B（182.8 MB），sha256 `11153539a03b525521a34c95466eef7d864d8f0ebf7d3053a0bb4ee6ac7d4bd7`
+- versionCode 393 / versionName 1.6.0-beta.17 / minSdk 26 / targetSdk 28 / compileSdk 36
+- **正式签名**（`CN=DSH Mobile, OU=DSH, O=Soodok, C=CN`，SHA-256 `d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8`）—— 与 beta.16 同一个 keystore，可覆盖升级
+- 内含实测：运行时 0.2.2-rc.3（BUILD.json `2026.11.17-45565c14`）、chat-import 包 **31 条目**、PTC 四项补丁齐、polyfill asset 与 fast-mode 插件在、`chat-anchor-fallback` 3 文件
+
+命令（keystore 从 `/e/tmp/wt-island2/keystore/` 拷进 `keystore/`，该目录已被 `.gitignore` 排除）：
+
+```
+gradle.bat --console=plain :app:assembleRelease -Pabi=arm64-v8a -Ppackage=full \
+  -PruntimeZip=E:/tmp/runtime-rc3-arm64.zip \
+  -PhardsshDir=E:/tmp/bundles/bundle-hardssh/hardssh \
+  -PmobileLayoutTgzDir=E:/tmp/bundles/bundle-mobile-layout \
+  -PsolutionExplorerTgzDir=E:/tmp/bundles/bundle-solution-explorer
+```
+
+推送到 origin/main 时本机 `github.com:443` 与 `gh-proxy.org` 都不通（`fetch` 三次全失败、`curl https://github.com` 000），改走 `python scripts/push-via-api.py`（api.github.com 直连 200）；三个提交 SHA 全部保持，远端 main = `2126e641`，CI `i18n-check` / `android-build` 均 success。
+
 ### 门禁
 
 - 全量探针：`scripts/probes/_test_*.py` 除 CI 同款 SKIP（`_test_corepack_hardlink.py`）外全绿（FAILED_COUNT=0）
