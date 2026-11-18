@@ -285,14 +285,14 @@ android {
         // 直接退出，一个 socket 都不建，界面上就是「点了开始画面没反应」。
         // 部署期（ensureXkbOutputDir）+ 运行期（startFrameServer）各补一次
         // mkdir，失败回显带 xkb 目录状态。
-        // versionCode 继续单调递增：375 → … → 390 → 391 → 392。
-        versionCode = 392
+        // versionCode 继续单调递增：375 → … → 391 → 392 → 393。
+        versionCode = 393
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.16"
+        versionName = "1.6.0-beta.17"
 
         ndk {
             abiFilters += listOf(targetAbi)
