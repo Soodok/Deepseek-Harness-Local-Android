@@ -79,7 +79,7 @@
 | 1.6.0-beta.73 | 448 | 先等宿主撤掉覆盖层再开始淡（撤层走主线程消息，实测延迟 4 秒） |
 | 1.6.0-beta.74 | 449 | 淡化拉长到 900ms |
 | 1.6.0-beta.75 | 450 | 撤层前先 precacheImage，避免中间露出等待引擎就绪空白页 |
-| 1.6.0-beta.77 | 452 | 淡化改为 Ticker 按帧推进 12 步：设备录到 8 级可见过渡，不再是硬切 |
+| 1.6.0-beta.77 | 452 | 淡化改为 Ticker 按帧推进 12 步：设备录到 9 级可见过渡（k34.mp4），不再是硬切 |
 
 最终 APK：`app/build/outputs/apk/debug/app-debug.apk`，248183354 B，SHA-256 `0b25d48f93f80fef13f9abe2464c9e640894398d76f4e466165e405cd2fb5afe`，versionCode 452 / versionName 1.6.0-beta.77，ABI 仅 x86_64。
 
@@ -97,5 +97,5 @@ DSH 权威契约来自本地只读运行时 `E:/tmp/rc2_asar/dsh/node_modules/@d
 ## 6. 未覆盖
 
 - 文件改名（rename）与二进制文件的回滚已在 beta.50 补上设备级真实样例（validation 3.2）。
-- Web / 原生切换动效已录逐帧视频（beta.77，validation 3.8）：原生侧入场是 8 级可见过渡，不再是硬切；Web 侧退场没有动画可录（WebView 切后台被系统停掉）。
+- Web / 原生切换动效已录逐帧视频（beta.77，validation 3.8）：原生侧入场是 9 级可见过渡（k34.mp4），不再是硬切；Web 侧退场没有动画可录（WebView 切后台被系统停掉）。
 - ARM 真机、TalkBack、硬件键盘遍历未验。
