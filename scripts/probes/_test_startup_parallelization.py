@@ -39,10 +39,16 @@ def pos(token: str) -> int:
 
 
 print("=== 1. Strict startup dependencies ===")
+# ⚠️ 并行块的三条用 stepElapsed（各自计时），不是 step（共享墙钟差值）。
+# 这里必须按新契约取锚点：早先的探针写的是 step(...)，改造后找不到锚点就
+# 整段报红 —— 那种红是「探针过期」而不是「代码坏了」，会淹没真问题。
+STEP_ORPHAN = 'stepElapsed("orphan-reap"'
+STEP_OWNER = 'stepElapsed("home-owner-check"'
+STEP_GUARDIAN = 'stepElapsed("guardian-restore"'
 ordered = [
-    'step("orphan-reap")',
-    'step("home-owner-check")',
-    'step("guardian-restore")',
+    STEP_ORPHAN,
+    STEP_OWNER,
+    STEP_GUARDIAN,
     'step("parallel-preflight")',
     'mark("runtime-install")',
     'mark("hardssh-install")',
@@ -55,9 +61,25 @@ ordered = [
 positions = [pos(token) for token in ordered]
 check("all dependency anchors exist", all(p >= 0 for p in positions), str(positions))
 check("dependency order is preserved", all(a < b for a, b in zip(positions, positions[1:])), str(positions))
-check("orphan reap precedes AgentBridge bind", pos('step("orphan-reap")') < pos("AgentBridge.start(ctx)"))
-check("ownership repair precedes home-file writes", pos('step("home-owner-check")') < pos("AgentContextSeed.ensure(ctx)"))
+check("orphan reap precedes AgentBridge bind", pos(STEP_ORPHAN) < pos("AgentBridge.start(ctx)"))
+check("ownership repair precedes home-file writes", pos(STEP_OWNER) < pos("AgentContextSeed.ensure(ctx)"))
 check("runtime install starts only after preflight barrier", pos('step("parallel-preflight")') < pos("RuntimeInstaller(ctx).ensureInstalled"))
+
+print("\n=== 1b. Parallel stages must not borrow a shared wall clock ===")
+# 这一条是「归因正确性」的守卫，不是性能守卫。
+#
+# 背景（实测踩过）：这三步早先各调一次 step()，而 step() 的耗时是「距上一条
+# step 的墙钟差值」。并行块里三条连着调，第一条吞掉整块时间、后两条记成 0~1ms，
+# 于是 orphan-reap 被记成 4881ms 并当成「孤儿回收慢」去排查，方向完全错。
+#
+# 怎么打红：把任意一条改回 step("orphan-reap")，第二条断言立刻失败。
+PARALLEL_KEYS = ["orphan-reap", "home-owner-check", "guardian-restore"]
+for key in PARALLEL_KEYS:
+    check(
+        f"{key} reports its own elapsed time",
+        f'stepElapsed("{key}"' in src and f'step("{key}")' not in src,
+        "this stage shares a wall clock with its siblings; use BootTrace.stepElapsed",
+    )
 
 print("\n=== 2. Bounded independent fan-out ===")
 start = src.find('mark("parallel-preflight")')
