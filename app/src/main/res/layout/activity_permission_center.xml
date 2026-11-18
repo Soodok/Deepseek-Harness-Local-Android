@@ -123,7 +123,20 @@
                             <TextView android:id="@+id/txtCapTotal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="0 / 0" android:textColor="?attr/colorOnSurface" android:textSize="26sp" android:textStyle="bold" />
                             <TextView android:id="@+id/txtCapPct" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0%" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold" android:background="@drawable/bg_status_chip" android:paddingHorizontal="10dp" android:paddingVertical="4dp" />
                         </LinearLayout>
-                        <ProgressBar android:id="@+id/barCapProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="10dp" android:max="100" android:progress="0" android:progressDrawable="@drawable/bg_cap_progress" />
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
+                            android:id="@+id/barCapProgress"
+                            style="@style/Widget.Material3.LinearProgressIndicator"
+                            android:layout_width="match_parent"
+                            android:layout_height="6dp"
+                            android:layout_marginTop="10dp"
+                            android:indeterminate="false"
+                            android:max="100"
+                            android:progress="0"
+                            app:indicatorColor="?attr/dshAccent"
+                            app:indicatorTrackGapSize="0dp"
+                            app:trackColor="?attr/dshDivider"
+                            app:trackCornerRadius="3dp"
+                            app:trackThickness="6dp" />
                         <TextView android:id="@+id/txtCapOverviewSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_perm_group_device" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="8dp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -477,7 +490,7 @@
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                             <TextView android:id="@+id/txtGrantAllSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_grant_perms_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
                         </LinearLayout>
-                        <TextView android:id="@+id/btnGrantAll" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:background="?attr/selectableItemBackground" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                        <com.google.android.material.button.MaterialButton style="@style/Md3ButtonText" android:id="@+id/btnGrantAll" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="?attr/colorPrimary" android:textSize="12sp" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/dshBg" />
                     <LinearLayout android:id="@+id/rowPermList" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">

@@ -234,7 +234,7 @@ class RunModeOverlay(private val act: Activity) {
                     EngineModeSelector.setLinuxEnabled(act, true)
                 }
             }
-            android.app.AlertDialog.Builder(act)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(act)
                 .setTitle(R.string.run_mode_restart_q)
                 .setMessage(R.string.run_mode_restart_msg)
                 .setPositiveButton(R.string.run_mode_restart_now) { _, _ ->

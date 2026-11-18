@@ -113,17 +113,18 @@
 
                             <!-- 解压进行中才有转圈。纯百分比数字在 10 秒没变化时会被当成卡死，
                                  一点守恒的转动就是「还活着」的证据（原型里也是这颗点）。 -->
-                            <!-- 16dp 是实测下限：12dp 时默认弧形指示器只剩一根短线，
-                                 看着像渲染残迹而不是转圈。 -->
-                            <ProgressBar
+                            <com.google.android.material.progressindicator.CircularProgressIndicator
                                 android:id="@+id/pbWelcomePill"
+                                style="@style/Widget.Material3.CircularProgressIndicator"
                                 android:layout_width="16dp"
                                 android:layout_height="16dp"
                                 android:layout_marginEnd="7dp"
                                 android:importantForAccessibility="no"
                                 android:indeterminate="true"
-                                android:indeterminateTint="?attr/dshAccent"
-                                android:indeterminateTintMode="src_in" />
+                                app:indicatorColor="?attr/dshAccent"
+                                app:indicatorInset="0dp"
+                                app:indicatorSize="16dp"
+                                app:trackThickness="2dp" />
 
                             <TextView
                                 android:id="@+id/txtWelcomePill"
@@ -937,16 +938,18 @@
                                 android:textColor="?attr/dshTextSecondary"
                                 android:textSize="12sp" />
 
-                            <ProgressBar
+                            <com.google.android.material.progressindicator.LinearProgressIndicator
                                 android:id="@+id/pbDoneRuntime"
-                                style="?android:attr/progressBarStyleHorizontal"
+                                style="@style/Widget.Material3.LinearProgressIndicator"
                                 android:layout_width="match_parent"
                                 android:layout_height="4dp"
                                 android:layout_marginTop="10dp"
+                                android:indeterminate="false"
                                 android:max="100"
                                 android:progress="0"
-                                android:progressTint="?attr/dshAccent"
-                                android:visibility="gone" />
+                                android:visibility="gone"
+                                app:indicatorColor="?attr/dshAccent"
+                                app:trackThickness="4dp" />
                         </LinearLayout>
 
                         <!-- 下一步只留一条：模型与 API Key（端侧检查、远程主机放到应用内指引） -->

@@ -15,19 +15,18 @@
         android:layout_height="match_parent" />
 
     <!-- 安装/启动进度条：Installing 显示真实解压百分比，Starting 转不确定动画 -->
-    <ProgressBar
+    <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/installProgress"
-        style="?android:attr/progressBarStyleHorizontal"
+        style="@style/Widget.Material3.LinearProgressIndicator"
         android:max="10000"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="3dp"
-        android:maxHeight="3dp"
+        app:trackThickness="3dp"
         android:layout_gravity="top"
         android:layout_marginTop="40dp"
         android:indeterminate="true"
-        android:progressTint="?attr/colorPrimary"
-        android:progressBackgroundTint="?attr/colorPrimaryContainer"
+        app:indicatorColor="?attr/colorPrimary"
+        app:trackColor="?attr/colorPrimaryContainer"
         android:elevation="4dp"
         android:visibility="gone" />
 

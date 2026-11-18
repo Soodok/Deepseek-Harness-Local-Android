@@ -1,7 +1,7 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.content.DialogInterface
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -692,7 +692,7 @@ class PluginStoreActivity : ThemedActivity() {
 
         dialog.setOnShowListener {
             // 中性按钮：拉完整 manifest（体积/仓库/全部版本）+ 兼容性判断依据
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
                 dialog.setMessage(getString(R.string.plugin_loading_detail))
                 PluginMarket.detail(e.pkg) { full, err ->
                     runOnUiThread {
@@ -722,7 +722,7 @@ class PluginStoreActivity : ThemedActivity() {
                         }
                         if (err != null) sb.append("\n(").append(err).append(')')
                         dialog.setMessage(sb.toString().trim())
-                        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isEnabled = false
+                        dialog.getButton(DialogInterface.BUTTON_NEUTRAL).isEnabled = false
                     }
                 }
             }

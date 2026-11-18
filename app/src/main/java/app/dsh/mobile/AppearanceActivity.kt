@@ -7,7 +7,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import com.google.android.material.slider.Slider
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
@@ -251,7 +251,7 @@ class AppearanceActivity : ThemedActivity() {
     }
 
     /**
-     * 页面缩放对话框：SeekBar 滑条连续拖动（范围 50–150，步长 5），实时显示百分比。
+     * 页面缩放对话框：Material Slider连续拖动（范围 50–150，步长 5），实时显示百分比。
      * 落库后 MainActivity onResume 读取并 reload 生效。
      */
     private fun showScaleDialog() {
@@ -261,21 +261,17 @@ class AppearanceActivity : ThemedActivity() {
             text = "$pageScale%"
             setPadding(0, dp(8), 0, dp(4))
         }
-        val bar = SeekBar(this).apply {
-            max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
-            progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            val primary = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
-            progressTintList = android.content.res.ColorStateList.valueOf(primary)
-            thumbTintList = android.content.res.ColorStateList.valueOf(primary)
-            setPadding(dp(24), 0, dp(24), 0)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                    value.text = "${MIN_PAGE_SCALE + progress * SCALE_STEP}%"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
+        val bar = Slider(this).apply {
+            valueFrom = MIN_PAGE_SCALE.toFloat()
+            valueTo = MAX_PAGE_SCALE.toFloat()
+            stepSize = SCALE_STEP.toFloat()
+            val index = ((pageScale - MIN_PAGE_SCALE) / SCALE_STEP)
+                .coerceIn(0, (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP)
+            this.value = (MIN_PAGE_SCALE + index * SCALE_STEP).toFloat()
+            contentDescription = getString(R.string.scale_title)
+            addOnChangeListener { _, scale, _ -> value.text = "${scale.toInt()}%" }
         }
+        value.text = "${bar.value.toInt()}%"
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(16), dp(24), dp(8))
@@ -286,7 +282,7 @@ class AppearanceActivity : ThemedActivity() {
             .setTitle(getString(R.string.scale_title))
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                pageScale = MIN_PAGE_SCALE + bar.progress * SCALE_STEP
+                pageScale = bar.value.toInt()
                 getSharedPreferences(PREFS_UI, MODE_PRIVATE)
                     .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
                 findViewById<TextView>(R.id.valScale).text = "$pageScale%"

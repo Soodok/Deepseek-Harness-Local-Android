@@ -1,7 +1,7 @@
 package app.dsh.mobile
 
 import android.content.Context
-import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.text.TextUtils
 import android.util.TypedValue
@@ -74,17 +74,20 @@ class ThemePaletteSelector(
             null
         }
         val swatch = swatchColor?.let { color ->
-            ColorDrawable(color).apply { setBounds(0, 0, dp(24), dp(24)) }
+            GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+                setBounds(0, 0, dp(24), dp(24))
+            }
         }
         val button = MaterialRadioButton(context).apply {
             text = accessibleLabel
-            contentDescription = accessibleLabel
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             minHeight = dp(48)
             gravity = android.view.Gravity.CENTER_VERTICAL
             compoundDrawablePadding = dp(12)
-            setPaddingRelative(dp(12), 0, dp(16), 0)
+            setPaddingRelative(dp(20), 0, dp(16), 0)
             setCompoundDrawablesRelative(null, null, swatch, null)
             isEnabled = !unavailable
             setOnClickListener {
@@ -96,7 +99,10 @@ class ThemePaletteSelector(
             }
         }
         buttons[id] = button
-        addView(button, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        // CompoundButton positions its radio indicator at the edge of the view itself.
+        addView(button, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            marginStart = dp(8)
+        })
     }
 
     private fun updateChecked() {

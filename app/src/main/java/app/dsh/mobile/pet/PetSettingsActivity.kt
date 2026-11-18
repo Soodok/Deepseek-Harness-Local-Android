@@ -2,8 +2,6 @@ package app.dsh.mobile.pet
 
 import android.app.Activity
 import app.dsh.mobile.ThemedActivity
-import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -20,6 +18,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.DshApp
 import app.dsh.mobile.LocaleHelper
+import app.dsh.mobile.MaterialProgressDialog
 import app.dsh.mobile.MaxWidthLinearLayout
 import app.dsh.mobile.OrientationPrefs
 import app.dsh.mobile.PluginStoreActivity
@@ -44,7 +43,7 @@ class PetSettingsActivity : ThemedActivity() {
     private lateinit var content: LinearLayout
     private var enableSwitch: Switch? = null
     /** 当前展示的进度对话框：同一时刻只允许一个，统一由 [dismissProgress] 收口。 */
-    private var progressDlg: ProgressDialog? = null
+    private var progressDlg: MaterialProgressDialog? = null
     /** 已销毁标记：后台回调靠它丢弃 UI 更新，别再去碰一个死掉的 Activity。 */
     private val dead = AtomicBoolean(false)
     /** 订阅后台下载状态；Activity 销毁时取消，避免泄漏。 */
@@ -130,15 +129,14 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     /** 同一时刻只留一个进度框：先收掉上一个，再建新的。 */
-    private fun showProgress(build: ProgressDialog.() -> Unit = {}): ProgressDialog {
+    private fun showImportProgress() {
         dismissProgress()
-        val d = ProgressDialog(this).apply {
-            setCancelable(false)
-            build()
-            show()
-        }
-        progressDlg = d
-        return d
+        progressDlg = MaterialProgressDialog(
+            this,
+            message = getString(R.string.pet_pack_keep_open),
+            title = getString(R.string.pet_pack),
+            determinate = true,
+        )
     }
 
     private fun dismissProgress() {
@@ -495,17 +493,11 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun startImport(uri: Uri) {
-        showProgress {
-            setTitle(R.string.pet_pack)
-            setMessage(getString(R.string.pet_pack_keep_open))
-            isIndeterminate = false
-            max = 100
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-        }
+        showImportProgress()
         PetPackInstaller.install(
             this,
             uri,
-            onProgress = { p -> uiIfAlive { runCatching { progressDlg?.progress = p.coerceIn(0, 100) } } },
+            onProgress = { p -> uiIfAlive { progressDlg?.setProgress(p) } },
             onDone = { result ->
                 // 导入回调在后台线程：UI 一律经 uiIfAlive 回主线程；Activity 已经没了
                 // 时由 onDestroy 收掉对话框，这里直接丢。

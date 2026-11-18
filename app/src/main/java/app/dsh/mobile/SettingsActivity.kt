@@ -1,8 +1,8 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
 import android.Manifest
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
@@ -730,7 +730,7 @@ class SettingsActivity : ThemedActivity() {
             .create()
 
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 val raw = input.text.toString()
                 if (!RuntimeDownloadConfig.isValid(raw)) {
                     input.error = getString(R.string.setting_runtime_proxy_invalid)
@@ -743,7 +743,7 @@ class SettingsActivity : ThemedActivity() {
                 ).show()
                 dialog.dismiss()
             }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
                 RuntimeDownloadConfig.setProxy(this, null)
                 refreshRuntimeProxyRow()
                 Toast.makeText(

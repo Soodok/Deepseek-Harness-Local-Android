@@ -163,8 +163,8 @@ check('D5 DynamicColors registered once in Application, gated by the palette cho
       and 'ThemeAccent.dynamicEnabled' in dshapp)
 check('D5 no per-activity DynamicColors injection',
       'DynamicColors.applyTo' not in strip_kotlin_comments(themed_kt))
-check('D5 palette overlay is applied after setTheme',
-      re.search(r'setTheme\(R\.style\.Theme_Dsh\)\n(?:[^\n]*\n)*?'
+check('D5 palette overlay is applied after theme setup',
+      re.search(r'ThemeManager\.syncAppCompatNight\(this\)\n'
                 r'\s*val paletteOverlay = ThemeAccent\.overlayRes\(this\)\n'
                 r'\s*if \(paletteOverlay != 0\) theme\.applyStyle\(paletteOverlay, true\)',
                 themed_kt) is not None)

@@ -1,6 +1,8 @@
 package app.dsh.mobile
 
+import android.content.Context
 import android.os.Bundle
+import android.view.Gravity
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -9,6 +11,10 @@ import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.HomeResetter
 import app.dsh.mobile.engine.SelfCheck
+import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.CircularProgressIndicator
+import java.text.NumberFormat
 
 /**
  * 维护与高级（v1.4.45）：从设置主页收拢的诊断与高风险操作子页。
@@ -21,6 +27,13 @@ class MaintenanceActivity : ThemedActivity() {
     /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
     override val usesSettingsBackground: Boolean get() = true
 
+    private var cleanProgress: MaterialProgressDialog? = null
+
+    override fun onDestroy() {
+        cleanProgress?.dismiss()
+        cleanProgress = null
+        super.onDestroy()
+    }
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -412,11 +425,8 @@ class MaintenanceActivity : ThemedActivity() {
      * API 凭证和会话历史，不可接受。DEEP 保持一致行为，避免两套语义。
      */
     private fun executeClean(mode: HomeResetter.Mode, target: android.net.Uri) {
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.backup_running))
-            setCancelable(false)
-            show()
-        }
+        val progress = MaterialProgressDialog(this, getString(R.string.backup_running))
+        cleanProgress = progress
         Thread {
             var backupErr: String? = null
             try {
@@ -427,7 +437,9 @@ class MaintenanceActivity : ThemedActivity() {
                     out.use {
                         HomeResetter.backupTo(this, it) { done ->
                             runOnUiThread {
-                                progress.setMessage(getString(R.string.backup_progress, formatSize(done)))
+                                if (progress.isShowing) {
+                                    progress.setMessage(getString(R.string.backup_progress, formatSize(done)))
+                                }
                             }
                         }
                     }
@@ -439,6 +451,8 @@ class MaintenanceActivity : ThemedActivity() {
             if (backupErr != null) {
                 runOnUiThread {
                     progress.dismiss()
+                    cleanProgress = null
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.backup_failed_title)
                         .setMessage(getString(R.string.backup_failed_body, backupErr ?: ""))
@@ -448,7 +462,9 @@ class MaintenanceActivity : ThemedActivity() {
                 return@Thread
             }
 
-            runOnUiThread { progress.setMessage(getString(R.string.clean_running)) }
+            runOnUiThread {
+                if (progress.isShowing) progress.setMessage(getString(R.string.clean_running))
+            }
             val app = application as DshApp
             // 停引擎：运行中删除会让引擎崩溃在半途
             runCatching { app.supervisor.stopForMaintenance() }
@@ -468,6 +484,8 @@ class MaintenanceActivity : ThemedActivity() {
 
             runOnUiThread {
                 progress.dismiss()
+                cleanProgress = null
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(if (result.ok) R.string.clean_done_title else R.string.clean_partial_title)
                     .setMessage(cleanSummary(mode, result))
@@ -629,4 +647,58 @@ class MaintenanceActivity : ThemedActivity() {
         refreshPluginKill()
     }
 
+}
+
+/** Shared non-cancelable Material progress UI; callers own its activity lifecycle. */
+internal class MaterialProgressDialog(
+    context: Context,
+    message: CharSequence,
+    title: CharSequence? = null,
+    determinate: Boolean = false,
+) {
+    private val builder = MaterialAlertDialogBuilder(context)
+    private val label = TextView(builder.context)
+    private val indicator = CircularProgressIndicator(builder.context).apply {
+        isIndeterminate = !determinate
+        max = 100
+    }
+    private val percentFormat = if (determinate) NumberFormat.getPercentInstance() else null
+    private var messageText = message
+    private val dialog: AlertDialog
+
+    init {
+        val density = builder.context.resources.displayMetrics.density
+        val padding = (24 * density).toInt()
+        val content = LinearLayout(builder.context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPaddingRelative(padding, if (title == null) padding else (16 * density).toInt(), padding, padding)
+            addView(indicator, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginEnd = (16 * density).toInt() })
+            addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        updateLabel()
+        dialog = builder.setTitle(title).setView(content).setCancelable(false).show()
+    }
+
+    val isShowing: Boolean get() = dialog.isShowing
+
+    fun setMessage(message: CharSequence) {
+        messageText = message
+        updateLabel()
+    }
+
+    fun setProgress(percent: Int) {
+        indicator.progress = percent.coerceIn(0, indicator.max)
+        updateLabel()
+    }
+
+    fun dismiss() = dialog.dismiss()
+
+    private fun updateLabel() {
+        label.text = percentFormat?.let {
+            "$messageText\n${it.format(indicator.progress.toDouble() / indicator.max)}"
+        } ?: messageText
+    }
 }

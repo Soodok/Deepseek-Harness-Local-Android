@@ -3,7 +3,6 @@ package app.dsh.mobile
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -25,6 +24,7 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.dsh.mobile.engine.BootTrace
@@ -42,6 +42,7 @@ import app.dsh.mobile.update.AppUpdateBus
 import app.dsh.mobile.update.AppUpdateDownloadService
 import app.dsh.mobile.update.AppUpdateScheduler
 import app.dsh.mobile.update.UpdateDialogs
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -358,7 +359,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 现在改成：**没有任何关闭途径**的必选面板 —— 不可取消、没有负面按钮、
         // 只有一个「下载并启动」。退到后台再回来仍是同一个（runtimeSetupDialog?.isShowing
         // 挡住重复创建）。
-        val dialog = AlertDialog.Builder(this)
+        val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.runtime_setup_title)
             .setMessage(getString(R.string.runtime_setup_message, sizeText))
             .setPositiveButton(R.string.runtime_setup_download) { _, _ ->
@@ -2348,7 +2349,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (key == lastDegradedKey) return
         lastDegradedKey = key
         val detail = degraded.missingServices.joinToString("\n") { "\u00b7 $it" }
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.degraded_title))
             .setMessage(
                 getString(R.string.degraded_body, degraded.missingServices.size, detail),
@@ -3574,7 +3575,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 重入），旧实现每次都 `show()` 一个新对话框 → **无限叠堆**（且 setCancelable(false)
      * 无法取消）。独立审查指出后补上这道守卫。
      */
-    private var gateDialog: android.app.AlertDialog? = null
+    private var gateDialog: AlertDialog? = null
 
     /**
      * 用户在内核门禁里点了「用浏览器打开」（v1.6.8）。
@@ -3610,7 +3611,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             if (report.chrome > 0) report.chrome.toString() else "?",
             AppGate.MIN_WEBVIEW_CHROME,
         )
-        val builder = android.app.AlertDialog.Builder(this)
+        val builder = MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.webview_gate_title))
             .setMessage(msg)
             .setPositiveButton(R.string.webview_gate_update) { _, _ ->

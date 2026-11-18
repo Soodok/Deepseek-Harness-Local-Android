@@ -33,14 +33,23 @@ checks = {
     'shared alert overlay selects the Material dialog style':
         items('ThemeOverlay.Dsh.MaterialAlertDialog').get('alertDialogStyle') == '@style/DshMaterialAlertDialog',
     'shared dialog style supplies a single-choice row':
-        styles['DshMaterialAlertDialog'].get('parent') == 'MaterialAlertDialog.Material3',
+        styles['DshMaterialAlertDialog'].get('parent') == 'MaterialAlertDialog.Material3'
+        and items('DshMaterialAlertDialog').get('singleChoiceItemLayout') == '@layout/dialog_single_choice'
+        and all(
+            any(i.get('name') == 'materialAlertDialogTheme'
+                and (i.text or '').strip() == '@style/ThemeOverlay.Dsh.MaterialAlertDialog'
+                for i in ET.parse(RES / qualifier / 'themes.xml').getroot().find("style[@name='Theme.Dsh']"))
+            for qualifier in ('values', 'values-night')
+        ),
     'single-choice row uses Material dialog metrics and a checkable compat view':
         row.tag == 'androidx.appcompat.widget.AppCompatCheckedTextView'
         and row.get(ANDROID + 'id') == '@android:id/text1'
         and row.get(ANDROID + 'paddingStart') == '@dimen/abc_select_dialog_padding_start_material'
         and row.get(ANDROID + 'paddingEnd') == '?attr/dialogPreferredPadding'
         and row.get(ANDROID + 'drawablePadding') == '20dp'
-        and row.get(APP + 'drawableStartCompat') == '?android:attr/listChoiceIndicatorSingle',
+        and row.get('style') == '@style/Widget.Material3.CheckedTextView'
+        and row.get(APP + 'drawableStartCompat') == '@drawable/abc_btn_radio_material'
+        and row.get(APP + 'drawableTint') == '@color/m3_radiobutton_button_tint',
     'progress ring and parent wrap actual measured size':
         all(node.get(ANDROID + dim) == 'wrap_content' for node in (ring, parent)
             for dim in ('layout_width', 'layout_height'))

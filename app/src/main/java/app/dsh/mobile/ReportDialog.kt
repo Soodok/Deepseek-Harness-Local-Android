@@ -1,12 +1,12 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.res.ColorStateList
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 结构化报告弹窗（v1.4.45）：状态徽章 + 分项列表，替代 `setMessage` 纯文本堆砌。
@@ -151,7 +151,7 @@ object ReportDialog {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
         )
 
-        AlertDialog.Builder(activity)
+        MaterialAlertDialogBuilder(activity)
             .setTitle(title)
             .setView(box)
             .setPositiveButton(android.R.string.ok, null)

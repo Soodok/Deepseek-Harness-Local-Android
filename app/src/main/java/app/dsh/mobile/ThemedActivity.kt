@@ -207,50 +207,13 @@ open class ThemedActivity : Activity() {
         setOnShowListener { AccentTint.apply(window?.decorView) }
     }
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(ThemeAccent.wrap(ThemeManager.wrap(newBase)))
+        super.attachBaseContext(ThemeManager.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 保留上游 AppCompat 深浅色同步，避免弹窗把 Activity 的资源配置改回系统模式。
-        // 动态色已由 Application 的生命周期回调应用；风格覆盖层只设置 dsh 令牌。
+        // Theme.Dsh is set by the manifest; keep the official DynamicColors overlay
+        // installed before onCreate. Only a selected preset supplies another overlay.
         ThemeManager.syncAppCompatNight(this)
-        // ★ v1.8.0：主题分派改由「界面风格」决定，不再由 usesSettingsBackground 决定。
-        //
-        // 原来只有设置体系那 18 个页面套 MD3，其余页面永远 Theme.Dsh —— 而这两套
-        // 主题的语义色以前都映射到同一张旧色板，画出来一样，所以没人发现。
-        // v1.8.0 让 MD3 走真正的暖灰色板后，如果还按旧分派，就会出现
-        // 「设置页暖、主界面冷」的花脸。因此改成全站跟随风格，
-        // 只有显式声明 followsStyle = false 的页面（自绘深色的编辑器/工作台）
-        // 保持经典主题。
-        //
-        // ⚠️ usesSettingsBackground 仍然保留它原本的第二职责（设置页背景图，
-        //    见 applySettingsBackground），不要为了主题把那个开关也删了。
-        // ★ 2026-11：全站唯一一套 Material 3 主题（Theme.Dsh 本身即 M3 语义色 + dsh 令牌），
-        // 原「经典 / Material 3」两套风格与 Theme.Dsh.MD3 副本已删除。
-        setTheme(R.style.Theme_Dsh)
-        // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
-        //
-        // ⚠️ 2026-11-10：PRESET / CUSTOM 不再走 DynamicColors。
-        // 原来三种模式都注入 Monet，PRESET/CUSTOM 还拿强调色当 seed 生成 content-based 色板，
-        // 后果是整个 MD3 语义色被运行时覆盖：
-        //   · colorSurface 被换成 Monet 中性色，与页面底几乎同色 → 分组卡片看起来"消失"，
-        //     行直接浮在背景上，分组边界没了；
-        //   · colorPrimary 被换成淡蓝近白 → 分组标题失去强调色；
-        //   · colorOnSurface 被换成近白 → 图标统一变白，原有的分类着色全丢。
-        // 也就是说 themes.xml 里「MD3 语义色回映射旧色板」对任何 ?attr/color* 控件都不生效。
-        // 只有用户真的选「跟随壁纸」时才该让 Monet 接管，其余情况必须让我们的色板说了算。
-        // ★ v1.8.1：不再在这里注入 DynamicColors。
-        //
-        // 原来 DYNAMIC 模式会调 DynamicColors.applyToActivityIfAvailable(this)，
-        // 它在 API 31+ 走 ColorResourcesOverride → ResourcesLoader 替换颜色资源，
-        // 这会**改变本 Activity 的 Resources 配置**，于是系统紧接着再发一次
-        // configuration change → 第二次 relaunch。真机/模拟器实测（Android 14）：
-        // 点一下「动态取色」屏幕重绘两次（ActUi 32 vs 应用 16 的配置差被再次应用），
-        // 用户看到的就是「点一下就闪屏」。
-        //
-        // 现在动态取色的取色改由 [SystemAccent] 直接读系统的 system_accent 色，
-        // 不碰 Resources、不产生配置变化，只保留我们自己的一次 recreate()。
-        // PR #102：先按风格选整套主题，再叠配色方案覆盖层（SYSTEM 档 overlayRes 返回 0）。
         val paletteOverlay = ThemeAccent.overlayRes(this)
         if (paletteOverlay != 0) theme.applyStyle(paletteOverlay, true)
         super.onCreate(savedInstanceState)

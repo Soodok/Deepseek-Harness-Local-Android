@@ -231,8 +231,8 @@ check("全仓没有『show 之后换弹窗背景』的调用", not offenders, ",
 
 # ---- 主题分派：全站唯一一套主题，不再按页面 / 风格二分 ----
 themed = read(os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ThemedActivity.kt"))
-check("主题分派统一 setTheme(R.style.Theme_Dsh)",
-      "setTheme(R.style.Theme_Dsh)" in themed)
+check("Activity 保留清单主题及动态覆盖",
+      not re.search(r"^\s*setTheme\(", themed, re.M))
 # 经典/Material 两套风格已删除：任何一处 Theme.Dsh.MD3 或 UI 风格开关跑回来，
 # 都会让「同一页两种色板」的老毛病复活，且主题页已经不再提供切换入口。
 style_switch = []

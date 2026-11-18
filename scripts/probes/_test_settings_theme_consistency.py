@@ -96,18 +96,18 @@ for loc in ("values", "values-night"):
     check(f"[C2] {loc} 主题定义全部风格令牌", declared <= mapped_tokens,
           str(sorted(declared - mapped_tokens)))
 themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
-# 经典风格已删除：全站固定单一 Material 3 主题，配色覆盖层在 setTheme 之后应用。
-check("[C3] 单主题 + 配色覆盖层在 setTheme 之后应用",
-      "setTheme(R.style.Theme_Dsh)" in themed
+# 经典风格已删除：全站固定单一 Material 3 主题，配色覆盖层在主题初始化后应用。
+check("[C3] 单主题 + 配色覆盖层在主题初始化后应用",
+      not re.search(r"^\s*setTheme\(", themed, re.M)
       and "val paletteOverlay = ThemeAccent.overlayRes(this)" in themed
       and "theme.applyStyle(paletteOverlay, true)" in themed)
 
 # ---------- [D] setTheme 只出现在 ThemedActivity ----------
 bad = []
 for p in glob.glob(os.path.join(JAVA, "*.kt")):
-    if re.search(r"^\s*setTheme\(", read(p), re.M) and os.path.basename(p) != "ThemedActivity.kt":
+    if re.search(r"^\s*setTheme\(", read(p), re.M):
         bad.append(os.path.basename(p))
-check("[D1] 只有 ThemedActivity 调用 setTheme", not bad, str(bad))
+check("[D1] Activity 不覆盖清单主题", not bad, str(bad))
 
 # ---------- [E] 动态取色注册在 Application ----------
 dshapp = read(os.path.join(JAVA, "DshApp.kt"))

@@ -1,11 +1,11 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -214,7 +214,7 @@ class FileEditorActivity : ThemedActivity() {
     /** 有未保存修改时先确认，再决定是否退出。 */
     private fun confirmDiscardThenFinish() {
         if (editable && editor.text.toString() != loadedText) {
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.file_editor_unsaved_title)
                 .setMessage(R.string.file_editor_unsaved_body)
                 .setPositiveButton(R.string.file_editor_discard) { _, _ -> finish() }

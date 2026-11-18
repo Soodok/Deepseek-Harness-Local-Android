@@ -5,10 +5,12 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:minHeight="?attr/listPreferredItemHeightSmall"
-    android:gravity="left|center_vertical"
+    style="@style/Widget.Material3.CheckedTextView"
+    android:checkMark="@null"
+    android:gravity="start|center_vertical"
     android:textAlignment="viewStart"
     android:paddingStart="@dimen/abc_select_dialog_padding_start_material"
     android:paddingEnd="?attr/dialogPreferredPadding"
-    app:drawableStartCompat="?android:attr/listChoiceIndicatorSingle"
-    android:drawablePadding="20dp"
-    android:ellipsize="marquee" />
+    app:drawableStartCompat="@drawable/abc_btn_radio_material"
+    app:drawableTint="@color/m3_radiobutton_button_tint"
+    android:drawablePadding="20dp" />

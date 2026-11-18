@@ -13,7 +13,7 @@
 
 本探针守住：
   1. 外观模式与配色选择都先比对再写盘重建（空转保护，无重建闭环）；
-  2. 配色覆盖层在 setTheme 之后应用；
+  2. 配色覆盖层在主题初始化后应用；
   3. DynamicColors 只在 Application 注册一次，Activity 不注入；
   4. 系统栏跟着主题的页面底色走。
 """
@@ -72,9 +72,9 @@ check("配色状态来自偏好",
 # ---- 3. 主题分派与配色覆盖层 ----
 themed_code = strip_comments(themed)
 check("全站固定单一 Material 3 主题",
-      "setTheme(R.style.Theme_Dsh)" in themed_code)
-check("配色覆盖层在 setTheme 之后应用",
-      re.search(r'setTheme\(R\.style\.Theme_Dsh\)\n(?:[^\n]*\n)*?'
+      not re.search(r"^\s*setTheme\(", themed_code, re.M))
+check("配色覆盖层在主题初始化后应用",
+      re.search(r'ThemeManager\.syncAppCompatNight\(this\)\n'
                 r'\s*val paletteOverlay = ThemeAccent\.overlayRes\(this\)\n'
                 r'\s*if \(paletteOverlay != 0\) theme\.applyStyle\(paletteOverlay, true\)',
                 themed_code) is not None)

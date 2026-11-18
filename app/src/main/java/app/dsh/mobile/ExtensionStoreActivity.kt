@@ -1,7 +1,6 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.widget.ImageView
@@ -194,7 +193,19 @@ class ExtensionStoreActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
     }
 
+    private val progressDialogs = mutableSetOf<MaterialProgressDialog>()
+
+    private fun showProgress(message: CharSequence): MaterialProgressDialog =
+        MaterialProgressDialog(this, message).also { progressDialogs.add(it) }
+
+    private fun dismissProgress(progress: MaterialProgressDialog) {
+        progressDialogs.remove(progress)
+        progress.dismiss()
+    }
+
     override fun onDestroy() {
+        progressDialogs.forEach { it.dismiss() }
+        progressDialogs.clear()
         uiScope.cancel()
         super.onDestroy()
     }
@@ -873,7 +884,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         }
         val insName = versionName(ext, ins.versionId)
         val targetName = versionName(ext, versionId)
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(ext.name)
             .setMessage(getString(R.string.ext_version_switch_msg, targetName, insName))
             .setNegativeButton(android.R.string.cancel, null)
@@ -948,7 +959,7 @@ class ExtensionStoreActivity : ThemedActivity() {
     /**
      * 真正执行装包（[linuxInstall] 的确认分支走这里）。
      *
-     * v1.5.4：从「一个只会转圈的 ProgressDialog」换成 [PkgProgressDialog] ——
+     * v1.5.4：从「一个只会转圈的进度对话框」换成 [PkgProgressDialog] ——
      * 装 node 这类要跑几分钟，旧版全程只有一个固定文案的圈，用户既判断不了
      * 有没有在动、也看不出卡在哪一步；失败时把 `rawOutput` 塞进 AlertDialog 的
      * message，那个 TextView 无法全选复制，等于报错信息没法反馈。
@@ -1139,13 +1150,12 @@ class ExtensionStoreActivity : ThemedActivity() {
      */
     private fun runHealthCheck() {
         if (linuxMode) { runLinuxHealthCheck(); return }
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
-        }
+        val progress = showProgress(getString(R.string.ext_checking))
         Thread({
             val health = runCatching { manager.checkHealth() }.getOrElse { emptyList() }
             runOnUiThread {
-                progress.dismiss()
+                dismissProgress(progress)
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 val installed = health.filter { it.installed }
                 if (installed.isEmpty()) {
                     alert(getString(R.string.ext_check_title), getString(R.string.ext_check_none)); return@runOnUiThread
@@ -1178,9 +1188,7 @@ class ExtensionStoreActivity : ThemedActivity() {
      * - 一个都没有 → 未安装（不计入「已装」，不参与修复）
      */
     private fun runLinuxHealthCheck() {
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
-        }
+        val progress = showProgress(getString(R.string.ext_checking))
         Thread({
             val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
             linuxInstalled = have
@@ -1191,7 +1199,8 @@ class ExtensionStoreActivity : ThemedActivity() {
             }
             val partial = installed.filter { it.second == ExtensionManager.ExtState.DOWNLOADED }
             runOnUiThread {
-                progress.dismiss()
+                dismissProgress(progress)
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (installed.isEmpty()) {
                     alert(getString(R.string.ext_check_title), getString(R.string.ext_linux_check_none))
                     return@runOnUiThread
@@ -1244,16 +1253,13 @@ class ExtensionStoreActivity : ThemedActivity() {
                     // 分多次调用反而重复解析索引（实测 20 个扩展逐个装要 4 分钟+）
                     val pkgs = missing.flatMap { LinuxExtensionBridge.packagesOf(it.packages, linuxFamily) }
                         .distinct()
-                    val progress = android.app.ProgressDialog(this).apply {
-                        setMessage(getString(R.string.ext_linux_installing_all, pkgs.size))
-                        setCancelable(false)
-                        show()
-                    }
+                    val progress = showProgress(getString(R.string.ext_linux_installing_all, pkgs.size))
                     Thread({
                         val r = runCatching { pkgManager.install(pkgs) }
                             .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
                         runOnUiThread {
-                            progress.dismiss()
+                            dismissProgress(progress)
+                            if (isFinishing || isDestroyed) return@runOnUiThread
                             linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
                             Toast.makeText(
                                 this,
@@ -1281,28 +1287,25 @@ class ExtensionStoreActivity : ThemedActivity() {
         // Linux 模式没有 ExtensionManager 的 MARKER/健康检查体系：包是否完整由 apk 自己
         // 的数据库保证（`apk fix` 可修），所以「修复」改为对已装条目重跑一次 apk add。
         if (linuxMode) {
-            val progress = android.app.ProgressDialog(this).apply {
-                setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
-            }
+            val progress = showProgress(getString(R.string.ext_checking))
             Thread({
                 linuxInstalled = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
                 val partial = items.filter { stateOf(it) == ExtensionManager.ExtState.DOWNLOADED }
                 runOnUiThread {
-                    progress.dismiss()
+                    dismissProgress(progress)
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     if (partial.isEmpty()) {
                         alert(getString(R.string.ext_repair_title), getString(R.string.ext_repair_none))
                         return@runOnUiThread
                     }
                     val pkgs = partial.flatMap { LinuxExtensionBridge.packagesOf(it.packages, linuxFamily) }.distinct()
-                    val p2 = android.app.ProgressDialog(this).apply {
-                        setMessage(getString(R.string.ext_linux_installing_all, pkgs.size))
-                        setCancelable(false); show()
-                    }
+                    val p2 = showProgress(getString(R.string.ext_linux_installing_all, pkgs.size))
                     Thread({
                         val r = runCatching { pkgManager.install(pkgs) }
                             .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
                         runOnUiThread {
-                            p2.dismiss()
+                            dismissProgress(p2)
+                            if (isFinishing || isDestroyed) return@runOnUiThread
                             linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
                             Toast.makeText(
                                 this,
@@ -1318,14 +1321,13 @@ class ExtensionStoreActivity : ThemedActivity() {
             }, "ext-linux-repair-scan").start()
             return
         }
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
-        }
+        val progress = showProgress(getString(R.string.ext_checking))
         Thread({
             val broken = runCatching { manager.checkHealth() }.getOrElse { emptyList() }
                 .filter { it.installed && !it.ok }
             runOnUiThread {
-                progress.dismiss()
+                dismissProgress(progress)
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (broken.isEmpty()) { alert(getString(R.string.ext_repair_title), getString(R.string.ext_repair_none)); return@runOnUiThread }
                 confirmRepair(broken)
             }

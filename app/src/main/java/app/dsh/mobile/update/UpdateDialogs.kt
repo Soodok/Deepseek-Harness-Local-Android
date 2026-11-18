@@ -1,7 +1,6 @@
 package app.dsh.mobile.update
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
