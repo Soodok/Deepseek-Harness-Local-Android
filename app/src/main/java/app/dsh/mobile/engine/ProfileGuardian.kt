@@ -313,18 +313,24 @@ class ProfileGuardian(private val ctx: Context) {
         if (!dshAi.isDirectory) return 0
         dshAi.listFiles()?.forEach { pkg ->
             if (!pkg.isDirectory || java.nio.file.Files.isSymbolicLink(pkg.toPath())) return@forEach
-            val originals = pkg.listFiles()
-                ?.filter { it.isFile && it.name == "cordis.patch.yml" }
-                ?.isNotEmpty() == true
-            if (originals) return@forEach // 原文件健在，无需恢复
+            // 先用单次 stat 判「原文件健在」，不要上来就 listFiles。
+            //
+            // 这个方法跑在冷启动的并行块里，engine 内置包实测有 **338 个**，
+            // 每个目录 listFiles 一次就是 338 次目录枚举（每次 ~0.7ms），
+            // 实测吃掉 247ms —— 而这个并行块的总墙钟就是三者中最慢的那条，
+            // 所以它直接等于启动延迟。338 个里被隔离过的通常**一个都没有**，
+            // 也就是说 338 次目录枚举全是为了确认「没事」。
+            //
+            // `isFile` 是单次 stat，比 listFiles 便宜一个量级；只有极少数
+            // 真正缺原文件的包才需要枚举目录找 .quarantine-*。
+            if (File(pkg, "cordis.patch.yml").isFile) return@forEach // 原文件健在，无需恢复
             val quarantine = pkg.listFiles()
                 ?.filter {
                     it.isFile &&
                         it.name.startsWith("cordis.patch.yml.quarantine-") &&
                         !java.nio.file.Files.isSymbolicLink(it.toPath())
                 }
-                ?.sortedBy { it.lastModified() }
-                ?.firstOrNull() ?: return@forEach
+                ?.minByOrNull { it.lastModified() } ?: return@forEach
             val target = File(pkg, "cordis.patch.yml")
             if (quarantine.renameTo(target)) {
                 restored++
