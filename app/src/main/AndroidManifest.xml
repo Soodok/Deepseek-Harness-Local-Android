@@ -1467,9 +1467,12 @@
              不需要上游的 ExtensionApkInstallActivity 专用回调，故不注册。 -->
 
         <!-- 独立 Flutter 聊天入口；不作为 launcher，主 WebView 仍由 MainActivity 提供回退。 -->
+        <!-- 专用主题 + 窗口淡入淡出。真正撑住引擎冷启空窗的是 MainActivity 拍下的
+             入场底图（见 validation 3.8），主题只负责「窗口是透明的」这件事。 -->
         <activity
             android:name=".NativeChatActivity"
             android:exported="false"
+            android:theme="@style/Theme.Dsh.NativeChat"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden" />
 

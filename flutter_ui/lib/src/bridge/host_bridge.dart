@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../model/tool_content.dart';
@@ -85,6 +88,66 @@ class HostBridge {
     final browser = await openBrowserResource(uri.toString());
     if (browser != null) return browser;
     return _open('openResource', {'uri': uri.toString()});
+  }
+
+  /// 宿主报告"引擎已把第一帧画到屏幕上"的时刻。
+  ///
+  /// Flutter 自己的 initState / post-frame 在冷启时不可靠：这一页起来要 5–8 秒，
+  /// 那时任何几百毫秒的渐显都已经跑完，屏幕上第一眼就是不透明整帧。所以入场淡化
+  /// 必须等宿主这个信号。返回的 Future 在信号到达时完成；若宿主已经显示过了
+  /// （订阅得晚），consumeFirstFrame 会立刻告诉我们是这种情况。
+  static Future<void> firstFrameShown() async {
+    final completer = _firstFrame ??= Completer<void>();
+    // 先挂监听再问"显示过没有"：反过来的话，信号可能正好落在两步之间丢失。
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'firstFrameShown' && !completer.isCompleted) {
+        completer.complete();
+      }
+      return null;
+    });
+    try {
+      final already = await _channel.invokeMethod<bool>('consumeFirstFrame');
+      if (already == true && !completer.isCompleted) completer.complete();
+    } on MissingPluginException {
+      // 没有宿主（Web 预览）：没有可等待的显示信号，直接放行。
+      if (!completer.isCompleted) completer.complete();
+    } on PlatformException {
+      if (!completer.isCompleted) completer.complete();
+    }
+    return completer.future;
+  }
+
+  /// 宿主在点击那一刻拍下的 Web 那一屏（PNG 字节），用来当入场底图。
+  ///
+  /// 返回 null 表示没有底图（拍图失败、老系统、Web 预览）。
+  static Future<Uint8List?> readBackdrop() async {
+    try {
+      final raw = await _channel.invokeMethod<Uint8List>("backdropImage");
+      return raw;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// 告诉宿主：Flutter 已经在自己那层画出同一张底图了，可以把覆盖层撤掉。
+  static Future<void> releaseBackdrop() async {
+    try {
+      await _channel.invokeMethod<bool>("releaseBackdrop");
+    } on MissingPluginException {
+      // 没有宿主：什么都不用做。
+    } on PlatformException {
+      // 同上。
+    }
+  }
+
+  static Completer<void>? _firstFrame;
+
+  /// 只给测试用：清掉上一次跨用例遗留的「首帧已显示」状态。
+  @visibleForTesting
+  static void debugResetFirstFrame() {
+    _firstFrame = null;
   }
 
   static Future<Map<String, String>?> readAppearance() async {

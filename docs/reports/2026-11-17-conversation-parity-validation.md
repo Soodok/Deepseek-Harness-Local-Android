@@ -1,8 +1,8 @@
-# 会话平权验收记录（2026-11-17/18，beta.37 → beta.50）
+# 会话平权验收记录（2026-11-17/18，beta.37 → beta.77）
 
 设备：专用 AVD dsh_flutter_20261116（emulator-5570，1080x2340，Android x86_64）。未操作任何物理真机，未读桌面/设备凭据。在线回合使用设备已配置的 gpt-6-luna（用户授权），全部为真实模型请求，无 fixture 冒充。
 
-## 1. 自动化门禁（串行执行，最终态 beta.50）
+## 1. 自动化门禁（串行执行，最终态 beta.77）
 
 | 命令 | 退出码 | 结果 |
 | --- | --- | --- |
@@ -18,6 +18,11 @@
 | flutter analyze --no-pub（beta.52） | 0 | No issues found!（2.1s） |
 | flutter test --concurrency=1（beta.52） | 0 | 429 tests passed（/tmp/ft_b52.log） |
 | node --test client.test.mjs core.test.mjs（beta.52） | 0 | 39 tests / 39 pass / 0 fail |
+| flutter analyze --no-pub（beta.77） | 0 | No issues found!（1.2s） |
+| flutter test --concurrency=1（beta.77） | 0 | 434 tests passed |
+| node --test client.test.mjs core.test.mjs（beta.77） | 0 | 39 tests / 39 pass / 0 fail |
+| gradle :app:testDebugUnitTest --tests app.dsh.mobile.NativeChatLaunchTest（beta.77） | 0 | tests=4 skipped=0 failures=0 errors=0（TEST-app.dsh.mobile.NativeChatLaunchTest.xml） |
+| gradle :app:assembleDebug（beta.77） | 0 | BUILD SUCCESSFUL in 1m 44s（干净重建；最终交付包 sha256 0b25d48f…，248183354 B） |
 
 构建命令（JAVA_HOME=D:/新建文件夹/jbr，ANDROID_HOME=E:/Android/Sdk）：
 
@@ -29,7 +34,7 @@ gradle.bat --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx1536m -Dfile.enc
   -PruntimeZip=E:/tmp/dsh-flutter-runtime-20261116/runtime-x86_64-dsh-0.2.2-rc.2-20261116.zip
 ```
 
-安装：adb -s emulator-5570 install -r -t -d app/build/outputs/apk/debug/app-debug.apk（必须带 -t；设备上曾有其他工作树的 versionCode 430，必须带 -d 才允许降级）。装机后 dumpsys package 确认 versionCode=425 / versionName=1.6.0-beta.50。
+安装：adb -s emulator-5570 install -r -t -d app/build/outputs/apk/debug/app-debug.apk（必须带 -t；设备上曾有其他工作树的 versionCode 430，必须带 -d 才允许降级）。装机后 dumpsys package 确认 versionCode=452 / versionName=1.6.0-beta.77（beta.77 为最终交付包）。
 
 ## 2. 新增/修改的测试用例（每条都有负对照）
 
@@ -43,6 +48,12 @@ gradle.bat --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx1536m -Dfile.enc
 4. a rewound answer still reads the file outcome under files —— 兼容 files.* 嵌套形状，防回归。
 5. 早前两例：撤回在页面消失后落地不抛异常、fork 后草稿共享。负对照分别为去掉 _disposed 判断、把 _ownsDraft 固定为 true。
 
+
+### Flutter 入场淡化（flutter_ui/test/widget_test.dart）
+
+`the host backdrop covers the first frame and then dissolves` 一例覆盖三件事：①首帧底图必须满不透明（否则先黑一下）；②宿主覆盖层必须被撤（调用记录里有 releaseBackdrop），且撤层发生在底图解码并画上去之后；③淡化必须**按帧**推进 —— 用例故意一次把时钟跳 5 秒，断言 opacity 只退了「一步」而没到底，再逐帧推进确认中途真的出现过半透明、且跨过 ≥4 帧才淡完。
+
+两次负对照（均先打红再还原）：①把 progress 改成一次到 1.0（模拟按墙钟折算）→ 「一次长跳只该退一步」变红（Expected a value greater than <0.0>, Actual <0.0>）；②把 LaunchFade.steps 改成 1（一帧淡完）→ 同一断言变红。恢复后 434 tests 全绿。
 ### Web 插件（docs/reports/2026-11-17-conversation-parity-plugin-test/client.test.mjs，共 34 例）
 
 本轮新增 8 例：编辑态挂在 fork 会话上、取消编辑还原草稿、保留草稿带进 fork、被拒的编辑不留编辑态、编辑横条可取消、编辑横条浮层与 rc.2 令牌、回答身份读 finalNode、系统分享走原生桥。各自负对照均打红后还原。
@@ -118,6 +129,25 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 - 「新建会话」直接进入空会话，输入框可用，无需填工作目录；新会话 cwd 由引擎按工作区决定（实测两种：native-ui-check 与 workspaces）。
 - 灵动岛「切换原生对话」从 Web 直接进原生，承接当前会话；反向返回 Web 对齐同一会话。
 
+### 3.8 入场切换动效（beta.77，逐帧录屏取证）
+
+做法：主界面在点击那一刻用 `PixelCopy.request(window, bitmap, …)` 拍下 Web 那一屏（logcat `DshWebView: backdrop copy 0 in 343ms`），把 PNG 路径随 Intent 传给原生页；原生页用 `TYPE_APPLICATION_PANEL` 子窗口把它盖在整个窗口最上面撑住冷启动。Flutter 起来后 `LaunchFade` 先把同一张图 `precacheImage` 进缓存、等它真的画到自己那一层，再通知宿主 `releaseBackdrop` 撤掉覆盖层（两层同一像素内容，撤掉看不出跳变），最后用 **Ticker 按帧**把这张图淡掉，露出下面 Flutter 已经画好的那一帧。
+
+关键取舍：淡化步进按**帧数**（`LaunchFade.steps = 12`），不按墙钟。冷启动只有 3–5 帧/秒，AnimationController 按经过时间折算，第一个 tick 到达时已经过去 4 秒、750ms 的动画在第一帧就折成 1.0（beta.73 k25.mp4 / beta.75 k27.mp4 都是这个形状，屏幕上仍是一帧硬切）。
+
+设备证据：
+
+| 项 | 做法 | 结果 |
+| --- | --- | --- |
+| 逐帧亮度曲线（beta.77，有动效） | `screenrecord` 360x780 → ffmpeg 抽全帧 → 每帧灰度均值 | 最终交付包 beta.77 复录：32.0 → 65.4 → 83.3 → 117.4 → 149.9 → 167.1 → 183.5 → 200.5 → 218.1 → 233.8，共 9 级可见过渡，跨 15.88s→16.91s（k34.mp4，ffk34，拼图 k34sheet.png）。中间帧可见「Web 那一页半透明压着正在出现的原生占位页」。早一版 beta.77 探针录到 8 级（k29.mp4，12.30s→13.55s） |
+| 关键过渡顺序 | logcat `NativeChatFade` | `backdrop overlay attached` → `backdrop png requested, bytes=402050` → `backdrop released by flutter`（撤层确实发生在淡之前） |
+| 证据归档 | 录屏与拼图随提交保存 | docs/reports/assets/2026-11-18-native-fade/{k34.mp4,k34sheet.png,k29.mp4,k30.mp4} |
+| 「减少动效」开关 | 三个动画倍率置 0 后重录 | 32.0 → 233.8 单帧，淡化按设计跳过（k30.mp4）；已还原为 1 |
+| 反证：按墙钟而非按帧 | 单测把 progress 改成一次到 1.0 | 用例「一次长跳只该退一步」变红（Expected >0.0, Actual 0.0），恢复后全绿 |
+| 反证：一帧淡完 | 单测把 `steps` 改成 1 | 同一断言变红，恢复后全绿 |
+
+已知边界（如实记录）：①淡完后露出的不一定是会话页本身 —— 冷启动时 Flutter 先画的是「本机引擎 / 正在准备对话」这一屏，会话页要再等几秒才换上（k29.mp4 帧 106–121 是淡出中的占位页，帧 128 才是带消息的会话页，中间 233.8→226.5→223.3 三次小跳）；②淡化只覆盖原生页入场，Web 那一侧的退场是 WebView 切后台被系统停掉，没有可用退场动画，屏幕上那 1–2 秒仍是最后一张 Web 画面；③冷启动帧率低，12 步的时间分辨率是每步 200–400ms，过渡是分级的、不平滑；④拍图失败（SDK<26 或异常）时退回窗口 alpha 阶梯，观感不如底图方案。
+
 ## 3.7 设备上留下的测试资产（未删除，可复核）
 
 下列文件是本轮做真实样例时造的，位于模拟器 AVD 的应用私有目录内（不是用户数据，也没有外部工作区被改）：
@@ -141,5 +171,5 @@ uiautomator content-desc 证据（动作行齐全）：用户行「复制」「�
 - 文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」只有离线单测，没有设备级真实故障注入。
 - fork 失败的真实故障注入：只有离线单测（core.test.mjs 三例 + 三次负对照），没在设备上造出 fork 真实失败的场景。
 - 其余已知失败码（session-not-found / target-not-found 等）的可读文案只有离线单测，设备上只实测了 session-busy。
-- 切换动效：未录逐帧视频。
+- 切换动效已补逐帧录屏（见 3.8）；但 Web 侧退场没有动画可录，只有原生侧入场做了取证。
 - ARM 真机、TalkBack、硬件键盘遍历、全部主题像素对比。

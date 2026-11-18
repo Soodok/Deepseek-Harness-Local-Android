@@ -295,14 +295,63 @@ android {
         // 失败却已造成不可见的改动，且重试时自己写回去的内容会被当成"回合之后被外部改过"。
         // v1.6.0-beta.52 (2026-11-18 03:45): 失败原因说人话——插件与原生端都把 kebab 错误码
         // （session-busy 这类）换成一句可读文案；不认识的错误保留原文，不编造原因。
-        versionCode = 427
+        // v1.6.0-beta.56 (2026-11-18 07:10): 入淡的起点交给宿主报告的首帧显示事件。
+        // beta.55 把计时挂到 Dart 的 post-frame，但冷启时这一页要 5–8 秒才真正可见，
+        // 那时 260ms 早跑完（实测 v1.mp4 逐帧 31.5 → 233.6）。现在原生侧
+        // onFlutterUiDisplayed → MethodChannel "firstFrameShown" → LaunchFade 起跳，
+        // 并保留 consumeFirstFrame 兜住"订阅晚于事件"的时序。
+        // v1.6.0-beta.55 (2026-11-18 06:35): 入淡从「首帧被看见之后」开始计时。
+        // beta.54 已经挂上 LaunchFade，但动画在 initState 里 forward()：冷启时首页要等
+        // SurfaceView 拿到 buffer 才被看见，那时 260ms 早已跑完，第一眼就是不透明
+        // （实测 w3.mp4 逐帧 31.6 → 230.3，一跳到底）。改挂 post-frame 回调后，
+        // 屏幕上先出现一帧完全透明（透出 Web 页），再从它开始浮上来。
+        // v1.6.0-beta.54 (2026-11-18 06:15): 入场淡化画到 Flutter 自己身上。
+        // beta.53 把窗口设成 translucent + 透明底，解决了「整屏纯色 1.9-4 秒」，
+        // 但逐帧量（x4.mp4，20fps 采样）显示内容仍是一次硬切：44.5 → 218 只隔一帧。
+        // 原因是 Flutter 画在独立的 SurfaceView 图层里，由 SurfaceFlinger 单独合成，
+        // 不跟随宿主窗口的 activityOpenEnterAnimation。现在改成内容首帧 alpha=0，
+        // 260ms decelerate 浮到 1（LaunchFade），窗口保持透明，底下 Web 页透出来。
+        // v1.6.0-beta.53 (2026-11-18 04:45): 原生对话页改用专用主题 + 浅色启动图 + 淡入淡出。
+        // 原先沿用全站 Theme.Dsh，深色系统下 windowBackground 是 #101418，Flutter 引擎冷启到
+        // 第一帧之间显示这层近黑背景，实测逐帧亮度从 45 掉到 16.5 并持续 1.9 秒（sw2.mp4），
+        // 然后硬切成浅色会话页 —— 与「Web 自然消散、原生渐变浮现」正好相反。
+        // v1.6.0-beta.57 (2026-11-18 07:35): 改用 TextureView 渲染（NativeChatActivity.getRenderMode）。
+        // 这是「原生渐变浮现」六轮失败的真正分水岭：SurfaceView 的画面由 SurfaceFlinger
+        // 单独合成在独立图层上，不参与宿主窗口 alpha——于是 Dart 侧把 opacity 从 0 淡到 1、
+        // 窗口动画怎么配都没用，屏幕上永远是第一帧整块出现（beta.53~beta.56 三次录屏逐帧
+        // 亮度 31.5 → 228~233 单帧跳变）。TextureView 是普通 View，合成进窗口图层，
+        // alpha 才真正作用到内容上。
+        // v1.6.0-beta.58 (2026-11-18 09:40): 入场改「Web 截屏底图」方案。
+        // beta.53~beta.64 试遍窗口淡入淡出、TextureView、Dart 侧 alpha、窗口 alpha 阶梯，
+        // 逐帧亮度取证全是单帧硬切（31.5 → 228~233）。真正的空窗来自 WebView 切后台后
+        // 不再合成、而窗口又是 translucent 透明底，屏幕上留一段纯黑（beta.52 sw2.mp4
+        // 亮度 45 → 16.5 持续 1.9 秒）。现在点击那一刻用 PixelCopy 拍下 Web 那一屏，
+        // 随 Intent 带进原生页铺在最上层，冷启全程显示「刚才那一页」，首帧画好后再用
+        // 260ms 溶掉底图 —— alpha 叠在已经画完的静态画面上，不再受冷启动帧率牵连。
+        // v1.6.0-beta.59 (2026-11-18 09:50): 底图溶解改手写台阶 + 720ms。
+        // beta.58 底图确实顶住了冷启（logcat: backdrop attached 1080x2340，录屏里那段
+        // 纯黑空窗变成「刚才那一页」），但 260ms 的 ViewPropertyAnimator 实际拖到 614ms
+        // 才回调 onAnimationEnd，中间一帧都没上屏 —— 底图撤得太快，屏幕上仍是一次硬跳。
+        // 现在每 60ms 直接把 alpha 降一级（共 12 级），卡住也不会永远挂着。
+        // v1.6.0-beta.60 (2026-11-18 10:05): 给底图取图加耗时日志，定位点击瞬间的 ANR 归因
+        // （PixelCopy 手上还是 10MB Bitmap 分配，需要数据说话，不猜）。
+        // beta.65~beta.77 收敛路径（最终形态，逐帧录屏取证见 docs/reports 的 validation 3.8）：
+        // · 覆盖层必须是 TYPE_APPLICATION_PANEL 独立子窗口，且撤层时不能 recycle bitmap
+        //   （否则 Canvas: trying to use a recycled bitmap 崩溃）。
+        // · 就绪判据只信「中心区亮度」PixelCopy 采样；「与底图不同」会把纯黑误判成已画好。
+        // · backdropImage 读落盘 PNG，不读还挂在 post 队列里的 Bitmap。
+        // · 交接顺序：precacheImage → endOfFrame → releaseBackdrop → 再开始淡。
+        //   少任一步都会先露出空白页或多留一层覆盖。
+        // · 淡化按渲染帧推进 12 步（Ticker），不按墙钟：冷启动 3~5 帧/秒，
+        //   AnimationController 的墙钟折算会让第一个 tick 直接到 1.0，仍是一帧硬切。
+        versionCode = 452
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.52"
+        versionName = "1.6.0-beta.77"
 
         ndk {
             abiFilters += listOf(targetAbi)

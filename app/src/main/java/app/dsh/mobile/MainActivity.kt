@@ -10,12 +10,18 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
+import java.io.File
+import java.io.FileOutputStream
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -262,14 +268,28 @@ class MainActivity : ThemedActivity() {
         // 独立 Native Chat：Flutter 对话页，不改变现有 WebView 主入口
         // 灵岛入口：带上 Web 当前正在看的会话，原生页直接承接，不经过选择页。
         findViewById<View>(R.id.btnNativeChat).setOnClickListener {
-            readCurrentWebSession { sessionId ->
-                startActivity(
-                    Intent(this, NativeChatActivity::class.java).apply {
-                        if (!sessionId.isNullOrBlank()) {
-                            putExtra(NativeChatActivity.EXTRA_SESSION_ID, sessionId)
-                        }
-                    },
-                )
+            // 先把这一屏（Web 页面）拍成图，随 Intent 带进原生页当底图。
+            //
+            // 为什么必须这么做：原生页是冷启动的 Flutter Activity，从点击到它画出第一帧
+            // 实测要 4–7 秒。这期间 WebView 已经停在后台不再合成，窗口又是 translucent +
+            // 透明底，于是屏幕上留一段**纯黑空窗**（beta.52 sw2.mp4 亮度 45 → 16.5 持续
+            // 1.9 秒；beta.53 更糟是它自己那块近黑底 4 秒）。空窗正是「硬切」观感的主体，
+            // 只调窗口动画/透明度都盖不住它。
+            // 带着这张底图进去，冷启期间屏幕上一直是"刚才那一页"，原生页画好后再把底图
+            // 溶解掉 —— 这才是「Web 自然消散、原生浮现」。
+            captureWindowBackdrop { backdrop ->
+                readCurrentWebSession { sessionId ->
+                    startActivity(
+                        Intent(this, NativeChatActivity::class.java).apply {
+                            if (!sessionId.isNullOrBlank()) {
+                                putExtra(NativeChatActivity.EXTRA_SESSION_ID, sessionId)
+                            }
+                            if (backdrop != null) {
+                                putExtra(NativeChatActivity.EXTRA_BACKDROP, backdrop)
+                            }
+                        },
+                    )
+                }
             }
         }
         // 齿轮按钮：跳转独立设置页
@@ -420,6 +440,62 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 用户手选会话写的是同一个键），不解析 DOM 标题、不猜"最近会话"。
      * 页面还没加载完或没有选择时回调 null，原生页会按引擎自己的目录决定。
      */
+    /**
+     * 把当前这一屏拍成 PNG 落到 cacheDir，回传绝对路径给原生页当入场底图。
+     *
+     * 用 PixelCopy 而不是 view.draw(canvas)：WebView 的内容由独立的合成层渲染，
+     * 软件绘制拿到的是空白（实测只有背景色）。PixelCopy 走系统合成结果，才是用户
+     * 眼睛看到的那一帧。
+     *
+     * 回传**文件路径**而不是 Bitmap：整屏 1080×2340 的 Bitmap 走 Intent 会触发
+     * TransactionTooLargeException；PNG 落盘只有一两百 KB。
+     */
+    private fun captureWindowBackdrop(onResult: (String?) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            onResult(null)
+            return
+        }
+        val view = window.decorView
+        val width = view.width
+        val height = view.height
+        if (width <= 0 || height <= 0) {
+            onResult(null)
+            return
+        }
+        val startAt = android.os.SystemClock.uptimeMillis()
+        runCatching {
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            PixelCopy.request(
+                window,
+                bitmap,
+                { copyResult: Int ->
+                    logWebView("backdrop copy ${copyResult} in ${android.os.SystemClock.uptimeMillis() - startAt}ms")
+                    if (copyResult != PixelCopy.SUCCESS) {
+                        bitmap.recycle()
+                        onResult(null)
+                        return@request
+                    }
+                    // 写盘也走后台：一两百 KB 的 PNG 压缩在主线程会掉帧，正好毁掉这一帧。
+                    Thread {
+                        val dir = File(cacheDir, "native-chat-backdrop").apply { mkdirs() }
+                        val file = File(dir, "backdrop.png")
+                        val ok = runCatching {
+                            FileOutputStream(file).use { out ->
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                            }
+                        }.isSuccess
+                        bitmap.recycle()
+                        runOnUiThread { onResult(if (ok) file.absolutePath else null) }
+                    }.start()
+                },
+                Handler(Looper.getMainLooper()),
+            )
+        }.onFailure {
+            logWebView("capture backdrop failed: ${it.message}")
+            onResult(null)
+        }
+    }
+
     private fun readCurrentWebSession(onResult: (String?) -> Unit) {
         val view = if (::webView.isInitialized) webView else null
         if (view == null) {

@@ -138,4 +138,28 @@
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
     </style>
 
+    <!-- 原生对话页专用主题（v1.6.0-beta.53 引入，beta.58 起靠入场底图才真正成立）。
+         窗口透明 + windowIsTranslucent：引擎冷启到第一帧之间窗口本身是空的。
+         单靠这一条并不够 —— 实测窗口透明在交界处露出一段纯黑（beta.53 第一版 4 秒），
+         因为 WebView 切后台后不再合成、底下没有可显示的内容。真正填住这段空窗的是
+         MainActivity 点击那一刻用 PixelCopy 拍下、由 NativeChatActivity 用
+         TYPE_APPLICATION_PANEL 子窗口盖在最上层的底图（见 docs/reports 的 validation 3.8）。
+         窗口动画只做很短的淡入，作为底图之外的兜底。 -->
+    <style name="Theme.Dsh.NativeChat" parent="Theme.Dsh">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@style/Animation.Dsh.NativeChat</item>
+    </style>
+
+    <!-- 淡入淡出而不是默认的横向滑入：Web 与原生是同一会话的两个视图，
+         横向位移会让人以为"换了一个页面层级"。220ms 与 md3_fade_in_up 一致。 -->
+    <style name="Animation.Dsh.NativeChat" parent="@android:style/Animation.Activity">
+        <!-- 只让新页面淡入，底下那页原地不动：两边都淡会在交界处露出窗口栈底下的
+             黑色（beta.53 第一版实测亮度掉到 16.6 并持续 2.3 秒，与修复前一样）。 -->
+        <item name="android:activityOpenEnterAnimation">@anim/dsh_fade_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/dsh_hold</item>
+        <item name="android:activityCloseEnterAnimation">@anim/dsh_hold</item>
+        <item name="android:activityCloseExitAnimation">@anim/dsh_fade_out</item>
+    </style>
 </resources>

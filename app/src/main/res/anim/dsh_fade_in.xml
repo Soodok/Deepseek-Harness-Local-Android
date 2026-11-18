@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Web → 原生：目标页淡入（配合启动图的浅色渐变，交界不再是一次硬切）。 -->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="220"
+    android:fromAlpha="0.0"
+    android:toAlpha="1.0"
+    android:interpolator="@android:interpolator/decelerate_quint" />

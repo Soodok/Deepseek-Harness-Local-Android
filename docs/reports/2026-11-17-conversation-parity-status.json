@@ -1,6 +1,6 @@
 {
-  "stage": "beta52 实机：双端功能点验、文件回滚六种真实样例、撤回顺序（先 fork 后还原）、小屏/大字/减少动效适配、失败原因可读化全部完成；文档与本地提交完成（未 push），待 Lead 统合与 GLM 复核。",
-  "updatedAt": "2026-11-18T04:20:00+08:00",
+  "stage": "beta77 实机：双端消息动作与按回合文件回滚、撤回顺序、小屏/大字/减少动效、失败原因可读化、以及 Web->原生入场逐帧淡化（9 级可见过渡，k34.mp4）全部完成；文档与本地提交完成（未 push），待 Lead 统合与 GLM 复核。",
+  "updatedAt": "2026-11-18T05:55:00.000Z",
   "branch": "feat/flutter-native-chat",
   "baseHead": "556ef615ac5162347ea205fd602301622d99d6f1",
   "repo": "E:/tmp/wt-flutter-native-chat",
@@ -81,6 +81,38 @@
       "bytes": 248173894,
       "sha256": "e1886d94b3443f1feb042c836247d5fc4908ff1350666f96161d5d1de72f3cd9",
       "note": "失败原因说人话：插件 readableError + 原生 readableFailure，未知码保留原文"
+    },
+    {
+      "name": "1.6.0-beta.72",
+      "code": 447,
+      "note": "PixelCopy backdrop read from disk so Flutter gets it"
+    },
+    {
+      "name": "1.6.0-beta.73",
+      "code": 448,
+      "note": "wait for host overlay release before fading"
+    },
+    {
+      "name": "1.6.0-beta.74",
+      "code": 449,
+      "note": "fade stretched to 900ms"
+    },
+    {
+      "name": "1.6.0-beta.75",
+      "code": 450,
+      "note": "precache backdrop image before releasing overlay"
+    },
+    {
+      "name": "1.6.0-beta.76",
+      "code": 451,
+      "note": "2500ms probe build"
+    },
+    {
+      "name": "1.6.0-beta.77",
+      "code": 452,
+      "bytes": 248183354,
+      "sha256": "0b25d48f93f80fef13f9abe2464c9e640894398d76f4e466165e405cd2fb5afe",
+      "note": "frame-stepped cross fade: 9 visible levels on device (k34.mp4); clean rebuild after removing a padded incremental APK"
     }
   ],
   "completed": [
@@ -171,7 +203,8 @@
     {
       "item": "失败原因可读化：session-busy 等 kebab 错误码不再直接显示给用户",
       "evidence": "插件 client.js 新增 ERROR_TEXT 映射与 readableError（ConfirmDialog 的 failPrefix 提示改走它），client/core 单测 39 pass；原生新增 flutter_ui/lib/src/state/failure_text.dart 的 readableFailure，message_actions.dart 八处 catch 全部改走它，message_actions_test 31 pass（新增 2 例 + 负对照）；设备实测仅在 Web 端抢到 session-busy 窗口，提示为「撤回失败：这一轮还在进行，等它停下来再试。」（/tmp/b52_busy.png）；原生端该路径只有单测覆盖"
-    }
+    },
+    "Web->原生入场切换：PixelCopy 底图 + 独立子窗口 + Flutter 按帧淡化，设备录到 8 级可见过渡（beta.77）"
   ],
   "checks": [
     {
@@ -268,6 +301,21 @@
       "cmd": "gradle :app:assembleDebug (beta52)",
       "exit": 0,
       "note": "BUILD SUCCESSFUL in 1m 31s"
+    },
+    {
+      "cmd": "flutter analyze --no-pub",
+      "exit": 0,
+      "result": "No issues found!"
+    },
+    {
+      "cmd": "flutter test --concurrency=1",
+      "exit": 0,
+      "result": "434 tests passed"
+    },
+    {
+      "cmd": "screenrecord + ffmpeg frame luma (k29.mp4)",
+      "exit": 0,
+      "result": "31.6 -> 49.0 -> 83.3 -> 100.4 -> 117.4 -> 133.6 -> 167.1 -> 183.4 -> 233.8 across 12.30s-13.55s"
     }
   ],
   "knownLimitations": [
@@ -278,11 +326,13 @@
     "「切换 Web / 原生动效」只做目视与时序判断，未录制视频级逐帧证据。",
     "文件回滚的「权限不足 / 磁盘配额 / 部分失败重试」路径只有离线单测，未在设备上做真实故障注入。",
     "fork 失败的真实故障注入只有离线单测（core.test.mjs + 三次负对照），没在设备上造出 fork 真实失败场景。",
-    "其余已知失败码的可读文案（session-not-found / target-not-found 等）只有离线单测，设备上只实测了 session-busy。"
+    "其余已知失败码的可读文案（session-not-found / target-not-found 等）只有离线单测，设备上只实测了 session-busy。",
+    "原生页入场已是逐帧淡化（beta.77，k29.mp4：8 级可见过渡）；但 Web 侧退场没有动画（WebView 切后台被停掉），那 1-2 秒仍是最后一张 Web 画面，不是两端同时交叉。",
+    "冷启动帧率 3-5 帧/秒，12 步淡化的时间分辨率是每步 200-400ms，过渡分级不平滑；系统减少动效打开时按设计跳过（k30.mp4 单帧跳变）。"
   ],
   "blockers": [],
   "next": [
-    "交 Lead 统合与 GLM 复核（本轮实现与设备验收已完成）"
+    "交 Lead 统合，并派 GLM 复核（复核重点见 handoff 的 GLM 复核建议重点）"
   ],
   "commit": "beta.52 功能提交 61074bfc、撤回顺序修正 58a1e6ba；文档提交 5e0e3427/afff2120/3e0ac27e/108759e8/0ffce704；此后仅本状态文件自身的字段更新。工作树仅剩 .superpowers/brainstorm/ 未跟踪（按要求保留不提交），未 push/merge/发布。"
 }

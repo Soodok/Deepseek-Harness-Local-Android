@@ -70,8 +70,18 @@
 | 1.6.0-beta.50 | 425 | 冲突响应兼容顶层 `conflicts` |
 | 1.6.0-beta.51 | 426 | 撤回改为先 fork 后还原文件（fork 失败不再产生不可见改动） |
 | 1.6.0-beta.52 | 427 | 失败原因说人话（错误码不再直接露面，未知码保留原文） |
+| 1.6.0-beta.53 | 428 | 原生页专用主题 + 窗口淡入淡出（录屏证明仍是硬切） |
+| 1.6.0-beta.58 | 433 | 主界面 PixelCopy 拍下 Web 那一屏，作为入场底图压住冷启动空窗 |
+| 1.6.0-beta.62 | 437 | 底图改挂 TYPE_APPLICATION_PANEL 独立子窗口（视图树内会被 Flutter Surface 盖住） |
+| 1.6.0-beta.65 | 440 | 修 Canvas trying to use a recycled bitmap 真实崩溃（不再 recycle，改解绑 drawable） |
+| 1.6.0-beta.71 | 446 | 覆盖层就绪判据改为中心区亮度 PixelCopy 采样（与底图不同会把纯黑误判成已画好） |
+| 1.6.0-beta.72 | 447 | backdropImage 改读落盘 PNG（覆盖层还没画好时 Flutter 拿不到 Bitmap） |
+| 1.6.0-beta.73 | 448 | 先等宿主撤掉覆盖层再开始淡（撤层走主线程消息，实测延迟 4 秒） |
+| 1.6.0-beta.74 | 449 | 淡化拉长到 900ms |
+| 1.6.0-beta.75 | 450 | 撤层前先 precacheImage，避免中间露出等待引擎就绪空白页 |
+| 1.6.0-beta.77 | 452 | 淡化改为 Ticker 按帧推进 12 步：设备录到 8 级可见过渡，不再是硬切 |
 
-最终 APK：`app/build/outputs/apk/debug/app-debug.apk`，248169662 B，SHA-256 `4ecec00f2d75fcdc1703491076684ba34fa16c25f3fd74c05b4749aecd4e4f35`，versionCode 426 / versionName 1.6.0-beta.51，ABI 仅 x86_64。
+最终 APK：`app/build/outputs/apk/debug/app-debug.apk`，248183354 B，SHA-256 `0b25d48f93f80fef13f9abe2464c9e640894398d76f4e466165e405cd2fb5afe`，versionCode 452 / versionName 1.6.0-beta.77，ABI 仅 x86_64。
 
 ## 5. 参考与许可
 
@@ -86,6 +96,6 @@ DSH 权威契约来自本地只读运行时 `E:/tmp/rc2_asar/dsh/node_modules/@d
 
 ## 6. 未覆盖
 
-- 文件改名（rename）与二进制文件的回滚：只有离线单测，未在设备上造真实样例。
-- Web / 原生的切换动效：只做目视与时序判断，未录逐帧视频。
+- 文件改名（rename）与二进制文件的回滚已在 beta.50 补上设备级真实样例（validation 3.2）。
+- Web / 原生切换动效已录逐帧视频（beta.77，validation 3.8）：原生侧入场是 8 级可见过渡，不再是硬切；Web 侧退场没有动画可录（WebView 切后台被系统停掉）。
 - ARM 真机、TalkBack、硬件键盘遍历未验。

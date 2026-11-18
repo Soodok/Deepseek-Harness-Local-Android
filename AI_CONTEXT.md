@@ -1,5 +1,20 @@
 # DSH Android · 交接文档
 
+## 入场切换动效：Web→原生逐帧淡化（2026-11-18，beta.53→beta.77）
+
+- 需求：点灵动岛「切换原生对话」时 Web 自然消散、原生渐变浮现，不要硬切。
+- beta.53～beta.70 十几轮全部失败：窗口 alpha、ValueAnimator 手写台阶、TextureView、Dart AnimationController、覆盖层自身溶解，录屏一律是 31.5 → 228~233 单帧跳变。根因（推测，有多轮证据）：WebView 切后台不再合成、窗口又 translucent+透明底，屏幕留纯黑空窗，那是硬切观感的主体；Flutter 在独立 Surface 上，与任何覆盖层窗口之间没有可用的混合过渡。
+- 最终方案（beta.77，设备已验证）：
+  1. MainActivity.captureWindowBackdrop() 在点击那一刻用 PixelCopy.request(window, bitmap, …) 拍下 Web 那一屏，PNG 落盘到 cacheDir，路径随 Intent 传给原生页（不传 Bitmap，避免 TransactionTooLargeException；必须用 Window 重载，传 View 会抛类型错误）。
+  2. NativeChatActivity.attachBackdrop() 用 TYPE_APPLICATION_PANEL 独立子窗口把底图盖在最上层撑住 4–7 秒冷启动（挂在 android.R.id.content / decorView 上都会被 Flutter Surface 盖住；window.decorView.windowToken 在 onCreate 还是 null，必须 post 之后再加，否则 BadTokenException）。
+  3. Flutter 侧 flutter_ui/lib/src/ui/launch_fade.dart：precacheImage 把同一张图解码进缓存 → await WidgetsBinding.instance.endOfFrame 确保画上去 → 调 HostBridge.releaseBackdrop() 撤宿主覆盖层（两层同一像素内容，撤掉看不出跳变）→ 再用 Ticker 按帧淡掉。
+- 关键教训（这条是本次最贵的）：淡化步进必须按帧数，不能按墙钟。冷启动只有 3–5 帧/秒，AnimationController 按经过时间折算，第一个 tick 到达时已过 4 秒、750ms 动画在第一帧就折成 1.0 —— 屏幕上仍是一帧硬切（beta.73 k25.mp4、beta.75 k27.mp4 都是这个形状）。改成 Ticker 每渲染帧退一步（LaunchFade.steps = 12）后，录屏出现 9 级可见过渡：亮度 32.0→65.4→83.3→117.4→149.9→167.1→183.5→200.5→218.1→233.8，跨 15.88s→16.91s（k34.mp4 / k34sheet.png，最终交付包复录）。
+- 另外两个实测出来的顺序约束：①必须先 precacheImage 再撤层，否则中间露出「等待本机引擎就绪」空白页（beta.74 k26.mp4 帧 107 的 226.7）；②必须等宿主真的执行完撤层再开始淡，撤层走主线程消息、冷启动时延 4 秒（beta.72 k23.mp4）。
+- 修掉的真实崩溃：java.lang.RuntimeException: Canvas: trying to use a recycled bitmap（beta.64/65）—— 撤层时不能 bitmap.recycle()，改 image.setImageDrawable(null)。
+- 「减少动效」按设计跳过淡化：三个动画倍率置 0 后录到 32.0→233.8 单帧（k30.mp4）；设备设置已还原（三个倍率 1、hide_error_dialogs 0）。
+- 门禁（beta.77 最终态）：flutter analyze --no-pub 退出 0；flutter test --concurrency=1 退出 0「434 tests passed」；Gradle :app:assembleDebug 退出 0 BUILD SUCCESSFUL in 3m 2s；APK 248183354 B，SHA-256 0b25d48f93f80fef13f9abe2464c9e640894398d76f4e466165e405cd2fb5afe，versionCode 452 / versionName 1.6.0-beta.77。
+- 已知边界：①淡化只覆盖原生页入场，Web 侧退场没有动画（WebView 切后台被系统停掉），那 1–2 秒是最后一张 Web 画面，不是两端同时交叉；②冷启动帧率低，12 步的时间分辨率是每步 200–400ms，过渡分级不平滑；③拍图失败（SDK<26 或异常）退回窗口 alpha 阶梯。
+- 关键文件：app/src/main/java/app/dsh/mobile/{MainActivity,NativeChatActivity}.kt、app/src/main/res/values/themes.xml（Theme.Dsh.NativeChat）、app/src/main/res/anim/dsh_fade_{in,out}.xml、flutter_ui/lib/src/ui/launch_fade.dart、flutter_ui/lib/src/bridge/host_bridge.dart（readBackdrop / releaseBackdrop）、flutter_ui/test/widget_test.dart（淡化用例含两条反证）。
 ## 会话平权：双端消息动作 + 文件回滚（2026-11-18，beta.37→beta.52）
 
 - 范围：只写 E:/tmp/wt-flutter-native-chat（feat/flutter-native-chat，基线 556ef615），未 push/merge/发布；主仓库 E:/Deepeek harness/dsh-android 与他人工作树一律未动。

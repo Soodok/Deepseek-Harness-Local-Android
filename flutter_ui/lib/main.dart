@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -11,6 +12,7 @@ import 'src/state/chat_controller.dart';
 import 'src/theme/dsh_theme.dart';
 import 'src/transport/fixture_transport.dart';
 import 'src/ui/chat_shell.dart';
+import 'src/ui/launch_fade.dart';
 import 'src/state/settings_controller.dart';
 import 'src/theme/display_scale.dart';
 import 'src/ui/settings/settings_scope.dart';
@@ -19,15 +21,39 @@ import 'src/bridge/settings_service_stub.dart'
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 外观必须在 runApp 之前读出来。
+  //
+  // 原先这里直接 runApp，_themeMode 的初始值是 ThemeMode.dark，用户保存的 light
+  // 要等一个 MethodChannel 往返回来才生效 —— 于是冷启动的第一帧永远是深色
+  // （实测中心像素 #151517），几百毫秒后才跳成浅色。从 Web 切过来时这段深色
+  // 正好落在引擎冷启的空窗里，看起来就是「先黑一下再变白」。
+  //
+  // 这次读取就是一次 SharedPreferences 往返（毫秒级），换来首帧即正确的外观；
+  // Web 预览下没有桥，readAppearance 返回 null，行为不变。
+  final appearance = await HostBridge.readAppearance();
+  // 入场底图：宿主在点击「切换原生对话」那一刻拍下的 Web 那一屏。
+  // 它在冷启动那几秒里替我们挡住黑屏，起来后再由 LaunchFade 在自己这层淡掉。
+  final backdrop = await HostBridge.readBackdrop();
   // The chrome is drawn with Flutter's own BackdropFilter/ImageFilter, so the
   // app no longer initializes a third-party glass renderer at startup.
-  runApp(const DshApp());
+  runApp(DshApp(initialAppearance: appearance, backdrop: backdrop));
 }
 
 class DshApp extends StatefulWidget {
-  const DshApp({super.key, this.preview = kIsWeb});
+  const DshApp({
+    super.key,
+    this.preview = kIsWeb,
+    this.initialAppearance,
+    this.backdrop,
+  });
 
   final bool preview;
+
+  /// 启动前就读到的外观；非 null 时首帧直接用它，不再先画深色再改。
+  final Map<String, String>? initialAppearance;
+
+  /// 宿主拍下的 Web 那一屏：入场时盖在页面之上，再淡掉露出会话页。
+  final Uint8List? backdrop;
 
   @override
   State<DshApp> createState() => _DshAppState();
@@ -66,6 +92,7 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
     _hostResolved = widget.preview;
     _settings.refresh();
     if (!widget.preview) _refreshHostInfo();
+    _applyInitialAppearance();
     _readAppearance();
     _readDisplaySize();
   }
@@ -91,6 +118,18 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
       ScaffoldMessenger.maybeOf(context)
           ?.showSnackBar(const SnackBar(content: Text('显示大小没能保存，重启后会恢复上一个选择')));
     }
+  }
+
+  /// 把 main() 里提前读到的外观落到状态上（在 initState 同步执行）。
+  void _applyInitialAppearance() {
+    final saved = widget.initialAppearance;
+    if (saved == null) return;
+    _themeMode =
+        ThemeMode.values.where((m) => m.name == saved['mode']).firstOrNull ??
+        _themeMode;
+    _mood =
+        DshMood.values.where((m) => m.name == saved['mood']).firstOrNull ??
+        _mood;
   }
 
   Future<void> _readAppearance() async {
@@ -230,8 +269,12 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
             // route and overlay scales together, and below nothing that owns
             // state: the widget chain is identical at every size, so switching
             // never remounts routes, focus, drafts or scroll offsets.
-            builder: (context, child) =>
-                DshDisplayCanvas(child: child ?? const SizedBox.shrink()),
+            builder: (context, child) => DshDisplayCanvas(
+              child: LaunchFade(
+                backdrop: widget.backdrop,
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
             home: Builder(
               builder: (context) => !_hostResolved
                   ? const Scaffold(

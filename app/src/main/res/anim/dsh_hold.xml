@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「原地不动」：给交叉淡化的**被覆盖方**用。
+
+  为什么不能两边都淡：beta.53 第一版把进入方淡入、同时把退出方淡到全透明，
+  实测交界处露出的是窗口栈底下的黑色（逐帧亮度掉到 16.6 并持续 2.3 秒，
+  与修复前几乎一样）。正确的交叉淡化是**只让新页面浮起来**，底下那页保持
+  原样不动 —— 这样任何一帧都是「旧页 + 新页的透明度」，不会露出黑色。
+-->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="220"
+    android:fromAlpha="1.0"
+    android:toAlpha="1.0" />
