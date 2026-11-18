@@ -334,5 +334,7 @@
   "next": [
     "交 Lead 统合，并派 GLM 复核（复核重点见 handoff 的 GLM 复核建议重点）"
   ],
-  "commit": "beta.52 功能提交 61074bfc、撤回顺序修正 58a1e6ba；文档提交 5e0e3427/afff2120/3e0ac27e/108759e8/0ffce704；此后仅本状态文件自身的字段更新。工作树仅剩 .superpowers/brainstorm/ 未跟踪（按要求保留不提交），未 push/merge/发布。"
+  "commit": [
+    "f03795d7394602926e2956dd0d4d20de0c747d1c feat(chat-parity): Web 切原生入场改逐帧淡化（beta.53→beta.77）"
+  ]
 }

@@ -73,6 +73,10 @@
 4. ~~rewind 先回滚文件再 fork~~ **beta.51 已修**：改为「冲突预检（只读）→ fork → 还原文件」，顺序由 core.rewindForkFirst 承担并有三例单测锁定。复核时请确认：①fork 成功后还原过程中若某文件失败，此时会话已分叉而文件只回滚了一部分，界面是否把 skipped 清单讲清楚；②是否还需要给「fork 成功但还原失败」补一条补偿/提示路径。
 5. client.js 与 Flutter 端 describeChanges/planFrom 的文案口径是否仍完全一致。
 
+## 本地提交
+
+- f03795d7 feat(chat-parity): Web 切原生入场改逐帧淡化（beta.53→beta.77）（未 push）
+
 ## 文档索引
 
 - docs/reports/2026-11-17-conversation-parity-plan.md —— 设计与实施计划。
