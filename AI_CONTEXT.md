@@ -14481,3 +14481,78 @@ XML 原始 `res/drawable/bg_dynamic_island_dot.xml` 本来就有 `stroke 0.5dp i
 - 版本号未动（仍是 `versionCode 392 / 1.6.0-beta.16`），验证构建用的是隔离树的 430。
   发版时按 `docs/RELEASE.md` 抬到 393。
 
+
+## 第一百四十章（v1.6.0-beta.17 · 2026-11-18）冷启动 5655→4494ms：模式判定前移、并行归因修正、日志树剪枝
+
+### 冷启动变慢：三处定位，其中两处是归因假象
+
+**问题复现**：用户反映「启动 1.4 秒之后运行环境才检测出来」，且启动速度达不到 README 的 2.3 秒。
+
+### 先说结论：检测本身不慢，慢的是它排队的位置
+
+`EngineModeSelector.resolve()` 实测只要 **0~6ms**（Linux 关闭时仅读一个 SharedPreferences 布尔）。
+但它在 `spawnEngine` 里，前面隔着孤儿回收、preflight、runtime-install、hardssh、profile-plugins，
+累计 **1.19~2.4 秒**才轮到 —— 这就是用户看到的「检测延迟」。
+
+### 三处改动
+
+| 改动 | 位置 | 效果 |
+|---|---|---|
+| 模式判定前移 | `EngineModeSelector.resolveEarly()` + `DshApp.onCreate` | 第一帧即显示真实模式，0.1s 就绪 |
+| 并行块各自计时 | `BootTrace.stepElapsed()` + `EngineSupervisor:742+` | 修掉归因假象（详见下） |
+| 日志遍历剪枝 | `LogJanitor.NOISE_DIRS` | log-sweep 537.5 → 148.5ms |
+
+### 归因假象：`orphan-reap: 4881ms` 从来不是孤儿回收慢
+
+`step()` 的语义是「距上一条 step 的墙钟差值」。并行块里三条 `step()` 连着调，
+第一条吞掉整块时间、后两条必然记成 0~1ms：
+
+```
+boot step orphan-reap:        4881ms   <- 三条并行任务的总墙钟
+boot step home-owner-check:     11ms   <- 恒 0~1ms，不是因为它快
+boot step guardian-restore:      8ms
+```
+
+照这个数字去查 `/proc` 全表扫描会白费功夫（模拟器实测孤儿回收只要 **5~7ms**）。
+改成每个任务自己计时后，真实分布是 `orphan-reap 5ms / owner-check 0ms / guardian 247ms`。
+
+### 实测数据（emulator-5554 · x86_64 · Android 14 · 完整包）
+
+```
+                    修复前(4轮)              修复后(3轮)
+log-sweep           423~660ms 中位 537      127~201ms 中位 148
+parallel-preflight  —                        415~490ms
+health-poll         4137~5274ms             3081~3648ms
+TOTAL               5463~6951ms 中位 5655    4041~4595ms 中位 4494
+```
+
+**省 1161ms（20.5%）**。
+
+`health-poll` 那 3.1~3.6 秒是引擎自身启动 Node + 加载 338 个插件 + WebUI，属上游成本，本轮未动。
+它现在占总启动的 **75%**，是下一个主战场。
+
+### 遮罩实测对比
+
+修复前 1.6s 抓图：「Detecting runtime / Waiting for environment detection」
+修复后 1.5s 抓图：「**Android native** / bionic node · engine/lib」，Elapsed 0.1s 时模式已确定。
+
+### 探针与负对照
+
+`_test_startup_parallelization.py` 原以 `step("orphan-reap")` 为锚点，改 `stepElapsed` 后 2 条报红。
+已更新锚点，并**新增「并行阶段不得借用共享墙钟」**：对三个 key 断言 `stepElapsed("k"` 存在且 `step("k")` 不存在。
+
+负对照：把 `guardian-restore` 改回 `BootTrace.step(...)` → **通过 14 / 失败 3**；还原 → 17/0。
+
+### 门禁
+
+- JVM 行为测试：**passed=2405 failed=0**
+- `_test_startup_parallelization.py` 17/0、`_test_startup_trim.py` 36/0、`_test_boot_trace.py` 32/0
+- `check-i18n.py` All passed（7 套 values 各 1876 条同步）
+- `check-ui-tokens.py` All passed
+
+### 未做 / 待排期
+
+- `health-poll` 3.1~3.6s 未优化（上游引擎成本）
+- 仍缺「启动耗时预算」型性能回归门禁：现有探针只守顺序与归因，**性能退化它不会红**
+- 真机 `192.168.101.21:9000` 已掉线，未做真机对照
+- 测量设备是模拟器 x86_64，数值不可直接与真机 ARM 对比
