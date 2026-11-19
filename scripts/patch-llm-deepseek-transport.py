@@ -165,6 +165,12 @@ def patch_text(text: str) -> tuple[str, list[str]]:
     applied.append("transport-detail")
     text = text.replace(HELPER_ANCHOR, HELPER + HELPER_ANCHOR, 1)
     applied.append("helper")
+    # 修（v1.6.0-beta.19）：这条分支以前直接 return，于是「上游还没有第一层」的
+    # runtime 只拿到第一层补丁，第二层（请求体字节数）永远补不上。CI 的
+    # runtime-build 走的正是这条路径（它的 npm 原料里没有 transportDetail 函数），
+    # 结果 beta.18 发布包里 #108 只做了一半。两条路径都必须能走到第二层。
+    text, extra = patch_payload_bytes(text)
+    applied.extend(extra)
     return text, applied
 
 
