@@ -8,9 +8,10 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-16 · `main` 代码提交 `8ad34f9a`（**已推送**，远端 `main` 与本地一致）· 本轮推送 10 个提交、关闭已合并 PR、清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（见第一百三十四章）；上一轮是「PR #110/#88 合入 + 三处 UI 观感修正」（第一百三十三章），再上一轮是「扩展入口软链误拦 + binutils 声明名不符」（第一百三十二章）。
-> ✅ 远端 `main` 已同步到本文件所在的提交（凭据已于 11-14 晚换新并存入 GCM，`ls-remote` 可通）。
-> `v1.6.0-beta.14` 的 tag 仍未打（发版流程待走，见 `docs/RELEASE.md`）。
+**最后更新**：2026-11-19 · `main` 代码提交 `5233c6d2`（**未推**）· 本轮收掉 #123 / #122 / #108 三条 issue，并把 #118 / #119 的既有修复随 `1.6.0-beta.18 (394)` 一起出包（见第一百四十二章）。
+> 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
+> ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
+> ⚠️ 本轮 `5233c6d2` 与 `1.6.0-beta.18 (394)` 的 tag 都**还没推**。
 本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
 两轮「窄→宽」，根因是 `toggleToolbar()` 先 `renderIslandVisibility()` 再在 120ms 后压小重撑，
 两段动画叠加；把起点 scale/alpha 挪到渲染前、删掉 handle 空转动画即修。② 用户要求侧边面板
@@ -14758,6 +14759,104 @@ DshApp 去掉 resolveEarly     -> 失败 1
 ```
 PASS=142  FAIL=0
 ```
+
+## 第一百四十二章（v1.6.0-beta.18 · 2026-11-19）四条 issue 收口：#123 全屏三档 / #122 插件版本 / #108 诊断 / #118·#119 随版发出
+
+提交 `5233c6d2`。18 文件 +715/−23。
+
+### 1. #123 全屏模式只隐藏了状态栏 —— 白带是两件事叠在一起
+
+用户（HONOR / Android 17 / App 1.5.0）报「底部导航栏依旧占位，内容被卡在导航栏上方，
+聊天正文永远贴不到屏幕最底边」。他给的判断很准：`dist/index.html` 无 `viewport-fit=cover`、
+前端 `env(safe-area-inset-*)` 用了 0 次 —— 所以底部边界只能是壳层的事。
+
+但壳层里其实是**两处同时**在留白，只改一处白带都还在：
+
+| # | 位置 | 原状 |
+| ① | `applyStatusBarImmersive()` | `c.hide(WindowInsetsCompat.Type.statusBars())` —— 只隐藏状态栏 |
+| ② | `applyIslandInsets()` 的 `bottomPad` | `else if (immersive) navBottom` —— 主动把导航条高度让出来 |
+
+修法：把布尔 `KEY_IMMERSIVE` 扩成三档 `ImmersiveMode { OFF, STATUS, STATUS_NAV }`，
+`STATUS_NAV` 档下：
+
+- `hide(statusBars() or navigationBars())` + `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`；
+- API<30 用 `SYSTEM_UI_FLAG_HIDE_NAVIGATION or LAYOUT_HIDE_NAVIGATION or IMMERSIVE_STICKY` 兜底；
+- `bottomPad` 在 nav 隐藏时**归零**（键盘弹起仍让位 IME）；
+- IME 弹起会重置 hide → 在 `setOnApplyWindowInsetsListener` 末尾按当前档位重新 hide；
+- 退出全屏时 `clearMask` 带上两个 nav flag，并 `show(statusBars + navigationBars)`。
+
+设置页（`AppearanceActivity`）加第二行子开关 `swImmersiveNav` / 整行 `rowImmersiveNav`：
+第一级关闭时第二级**禁用 + alpha 0.45**（不是隐藏 —— 隐藏会让分组高度跳动）。六语文案齐。
+
+### 2. #122 插件设置页错位 —— 内置插件版本正好落在「不兼容」那一行
+
+用户报 1.6.0-beta.14 上 Our Free Model 插件页概率性错位。截图症状：底部一整块灰色空白带、
+左侧内容区比背景窄一条、右侧形象溢出页面。
+
+查上游 `@xiaopb/dsh-mobile-layout` 的 README 兼容表（逐版本登记，`dsh.compatibility.dshReleases`）：
+
+| 插件版本 | 对 `0.2.2-rc.1` | 说明 |
+| 0.4.4 – 0.4.6 | ❌ 不兼容（未登记 = unknown） | 实测：设置页变悬浮小窗且标题/页签/内容裁切、关不掉 |
+| 0.4.7 起 | ✅ 首个适配 | 按 `data-shortcut-modal` 正向契约 + `settings.general.item` slot 接入 |
+
+而本仓 `vendor/mobile-layout/bundle.json` 打进去的正是 **0.4.5**（2026-11-06 的版本）。
+升到 **0.4.12**（npm tarball + integrity 校验，sha256 `897ba372…`，自带 `cordis.patch.yml`）。
+装机日志确认：`ProfilePluginProvisioner: @xiaopb/dsh-mobile-layout: provisioned at 0.4.12`。
+
+> 上一轮（11-09）的 `dist/mobile-layout` 里其实已有 0.4.8，但 `dist/` 在 `.gitignore` 里、
+> 且 CI 走 `pack-mobile-layout.sh` 取 npm latest，本地 `vendor/` 那份才是缺省源。
+
+### 3. #108 TRANSPORT 只有一句「transport failed」—— 补请求体字节数
+
+用户报 40.4 MB / 3349 turn 的老会话发「在吗」必 5 次 TRANSPORT，小会话一次过。
+第一层补丁（11 月上旬）已把底层异常 code 拼进文案，但**看不出请求体多大**，
+用户无法判断是网络抖还是会话已经大到发不出去。
+
+第二层：`extensions.payload.length` 在 fetch 前采集，抛 TRANSPORT 时拼成
+`… · request body 40.2 MB`。错误码 / cause / 重试策略**一律不动** —— 只在诊断层。
+
+**没有做**「超过 N MB 就不再重试」：上游没有声明任何请求体上限，能查到的只有
+`defaultContextWindow = 1e6`（token，不是字节）。凭猜定阈值会在正常大请求上误伤，
+真正该修的是上游的上下文压缩策略 —— 留到有实测证据后的独立改动。
+
+### 4. #118 / #119 随本版出包（代码在 beta.16 已修，一直没发）
+
+`a9e7d961` 把 fast_mode 的钩子选择从「猜 `class AgentModel` 字面量」改成「读硬契约」；
+`1b0dba25` + `fe1bc876` 给老内核补了锚定浮层的脚本定位与 polyfill 三处兜底。
+两条都已进 HEAD 但从未进过发行包（beta.14 之后 39 个提交都没发），本版一并发出。
+
+### 5. 探针（各带负对照，全部实际打红过）
+
+| 探针 | 条数 | 负对照 |
+| `_test_immersive_mode.py` | 22 | 4 变异全红：hide 只留 statusBars / bottomPad 不看 navHidden / clearMask 去掉 HIDE_NAVIGATION / 枚举改名 STATUS_NAVX |
+| `_test_mobile_layout_version.py` | 8 | 抬 MIN_VERSION → B2 红；改 sha256 → C2 红 |
+| `_test_transport_body_size.py` | 11 | 删拼接 → B2 红；删幂等短路 → C1/C2 红 |
+
+**踩到的假绿**：`_test_immersive_mode.py` 第一版 A2 用 `"STATUS_NAV" in code`，
+被变异 `STATUS_NAVX` 蒙对（子串包含）；B1 只看 `.hide(...)` 的参数列表，
+但实参是变量 `bars` 不是字面拼接；E1 取 `split("clearMask")[-1]` 落到了使用点之后。
+三处都靠跑变异才发现，改后 4/4 全红。
+
+### 6. 验证与产物
+
+- `check-i18n` EXIT 0、`check-ui-tokens` EXIT 0、`gate-memory.sh static` EXIT 0（py 探针 **PASS=146 FAIL=0**）、
+  `run-a11y-jvm-test.sh` → **passed=2405 failed=0**。
+- 产物（均 `-Ppackage=full -PdebuggableRelease=true`，签名 `d28ca4f5…92c8`）：
+
+| ABI | 体积 | md5 | 内嵌 |
+| arm64-v8a | 190,181,516 B | `142dacecf1a79ceed3b352f52c16fc7e` | runtime `2026.11.14-d0bd1fde` + hardssh 0.2.13 + mobile-layout 0.4.12 |
+| x86_64 | 190,290,473 B | `894b752b42baeeab0255e86e2c573b5a` | 同上 |
+
+- 模拟器 `emulator-5554` 装成 `394 / 1.6.0-beta.18`，启动链路：
+  `profile-plugins: 29ms` → `provisioned at 0.4.12`，`spawn 1389ms` + `health-poll 10791ms`（冷启动含首次解压）。
+- **未做**：真机 PLZ110 本轮离线（`adb connect 192.168.101.21:9000` 超时），
+  arm64 包只做了构建 + 签名核验；#123 的三档切换、#119 的用量浮层、#118 的 fast_mode 都还需要真机点一次。
+- **未发版**：`versionCode 394 / versionName 1.6.0-beta.18` 已改但未打 tag、未推远端。
+
+### 7. 并行会话的 WIP（本轮未碰）
+
+`app/src/main/java/app/dsh/mobile/engine/` 下的 `EngineSupervisor.kt` / `RuntimeInstaller.kt` 正在被改，
+新增 `FrontendWarmup.kt` / `PortReclaim.kt` + 两个测试类。本轮提交**全部避开**这些文件。
 
 ## PR #102：Material 3 单主题审查修订
 

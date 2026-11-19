@@ -106,6 +106,8 @@
     <string name="files_dir_copied">Path copied</string>
 <string name="setting_immersive">Fullscreen (hide status bar)</string>
     <string name="setting_immersive_sub">Hide the system status bar so pages fill the screen. The top toolbar automatically clears the camera cutout. Swipe down from the top to reveal the status bar temporarily.</string>
+    <string name="setting_immersive_nav">Also hide navigation bar</string>
+    <string name="setting_immersive_nav_sub">Hide the bottom navigation bar and gesture handle so pages reach the very bottom edge. Swipe up from the bottom to peek. Only available when fullscreen is on.</string>
     <string name="setting_scale_sub">Adjust how web pages are scaled (browser zoom)</string>
     <string name="setting_theme">Appearance</string>
     <string name="setting_theme_sub">Dark, light, or follow the system</string>

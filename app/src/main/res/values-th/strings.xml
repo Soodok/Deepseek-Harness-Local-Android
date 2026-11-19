@@ -96,6 +96,8 @@
     <string name="files_dir_copied">คัดลอกพาธแล้ว</string>
     <string name="setting_immersive">ซ่อนแถบสถานะ</string>
     <string name="setting_immersive_sub">ซ่อนแถบสถานะให้หน้าจอเต็มจอ; ลากจากด้านบนลงเพื่อแสดงชั่วคราว ปิด</string>
+    <string name="setting_immersive_nav">ซ่อนแถบนำทางด้วย</string>
+    <string name="setting_immersive_nav_sub">ซ่อนแถบนำทางด้านล่างและแถบ gestured ให้หน้าเว็บเต็มถึงขอบล่างสุด ปัดขึ้นจากด้านล่างเพื่อเรียกดูชั่วคราว ใช้ได้เมื่อเปิดโหมดเต็มจอแล้วเท่านั้น</string>
     <string name="setting_scale_sub">ปรับขนาดหน้าเว็บ (ซูมเบราว์เซอร์)</string>
     <string name="setting_theme">รูปร่าง</string>
     <string name="setting_theme_sub">มืดสว่างหรือตามระบบ</string>
