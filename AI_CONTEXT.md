@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-19 深夜 · `main` 代码提交 `0228457f`（已推）· 本轮收掉 #123 / #122 / #108 三条 issue，并把 #118 / #119 的既有修复随发行包一起发出；beta.18（394）漏了 #108 第二层，beta.19（395）补全并开箱验证（见第一百四十二章）。
+**最后更新**：2026-11-20 凌晨 · `main` 代码提交 `23ce8bf5`（本地，未推）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -14935,3 +14935,161 @@ CI 全绿（`android-build` / `i18n-check` / `runtime-build`），Release 已发
   但 `assembleRelease` 编译的是**工作区**，所以 `/e/tmp/rel394/` 那两份含
   `FrontendWarmup` / `PortReclaim`（并行会话在写的）。**交付只认 CI 从 tag 构建的产物** ——
   已用 dex 开箱确认 CI 包里没有 `FrontendWarmup`。
+
+---
+
+## 第一百四十三章（v1.6.0-beta.20 · 2026-11-20）WebUI 首屏 1.7 秒空档的真凶：shiki 预热，以及一次构建缓存污染的排查
+
+### 一、结论先行
+
+引擎 WebUI 的「解析完到画面可用」之间那段 1.7 秒空档，来源是前端 bundle 在模块顶层立刻预热
+语法高亮：构造 highlighter 只要 3~21 ms，但紧随其后的三次热身 tokenize 掉 641~843 ms
+（typescript 494~662 / shellscript 121~153 / json 3~6），全部压在首屏主线程上。
+
+已改为 `requestIdleCallback`（无该 API 时退 1200 ms），**实测首屏解析省 797 ms（27.6%）**，
+且第一次滚到代码块时高亮仍是热的。提交 `23ce8bf5`。
+
+### 二、先证伪的那条路：调 oniguruma 的正则懒编译参数（无效）
+
+CPU 采样显示 `Dm @ vendor-*.js` 占 30.5%、`findNextMatchSync` 4.7%，
+调用栈 `Dm ← Lo ← _d ← kd ← gl ← regexConstructor` 指向 vscode-textmate 的 oniguruma 正则编译。
+前端把 `lazyCompileLength` 从 oniguruma 默认的 3000 改成 `Number.POSITIVE_INFINITY`
+（等于让懒编译彻底失效），看起来像是元凶。
+
+配对 A/B 五轮（flutter 分支 beta.86 / emulator-5570，改回 3000 vs 现状 Infinity）：
+
+| 指标 | Infinity | 改回 3000 | 差值 |
+|---|---|---|---|
+| 长任务总计 | 1989 ms | 1912 ms | +77 ms |
+| load 事件 | 1992 ms | 2006 ms | **−14 ms** |
+| 界面到位 | 2818 ms | 2819 ms | **−1 ms** |
+
+5 轮里只有 2 轮更快 —— 属噪声。**该路径证伪，不要再回头调这个参数。**
+
+原因后来才看清（把 `nB()` 拆成四段计时）：
+
+```
+createHighlighter          3 ~ 21 ms     ← 建实例几乎免费
+typescript 预热 tokenize 494 ~ 662 ms    ← 成本全在这
+shellscript 预热 tokenize 121 ~ 153 ms
+json 预热 tokenize           3 ~ 6 ms
+合计                       641 ~ 843 ms
+```
+
+正则编译确实发生，但它发生在**那次预热 tokenize 的第一次匹配**里，不在构造阶段。
+调懒编译阈值只能改「什么时候编译」，改不了「编译多少」，所以调参无效。
+
+### 三、为什么不能直接删预热
+
+删除预热同样能让首屏变快（flutter 分支上配对 5/5 轮全胜，长任务中位 2085→1461 ms），
+但**第一次滚到代码块时现场编译 typescript grammar 要 500~660 ms** —— 只是把卡顿挪到用户眼前。
+首屏恰好没有代码块时会掩盖这个问题，一旦当前会话写了代码就会暴露。
+
+所以最终采用「空闲时预热」：首屏照旧渲染，三次 tokenize 挪进 `requestIdleCallback`。
+
+### 四、实现
+
+`app/src/main/java/app/dsh/mobile/engine/FrontendWarmup.kt`（新建，140 行）
+
+- 两条正则覆盖压缩器的两种惯用法，**顺序敏感**：
+  - `unrefForm` = `\((\w+)=\((\w+)=setTimeout\(\(\)=>\{(\w+)\(\)\},0\)\)\.unref\)==null\|\|\1\.call\(\2\);?`
+  - `plainForm` = `setTimeout\(\(\)=>\{(\w+)\(\)\},0\)(\.unref\?\.\(\);?)? `
+  - 必须先 `unrefForm` 再 `plainForm`：unref 形里含裸 `setTimeout(...)` 子串，先跑 plain 会把
+    内层改坏、外层 `(...).unref)==null||sk.call(ak)` 失去被调函数。
+- `MARKER = "/* dsh-android: idle warm-up v1 */"` 保证幂等；
+- 写盘走 `*.dsh-warm.tmp` + `Files.move(REPLACE_EXISTING, ATOMIC_MOVE)`；
+- 只处理 `assets/index-*.js`，不碰 vendor 与其他 chunk。
+
+接线：`RuntimeInstaller.kt:136`（复用旧磁盘分支）与 `:1008`（首装/显式更新分支）各一行
+`FrontendWarmup.healInstalled(ctx)`，紧跟 `WebViewPolyfill.healInstalled(ctx)`。
+
+### 五、实测（main / vC395 / emulator-5554 / AVD dsh34 / x86_64 / Android 14 / 8GB）
+
+口径：引擎自打的 `webview-first-paint` 累计减 `boot.log` 的 `TOTAL`，即 WebUI 加载段。
+对照组用「assets 目录 chmod 555 让 healInstalled 写不进去」来造 base 态，
+**代码路径完全一致**，不需要另编一个 APK。
+
+| 轮 | base gap | idle gap | base marker | idle marker |
+|---|---|---|---|---|
+| 1 | 2701 | 2011 | 0 | 1 |
+| 2 | 2903 | 2093 | 0 | 1 |
+| 3 | 2890 | 2265 | 0 | 1 |
+| 4 | 2854 | 2273 | 0 | 1 |
+| 5 | 3030 | 2070 | 0 | 1 |
+| **中位** | **2890** | **2093** | | |
+
+**省 797 ms（27.6%），5/5 轮 idle 更快。**
+marker 列证明每组确实处于预期状态（base 未被改写、idle 已改写），不是两组都跑同一份文件。
+
+功能验证：预热完成后 `getLoadedLanguages()` 含 typescript/shellscript/json 及
+ts/cts/mts/bash/sh/shell/zsh 等别名；`codeToHtml('const a = 1',{lang:'typescript'})` 6 ms，
+输出含 `<pre class="shiki css-variables">` 与 `--shiki` 变量。
+
+端到端（关键证据）：设备上还原成原始包 `db3f0af1`（marker=0），重启应用后变
+`85ef4b22`、marker=1 —— 全程未手工干预，确认 `healInstalled` 自己在真机路径上生效。
+在此之前我先用手推的包验证过一次，那时设备上的 md5 恰好就是我手推的版本，
+`healInstalled` 看到 MARKER 直接跳过 —— 那只证明了幂等，没证明自动打补丁。已重做。
+
+### 六、门禁
+
+- `FrontendWarmupTest`：6/6（unrefForm/plainForm 改写、括号平衡、幂等、无锚点原样返回、任意长度压缩名提取）
+- `scripts/probes/_test_frontend_warmup_idle.py`：16/0
+- 全量探针：**PASS=148 FAIL=0**（`PYTHONIOENCODING=utf-8` 下跑；不带该变量会有 20 个 GBK 编码假失败）
+- `check-i18n.py` All passed；`check-ui-tokens.py` All passed；`git diff --check` 干净
+
+负对照（本文件此前的实测）：unref/plain 两条 replace 顺序对调 → 用例打红，还原后 6/0。
+探针侧：只查字面量 `'requestIdleCallback' in kt` 时，把条件改成 `if(false)` 仍绿（假绿），
+已改为把 Kotlin 拼接字符串合并后断言「能力检测 + 真调用」结构；四条负对照各自都能打红。
+
+### 七、撞上的一次构建缓存污染（值得单列）
+
+排查过程中发现应用一启动就崩：
+
+```
+NoClassDefFoundError: Failed resolution of Lapp/dsh/mobile/engine/RuntimeInstaller;
+  at app.dsh.mobile.MainActivity.onResume(MainActivity.kt:474)
+```
+
+**现象与定位**：
+- `app/build/tmp/kotlin-classes/debug/.../RuntimeInstaller.class` 存在（70902 B，magic cafebabe 正常）
+- `app/build/intermediates/project_dex_archive/debug/dexBuilderDebug/out/.../engine/` 下
+  六个内层类 `RuntimeInstaller$Installed.dex`、`$Manifest.dex`、`$install$1.dex` 等都在，
+  **唯独外层 `RuntimeInstaller.dex` 缺失**
+- 同时 `dexBuilderDebug` 报 `UP-TO-DATE`
+- 11 个 dex 全扫，外层类的 `class_def` 一个都没有（内层类都在）
+
+**修法**：删掉整条 dex 流水线的中间产物再构建 —— 只删 `intermediates/dex` 不够，
+必须连 `project_dex_archive`、`mixed_scope_dex_archive`、`sub_project_dex_archive`、
+`dex_metadata_directory`、`global_synthetics_dex` 一起删。
+
+```bash
+rm -rf app/build/intermediates/{project_dex_archive,dex,mixed_scope_dex_archive,\
+sub_project_dex_archive,dex_metadata_directory,global_synthetics_dex}
+```
+
+重建后 `RuntimeInstaller.dex` 为 55844 B，APK 的 `classes6.dex` 里能找到类定义，
+装上去 pid 正常、引擎正常启动。
+
+**推测（未验证）**：并行会话在同一个工作区反复构建（同一份 `app/build`），
+某次中断或并发写让 dexBuilder 的输出目录与它的 up-to-date 记录脱节。
+两次独立构建都崩在同一个类，与「机器损坏」不符、与「共享中间产物被写坏」相符。
+**判断方法**：看 `project_dex_archive/.../dexBuilderDebug/out/` 里是否缺某个外层类
+而内层类齐全 —— 这是最快的指纹。**遇到记得先清 dex 中间产物，不要去怀疑 dex 合并逻辑或源码。**
+
+### 八、本次新增根因（写给自己和后来者）
+
+- **「调到正确参数」不等于「消除成本」**：正则编译在第一次匹配时发生，不在构造时。
+  调 `lazyCompileLength` 改的是时机不是总量，因此无效。
+- **「删掉预热」把卡顿挪给用户**：首屏无代码块不代表用户不会滚到代码块。
+  正确解法是空闲执行，不是取消。
+- **改 dist 产物要验证「是谁改的」**：设备上 md5 与手推版本一致时，
+  `healInstalled` 只会幂等跳过 —— 必须先把文件还原成原始哈希，再重启观察是否自动变化。
+- **CDP `Fetch.enable` 与 `Page.reload` 都会破坏 main 的 token→303→cookie 链**，
+  main 分支测 WebUI 只能用「改设备上的 dist + 依赖应用自打点」，
+  不能用 CDP 拦截替换 bundle。
+- **`adb shell` 里写文件不能用 `cp`（Windows 侧路径不会被识别）**：
+  正确形态是 `adb shell "run-as <pkg> sh -c 'cat > <abs>'" < localfile`。
+  `adb push` 到 `/data/local/tmp` 再 `cp` 也可以，但要注意 `MSYS2_ARG_CONV_EXCL`
+  开启时本地路径必须写成 `E:/tmp/...` 而不是 `/e/tmp/...`。
+- **权限门做 A/B 的好用手段**：`chmod 555 <dir>` 让目标进程写不进去，
+  代码路径不变就能得到「未生效」对照组，比另编一个 APK 省一次完整构建。
