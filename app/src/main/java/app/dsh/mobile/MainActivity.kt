@@ -2563,11 +2563,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         WindowInsetsControllerCompat(w2, w2.decorView).hide(bars2)
                     }
                     @Suppress("DEPRECATION")
-                    w2.decorView.systemUiVisibility =
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                    // Keep the theme's light status/navigation icon flags when restoring fullscreen.
+                    w2.decorView.systemUiVisibility = w2.decorView.systemUiVisibility
+                        .or(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
                     if (hideNav2) {
                         @Suppress("DEPRECATION")
                         run {
