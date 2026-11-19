@@ -14758,3 +14758,11 @@ DshApp 去掉 resolveEarly     -> 失败 1
 ```
 PASS=142  FAIL=0
 ```
+
+## PR #102：Material 3 单主题审查修订
+
+- 单一应用主题 `Theme.Dsh` 由 Manifest 指定；`values` / `values-night` 是同一个主题的明暗变体。设置页与首次引导共用配色选择器，保留蓝/青/紫/琥珀及系统动态，未恢复 Classic 风格或 `Theme.Dsh.MD3` 副本。
+- `dshAccent`、`dshBg`、`dshSurface`、`dshStroke` 等兼容令牌在两种明暗资源中引用 M3 语义角色，不再维护第二套静态色板。状态/遮罩等产品令牌保留。三个视图入口均为旧静态强调色执行兼容着色，不受设置背景图开关影响。
+- 系统档通过 Application 的 `DynamicColors.applyToActivitiesIfAvailable` 注册，库在 `onActivityPreCreated` 处理；只在支持且选中系统档时启用。Activity 不再调用 `setTheme()`，以免覆盖动态色；预设档只叠对应的 M3 覆盖层。旧设备选中系统档时用蓝色色板，不改用户偏好。
+- 防回归：`_test_theme_flicker.py` 防止状态恢复导致重复重建；`_test_settings_theme_consistency.py` 防止角色映射与主题分派断链；`_test_style_tokens.py` 检查明暗角色别名及设置页兼容着色；`_test_md3_palette_roles.py` 防止覆盖层和系统栏颜色不一致；`_test_material_single_choice.py` 检查单选圆点与弹窗资源接线；`_test_theme_recreate_splash.py` 防止切换主题时启动遮罩错显。
+- Android 单元测试使用 JUnit 4，交由 GitHub Actions 运行。本修订未实测 Android 26–30 蓝色回落、Android 31+ Monet 实际配色、TalkBack 播报或重建次数；需要在真机验收时记录设备、API 级别和实测次数。没有代替真机验收或提前报告本轮 CI 通过。

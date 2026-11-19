@@ -32,13 +32,12 @@
         <item name="colorSurfaceBright">@color/surface</item>
         <item name="colorSurfaceDim">@color/surface_alt</item>
         <item name="colorOnSurfaceInverse">@color/text_primary</item>
-        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:colorBackground">?attr/colorSurface</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
         <!-- v1.8.1：Material 弹窗统一主题（md3Dialog / showMd3 链路） -->
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dsh.MaterialAlertDialog</item>
         <!-- v1.4.43：允许窗口画进挖孔区。全屏时真正的沉浸式需要它，
@@ -47,27 +46,27 @@
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     
         <!-- 风格令牌（v1.8.0，与 values/themes.xml 同构，值取 values-night/colors.xml） -->
-        <item name="dshBg">@color/bg</item>
-        <item name="dshSurface">@color/surface</item>
-        <item name="dshSurfaceAlt">@color/surface_alt</item>
-        <item name="dshSurfaceHigh">@color/surface_high</item>
-        <item name="dshDialogBg">@color/dialog_bg</item>
-        <item name="dshTextPrimary">@color/text_primary</item>
-        <item name="dshTextSecondary">@color/text_secondary</item>
-        <item name="dshTextMuted">@color/text_muted</item>
-        <item name="dshAccent">@color/accent</item>
-        <item name="dshAccentSoft">@color/accent_soft</item>
-        <item name="dshOnAccent">@color/on_accent</item>
-        <item name="dshDivider">@color/divider</item>
-        <item name="dshStroke">@color/stroke</item>
-        <item name="dshDanger">@color/danger</item>
+        <item name="dshBg">?attr/colorSurface</item>
+        <item name="dshSurface">?attr/colorSurfaceContainer</item>
+        <item name="dshSurfaceAlt">?attr/colorSurfaceContainerLow</item>
+        <item name="dshSurfaceHigh">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshDialogBg">?attr/colorSurfaceContainerHigh</item>
+        <item name="dshTextPrimary">?attr/colorOnSurface</item>
+        <item name="dshTextSecondary">?attr/colorOnSurfaceVariant</item>
+        <item name="dshTextMuted">?attr/colorOnSurfaceVariant</item>
+        <item name="dshAccent">?attr/colorPrimary</item>
+        <item name="dshAccentSoft">?attr/colorPrimaryContainer</item>
+        <item name="dshOnAccent">?attr/colorOnPrimary</item>
+        <item name="dshDivider">?attr/colorOutlineVariant</item>
+        <item name="dshStroke">?attr/colorOutlineVariant</item>
+        <item name="dshDanger">?attr/colorError</item>
         <item name="dshSuccess">@color/success</item>
         <item name="dshWarning">@color/warning</item>
-        <item name="dshIconColor">@color/icon_color</item>
+        <item name="dshIconColor">?attr/colorOnSurfaceVariant</item>
         <item name="dshBtnRipple">@color/btn_ripple</item>
         <item name="dshOverlay">@color/overlay</item>
-        <item name="dshIslandText">@color/island_text</item>
-        <item name="dshIslandAccent">@color/island_accent</item>
+        <item name="dshIslandText">?attr/colorOnSurfaceVariant</item>
+        <item name="dshIslandAccent">?attr/colorPrimary</item>
 
         <!-- 形态令牌（v1.8.1）：与 values/themes.xml 的经典一致 -->
         <item name="dshCardRadius">18dp</item>
@@ -78,35 +77,4 @@
         <item name="dshControlRadius">12dp</item>
         <item name="dshGridCellRadius">16dp</item>
     </style>
-
-    <style name="Theme.Dsh.Spinner" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:popupBackground">@drawable/bg_menu_card</item>
-        <item name="android:textColorPrimary">@color/text_primary</item>
-        <item name="android:textColorSecondary">@color/text_secondary</item>
-        <item name="android:colorAccent">@color/accent</item>
-        <item name="android:textColor">@color/text_primary</item>
-    </style>
-
-    <style name="Theme.Dsh.Dialog" parent="Theme.Material3.Dark.Dialog.Alert">
-        <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
-        <item name="android:colorAccent">@color/accent</item>
-        <item name="android:textColorPrimary">@color/text_primary</item>
-        <item name="android:textColorSecondary">@color/text_secondary</item>
-        <item name="android:textColor">@color/text_primary</item>
-
-        <!-- 与 values/themes.xml 的 Theme.Dsh.Dialog 保持同构（原因见那边的长注释）：
-             Material 弹窗的标题/正文/容器分别取 colorOnSurface /
-             colorOnSurfaceVariant / colorSurfaceContainerHigh，不读 textColorPrimary。
-             两个文件必须同时补齐，否则明暗任一侧仍然会「字色不跟随」。 -->
-        <item name="colorSurface">@color/dialog_bg</item>
-        <item name="colorSurfaceContainer">@color/dialog_bg</item>
-        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
-        <item name="colorOnSurface">@color/text_primary</item>
-        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
-        <item name="colorPrimary">@color/accent</item>
-        <item name="colorOnPrimary">@color/surface</item>
-        <item name="colorOutline">@color/divider</item>
-        <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
-    </style>
-
 </resources>

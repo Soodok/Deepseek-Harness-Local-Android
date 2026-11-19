@@ -1,13 +1,19 @@
 package app.dsh.mobile
 
 import android.content.Context
+import android.graphics.drawable.InsetDrawable
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.TextAppearanceSpan
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.TextView
-import com.google.android.material.button.MaterialButtonToggleGroup
+import android.widget.RadioGroup
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.radiobutton.MaterialRadioButton
+import com.google.android.material.R as MaterialR
 
 /**
  * 主题设置（v1.6.x）。
@@ -53,26 +59,63 @@ class ThemeActivity : ThemedActivity() {
 
     // ---------------------------------------------------------------- 外观模式
 
+    private val ThemeMode.radioId: Int
+        get() = when (this) {
+            ThemeMode.LIGHT -> R.id.rbModeLight
+            ThemeMode.DARK -> R.id.rbModeDark
+            ThemeMode.SYSTEM -> R.id.rbModeSystem
+        }
+
     private fun bindModeRows() {
-        val rows = listOf(
-            Triple(R.id.rowModeLight, R.id.rbModeLight, ThemeMode.LIGHT),
-            Triple(R.id.rowModeDark, R.id.rbModeDark, ThemeMode.DARK),
-            Triple(R.id.rowModeSystem, R.id.rbModeSystem, ThemeMode.SYSTEM),
+        val options = listOf(
+            ThemeMode.LIGHT to R.string.theme_mode_light_sub,
+            ThemeMode.DARK to R.string.theme_mode_dark_sub,
+            ThemeMode.SYSTEM to R.string.theme_mode_system_sub,
         )
-        for ((rowId, rbId, mode) in rows) {
-            findViewById<View>(rowId).setOnClickListener {
+        val inset = resources.getDimensionPixelSize(R.dimen.md3_item_padding_h)
+        val rowHeight = resources.getDimensionPixelSize(R.dimen.md3_item_two_line)
+        for ((mode, subtitleRes) in options) {
+            val radio = findViewById<MaterialRadioButton>(mode.radioId)
+            // One native label gives the radio both lines without a second accessibility stop.
+            val label = SpannableStringBuilder(getText(mode.labelRes)).append('\n')
+            val subtitleStart = label.length
+            label.append(getText(subtitleRes))
+            label.setSpan(
+                TextAppearanceSpan(radio.context, MaterialR.style.TextAppearance_Material3_BodyMedium),
+                subtitleStart, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+            label.setSpan(
+                ForegroundColorSpan(MaterialColors.getColor(radio, MaterialR.attr.colorOnSurfaceVariant)),
+                subtitleStart, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+            radio.text = label
+
+            // CompoundButton draws its indicator at the view edge, outside text padding.
+            // Inset the original drawable without shrinking the row's click/focus bounds.
+            radio.buttonDrawable?.let { drawable ->
+                val rtl = radio.layoutDirection == View.LAYOUT_DIRECTION_RTL
+                // Detach first so CompoundButton does not clear the wrapper's child callback.
+                radio.buttonDrawable = null
+                radio.buttonDrawable = InsetDrawable(
+                    drawable, if (rtl) 0 else inset, 0, if (rtl) inset else 0, 0,
+                )
+                radio.minHeight = rowHeight
+            }
+            radio.setOnClickListener {
                 if (ThemePref.get(this) == mode) return@setOnClickListener
                 ThemePref.set(this, mode)
                 recreate()
             }
-            findViewById<MaterialRadioButton>(rbId).isChecked = ThemePref.get(this) == mode
         }
+        refreshModeSelection()
+    }
+
+    private fun refreshModeSelection() {
+        findViewById<RadioGroup>(R.id.appearanceModeGroup).check(ThemePref.get(this).radioId)
     }
 
     private fun refresh() {
-        findViewById<MaterialRadioButton>(R.id.rbModeLight).isChecked = ThemePref.get(this) == ThemeMode.LIGHT
-        findViewById<MaterialRadioButton>(R.id.rbModeDark).isChecked = ThemePref.get(this) == ThemeMode.DARK
-        findViewById<MaterialRadioButton>(R.id.rbModeSystem).isChecked = ThemePref.get(this) == ThemeMode.SYSTEM
+        refreshModeSelection()
         paletteSelector.setSelectedId(ThemeAccent.selected(this))
     }
 }

@@ -14,6 +14,7 @@
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 JAVA = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile")
@@ -36,10 +37,20 @@ def read(p):
 theme = read(os.path.join(JAVA, "ThemeActivity.kt"))
 layout = read(LAYOUT)
 
-# 外观模式单选
-check("三个外观模式都有单选按钮",
-      all(f"rbMode{x}" in layout for x in ("Light", "Dark", "System")))
-check("整行可点切换模式", "setOnClickListener" in theme and "findViewById<View>(rowId)" in theme)
+# Read the actual single-choice widget tree, not just ID names in source text.
+android = "{http://schemas.android.com/apk/res/android}"
+group = next((node for node in ET.fromstring(layout).iter("RadioGroup")
+              if node.get(android + "id") == "@+id/appearanceModeGroup"), None)
+radios = [] if group is None else [node for node in group
+    if node.tag == "com.google.android.material.radiobutton.MaterialRadioButton"]
+check("三个外观模式由同一个 RadioGroup 管理",
+      [radio.get(android + "id") for radio in radios]
+      == ["@+id/rbMode" + mode for mode in ("Light", "Dark", "System")])
+check("单选按钮本身覆盖整行并可获得焦点",
+      len(radios) == 3 and all(radio.get(android + "layout_width") == "match_parent"
+      and radio.get(android + "focusable") != "false"
+      and radio.get(android + "clickable") != "false" for radio in radios)
+      and "radio.setOnClickListener" in theme)
 check("模式未变不重建", "ThemePref.get(this) == mode" in theme)
 
 selector = read(os.path.join(JAVA, "ThemePaletteSelector.kt"))

@@ -59,149 +59,83 @@
                 app:strokeWidth="?attr/dshCardStroke"
                 app:cardBackgroundColor="?attr/dshSurface">
 
-                <LinearLayout
+                <RadioGroup
+                    android:id="@+id/appearanceModeGroup"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <LinearLayout
-                        android:id="@+id/rowModeLight"
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/rbModeLight"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="start|center_vertical"
+                        android:lineSpacingExtra="2dp"
                         android:minHeight="@dimen/md3_item_two_line"
-                        android:paddingHorizontal="@dimen/md3_item_padding_h"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="@dimen/md3_item_padding_h"
                         android:paddingVertical="12dp"
-                        android:background="?attr/selectableItemBackground">
-
-                        <com.google.android.material.radiobutton.MaterialRadioButton
-                            android:id="@+id/rbModeLight"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:clickable="false"
-                            android:focusable="false" />
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="8dp"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="@string/theme_light"
-                                android:textAppearance="?attr/textAppearanceBodyLarge"
-                                android:textColor="?attr/colorOnSurface" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/theme_mode_light_sub"
-                                android:textAppearance="?attr/textAppearanceBodyMedium"
-                                android:textColor="?attr/colorOnSurfaceVariant" />
-                        </LinearLayout>
-                    </LinearLayout>
+                        android:saveEnabled="false"
+                        android:singleLine="false"
+                        android:textAllCaps="false"
+                        android:textAppearance="?attr/textAppearanceBodyLarge"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:importantForAccessibility="no"
                         app:dividerInsetStart="@dimen/md3_divider_inset"
                         app:dividerInsetEnd="0dp" />
 
-                    <LinearLayout
-                        android:id="@+id/rowModeDark"
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/rbModeDark"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="start|center_vertical"
+                        android:lineSpacingExtra="2dp"
                         android:minHeight="@dimen/md3_item_two_line"
-                        android:paddingHorizontal="@dimen/md3_item_padding_h"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="@dimen/md3_item_padding_h"
                         android:paddingVertical="12dp"
-                        android:background="?attr/selectableItemBackground">
-
-                        <com.google.android.material.radiobutton.MaterialRadioButton
-                            android:id="@+id/rbModeDark"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:clickable="false"
-                            android:focusable="false" />
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="8dp"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="@string/theme_dark"
-                                android:textAppearance="?attr/textAppearanceBodyLarge"
-                                android:textColor="?attr/colorOnSurface" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/theme_mode_dark_sub"
-                                android:textAppearance="?attr/textAppearanceBodyMedium"
-                                android:textColor="?attr/colorOnSurfaceVariant" />
-                        </LinearLayout>
-                    </LinearLayout>
+                        android:saveEnabled="false"
+                        android:singleLine="false"
+                        android:textAllCaps="false"
+                        android:textAppearance="?attr/textAppearanceBodyLarge"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:importantForAccessibility="no"
                         app:dividerInsetStart="@dimen/md3_divider_inset"
                         app:dividerInsetEnd="0dp" />
 
-                    <LinearLayout
-                        android:id="@+id/rowModeSystem"
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/rbModeSystem"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="start|center_vertical"
+                        android:lineSpacingExtra="2dp"
                         android:minHeight="@dimen/md3_item_two_line"
-                        android:paddingHorizontal="@dimen/md3_item_padding_h"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="@dimen/md3_item_padding_h"
                         android:paddingVertical="12dp"
-                        android:background="?attr/selectableItemBackground">
-
-                        <com.google.android.material.radiobutton.MaterialRadioButton
-                            android:id="@+id/rbModeSystem"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:clickable="false"
-                            android:focusable="false" />
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="8dp"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="@string/theme_system"
-                                android:textAppearance="?attr/textAppearanceBodyLarge"
-                                android:textColor="?attr/colorOnSurface" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/theme_mode_system_sub"
-                                android:textAppearance="?attr/textAppearanceBodyMedium"
-                                android:textColor="?attr/colorOnSurfaceVariant" />
-                        </LinearLayout>
-                    </LinearLayout>
-                </LinearLayout>
+                        android:saveEnabled="false"
+                        android:singleLine="false"
+                        android:textAllCaps="false"
+                        android:textAppearance="?attr/textAppearanceBodyLarge"
+                        android:textColor="?attr/colorOnSurface" />
+                </RadioGroup>
             </com.google.android.material.card.MaterialCardView>
 
             <!-- ===== 配色方案 ===== -->

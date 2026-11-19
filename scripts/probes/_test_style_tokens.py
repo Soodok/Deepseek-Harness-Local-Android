@@ -90,20 +90,25 @@ light_theme = style_items(light_path, "Theme.Dsh")
 night_theme = style_items(night_path, "Theme.Dsh")
 
 check("attrs_style.xml 声明了令牌", len(declared) >= 20, f"declared={len(declared)}")
-ALLOW_SAME = {"dshDanger", "dshSuccess", "dshWarning", "dshBtnRipple", "dshOverlay"}
-# 令牌 → 它必须落在的色源（@color/xxx）。风格分叉已取消，色源关系仍需成立：
-# 否则 ?attr/dshXxx 与 ?attr/colorYyy 会指向两张不同的色板，同一页必然花脸。
+# Compatibility tokens must resolve the active M3 role, not a parallel static palette.
 TOKEN_SOURCES = {
-    "dshBg": "@color/bg", "dshSurface": "@color/surface",
-    "dshSurfaceAlt": "@color/surface_alt", "dshSurfaceHigh": "@color/surface_high",
-    "dshDialogBg": "@color/dialog_bg",
-    "dshTextPrimary": "@color/text_primary", "dshTextSecondary": "@color/text_secondary",
-    "dshTextMuted": "@color/text_muted",
-    "dshAccent": "@color/accent", "dshAccentSoft": "@color/accent_soft",
-    "dshOnAccent": "@color/on_accent", "dshDivider": "@color/divider",
-    "dshStroke": "@color/stroke", "dshDanger": "@color/danger",
-    "dshIconColor": "@color/icon_color", "dshIslandText": "@color/island_text",
-    "dshIslandAccent": "@color/island_accent",
+    "dshBg": "?attr/colorSurface",
+    "dshSurface": "?attr/colorSurfaceContainer",
+    "dshSurfaceAlt": "?attr/colorSurfaceContainerLow",
+    "dshSurfaceHigh": "?attr/colorSurfaceContainerHigh",
+    "dshDialogBg": "?attr/colorSurfaceContainerHigh",
+    "dshTextPrimary": "?attr/colorOnSurface",
+    "dshTextSecondary": "?attr/colorOnSurfaceVariant",
+    "dshTextMuted": "?attr/colorOnSurfaceVariant",
+    "dshAccent": "?attr/colorPrimary",
+    "dshAccentSoft": "?attr/colorPrimaryContainer",
+    "dshOnAccent": "?attr/colorOnPrimary",
+    "dshDivider": "?attr/colorOutlineVariant",
+    "dshStroke": "?attr/colorOutlineVariant",
+    "dshDanger": "?attr/colorError",
+    "dshIconColor": "?attr/colorOnSurfaceVariant",
+    "dshIslandText": "?attr/colorOnSurfaceVariant",
+    "dshIslandAccent": "?attr/colorPrimary",
 }
 
 for mode, styles_in_mode, tokens in (
@@ -117,14 +122,6 @@ for mode, styles_in_mode, tokens in (
     wrong = sorted(k for k, src in TOKEN_SOURCES.items() if tokens.get(k) != src)
     check(f"{mode}: 令牌指向预期色源", not wrong,
           ",".join(f"{k}={tokens.get(k)}" for k in wrong))
-
-# Material 0 层语义色与 dsh 令牌必须同源（v1.5.6 的回映射约定，花脸的根因）。
-# dsh* 令牌一律是 @color 静态引用；写成 ?attr/colorXxx（再引用一次 Material 角色）
-# 会让「自定义语义色」回到资源解析期，等于 v1.8.0 白改。
-light_semantic = light_styles.get("Theme.Dsh", {})
-re_attr_tokens = sorted(k for k in declared
-                        if (light_semantic.get(k) or light_theme.get(k) or "").startswith("?attr/"))
-check("dsh* 令牌是静态色源，不二次引用 ?attr", not re_attr_tokens, ",".join(re_attr_tokens))
 
 # ---- T4 通知/浮层图标必须保持静态 ----
 MUST_STAY_STATIC = ["ic_download", "ic_health", "ic_pet",
@@ -250,8 +247,9 @@ theme_layout = read(os.path.join(RES, "layout", "activity_theme.xml"))
 gone_ids = [i for i in ("groupStyle", "btnStyleClassic", "btnStyleMaterial", "subStyle")
             if "@+id/" + i in theme_layout]
 check("主题页不再提供经典/材料风格开关", not gone_ids, ",".join(gone_ids))
-check("followsStyle 默认 true（全站跟随）",
-      "protected open val followsStyle: Boolean get() = true" in themed)
+check("设置页也保留兼容着色，不受背景图开关影响",
+      len(re.findall(r"(?m)^\s*applyAccentTint\(\)\s*$", themed)) == 3
+      and not re.search(r"(?m)^\s*if .*applyAccentTint\(", themed))
 
 if FAILS:
     print(f"\nFAILED: {len(FAILS)} check(s)")

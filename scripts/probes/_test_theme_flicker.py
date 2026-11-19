@@ -64,7 +64,9 @@ check("配色选择器只在选中项变化时回调",
 
 # ---- 2. 单选状态来自偏好 ----
 check("外观模式单选状态来自偏好",
-      all('ThemePref.get(this) == ThemeMode.' + mode in theme for mode in ('LIGHT', 'DARK', 'SYSTEM')))
+      all(f"ThemeMode.{mode} -> R.id.rbMode{label}" in theme
+           for mode, label in (("LIGHT", "Light"), ("DARK", "Dark"), ("SYSTEM", "System")))
+      and ".check(ThemePref.get(this).radioId)" in theme)
 check("配色状态来自偏好",
       'ThemePaletteSelector(' in theme and 'ThemeAccent.selected(this)' in theme
       and 'paletteSelector.setSelectedId(ThemeAccent.selected(this))' in theme)

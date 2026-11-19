@@ -232,30 +232,16 @@ open class ThemedActivity : Activity() {
      */
     protected open val usesSettingsBackground: Boolean get() = false
 
-    /**
-     * 本 Activity 是否跟随「界面风格」（设置 → 主题 → 界面风格）。
-     *
-     * 默认 true：v1.8.0 起全站都跟着风格走，布局里的 `?attr/dshXxx` 与
-     * Material 语义色才会同步解析，不会出现「设置页暖、主界面冷」的花脸。
-     *
-     * 覆盖为 false 的只有**自绘深色**的页面 —— 它们的底色是写死的 #FF101418，
-     * 套 Material 3 暖灰反而更割裂：
-     *   · TerminalActivity（终端，深色底色）
-     *   · LogViewerActivity（日志，深色底色，且不继承 ThemedActivity，不影响）
-     *   · LinuxActivity（工作台，整屏自绘）
-     */
-    protected open val followsStyle: Boolean get() = true
-
     override fun setContentView(layoutResID: Int) {
         super.setContentView(layoutResID)
         applySettingsBackground()
-        if (!usesSettingsBackground) applyAccentTint()
+        applyAccentTint()
     }
 
     override fun setContentView(view: View) {
         super.setContentView(view)
         applySettingsBackground()
-        if (!usesSettingsBackground) applyAccentTint()
+        applyAccentTint()
     }
 
     override fun onResume() {
@@ -264,15 +250,14 @@ open class ThemedActivity : Activity() {
         if (usesSettingsBackground) applySettingsBackground()
         // 强调色可能在别的页面被改过（主题页重建的只是它自己），
         // 回本页时重新铺一次；未改色时是幂等的空操作。
-        if (!usesSettingsBackground) applyAccentTint()
+        applyAccentTint()
     }
 
     /**
      * 把用户选的强调色铺到当前页（v1.7.9）。
      *
-     * 布局里有 87 处 `@color/accent`、88 处 `?attr/colorPrimary`，全部在资源解析期
-     * 定型，不跟随偏好 —— 只有代码里显式取 `Accent.current()` 的位置会变色，
-     * 于是同一个页面一半变了、一半没变。这里在视图树挂好之后统一改写一遍。
+     * 旧控件仍使用静态 `@color/accent`；在视图树挂好后补上兼容着色。
+     * Material 语义角色和 dsh 别名已经由主题覆盖层解析。
      *
      * 为什么要 `post`：setContentView 返回时子 View 的 tint / textColor 可能还没
      * 最终确定（Material 控件在 onAttachedToWindow 里补样式），立刻遍历会漏。

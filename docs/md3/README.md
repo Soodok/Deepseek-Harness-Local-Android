@@ -1,17 +1,11 @@
 # Material 3 官方规范（本仓库的强制依据）
 
-本目录包含从 Google 官方渠道保存的参考材料；本 README 是项目维护说明，
-不是 Google 官方规范。内容随库版本变化，实际实现应以链接的官方文档和源码为准。
+本页记录仓库的 Material 3 Views 实现约定；官方规范以原文为准，不在 PR 中复制整套文档。
 
-抓取来源：
-
-- Material Components for Android 官方文档仓库
-  `https://github.com/material-components/material-components-android/tree/master/docs`
-  （`getting-started` / `theming` / `theming/Color|Typography|Shape|Motion` / `components/*`）
-- Android 开发者官网「动态取色」
-  `https://developer.android.com/develop/ui/views/theming/dynamic-colors`
-
-> 重新抓取：`node tools/fetch-md3-docs.mjs`（脚本见仓库 `tools/`）。
+- [Material Components for Android 1.14.0](https://github.com/material-components/material-components-android/tree/1.14.0/docs)
+- [Material 3 颜色角色](https://m3.material.io/styles/color/roles)
+- [Android Views 动态配色](https://developer.android.com/develop/ui/views/theming/dynamic-colors)
+- [Material 3 单选](https://github.com/material-components/material-components-android/blob/1.14.0/docs/components/RadioButton.md) · [对话框](https://github.com/material-components/material-components-android/blob/1.14.0/docs/components/Dialog.md)
 
 ---
 
@@ -39,8 +33,8 @@
 4. **形状与字号用令牌。** 圆角走 `shapeAppearanceCorner*`，字号走
    `?attr/textAppearance*`（DisplayLarge…LabelSmall）。不手写 `textSize="15sp"`。
 
-5. **深浅色靠资源限定符。** 只维护一份 `values/themes.xml`，parent 用
-   `Theme.Material3.DayNight.*`；深色差异放 `values-night/colors.xml`。
+5. **深浅色靠资源限定符。** 只维护一个应用主题 ID `Theme.Dsh`；
+   `values` 和 `values-night` 以 Material 3 Light/Dark 资源限定符提供明暗变体。
    禁止再造 `Theme.Xxx.MD3` 这类副本主题（副本必然漏映射色阶）。
 
 6. **可点击元素必须有 MD3 反馈。** `?attr/selectableItemBackground` 或
@@ -97,7 +91,7 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 - Activity **不要** `setTheme()`；主题由 Manifest 的 `android:theme` 决定。
 - 需要强制浅/深色时，改 `resources.configuration.uiMode`（`attachBaseContext`），
   不要用 `setTheme` 切换主题资源。
-- Android 11 及以下没有 Monet，自动回落到主题里的静态色板。
+- 不支持动态取色时，保留用户偏好并回落到蓝色色板。
 
 ---
 

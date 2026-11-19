@@ -82,11 +82,6 @@ enum class Accent(
         /** 旧控件兼容：动态取色启用时读取当前 Activity 的主题主色。 */
         fun current(ctx: Context): AccentColor = resolve(ctx)
 
-        fun set(ctx: Context, accent: Accent) {
-            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(KEY, accent.id).apply()
-        }
-
         /** 旧业务控件跟随主题主色；不支持动态色时保留原预设回退。 */
         internal fun resolve(ctx: Context): AccentColor {
             val preset = currentPreset(ctx)

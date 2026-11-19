@@ -79,7 +79,6 @@ class LinuxActivity : ThemedActivity() {
      * 配色按「深色工作台」设计 —— 套 Material 3 暖灰会让自绘部分与
      * `?attr/dshXxx` 部分互相打架。等它的自绘层也改成令牌驱动后再纳入。
      */
-    override val followsStyle: Boolean get() = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var env: LinuxEnvironmentManager

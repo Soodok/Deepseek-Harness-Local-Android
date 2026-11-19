@@ -2,7 +2,7 @@
 
 **用户要求：** 所有设置界面（主设置页与各级子页面）全部使用 Google 原生 Material 3 / M3E 组件，动态取色与 MD3 色彩系统完整结合，严格遵循官方文档；颜色设置只保留系统动态取色开关（引导与设置页共用偏好），无需预设或自定义颜色。不要自绘拼装，不再询问。最终自行验证、更新现有 PR #102；不直接合并，不替用户决定发布。
 
-**权威文档：** `docs/md3/README.md` 及该目录中的 Android Developers / Material Components 官方文档。发生冲突时检查官方原文，不凭记忆臆造。
+**权威文档：** `docs/md3/README.md` 及其中链接的 Android Developers / Material Components 官方文档。发生冲突时检查官方原文，不凭记忆臆造。
 
 ## 进度
 

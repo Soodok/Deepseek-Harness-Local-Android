@@ -742,6 +742,11 @@ dependencies {
     //   main 经 PR #97 的 MD3 界面需要它；feat 的 MD3 设置页重构也需要它。
     //   合并后 MD3 主题整包保留，因此这条依赖必须留下，否则 MaterialCardView /
     //   MaterialAlertDialogBuilder 等全部编译不过。
+
+    // 纯 JVM 单元测试（v1.6）：`EndpointCatalog.search()` 这类不碰 Android API
+    // 的逻辑必须能在本机跑，不能只靠 py 探针读源码 —— 探针只能证明「代码长这样」，
+    // 证明不了「跑起来是这个结果」。junit4 + 纯 kotlin stdlib 足够，不引 Robolectric。
+    testImplementation("junit:junit:4.13.2")
 }
 
 // ---------------------------------------------------------------------------
