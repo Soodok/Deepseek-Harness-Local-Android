@@ -357,3 +357,8 @@ docs/ui-preview/.preview-server.json
 # 那种改动只会让启动变慢，所有门禁照样全绿。三条热点各对应一次实测修复，
 # 四条负对照都能打红（去掉剪枝、guardian 回 listFiles、去掉 resolveEarly 调用）。
 !/scripts/probes/_test_boot_hotspots.py
+
+# 前端语法高亮预热的空闲化：删掉预热也能让首绘变快，但第一次滚到代码块时
+# 现场编译 typescript grammar 要 500~660 ms —— 只是把卡顿挪到用户眼前。
+# 探针同时禁止「保留立即预热」和「完全不预热」，只放行空闲执行。
+!/scripts/probes/_test_frontend_warmup_idle.py
