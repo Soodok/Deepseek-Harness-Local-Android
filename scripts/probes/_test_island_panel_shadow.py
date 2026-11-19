@@ -66,9 +66,16 @@ check('DARK panelShadow = 0x7A000000 (48% black)',
       re.search(r'panelShadow = 0x7A000000', chrome) is not None)
 check('LIGHT panelShadow = 0x38000000 (22% black)',
       re.search(r'panelShadow = 0x38000000', chrome) is not None)
-# 用户明说「不描边」—— 深色主题的 outline 必须仍然是 0
-check('DARK still does not draw an outline (user: 不描边)',
-      re.search(r'outline = 0,', chrome) is not None)
+# ⚠️ v1.7.20：这里原来断言「DARK 的 outline 必须是 0（用户明说不要描边）」。
+# 那条断言的前提被实测推翻了 —— 深色 handle 纯黑压在 #151517 页面上只有
+# 1.15:1，用户报的「收起后小球不显示」就是它。用户说的「不描边」针对的是
+# **侧边面板**（panelBackground 里那行注释），不是收起态把手。
+# 判据改为：两种主题的 outline 都必须非 0（把手的边界靠它）。
+check('DARK handle draws an outline (black on #151517 is 1.15:1)',
+      re.search(r'outline = 0xFF7B8899\.toInt\(\),', chrome) is not None
+      and len(re.findall(r'outline = 0xFF', chrome)) == 2)
+check('no theme leaves the handle without an outline',
+      'outline = 0,' not in chrome)
 
 # ---------- 2. 画法 ----------
 check('shadow view uses setShadowLayer (not elevation)',

@@ -344,3 +344,12 @@ docs/ui-preview/.preview-server.json
 # role=dialog 且非 aria-modal 的浮层、内联 !important 与视口夹取；含三条负对照。
 !/scripts/probes/_test_chat_anchor_fallback.py
 !/scripts/probes/_chat_anchor_fallback_runtime_test.mjs
+
+# 官方 chat 导出包导入（v1.6.0-beta.17）：守住「层文本带引号 + 上限挂在 config +
+# 探测不到包就删层 + patchPaths 顺序 + 开关接线 + 六 locale」整条装配链。
+!/scripts/probes/_test_deepseek_chat_import.py
+
+# 冷启动热点回退守卫：顺序/归因探针都管不了「有人又把全树遍历加回来」——
+# 那种改动只会让启动变慢，所有门禁照样全绿。三条热点各对应一次实测修复，
+# 四条负对照都能打红（去掉剪枝、guardian 回 listFiles、去掉 resolveEarly 调用）。
+!/scripts/probes/_test_boot_hotspots.py

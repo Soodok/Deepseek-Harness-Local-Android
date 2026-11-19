@@ -164,6 +164,9 @@
 
             <string name="setting_config_files">配置文件</string>
     <string name="setting_config_files_sub">打开 AGENTS.md、工作区注册表或插件清单</string>
+    <string name="setting_chat_import">导入 DeepSeek 对话</string>
+    <string name="setting_chat_import_sub">导入官方 DeepSeek 对话应用导出的压缩包</string>
+    <string name="setting_chat_import_restart_hint">导入层在引擎启动时加载。现在重启引擎以生效？</string>
     <string name="config_files_none">还没有配置文件 —— 先启动一次引擎</string>
     <string name="config_files_failed">无法打开：%1$s</string>
 <string name="setting_import_data">导入数据</string>

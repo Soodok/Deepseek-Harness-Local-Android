@@ -133,7 +133,8 @@ fun IslandPalette.themed(context: Context): IslandPalette.Colors {
     val onVariant = role(com.google.android.material.R.attr.colorOnSurfaceVariant)
     val primary = role(androidx.appcompat.R.attr.colorPrimary)
     val tertiary = role(com.google.android.material.R.attr.colorTertiary)
-    return IslandPalette.Colors(
+    val base = of(ThemeManager.isDark(context))
+    return base.copy(
         panel = panel,
         handle = panel,
         title = onSurface,
@@ -145,7 +146,6 @@ fun IslandPalette.themed(context: Context): IslandPalette.Colors {
         ok = tertiary,
         okSoft = androidx.core.graphics.ColorUtils.setAlphaComponent(tertiary, 31),
         warn = role(androidx.appcompat.R.attr.colorError),
-        outline = if (ThemeManager.isDark(context)) 0 else role(com.google.android.material.R.attr.colorOutline),
     )
 }
 

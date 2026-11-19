@@ -580,6 +580,8 @@ Windows Git Bash 用 `gradle.bat` 替代 `./gradlew`。
 
 **WebView 的 CSS 门槛低于 JS 门槛。** `MIN_CHROME = 85` 守的是 JS 侧（语法转译 + API polyfill，见 `WebViewDiagnostics.kt:75` 与 `_test_webview_syntax_floor.mjs`）。CSS 侧上游用了 `:has()`（Chrome 105）、`color-mix()`（111）、CSS anchor positioning（`anchor()` / `position-anchor` / `position-try`，**125**）——这些 polyfill 补不了，在 85–124 的内核上**静默降级**：不报错、不白屏，但选择器不匹配、颜色表达式失效、弹层拿不到相对触发点的坐标。实测（Chrome 157 + rc.3 真 CSS、412×915）：`anchor()` 声明被丢弃后，本轮用量面板落在 (100, 12) 即**视口顶边**，离触发按钮 678px。目前用客户端插件兜底已定位的那一处（`chat-anchor-fallback`），其余 CSS 降级仅影响观感，不改功能；抬门槛属产品决策，未做。
 
+**官方 chat 导入是「可选层」，不是默认能力。** 引擎运行时自带 `@deepseek-ai/dsh-deepseek-chat-import`，但上游注明 shipped profile 不含这一层 —— 要在「备份与恢复」页拨开开关、重启引擎后，侧栏「新建会话」旁才会出现上传按钮。上传包**整包读进内存再解压、不落盘**，所以我们在层里把上限收到 **256 MiB 上传 / 64 MiB 单条目**（上游桌面默认是 512 / 256）；超过就返回 `too-large`，不会尝试边下边解。导出包格式是官方 v3（`deepseek_data-*.zip`），导入后会话进入选定工作区，原会话标题会作为会话名。
+
 **不该拿它做的事。** 不要用虚拟 HID / 无障碍 / Root 绕过风控、欺骗用户、操作未授权设备。项目**不提供**让注入输入「不可检测」的实现。
 
 ---

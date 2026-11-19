@@ -715,6 +715,17 @@ class EngineSupervisor(private val ctx: Context) {
                 },
             )
             pluginRecoveryRequestedThisLoop = false
+            // ★运行模式判定尽早落地。
+            //
+            // resolve() 在 spawnEngine 里，实测要到 1.2~2.4 秒才轮到（前面隔着
+            // 孤儿回收、preflight、runtime-install、hardssh、profile-plugins）。
+            // 在那之前 EngineModeSelector.resolved 是 false，遮罩显示「检测运行环境」
+            // —— 用户看到的就是「启动 1.4 秒之后运行环境才检测出来」。
+            //
+            // 但 Linux 模式默认关闭，关闭时判定只是读一个布尔值：检测本身从不慢，
+            // 慢的是排队。这里把能立刻确定的那一半先落地，遮罩立刻显示真实模式。
+            // Linux 开启时返回 false，仍由 spawnEngine 里的 resolve() 做完整探测。
+            runCatching { EngineModeSelector.resolveEarly(ctx) }
             fun step(name: String) {
                 val now = System.currentTimeMillis()
                 Log.i(TAG, "boot step $name: ${now - stepT}ms (total ${now - bootT0}ms)")
@@ -740,27 +751,53 @@ class EngineSupervisor(private val ctx: Context) {
                 // 实测收益：orphan-reap 在 ROOT 模式会 spawn 一次 su（实测 233ms），
                 // 原来是纯串行的固定开销；并行后落到 owner-check/guardian 的阴影里。
                 mark("orphan-reap")
+                // ⚠️ 并行块必须**各自计时**，不能靠 step() 的差值。
+                //
+                // step() 的语义是「距上一条 step 的墙钟」，串行阶段正合适；但这个块里
+                // 三个任务并发跑，三条 step 连着调时第一条吞掉整块时间、后两条必然
+                // 记成 0~1ms。实测踩过：orphan-reap 记成 4881ms 被读成「孤儿回收
+                // 花 4.9 秒」，照这个方向去查 /proc 全表扫描，全是白费 —— 那 4.9 秒
+                // 其实是三个任务并行块的总墙钟，真正的慢任务可能是 owner-check
+                // 的 find 全树遍历，或 guardian 的 overlay 校验。
+                //
+                // 现在每个任务自己起止计时，用 stepElapsed 上报各自耗时；块总墙钟
+                // 由三者的 max 自然体现（并行块不会比最慢那条更短）。
                 var healed = 0
+                var orphanMs = 0L
+                var ownerMs = 0L
+                var guardianMs = 0L
                 supervisorScope {
-                    val orphanJob = async(Dispatchers.IO) { OrphanReaper.reap(ctx) }
+                    val orphanJob = async(Dispatchers.IO) {
+                        val t0 = System.currentTimeMillis()
+                        val reaped = OrphanReaper.reap(ctx)
+                        orphanMs = System.currentTimeMillis() - t0
+                        reaped
+                    }
                     val ownerJob = async(Dispatchers.IO) {
+                        val t0 = System.currentTimeMillis()
                         val needFix = Privilege.dshHomeNeedsOwnershipFix(ctx)
                         if (needFix) {
                             Log.w(TAG, "found files with broken ownership/permissions (root residue or bad labels); healing")
                             val fixed = Privilege.fixHomeOwnership(ctx)
                             Log.w(TAG, "attribute healing ${if (fixed) "succeeded" else "unavailable (no shizuku/su)"}")
                         }
+                        ownerMs = System.currentTimeMillis() - t0
                     }
-                    val guardianJob = async(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
-                    // 逐项 await 以便把各自耗时打出来；坏一个不影响其余（runCatching）
+                    val guardianJob = async(Dispatchers.IO) {
+                        val t0 = System.currentTimeMillis()
+                        val n = guardian.restoreQuarantinedBuiltinOverlays()
+                        guardianMs = System.currentTimeMillis() - t0
+                        n
+                    }
+                    // 逐项 await；坏一个不影响其余（runCatching）
                     runCatching { orphanJob.await() }
                     runCatching { ownerJob.await() }
                     healed = runCatching { guardianJob.await() }.getOrDefault(0)
                 }
-                step("orphan-reap")
-                step("home-owner-check")
+                BootTrace.stepElapsed("orphan-reap", orphanMs)
+                BootTrace.stepElapsed("home-owner-check", ownerMs)
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
-                step("guardian-restore")
+                BootTrace.stepElapsed("guardian-restore", guardianMs)
 
                 // 三项互不依赖的启动准备任务并行执行：
                 //  - AgentContextSeed 只写 dsh-home/AGENTS.md；
@@ -1350,8 +1387,15 @@ class EngineSupervisor(private val ctx: Context) {
         //   ① 插件层：禁用 fs-sandbox/subprocess、插入 hardssh 接缝行
         //   ② Android 适配层：重复钉住关键 host 行（后应用者生效）
         // 插件缺失/链接失败时 ensureBundledSshPlugin 返回 null —— 引擎照常启动。
-        val patchPaths = ArrayList<String>(2)
+        //
+        // ② 官方 chat 导出包导入层（v1.6.0-beta.17）：只在用户拨开开关、且运行时里
+        //    真带了 @deepseek-ai/dsh-deepseek-chat-import 时才加。它的 insert 行不钉
+        //    任何 host 行，纯粹是「多挂一个可选插件」，所以排在适配层之前 ——
+        //    Android 适配层始终最后应用（后应用者生效），不依赖这一层是否存在。
+        val patchPaths = ArrayList<String>(3)
         runCatching { EngineConfig.ensureBundledSshPlugin(ctx)?.absolutePath }
+            .getOrNull()?.let { patchPaths.add(it) }
+        runCatching { EngineConfig.ensureChatImportLayer(ctx)?.absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }
         runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }

@@ -193,7 +193,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout
+                <LinearLayout
                     android:id="@+id/rowConfigFiles"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -240,9 +240,61 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_chevron" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset" />
+                <LinearLayout
+                    android:id="@+id/rowChatImport"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_download"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_chat_import"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_chat_import_sub"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/swChatImport"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:contentDescription="@string/setting_chat_import" />
+                </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-
                 </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>

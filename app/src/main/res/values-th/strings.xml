@@ -145,6 +145,9 @@
     <string name="file_editor_path_copied">คัดลอกเส้นทางแล้ว</string>
     <string name="setting_config_files">กำหนดค่าไฟล์</string>
     <string name="setting_config_files_sub">เปิด AGENTS.md รีจิสทรีพื้นที่ทำงานหรือโปรไฟล์ปลั๊กอิน</string>
+    <string name="setting_chat_import">นำเข้าบทสนทนา DeepSeek</string>
+    <string name="setting_chat_import_sub">นำเข้าไฟล์บีบอัดที่ส่งออกจากแอปแชท DeepSeek อย่างเป็นทางการ</string>
+    <string name="setting_chat_import_restart_hint">เลย์เรียนนำเข้าจะโหลดเมื่อเริ่มต้นเอนจิน จะรีสตาร์ทเอนจินตอนนี้หรือไม่</string>
     <string name="config_files_none">ยังไม่มีไฟล์กำหนดค่า — สตาร์ทเอนจินหนึ่งครั้งก่อน</string>
     <string name="config_files_failed">ไม่สามารถเปิดได้: %1$s</string>
     <string name="setting_import_data">นำเข้าข้อมูล</string>

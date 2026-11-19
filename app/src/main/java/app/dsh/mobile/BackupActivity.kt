@@ -6,7 +6,11 @@ import android.os.Bundle
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import app.dsh.mobile.engine.ChatImportLayer
 import app.dsh.mobile.engine.ChatRecovery
+import app.dsh.mobile.engine.EngineConfig
+import com.google.android.material.materialswitch.MaterialSwitch
 
 /**
  * 备份与恢复（v1.4.46）：从设置主页数据区收拢的低频数据操作子页。
@@ -69,6 +73,28 @@ class BackupActivity : ThemedActivity() {
         // —— 配置文件（v1.4.29，issue #25）：列出常用配置，点哪个开哪个 ——
         findViewById<LinearLayout>(R.id.rowConfigFiles).setOnClickListener {
             showConfigFilePicker()
+        }
+
+        // —— 官方 chat 导出包导入（v1.6.0-beta.17）：开关 + 重启提示 ——
+        // 这个开关只决定引擎启动时是否多挂一层 patch（见 ChatImportLayer），
+        // 改完当场重写层文件，让「重启引擎」拿到的是新状态；引擎在跑时不重启不生效。
+        val swChatImport = findViewById<MaterialSwitch>(R.id.swChatImport)
+        val runtimeHasPlugin = java.io.File(EngineConfig.engineRoot(this), ChatImportLayer.PLUGIN_ENTRY).isFile
+        swChatImport.isChecked = DshApp.chatImportEnabled(this) && runtimeHasPlugin
+        // 运行时没带这个包时拨不动：开关能点亮但能力不存在，比灰着更误导。
+        swChatImport.isEnabled = runtimeHasPlugin
+        swChatImport.setOnCheckedChangeListener { _, checked ->
+            DshApp.setChatImportEnabled(this, checked)
+            runCatching { EngineConfig.ensureChatImportLayer(this) }
+            md3Dialog()
+                .setTitle(R.string.setting_chat_import)
+                .setMessage(R.string.setting_chat_import_restart_hint)
+                .setPositiveButton(R.string.action_restart_now) { _, _ ->
+                    (application as app.dsh.mobile.DshApp).supervisor.restart()
+                    Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
 
         // —— 对话恢复（v1.4.4）：扫描未登记进工作区的会话，确认后登记回去 ——

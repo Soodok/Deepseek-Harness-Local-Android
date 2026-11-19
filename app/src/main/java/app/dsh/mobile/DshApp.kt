@@ -59,6 +59,18 @@ class DshApp : Application() {
             }
             prev?.uncaughtException(thread, throwable)
         }
+        // ★运行模式判定前移：进程一起来就定下能立刻确定的那一半。
+        //
+        // 原实现只在 spawnEngine 里 resolve()，实测要到冷启 1.2~2.4 秒才轮到
+        // （前面隔着孤儿回收、preflight、runtime-install、hardssh、profile-plugins），
+        // 在那之前遮罩显示「检测运行环境」。用户的原话就是「启动 1.4 秒之后运行
+        // 环境才检测出来」—— 检测本身实测只要 0~6 ms，慢的是它排队的位置。
+        //
+        // 放在这里而不是 MainActivity.onCreate：Application 先于任何 Activity，
+        // 遮罩第一帧渲染时 lastMode 已经是真值，连「检测中」那一帧都不会出现。
+        // 成本是 Linux 关闭时读一次 SharedPreferences 布尔值（微秒级）。
+        // Linux 开启时返回 false，仍由 spawnEngine 里的 resolve() 做完整探测。
+        runCatching { app.dsh.mobile.engine.EngineModeSelector.resolveEarly(this) }
         supervisor = EngineSupervisor(this)
         // v1.6.11：容器内 DNS 代理必须随进程启动，不能只挂在 readiness()。
         //
@@ -168,6 +180,23 @@ class DshApp : Application() {
         fun setUserExitedExplicitly(context: android.content.Context, exited: Boolean) {
             context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_USER_EXITED, exited).apply()
+        }
+
+        /**
+         * 官方 DeepSeek chat 导出包导入开关（v1.6.0-beta.17）。
+         *
+         * 缺省**关**：这个能力对应引擎里多挂一层 patch 层（见 ChatImportLayer），
+         * 上游注释写明 shipped profile 不含该层，属于可选能力；用户从「备份与恢复」页拨开。
+         */
+        private const val KEY_CHAT_IMPORT = "deepseek_chat_import"
+
+        fun chatImportEnabled(context: android.content.Context): Boolean =
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_CHAT_IMPORT, false)
+
+        fun setChatImportEnabled(context: android.content.Context, on: Boolean) {
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_CHAT_IMPORT, on).apply()
         }
 
         /**

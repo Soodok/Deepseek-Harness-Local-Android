@@ -1686,6 +1686,44 @@ object EngineConfig {
     }
 
     /**
+     * 官方 DeepSeek chat 导出包导入层（v1.6.0-beta.17）：写出 patch 文件并返回它，
+     * 开关关闭或运行时缺包时返回 null（引擎照常启动，只是没有这个能力）。
+     *
+     * 三种状态各自要做的卫生动作：
+     *  · 开关开 + 包在 → 写 `<engine>/chat-import-layer.yml` 并返回；
+     *  · 开关关      → **删掉**上次留下的层文件：留着不会被引用（argv 里没有它），
+     *                  但会误导手改配置的人以为这层还在生效；
+     *  · 开关开但包不在（老运行时）→ 同样删掉并记一行日志：给引擎一个解析不了的
+     *                  包名只会换来一行 warning，能力本身不存在。
+     *
+     * 文件落在 engineRoot 而不是 filesDir：容器模式 launcher 把 patch 路径映射成
+     * guest `/eng/<rel>`，只有在 engine 目录下的文件两种模式才都可达。
+     */
+    fun ensureChatImportLayer(ctx: android.content.Context): File? {
+        val layer = File(engineRoot(ctx), ChatImportLayer.LAYER_FILE_NAME)
+        fun withdraw(reason: String) {
+            runCatching { if (layer.isFile) layer.delete() }
+                .onFailure { Log.w(TAG, "cannot remove chat import layer: ${it.message}") }
+            Log.i(TAG, "chat import layer not provided: $reason")
+        }
+        val present = File(engineRoot(ctx), ChatImportLayer.PLUGIN_ENTRY).isFile
+        if (!ChatImportLayer.shouldProvide(app.dsh.mobile.DshApp.chatImportEnabled(ctx), present)) {
+            withdraw(if (present) "switched off" else "plugin missing in this runtime")
+            return null
+        }
+        val body = ChatImportLayer.body()
+        runCatching {
+            if (!layer.isFile || layer.readText() != body) layer.writeText(body)
+            layer.setReadable(true, false)
+        }.onFailure {
+            Log.w(TAG, "chat import layer write failed: ${it::class.simpleName}: ${it.message}")
+            return null
+        }
+        Log.i(TAG, "chat import layer ready: ${layer.absolutePath}")
+        return layer
+    }
+
+    /**
      * 宽松 SemVer 比较：a 是否**大于** b（相等返回 false）。
      * 只处理数字段（1.2.3），prerelease 段截断后按数字比 —— 插件发版
      * 全是正式版，不需要完整 SemVer 规则。
