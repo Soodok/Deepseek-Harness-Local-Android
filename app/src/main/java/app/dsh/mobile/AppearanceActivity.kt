@@ -12,6 +12,7 @@ import android.widget.SeekBar
 import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.MainActivity.Companion.ImmersiveMode
 
 /**
  * 外观与显示（v1.4.56）：从设置主页收拢的个性化子页。
@@ -88,12 +89,50 @@ class AppearanceActivity : ThemedActivity() {
         }
         findViewById<TextView>(R.id.valScale).text = "$pageScale%"
 
-        // —— 沉浸式状态栏（横竖屏都隐藏，可自行开关）——
+        // —— 沉浸式状态栏 / 导航栏（issue #123 拆成两级）——
+        //
+        // 只有第一级开着的时第二级才有意义：没隐藏状态栏却单独隐藏导航栏，
+        // 既不是用户想要的「真全屏」，也会让底部手势条消失而顶部还在，
+        // 所以第二级行在第一级关闭时**整行禁用**（不是隐藏 —— 隐藏会让分组
+        // 高度跳动，禁用态本身就传达了「先开上面那个」）。
         val swImmersive = findViewById<MaterialSwitch>(R.id.swImmersive)
-        swImmersive.isChecked = MainActivity.immersiveEnabled(this)
-        swImmersive.setOnCheckedChangeListener { _, checked ->
-            MainActivity.setImmersiveEnabled(this, checked)
+        val rowImmersiveNav = findViewById<android.view.View>(R.id.rowImmersiveNav)
+        val swImmersiveNav = findViewById<MaterialSwitch>(R.id.swImmersiveNav)
+
+        // 局部函数只能捕获**在它之前**声明的局部变量 —— 三个控件必须先声明。
+        fun syncImmersiveRows() {
+            val mode = MainActivity.immersiveMode(this)
+            swImmersive.isChecked = mode != ImmersiveMode.OFF
+            swImmersiveNav.isChecked = mode == ImmersiveMode.STATUS_NAV
+            val navAvailable = mode != ImmersiveMode.OFF
+            swImmersiveNav.isEnabled = navAvailable
+            rowImmersiveNav.isEnabled = navAvailable
+            rowImmersiveNav.alpha = if (navAvailable) 1f else 0.45f
         }
+
+        swImmersive.setOnCheckedChangeListener { _, checked ->
+            // 关掉第一级时连第二级一起回落，避免留下「导航栏标记还开着但
+            // 状态栏已显示」的半截状态。
+            val next = if (!checked) {
+                ImmersiveMode.OFF
+            } else if (swImmersiveNav.isChecked) {
+                ImmersiveMode.STATUS_NAV
+            } else {
+                ImmersiveMode.STATUS
+            }
+            MainActivity.setImmersiveMode(this, next)
+            syncImmersiveRows()
+        }
+        swImmersiveNav.setOnCheckedChangeListener { _, checked ->
+            val mode = MainActivity.immersiveMode(this)
+            if (mode == ImmersiveMode.OFF) return@setOnCheckedChangeListener
+            MainActivity.setImmersiveMode(
+                this,
+                if (checked) ImmersiveMode.STATUS_NAV else ImmersiveMode.STATUS,
+            )
+            syncImmersiveRows()
+        }
+        syncImmersiveRows()
 
         // —— 官方推荐手机 UI（v1.4.67）：两套竖屏布局插件二选一 ——
         // 切换需要重写 android-overlay.yml 并重启引擎才生效（插件在启动时加载）。

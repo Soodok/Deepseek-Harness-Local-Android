@@ -285,14 +285,22 @@ android {
         // 直接退出，一个 socket 都不建，界面上就是「点了开始画面没反应」。
         // 部署期（ensureXkbOutputDir）+ 运行期（startFrameServer）各补一次
         // mkdir，失败回显带 xkb 目录状态。
-        // versionCode 继续单调递增：375 → … → 391 → 392 → 393。
-        versionCode = 393
+        // v1.6.0-beta.18（2026-11-19）：收掉卡片上的四条 issue ——
+        // ① #123 全屏模式拆三档（仅状态栏 / 状态栏 + 导航栏）；隐藏导航栏时底部让位
+        //    同步归零，否则那条白带还在（两件事必须一起改）。
+        // ② #122 内置 mobile-layout 0.4.5 → 0.4.12：上游 README 逐版本登记里
+        //    0.4.4–0.4.6 在 0.2.2-rc.1 上「❌ 不兼容」，实测正是设置页被接管后
+        //    标题/页签/内容裁切、关不掉。
+        // ③ #108 TRANSPORT 文案补上请求体字节数 —— 只做诊断，不动错误码与重试策略。
+        // ④ #118 fast_mode / #119 用量浮层在 beta.17 之前已修但没发出去，随本版出包。
+        // versionCode 继续单调递增：375 → … → 392 → 393 → 394。
+        versionCode = 394
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.17"
+        versionName = "1.6.0-beta.18"
 
         ndk {
             abiFilters += listOf(targetAbi)

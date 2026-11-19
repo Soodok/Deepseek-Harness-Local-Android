@@ -440,6 +440,53 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp" />
+                </LinearLayout><!-- issue #123：全屏模式第二级 —— 连底部导航栏一起隐藏 --><LinearLayout
+                android:id="@+id/rowImmersiveNav"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                    android:minHeight="@dimen/md3_item_two_line"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="@dimen/md3_item_padding_h"
+                android:paddingVertical="12dp"
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid">
+
+                <ImageView
+                android:layout_width="@dimen/md3_icon_chip"
+                android:layout_height="@dimen/md3_icon_chip"
+                android:padding="9dp"
+                android:src="@drawable/ic_display"
+                android:background="@drawable/bg_md3_icon_chip"
+                android:tint="?attr/dshAccent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_immersive_nav"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_immersive_nav_sub"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/swImmersiveNav"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
                 </LinearLayout><View android:layout_width="match_parent" android:layout_height="2dp" />
 
                 <!-- 官方推荐手机 UI（v1.4.67）：两套竖屏布局方案二选一 --><LinearLayout

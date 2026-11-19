@@ -82,9 +82,75 @@ function transportDetail(error) {
 """
 
 
+# ---- 第二层：请求体字节数（issue #108 追加，2026-11-19）----------------------
+#
+# 上游 fetch 前那一行是唯一能看到最终 payload 的地方，且只出现一次。锚点只截到
+# 反引号为止，避开后面模板字符串里的花括号（那串在各层转义里极易写坏）。
+PAYLOAD_ANCHOR = "\t\t\t\tconst response = await fetch(" + chr(96)
+PAYLOAD_PATCHED = (
+    "\t\t\t\tconst requestBodyBytes = extensions.payload.length;\n"
+    "\t\t\t\tconst response = await fetch(" + chr(96)
+)
+
+TRANSPORT_TAIL_MARKER = "· request body "
+TRANSPORT_WITH_BYTES_OLD = (
+    '"DeepSeek Messages transport failed: " + transportDetail(error), '
+    '"TRANSPORT", { cause: error });'
+)
+TRANSPORT_WITH_BYTES_NEW = (
+    '"DeepSeek Messages transport failed: " + transportDetail(error) + '
+    '" · request body " + formatBodyBytes(requestBodyBytes), '
+    '"TRANSPORT", { cause: error });'
+)
+
+BODY_HELPER = '''/**
+ * v1.7.9 / issue #108 第二层：把请求体大小格式化成可读单位。
+ *
+ * 只用于错误文案。字节数取自发请求前 payload 字符串的 length（UTF-16 单元数）——
+ * 对「是不是会话太大」这个判断够用，且不必为 40 MB 的串再做一次逐字节遍历。
+ */
+function formatBodyBytes(bytes) {
+\tif (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return "unknown size";
+\tif (bytes < 1024) return bytes + " B";
+\tif (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+\treturn (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+'''
+
+
+def patch_payload_bytes(text: str) -> tuple[str, list[str]]:
+    """第二层：采集请求体字节并拼进 TRANSPORT 文案（幂等）。"""
+    if TRANSPORT_TAIL_MARKER in text:
+        return text, ["already-has-body-size"]
+    if text.count(PAYLOAD_ANCHOR) != 1:
+        raise SystemExit(
+            "错误：请求体字节采集锚点出现 %d 次（期望 1）—— 上游 fetch 调用形态变了？"
+            % text.count(PAYLOAD_ANCHOR)
+        )
+    if text.count(TRANSPORT_WITH_BYTES_OLD) != 1:
+        raise SystemExit(
+            "错误：TRANSPORT 抛出点出现 %d 次（期望 1）"
+            % text.count(TRANSPORT_WITH_BYTES_OLD)
+        )
+    if HELPER_ANCHOR not in text:
+        raise SystemExit(
+            "错误：找不到注入点 var DeepSeekAdapter = class extends LlmAdapter {"
+        )
+    applied: list[str] = []
+    text = text.replace(PAYLOAD_ANCHOR, PAYLOAD_PATCHED, 1)
+    applied.append("payload-bytes")
+    text = text.replace(TRANSPORT_WITH_BYTES_OLD, TRANSPORT_WITH_BYTES_NEW, 1)
+    applied.append("transport-body-size")
+    text = text.replace(HELPER_ANCHOR, BODY_HELPER + HELPER_ANCHOR, 1)
+    applied.append("body-helper")
+    return text, applied
+
+
 def patch_text(text: str) -> tuple[str, list[str]]:
     if "function transportDetail(error)" in text:
-        return text, ["already-patched"]
+        # 第一层已在（我们打的，或上游 0.2.2-rc.3 自带），继续补第二层。
+        return patch_payload_bytes(text)
     if ANCHOR not in text:
         raise SystemExit(
             "错误：找不到 TRANSPORT 抛出点（上游形态已变？）\n"

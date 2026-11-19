@@ -100,6 +100,8 @@
     <string name="files_dir_copied">Путь скопирован</string>
 <string name="setting_immersive">Полный экран (скрыть строку состояния)</string>
     <string name="setting_immersive_sub">Скрыть системную строку состояния, чтобы страницы занимали весь экран. Верхняя панель автоматически обходит вырез камеры. Смахните вниз от верхнего края, чтобы временно показать строку состояния.</string>
+    <string name="setting_immersive_nav">Скрывать и панель навигации</string>
+    <string name="setting_immersive_nav_sub">Скрывает нижнюю панель навигации и полосу жестов, чтобы страницы доходили до нижнего края экрана. Смахните снизу вверх, чтобы показать их. Доступно только при включённом полноэкранном режиме.</string>
     <string name="setting_scale_sub">Настройте масштаб веб-страниц (зум браузера)</string>
     <string name="setting_theme">Оформление</string>
     <string name="setting_theme_sub">Тёмная, светлая или как в системе</string>

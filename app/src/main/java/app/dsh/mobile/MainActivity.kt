@@ -2191,12 +2191,27 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 w.setSoftInputMode(
                     android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
                 )
+                val hideNav = immersiveNavEnabled(this)
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
                     w.setDecorFitsSystemWindows(false)
                     val c = WindowInsetsControllerCompat(w, w.decorView)
-                    c.hide(WindowInsetsCompat.Type.statusBars())
+                    var bars = WindowInsetsCompat.Type.statusBars()
+                    if (hideNav) bars = bars or WindowInsetsCompat.Type.navigationBars()
+                    c.hide(bars)
                     c.systemBarsBehavior =
                         WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+                // ⚠️ #123：API < 30 也要能隐藏导航栏，否则低版本用户勾了「含导航栏」
+                // 完全没反应。flags 是全版本都认的，单独补一份。
+                if (hideNav) {
+                    @Suppress("DEPRECATION")
+                    run {
+                        val cur = w.decorView.systemUiVisibility
+                        w.decorView.systemUiVisibility = cur or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    }
                 }
                 @Suppress("DEPRECATION")
                 w.decorView.systemUiVisibility =
@@ -2246,7 +2261,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     val clearMask = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                         View.SYSTEM_UI_FLAG_FULLSCREEN or
                         View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                        View.SYSTEM_UI_FLAG_IMMERSIVE
+                        View.SYSTEM_UI_FLAG_IMMERSIVE or
+                        // #123：隐藏导航栏时设的位也必须清干净，否则退出全屏后
+                        // 导航栏仍然不回来，用户会以为系统坏了。
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     @Suppress("DEPRECATION")
                     val cur = w.decorView.systemUiVisibility
                     w.decorView.systemUiVisibility =
@@ -2254,8 +2273,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
                 // 交给 ThemeManager.applyBars 恢复「主题背景色 + 正确的图标明暗」。
                 ThemeManager.applyBars(this)
-                WindowInsetsControllerCompat(w, w.decorView)
-                    .show(WindowInsetsCompat.Type.statusBars())
+                WindowInsetsControllerCompat(w, w.decorView).show(
+                    WindowInsetsCompat.Type.statusBars() or
+                        WindowInsetsCompat.Type.navigationBars(),
+                )
                 // v1.4.57：立刻重算一次布局（岛的 topMargin、WebView 的底部 padding
                 // 都按 immersive 分支切换）。只靠 insets 回调是不够的 —— 退出全屏时
                 // insets 可能没变化（状态栏本来就在），回调不会触发，padding 就
@@ -2292,10 +2313,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 if (isFinishing || isDestroyed) return@postDelayed
                 val w2 = window ?: return@postDelayed
                 runCatching {
+                    val hideNav2 = immersiveNavEnabled(this)
                     if (android.os.Build.VERSION.SDK_INT >= 30) {
                         w2.setDecorFitsSystemWindows(false)
-                        WindowInsetsControllerCompat(w2, w2.decorView)
-                            .hide(WindowInsetsCompat.Type.statusBars())
+                        var bars2 = WindowInsetsCompat.Type.statusBars()
+                        if (hideNav2) bars2 = bars2 or WindowInsetsCompat.Type.navigationBars()
+                        WindowInsetsControllerCompat(w2, w2.decorView).hide(bars2)
                     }
                     @Suppress("DEPRECATION")
                     w2.decorView.systemUiVisibility =
@@ -2303,8 +2326,16 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                             .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
                             .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
                             .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
-                    WindowInsetsControllerCompat(w2, w2.decorView)
-                        .hide(WindowInsetsCompat.Type.statusBars())
+                    if (hideNav2) {
+                        @Suppress("DEPRECATION")
+                        run {
+                            val cur = w2.decorView.systemUiVisibility
+                            w2.decorView.systemUiVisibility = cur or
+                                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        }
+                    }
                     // 系统重置后窗口可能又开始为状态栏预留空间 → 立刻重算岛位置
                     w2.decorView.requestApplyInsets()
                 }
@@ -2681,9 +2712,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //     直接顶到键盘上方）；
             //   · 键盘收起 → 让位 navBottom **仅在全屏时**需要（窗口铺到屏幕最底，
             //     手势条会压住内容）；非全屏时系统已让开，留 0。
+            // #123：缺省「隐藏导航栏」时不能再主动让出 navBottom —— 那条让位
+            // 恰恰就是用户看到的白带本身（导航栏已经 hide，再让位等于凭空留白）。
+            // 键盘弹起时仍必须让位（IME 高度已含导航区）。
+            val navHidden = immersive && immersiveNavEnabled(this@MainActivity)
             val bottomPad = if (imeBottom > 0) {
                 imeBottom
-            } else if (immersive) {
+            } else if (immersive && !navHidden) {
                 navBottom
             } else {
                 0
@@ -2729,6 +2764,20 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
             if (webView.paddingBottom != 0) webView.setPadding(0, 0, 0, 0)
+
+            // ⚠️ #123：输入法弹起会**重置**导航栏的 hide 状态（系统把 IME 当成
+            // 一次新的系统栏布局），用户会看到「键盘一出，手势条又回来了」并且
+            // 我们刚归零的 bottomPad 也失去意义。这里按当前档位重新断言一次。
+            // 只在「隐藏导航栏」档位下做，其余档位完全不碰系统栏状态。
+            if (immersive && immersiveNavEnabled(this@MainActivity)) {
+                runCatching {
+                    WindowInsetsControllerCompat(window, window.decorView)
+                        .hide(
+                            WindowInsetsCompat.Type.statusBars() or
+                                WindowInsetsCompat.Type.navigationBars(),
+                        )
+                }
+            }
             insets
         }
         root.requestApplyInsets()
@@ -4333,18 +4382,67 @@ runCatching { (application as DshApp).supervisor.webUrl() }
          * 想全屏的用户仍可在设置 → 外观与显示里打开（岛会贴住摄像头）。
          */
         private const val KEY_IMMERSIVE = "immersive_statusbar"
+        private const val KEY_IMMERSIVE_NAV = "immersive_navbar"
         private const val DEFAULT_IMMERSIVE = false
 
-        @JvmStatic
-        fun immersiveEnabled(ctx: Context): Boolean =
-            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
-                .getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+        /**
+         * 全屏模式的三档（issue #123）。
+         *
+         * 原来只有一个布尔「全屏（隐藏状态栏）」，用户报「底部导航栏依旧占位，
+         * 内容区被卡在导航栏上方，底部留一条空白带，正文永远贴不到屏幕最底边」。
+         * 那条白带其实是**两件事叠在一起**，只改一件都还在：
+         *
+         *   ① 导航栏本身没 hide —— `hide()` 只传了 `statusBars()`；
+         *   ② 底部让位 `bottomPad = navBottom` 主动把那条高度让出来。
+         *
+         * 所以做成三档而不是再加一个独立开关：隐藏导航栏必须同时改这两处，
+         * 拆成两个互不相干的开关就会出现「勾了但白带还在」的组合。
+         */
+        enum class ImmersiveMode {
+            /** 都不隐藏（原「关闭」）。 */
+            OFF,
+
+            /** 只隐藏状态栏（原「开启」，#123 之前的唯一开启态）。 */
+            STATUS,
+
+            /** 状态栏 + 导航栏都隐藏，内容铺到屏幕最底（#123 新增）。 */
+            STATUS_NAV,
+        }
 
         @JvmStatic
-        fun setImmersiveEnabled(ctx: Context, on: Boolean) {
-            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_IMMERSIVE, on).apply()
+        fun immersiveMode(ctx: Context): ImmersiveMode {
+            val p = ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+            if (!p.getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)) return ImmersiveMode.OFF
+            return if (p.getBoolean(KEY_IMMERSIVE_NAV, false)) {
+                ImmersiveMode.STATUS_NAV
+            } else {
+                ImmersiveMode.STATUS
+            }
         }
+
+        @JvmStatic
+        fun setImmersiveMode(ctx: Context, mode: ImmersiveMode) {
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_IMMERSIVE, mode != ImmersiveMode.OFF)
+                .putBoolean(KEY_IMMERSIVE_NAV, mode == ImmersiveMode.STATUS_NAV)
+                .apply()
+        }
+
+        /** 兼容旧调用点：true = 至少隐藏状态栏。 */
+        @JvmStatic
+        fun immersiveEnabled(ctx: Context): Boolean = immersiveMode(ctx) != ImmersiveMode.OFF
+
+        /** 兼容旧调用点：setImmersiveEnabled(true) 等价于只隐藏状态栏。 */
+        @JvmStatic
+        fun setImmersiveEnabled(ctx: Context, on: Boolean) {
+            setImmersiveMode(ctx, if (on) ImmersiveMode.STATUS else ImmersiveMode.OFF)
+        }
+
+        /** 导航栏是否也要隐藏（#123）。 */
+        @JvmStatic
+        fun immersiveNavEnabled(ctx: Context): Boolean =
+            immersiveMode(ctx) == ImmersiveMode.STATUS_NAV
 
         /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
         private const val DEFAULT_PAGE_SCALE = 90
