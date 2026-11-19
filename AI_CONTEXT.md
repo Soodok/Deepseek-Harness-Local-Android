@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-19 · `main` 代码提交 `5233c6d2`（**未推**）· 本轮收掉 #123 / #122 / #108 三条 issue，并把 #118 / #119 的既有修复随 `1.6.0-beta.18 (394)` 一起出包（见第一百四十二章）。
+**最后更新**：2026-11-19 深夜 · `main` 代码提交 `0228457f`（已推）· 本轮收掉 #123 / #122 / #108 三条 issue，并把 #118 / #119 的既有修复随发行包一起发出；beta.18（394）漏了 #108 第二层，beta.19（395）补全并开箱验证（见第一百四十二章）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -14879,3 +14879,59 @@ PASS=142  FAIL=0
 
 `app/src/main/java/app/dsh/mobile/engine/` 下的 `EngineSupervisor.kt` / `RuntimeInstaller.kt` 正在被改，
 新增 `FrontendWarmup.kt` / `PortReclaim.kt` + 两个测试类。本轮提交**全部避开**这些文件。
+
+### 8. beta.19（395）：补全 #108 第二层 —— 一次真实的「探针全绿但交付漏打」
+
+提交 `0228457f`。beta.18 发布后开箱检查它的 arm64 Release，发现内嵌 runtime 里
+`dsh-llm-deepseek/lib/index.js` **只有第一层**（`transportDetail`），
+`requestBodyBytes` / `formatBodyBytes` 全无 —— #108 的第二层根本没进包。
+
+**证据链**：
+
+| 层 | 证据 |
+| CI 日志 | `llm-deepseek: 已打补丁 -> transport-detail, helper`（新脚本应输出 payload-bytes / transport-body-size / body-helper） |
+| 开箱 | beta.18 Release 的 `assets/runtime.zip` 解出来的 index.js：layer1=True / layer2=False |
+| 根因 | `patch_text` 有两条分支：上游**已有** transportDetail 时转 `patch_payload_bytes`；上游**没有**第一层时打完第一层就 `return` |
+| 为什么本地没发现 | 本地验证用的是 11-14 那份 release runtime，它自带 transportDetail，走的第一条分支 |
+| 为什么 CI 踩中 | 它的 npm 原料属于后者（index.js 里没有 transportDetail 函数） |
+
+**修法**：第一层分支打完 helper 后继续 `patch_payload_bytes(text)`。
+实测（把 runtime 里的 transportDetail 函数与文案拼接都还原成上游形态，模拟「无第一层」）：
+
+```
+llm-deepseek: 已打补丁 -> transport-detail, helper, payload-bytes, transport-body-size, body-helper
+```
+
+**探针补 A4/A4b/A4c**：只看「第一层分支区间」（`if ANCHOR not in text` 到 `return text, applied`）
+里有没有 `patch_payload_bytes` 调用。
+第一版判据在整个函数体里 `rfind`，被开头那个 if 分支的调用蒙对（照样绿）——
+改成区间后，删掉末尾调用 A4c 立刻红。**这已经是本轮第二次「判据宽于被测」**（第一次是
+`STATUS_NAV in code` 被 `STATUS_NAVX` 蒙对）。
+
+**beta.19 开箱验证**（`/e/tmp/ci19/` 的 arm64 Release，191,688,610 B）：
+
+| 项 | 结果 |
+| runtime | `2026.11.19-723f86a3`（149,687,538 B，CI 用新脚本重建） |
+| #108 第一层 | `transportDetail` ✅ |
+| #108 第二层 | `requestBodyBytes` 采集 / `request body` 文案 / `formatBodyBytes` **全部 ✅** |
+| #123 | `MainActivity$Companion$ImmersiveMode` + `STATUS_NAV` + `setting_immersive_nav` ✅ |
+| #122 | `assets/mobile-layout/bundle.json` = **0.4.12** ✅ |
+| hardssh | 0.2.13 ✅ |
+| 版本 | `395 / 1.6.0-beta.19` |
+| update-index | `latest = 395 / channel=stable / 8 assets / 16:59:39Z` |
+
+CI 全绿（`android-build` / `i18n-check` / `runtime-build`），Release 已发布（`prerelease: true`）。
+
+### 9. 本轮未完成（明确单列）
+
+- **真机验收全部未做**：OnePlus PLZ110 `192.168.101.21:9000` 全程连不上（`adb connect` 超时），
+  所以 #123 的三档切换、#119 的用量浮层、#118 的 fast_mode、#122 的插件设置页都**只有静态证据**
+  （源码 + 探针 + APK 开箱），**没有一次真机点击**。
+- **模拟器也没能验**：两台在线的模拟器都属于并行会话（`emulator-5554` 装的是他们用共享工作区
+  构建的 394 包 —— 拉下来 md5 `b012ee46`，与我的 `894b752b` 不同，且启动即
+  `ClassNotFoundException: app.dsh.mobile.engine.RuntimeInstaller` 崩在 resume；
+  `emulator-5570` 是 beta.86 且签名不同）。按「不抢他人设备」没有强装。
+- **本地构建的包混入了他人的未提交 WIP**：我 `5233c6d2` 只提交了自己的 18 个文件，
+  但 `assembleRelease` 编译的是**工作区**，所以 `/e/tmp/rel394/` 那两份含
+  `FrontendWarmup` / `PortReclaim`（并行会话在写的）。**交付只认 CI 从 tag 构建的产物** ——
+  已用 dex 开箱确认 CI 包里没有 `FrontendWarmup`。
