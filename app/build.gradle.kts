@@ -294,13 +294,18 @@ android {
         // ③ #108 TRANSPORT 文案补上请求体字节数 —— 只做诊断，不动错误码与重试策略。
         // ④ #118 fast_mode / #119 用量浮层在 beta.17 之前已修但没发出去，随本版出包。
         // versionCode 继续单调递增：375 → … → 392 → 393 → 394。
-        versionCode = 394
+        // v1.6.0-beta.19（2026-11-19）：只修 beta.18 的一个漏 ——
+        // #108 的「请求体字节数」只在「上游已有 transportDetail」那条分支生效，
+        // 而 CI 的 npm 原料走的是「上游还没有第一层」那条，打完第一层就 return，
+        // 第二层永远补不上。beta.18 的 Release 因此只修了一半。
+        // 同时给探针补了「第一层分支也必须转第二层」的结构判据（能打红）。
+        versionCode = 395
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.18"
+        versionName = "1.6.0-beta.19"
 
         ndk {
             abiFilters += listOf(targetAbi)

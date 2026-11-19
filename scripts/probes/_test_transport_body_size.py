@@ -60,6 +60,26 @@ def main():
     ok(i_bytes >= 0 and i_fetch >= 0 and i_bytes < i_fetch,
        "A3 采集行在 fetch 行之前（之后拿不到 payload）")
 
+    # beta.18 发布时踩到的假绿：本探针当时全绿，但 CI 的 runtime-build 产物只打了
+    # 第一层。原因是 patch_text 有两条路径 —— 上游已 transportDetail 时直接转
+    # patch_payload_bytes，而上游还没有第一层时打完第一层就 return。CI 的 npm
+    # 原料正好属于后者，第二层永远补不上，而探针只看补丁源里有采集与拼接，
+    # 两条路径的差异完全没覆盖。所以补一条结构判据。
+    m_tx = re.search(r"def patch_text\([\s\S]{0,2600}?\n\ndef ", src)
+    tx = m_tx.group(0) if m_tx else ""
+    ok(tx != "", "A4 找到 patch_text 函数体")
+    # 只看「第一层分支」那一段：从 ANCHOR 检查开始到 return text, applied。
+    # 不能在整个函数体里找 —— 开头那个 if 分支也调 patch_payload_bytes，
+    # 用它会让「末尾漏调」照样绿（第一版就这么假绿了）。
+    seg_start = tx.find("if ANCHOR not in text")
+    seg_end = tx.find("return text, applied")
+    seg = tx[seg_start:seg_end] if seg_start >= 0 and seg_end > seg_start else ""
+    ok(seg != "", "A4b 找到第一层分支区间")
+    ok(
+        "patch_payload_bytes(text)" in seg,
+        "A4c 第一层分支在 return 之前也补第二层（CI 的 npm 原料走这条，漏了等于没修）",
+    )
+
     print("[B] 采集值真的拼进文案")
     ok("TRANSPORT_WITH_BYTES_NEW" in src, "B1 定义了带字节数的新文案")
     ok("formatBodyBytes(requestBodyBytes)" in src, "B2 文案里真的插入了字节数")

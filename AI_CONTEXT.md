@@ -11,7 +11,7 @@
 **最后更新**：2026-11-19 · `main` 代码提交 `5233c6d2`（**未推**）· 本轮收掉 #123 / #122 / #108 三条 issue，并把 #118 / #119 的既有修复随 `1.6.0-beta.18 (394)` 一起出包（见第一百四十二章）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
-> ⚠️ 本轮 `5233c6d2` 与 `1.6.0-beta.18 (394)` 的 tag 都**还没推**。
+> ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
 本轮：**灵动岛两处观感修复** —— ① 用户报「收起态展开会连续展开两次」，录屏逐帧量测证明确有
 两轮「窄→宽」，根因是 `toggleToolbar()` 先 `renderIslandVisibility()` 再在 120ms 后压小重撑，
 两段动画叠加；把起点 scale/alpha 挪到渲染前、删掉 handle 空转动画即修。② 用户要求侧边面板
@@ -14851,7 +14851,29 @@ PASS=142  FAIL=0
   `profile-plugins: 29ms` → `provisioned at 0.4.12`，`spawn 1389ms` + `health-poll 10791ms`（冷启动含首次解压）。
 - **未做**：真机 PLZ110 本轮离线（`adb connect 192.168.101.21:9000` 超时），
   arm64 包只做了构建 + 签名核验；#123 的三档切换、#119 的用量浮层、#118 的 fast_mode 都还需要真机点一次。
-- **未发版**：`versionCode 394 / versionName 1.6.0-beta.18` 已改但未打 tag、未推远端。
+- **已发版**：`842230fa` 已推 `main`，tag `v1.6.0-beta.18` 已推，CI 全绿。
+
+### 6.1 发版踩到的 CI 坑：tag 构建与 runtime 指纹抢跑
+
+第一次推 tag 后 `android-build (v1.6.0-beta.18)` 在 `fetch-runtime` 步失败：
+
+```
+##[error] tag/正式构建要求 runtime 与当前脚本指纹一致，但 prerelease 是别的版本。
+```
+
+原因是我这轮改了 `scripts/patch-llm-deepseek-transport.py`（加第二层），**脚本指纹变了**，
+而滚动 prerelease `runtime` 里那份还是旧指纹。同一个 push 同时触发了 `runtime-build` 与
+`android-build`，两者并行：tag 构建在 15:55 判定「指纹不一致」失败，runtime 在 15:58 才重建完。
+
+**修法：等 `runtime-build` 成功后重推 tag**（`git push origin :refs/tags/X` 再 `git push origin X`）。
+第二次在 00:22 通过。以后凡改 runtime 侧脚本（`patch-*.py` / `build-runtime.sh` / `collect-termux-runtime.sh`），
+推 tag 前先确认 `runtime` prerelease 的 `runtime-meta-*.json` 已刷新到本次提交。
+
+### 6.2 发布结果（2026-11-19T16:21:25Z）
+
+`v1.6.0-beta.18` 标 `prerelease: true`，14 个资产。`update-index.json` 已核：
+`latest = 394 / 1.6.0-beta.18 / channel=stable / 8 个资产`，`generatedAt 2026-11-19T16:21:20Z`
+（channel 必须是 `stable`，否则装过 release 包的用户收不到后续更新）。
 
 ### 7. 并行会话的 WIP（本轮未碰）
 
