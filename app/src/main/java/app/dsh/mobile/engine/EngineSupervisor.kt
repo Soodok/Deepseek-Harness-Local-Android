@@ -1560,35 +1560,10 @@ class EngineSupervisor(private val ctx: Context) {
     private fun reclaimPortByPort() {
         val port = EngineConfig.DEFAULT_PORT
         Log.w(TAG, "port $port — thorough reclaim (kill every holder of this port)")
-        val d = "$"
         // 用 /proc 找所有监听该端口的 uid（tcp/tcp6 的本地地址:端口列），再杀掉这些 pid。
         // 匹配逻辑：读 /proc/net/tcp{,6}，找 state=0A（LISTEN）且 local_port == 3080，
         // 取其 inode，再扫 /proc/<pid>/fd 找指向 socket:[inode] 的进程。
-        val script = """
-            PORT_HEX=${'$'}(printf '%04X' $port)
-            INODES=''
-            for f in /proc/net/tcp /proc/net/tcp6; do
-              [ -r "${'$'}f" ] || continue
-              INODES="${'$'}INODES ${'$'}(awk -v p="${'$'}PORT_HEX" 'NR>1 && \$4 == "0A" { split(\$2,a,":"); if (a[2]==p) print \$10 }' "${'$'}f" 2>/dev/null)"
-            done
-            case "${'$'}INODES" in
-              *[0-9]*)
-                for p in ${'$'}(ls /proc | grep -E '^[0-9]+${'$'}'); do
-                  for fd in /proc/${'$'}p/fd/*; do
-                    tgt=${'$'}(readlink "${'$'}fd" 2>/dev/null) || continue
-                    case "${'$'}tgt" in
-                      socket:*)
-                        ino=${'$'}{tgt#socket:}
-                        ino=${'$'}{ino%]}
-                        case " ${'$'}INODES " in
-                          *" ${'$'}ino "*) kill -9 ${'$'}p 2>/dev/null; break ;;
-                        esac ;;
-                    esac
-                  done
-                done ;;
-            esac
-            true
-        """.trimIndent()
+        val script = PortReclaim.script(port)
         // ① 同 uid
         runCatching {
             val p = ProcessBuilder("/system/bin/sh", "-c", script).start()
@@ -1605,10 +1580,47 @@ class EngineSupervisor(private val ctx: Context) {
             Privilege.runSu(script)
             waitPortFree(2_000)
         }
+        // ③ 兜底：按端口清场依赖 awk 读 /proc/net/tcp 的表格式。实测过一次该 awk
+        //    本身就是坏的时候（raw string 里多写了反斜杠 → syntax error → INODES 恒空
+        //    → 一个进程都没杀，而脚本仍然 exit 0，日志里什么都没有）。
+        //    所以在「端口仍然被占」时再走一条**不依赖表格式**的路径：按 cmdline 找
+        //    带本 app 引擎/家目录路径的进程并杀掉。两条证据链互相独立，一条失效另一条
+        //    仍能清场；两条都失效才会落到下面的 STILL in use。
         if (portInUse(300)) {
-            Log.e(TAG, "port $port STILL in use after thorough sweeps — next boot will likely fail")
-        } else {
+            Log.w(TAG, "port $port still held after port-based sweep — falling back to cmdline sweep")
+            val fallback = runCatching {
+                PortReclaim.cmdlineSweepScript(
+                    EngineConfig.engineRoot(ctx).absolutePath,
+                    EngineConfig.dshHome(ctx).absolutePath,
+                )
+            }.getOrNull()
+            if (fallback != null) {
+                runCatching {
+                    val p = ProcessBuilder("/system/bin/sh", "-c", fallback).start()
+                    if (!p.waitFor(4, java.util.concurrent.TimeUnit.SECONDS)) {
+                        runCatching { p.destroy() }
+                        Log.w(TAG, "cmdline sweep timed out (4s)")
+                    }
+                }
+                Privilege.runSu(fallback)
+                waitPortFree(2_000)
+            }
+        }
+        val freed = !portInUse(300)
+        // ⚠️ 清场结果**必须同时进 engine.log**：用户反馈时导出的就是这份日志。
+        // 此前这些结论只进 logcat，导致「端口被占 → 反复 EADDRINUSE → 白屏」在用户
+        // 日志里只剩一个没头没尾的 EADDRINUSE，看不出清场到底跑没跑、成没成，
+        // 也就分不清「清场失效」和「根本没被调用」。
+        runCatching {
+            EngineLog.append(
+                logFile(),
+                "[port-reclaim] port=$port result=" + (if (freed) "free" else "STILL-IN-USE") + "\n",
+            )
+        }
+        if (freed) {
             Log.i(TAG, "port $port is free after thorough reclaim")
+        } else {
+            Log.e(TAG, "port $port STILL in use after thorough sweeps — next boot will likely fail")
         }
     }
 

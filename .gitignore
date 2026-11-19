@@ -362,3 +362,7 @@ docs/ui-preview/.preview-server.json
 # 现场编译 typescript grammar 要 500~660 ms —— 只是把卡顿挪到用户眼前。
 # 探针同时禁止「保留立即预热」和「完全不预热」，只放行空闲执行。
 !/scripts/probes/_test_frontend_warmup_idle.py
+
+# 3080 清场脚本的转义纪律：raw string 里写「反斜杠 + 美元符」或「两个反斜杠的 \0」
+# 都只会得到一条 exit 0 的静默 no-op —— 探针必须能把这些形态打红。
+!/scripts/probes/_test_port_reclaim_script.py
