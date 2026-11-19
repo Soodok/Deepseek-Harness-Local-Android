@@ -15093,3 +15093,95 @@ sub_project_dex_archive,dex_metadata_directory,global_synthetics_dex}
   开启时本地路径必须写成 `E:/tmp/...` 而不是 `/e/tmp/...`。
 - **权限门做 A/B 的好用手段**：`chmod 555 <dir>` 让目标进程写不进去，
   代码路径不变就能得到「未生效」对照组，比另编一个 APK 省一次完整构建。
+## 第一百四十四章（v1.6.0-beta.20 · 2026-11-20）白屏真因：3080 清场脚本三处静默失效（exit 0 但一个都没杀）
+
+### 一、用户报障与日志
+
+> root + 原生模式：第一次启动正常，杀掉后台再启动就白屏，必须重启手机才能恢复。
+
+用户提供的 engine.log（Xiaomi M332BF / SDK 37 / Android 17）三次启动全是同一句：
+
+```
+---- engine start 1795097999025 ----
+device: Xiaomi M332BF SDK=37 Android=17 OS4.0.8.0.XHPCNXM
+dsh: startup failed: 2 required plugins did not activate
+Failed plugins (1):
+  webserver (required)
+    Package: @deepseek-ai/dsh-host-webserver
+    Error: listen EADDRINUSE: address already in use 127.0.0.1:3080
+Plugins waiting for services (3): web-runtime / open-in-app / client-hmr
+```
+
+即上一轮的引擎 node 成了孤儿仍占着 3080，而本该清场的逻辑没有清掉它。root 模式下引擎链是
+App -> PTY fork -> su 外壳 -> magiskd/ksud -> node，PR_SET_PDEATHSIG 只挂在 su 外壳上，
+App 被强杀时信号传不到 node，node 以 uid 0 变孤儿，新引擎 EADDRINUSE，退避重试到上限后白屏。
+重启手机才清掉孤儿，与「必须重启手机」完全对上。
+
+### 二、根因：三处独立的静默失效
+
+「清场脚本跑完 exit 0」不等于「杀掉了什么」—— 脚本末尾是 true，任何一环失效都会安静地返回 0。
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | awk 字段引用写成反斜杠加数字（Kotlin raw string 里反斜杠是字面字符） | 交给 sh 的文本带反斜杠，awk syntax error，INODES 恒空，case 分支不成立，一个进程都没杀 |
+| 2 | readlink 给的是 socket:[967201]，代码只剥尾部右括号 | ino 留下前导左括号，与 tcp 表里的裸 967201 永远比不上，就算 INODES 有值也匹配不到 |
+| 3 | cmdline 兜底写成 tr 加两个反斜杠 | sh 把 NUL 换成字面「反斜杠 0」，cmdline 里的分隔符还在，case 匹配不到引擎路径 |
+
+三处叠加，从 2026-11-08 的提交 4e49bc34 起，「彻底清场」一直是 no-op。
+
+### 三、设备上的三段式 A/B（emulator-5554，root 会话 + nc -L 占位）
+
+预置：`nc -L -s 127.0.0.1 -p 3080` 占住端口。
+
+| 变体 | 改动 | 监听进程 | 结果 |
+|---|---|---|---|
+| A | 原状（反斜杠 + 不剥括号） | 存活 | 端口仍被占，script-exit=0 |
+| B | 只修 awk（仍不剥括号） | 存活 | 仍失败 —— 证明第 2 条是独立缺陷，不是第 1 条的附属 |
+| C | awk + 两端剥括号 | 被 kill | RESULT-killed，端口释放 |
+
+只修一处会得到「看起来修了但依然跑不动」的假绿 —— 本段最有价值的一条对照。
+
+### 四、改动
+
+- 新建 `app/src/main/java/app/dsh/mobile/engine/PortReclaim.kt`：`script(port)` 与
+  `cmdlineSweepScript(enginePath, homePath)` 都是纯函数；断言落在渲染后的文本上
+  （这类缺陷只有渲染之后才看得出，源码里「片段存在」的断言抓不到）。
+- `EngineSupervisor.reclaimPortByPort()` 改为调用 `PortReclaim.script(port)`；按端口清场后
+  端口仍被占时，再补一层按 cmdline 的清场（不依赖 /proc/net/tcp 表格式的第二条证据链，
+  含 lan-web-proxy 排除，避免误杀局域网代理）。
+- 清场结论写进 engine.log：`[port-reclaim] port=3080 result=free|STILL-IN-USE`。
+  此前这些结论只进 logcat —— 用户导出的正是 engine.log，里面只剩一个没头没尾的 EADDRINUSE，
+  分不清「清场失效」还是「根本没被调用」。
+- cmdline 扫描对每条读失败的 sh 报错追加 `2>/dev/null`（权限拒读时 sh 会替每个 pid 打一行
+  can't open ...: Permission denied，一次清场能刷上百行）。
+
+### 五、装机 E2E（同一台模拟器、同一棵源码、只换 APK）
+
+| APK | md5 | healthy | EADDRINUSE 次数 | engine.log |
+|---|---|---|---|---|
+| 修复前（旧脚本） | 7387f47d | no（124s 超时） | 4 | result=STILL-IN-USE ×12 |
+| 修复后 | 2ba6eb3f | yes（13s） | 0 | result=free |
+
+修复后 logcat 同时出现 `port 3080 — thorough reclaim`、`port 3080 is free after thorough reclaim`、
+`engine healthy on :3080`，孤儿 nc 已消失。
+
+### 六、门禁
+
+- JVM 单测 90/0（PortReclaimTest 8 条：无反斜杠美元符、awk 裸字段、端口插值、按 LISTEN+inode
+  匹配、末尾 bare true、无 CJK、inode 两端剥、tr 单反斜杠）。
+- 探针 `scripts/probes/_test_port_reclaim_script.py` 19/0，含 5 条负对照（去掉前导括号剥离
+  实测打红 B4、tr 写成两个反斜杠实测打红 D3/D4）。
+- 全量 `scripts/probes/_test_*.py`：FAILED_COUNT=0。
+- check-i18n.py：1878 键 6 套齐、Kotlin CJK 字面量 0；check-ui-tokens.py 通过。
+
+### 七、方法学教训
+
+- **「跑完 exit 0」是这类脚本最坏的信号**：它让日志干净、让调用方以为成功，掩盖了三个独立缺陷。
+  修完之后第一件事是把结论写进用户会导出的那份日志，而不是留在 logcat。
+- **占位进程必须选「不会被探测连接打掉」的形态**：`nc -l` 收一次连接就退出，用它测清场会得到
+  「清场成功」的假阳性；`nc -L` 才等价于真正的监听进程。
+- **同 uid 的 -L 监听器 app 侧脚本能杀；root 的不能**（app uid 既读不到 /proc/net/tcp、
+  也读不到别的 uid 的 cmdline，su 只在 ROOT 模式下有路径）。真机 root 孤儿真正依赖的是
+  `Privilege.runSu` 这一路，port 表那条只覆盖同 uid 场景 —— 写在这里，免得后人以为一条脚本全包。
+- 工作区里另一个会话同时在提交（23ce8bf5 / d6918fb7，shiki 预热）；本轮只 git add 自己的
+  5 个路径，未夹带他人改动。
