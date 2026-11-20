@@ -147,6 +147,42 @@ object IslandChrome {
         }
     }
 
+    /**
+     * 收起态把手的**触控矩形**（v1.7.21）。
+     *
+     * ## 为什么需要这个纯函数
+     * 把手视觉尺寸是 26×44dp（侧边）或 44×26dp（顶部），短边只有 26dp，
+     * 远低于 Android 的 48dp 最小触控尺寸 —— 用户实测「我都点不到」。
+     *
+     * 历史修法是在父容器上挂 [android.view.TouchDelegate] 向外扩 48dp，
+     * 但那条路**完全不生效**（v1.7.21 实测 + SDK 源码证实）：
+     *   1. `TouchDelegate.mBounds` 要的是**父容器局部坐标**，旧代码却按
+     *      「以把手为原点」写成负起点，把手不在父原点时整块矩形错位；
+     *   2. 更致命的是 `mTouchDelegate` 唯一的查询点在 `View.onTouchEvent`，
+     *      而 `ViewGroup.dispatchTouchEvent` 只有在 `mFirstTouchTarget == null`
+     *      （没有任何子视图命中）时才会走到 `super`。把手的父容器是根
+     *      FrameLayout，其中的 WebView 与启动遮罩都铺满全屏，手指一落就有
+     *      子视图命中 → 委托**永远不被查询** → 48dp 扩展是纯死代码。
+     *
+     * 所以改成「真实的透明命中视图」：位置与尺寸由这里算，Activity 只负责套用。
+     *
+     * @param m          把手的视觉矩形（[collapsedRect] 的结果）
+     * @param parentW    父容器宽（px）
+     * @param parentH    父容器高（px）
+     * @param minTouchPx 最小触控边长（px），通常 48dp
+     */
+    fun hitRect(m: Metrics, parentW: Int, parentH: Int, minTouchPx: Int): Metrics {
+        val size = maxOf(minTouchPx, maxOf(m.w, m.h))
+        val cx = m.x + m.w / 2
+        val cy = m.y + m.h / 2
+        val x = (cx - size / 2).coerceIn(0, (parentW - size).coerceAtLeast(0))
+        val y = (cy - size / 2).coerceIn(0, (parentH - size).coerceAtLeast(0))
+        return Metrics(x, y, size, size)
+    }
+
+    /** 最小触控边长（dp）。Android 无障碍规范的下限，不要为了「好看」调小。 */
+    const val HANDLE_MIN_TOUCH_DP = 48
+
     /** 展开面板是否被高度上限截断（需要内部滚动）。 */
     fun needsScroll(screenH: Int, density: Float, contentH: Int): Boolean {
         val maxH = (screenH * MAX_HEIGHT_RATIO).roundToInt()

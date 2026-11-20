@@ -1430,6 +1430,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         // 先把把手按当前停靠边摆好（尺寸/贴边/沿边位置都在 placeCollapsedHandle 里）
         if (islandDock != IslandDock.BOTTOM) placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        // 把手换边/换尺寸后，48dp 触控层要跟着搬（不能等 renderIslandVisibility ——
+        // 它的 handle.post 只在「刚变成可见」时跑，停靠边切换时把手本来就可见）。
+        handle.post { placeHandleHit() }
         renderBottomToolbar()
         // ★ v1.7.13：可见性一律由 renderIslandVisibility() 按状态推导，
         // 不再在这里「TOP 就无条件 GONE」——
@@ -1459,6 +1462,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val overlay = findViewById<View>(R.id.statusBarOverlay) ?: return
         val row = findViewById<View>(R.id.statusBarRow) ?: return
         val handle = findViewById<View>(R.id.handleBar) ?: return
+        val hit = findViewById<View>(R.id.handleHit)
         val side = islandDock == IslandDock.LEFT || islandDock == IslandDock.RIGHT
         val bottom = islandDock == IslandDock.BOTTOM
         // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）
@@ -1468,12 +1472,16 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE
         row.visibility = if (showOverlay) View.VISIBLE else View.GONE
         handle.visibility = if (showHandle) View.VISIBLE else View.GONE
+        // ★ v1.7.21：触控层与把手**同进同退**。它是独立 View，不跟随把手可见性
+        // 的话会变成一块「看不见但吃触摸」的幽灵区域，把网页上的点击吞掉。
+        hit?.visibility = if (showHandle) View.VISIBLE else View.GONE
         // 收起态把手的透明度复位：动画收尾失败时它可能停在 0f（同样会「看不见」）
         if (showHandle && handle.alpha < 1f) handle.alpha = 1f
         if (showHandle) {
             // GONE 期间布局不参与计算，显示后重新应用 insets。
             handle.requestApplyInsets()
-            handle.post { applyHandleTouchTarget(handle, handle.width) }
+            // 布局要等一帧才落定，触控层的位置依赖把手的 left/top/width/height
+            handle.post { placeHandleHit() }
         }
     }
 
@@ -1877,15 +1885,36 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private fun setupHandleBar() {
         // 摆放已由 setupIslandDock() 里的 applyDock() 完成（本函数只挂触摸手势）
         val handle = findViewById<View>(R.id.handleBar)
+        // ★ v1.7.21：44dp 见方的把手上再挂一层 48dp 透明命中视图（@id/handleHit）。
+        // 手势挂在**两个 View 上**：直接点到把手本体走 handle，点到外围扩展区走
+        // hit。两者共用同一套逻辑，位移始终作用在 handle 上（视觉主体不变）。
+        findViewById<View>(R.id.handleHit)?.let { attachHandleGesture(it, handle) }
+        attachHandleGesture(handle, handle)
+        // 把手每次重新布局（换边、换尺寸、insets 回调）后都要重摆触控层。
+        // 只靠 post{} 会漏掉「布局晚于 post」的时序（首次出现时就是这种）。
+        // （post 而不是直接调用：在 layout 回调里改 layoutParams 会请求二次布局）
+        handle.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            handle.post { placeHandleHit() }
+        }
+    }
+
+    /**
+     * 给 [source] 挂灵动岛把手的手势：点击唤回工具栏，拖动吸附到最近的边。
+     *
+     * @param source 实际接收触摸的 View（把手本体，或它外围的透明命中层）
+     * @param target 被拖动 / 变换的 View（永远是把手本体）
+     */
+    private fun attachHandleGesture(source: View, target: View) {
         val slop = (6 * resources.displayMetrics.density).toFloat()
         var rawX0 = 0f; var rawY0 = 0f
         var initTx = 0f; var initTy = 0f
         var moved = false
-        handle.setOnTouchListener { v, ev ->
+        val hit = findViewById<View>(R.id.handleHit)
+        source.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     rawX0 = ev.rawX; rawY0 = ev.rawY
-                    initTx = v.translationX; initTy = v.translationY
+                    initTx = target.translationX; initTy = target.translationY
                     moved = false
                     true
                 }
@@ -1896,20 +1925,28 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         // 拖离边缘时四角全圆：贴边那侧的直角只在贴边时有意义，
                         // 悬空时留直角会像"被切掉一块"。
                         if (islandDock != IslandDock.TOP) {
-                            v.background = floatingHandleBackground()
+                            target.background = floatingHandleBackground()
                         }
                     }
                     if (moved) {
-                        val parent = v.parent as View
+                        val parent = target.parent as View
                         // ⚠️ 范围要按视图当前的 left/top 换算成「相对位移」：
                         // 原来 translationY 下限写死 0，侧边停靠时把手本来就靠垂直居中，
                         // 于是**永远拖不到顶部**（用户反馈「拖不到上方，恢复不了原来的灵动岛」）。
-                        val minTx = -v.left.toFloat()
-                        val maxTx = (parent.width - v.width - v.left).toFloat()
-                        val minTy = -v.top.toFloat()
-                        val maxTy = (parent.height - v.height - v.top).toFloat()
-                        v.translationX = (initTx + dxm).coerceIn(minTx, maxTx.coerceAtLeast(minTx))
-                        v.translationY = (initTy + dym).coerceIn(minTy, maxTy.coerceAtLeast(minTy))
+                        val minTx = -target.left.toFloat()
+                        val maxTx = (parent.width - target.width - target.left).toFloat()
+                        val minTy = -target.top.toFloat()
+                        val maxTy = (parent.height - target.height - target.top).toFloat()
+                        val tx = (initTx + dxm).coerceIn(minTx, maxTx.coerceAtLeast(minTx))
+                        val ty = (initTy + dym).coerceIn(minTy, maxTy.coerceAtLeast(minTy))
+                        target.translationX = tx
+                        target.translationY = ty
+                        // 触控层跟着一起走：它停原地的话松手瞬间会露出「把手已经
+                        // 挪走、但一块看不见的区域还压在原处」的错位感，也无法继续拖。
+                        hit?.let { h ->
+                            h.translationX = tx
+                            h.translationY = ty
+                        }
                     }
                     true
                 }
@@ -1918,12 +1955,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     if (!moved || dx * dx + dy * dy < slop * slop) {
                         toggleToolbar()
                     } else {
-                        snapHandleToEdge(v)
+                        snapHandleToEdge(target)
                     }
                     true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
-                    if (moved) snapHandleToEdge(v)
+                    if (moved) snapHandleToEdge(target) else placeHandleHit()
                     true
                 }
                 else -> false
@@ -2609,36 +2646,75 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * top 可能为 0；岛是水平居中的，因此只需保证 top 安全，横向由居中布局自行避开。
      */
     /**
-     * 把收起态正圆的**触控区**扩到 48dp 见方（v1.4.59）。
+     * 把收起态把手的**触控区**扩到 48dp 见方（v1.7.21 重写）。
      *
      * ## 为什么需要
-     * 摄像头中心离屏幕顶端只有 67px（真机），圆要完整可见就不能超过 134px 直径
-     * —— 视觉上刚刚好，但换算成 dp 只有 38dp，**低于 Android 的 48dp 最小触控
-     * 尺寸**。用户实测「我都点不到」。
+     * 把手视觉尺寸只有 26×44dp（侧边停靠）或 44×26dp（顶部停靠），短边 26dp
+     * 远低于 Android 的 48dp 最小触控尺寸。用户实测「我都点不到」。
      *
-     * 单纯把 View 放大不行：直径超过「圆心到屏幕顶距离 × 2」就会溢出屏幕，
-     * 而 clamp 到 top=0 又会把圆心推下去（用户报的「溢出 + 位置下移」）。
+     * ## 旧实现为什么不生效（v1.4.59 → v1.7.20 一直是死代码）
+     * 旧做法是在父容器上挂 [android.view.TouchDelegate]，向外扩 48dp。
+     * 实测（模拟器 vC397，把手的 48dp 扩展区网格逐点点击）**全部点不动**，
+     * 只有视觉矩形本身可点。SDK 源码给出了两层原因：
      *
-     * ## 做法
-     * View 尺寸保持视觉正确（贴住顶部、罩住摄像头），用 [TouchDelegate] 把可点
-     * 区域向外扩到 48dp。父容器（FrameLayout）负责把落在扩展区的触摸事件转发
-     * 给这个 View —— 这是 Android 官方支持的「小控件大热区」做法。
+     *  1. `TouchDelegate.mBounds` 要求的是**父容器局部坐标**
+     *     （android/view/TouchDelegate.java:45-47 注释原文：
+     *     "Bounds in local coordinates of the containing view"），而旧代码
+     *     按「以把手为原点」写成负起点 —— 把手不在父原点时整块矩形错位。
+     *  2. 更致命：`mTouchDelegate` 唯一的查询点在 `View.onTouchEvent`
+     *     （View.java:18290），而 `ViewGroup.dispatchTouchEvent` 只有
+     *     `mFirstTouchTarget == null`（没有任何子视图命中）时才走到 `super`。
+     *     把手的父容器是根 FrameLayout，它的 WebView / 启动遮罩都铺满全屏，
+     *     手指一落就有子视图命中 → 委托**永远不被查询** → 扩展区是死代码。
      *
-     * 扩展区会超出父容器边界时（圆贴顶），TouchDelegate 的 rect 允许负数起点，
-     * 父容器仍会按坐标命中；超出屏幕的部分自然无效，不影响可用性。
+     * ## 现在的做法
+     * 用一个**真实存在的透明命中视图**（布局里的 `@id/handleHit`）：
+     *  · 它是把手的兄弟节点、在 XML 里声明得更晚 → z 序更高 → 先收到触摸；
+     *  · 位置/尺寸由纯函数 [IslandChrome.hitRect] 计算（可 JVM 断言）；
+     *  · 可见性与把手同步，手势（点击 + 拖拽）挂在它身上而不是把手上；
+     *  · 贴边时申请系统手势排除区，避免被全面屏手势抢走起手点击。
      */
-    private fun applyHandleTouchTarget(handle: android.view.View, dotSize: Int) {
-        val minTouch = (48 * resources.displayMetrics.density).toInt()
-        if (dotSize >= minTouch) return   // 已经够大，不需要扩展
-        val parent = handle.parent as? android.view.ViewGroup ?: return
-        val grow = (minTouch - dotSize) / 2
-        val rect = android.graphics.Rect(
-            -grow,
-            -grow,
-            handle.width + grow,
-            handle.height + grow,
-        )
-        parent.touchDelegate = android.view.TouchDelegate(rect, handle)
+    private fun placeHandleHit() {
+        val handle = findViewById<View>(R.id.handleBar) ?: return
+        val hit = findViewById<View>(R.id.handleHit) ?: return
+        val parent = hit.parent as? View ?: return
+        // 尚未布局（GONE 期间 or 首帧）时不计算 —— 用 0 尺寸算出来的矩形会落在
+        // 左上角，变成一块「看不见但吃触摸」的幽灵区域。此时干脆先藏起来，
+        // 等 handle 真正布局完（OnLayoutChangeListener / 下一次 post）再摆。
+        // 可见性不在这里决定 —— 由 renderIslandVisibility 统一推导，两处都写会打架。
+        if (handle.width <= 0 || handle.height <= 0) return
+
+        val dm = resources.displayMetrics
+        val pw = parent.width.takeIf { it > 0 } ?: dm.widthPixels
+        val ph = parent.height.takeIf { it > 0 } ?: dm.heightPixels
+        val minTouch = (IslandChrome.HANDLE_MIN_TOUCH_DP * dm.density).toInt()
+
+        val visual = IslandChrome.Metrics(handle.left, handle.top, handle.width, handle.height)
+        val m = IslandChrome.hitRect(visual, pw, ph, minTouch)
+        (hit.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            if (lp.leftMargin != m.x || lp.topMargin != m.y ||
+                lp.width != m.w || lp.height != m.h
+            ) {
+                lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                lp.leftMargin = m.x
+                lp.topMargin = m.y
+                lp.width = m.w
+                lp.height = m.h
+                hit.layoutParams = lp
+            }
+        }
+        // 拖拽会临时改 translation，复位交给这里（每次重新摆位都是干净状态）
+        hit.translationX = 0f
+        hit.translationY = 0f
+        // 贴边把手压在系统手势区上（两台测试设备都是手势导航）。
+        // 没有排除区时，从边缘起手会被系统当成「返回」吞掉 —— 这也是
+        // 「点不开」的一条独立通路。API 29+ 才支持，低版本忽略。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q && m.w > 0 && m.h > 0) {
+            runCatching {
+                hit.systemGestureExclusionRects =
+                    listOf(android.graphics.Rect(0, 0, m.w, m.h))
+            }
+        }
     }
 
     /**
@@ -2748,7 +2824,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 现在的做法是**分离视觉尺寸与触控尺寸**：
             //   · 视觉直径 = min(孔尺寸 + 余量, 圆心到屏幕顶距离 × 2)
             //     —— 保证圆完整可见、不溢出，同时比摄像头大一圈（真机 134px）；
-            //   · 触控区由 TouchDelegate 额外扩到 48dp 见方（见 applyHandleTouchTarget）。
+            //   · 触控区由独立的透明命中层扩到 48dp 见方（见 placeHandleHit）。
+            //     v1.7.21 之前用 TouchDelegate，实测完全不生效（死代码），已替换。
             // 这样「看起来比摄像头大一圈、贴住顶部、手指点得中」三者同时成立。
             val coverPad = (4 * d).toInt()
             val holeSize = maxOf(cutHoleW, cutHoleH) + coverPad
@@ -2860,8 +2937,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
                 if (dirty) {
                     handle.layoutParams = lp
-                    // 布局变了 → 触控区要跟着重算（等一次布局完成后再装）
-                    handle.post { applyHandleTouchTarget(handle, wantDot) }
+                    // 布局变了 → 触控层要跟着重算（等一帧布局完成后再摆）
+                    handle.post { placeHandleHit() }
                 }
             }
             // 工具栏用 wantRowTop（贴顶），圆用 wantTop（对齐孔中心）—— 两者不再混用。

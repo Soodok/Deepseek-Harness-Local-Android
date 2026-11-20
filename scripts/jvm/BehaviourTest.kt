@@ -1008,6 +1008,59 @@ object BehaviourTest {
         check(smallPanel.w == 120 && smallPanel.h == 70,
             "side menu fits a narrow, short window: $smallPanel")
 
+        // ═══ 收起态把手的 48dp 触控区（v1.7.21）═════════════════════════════
+        //
+        // 背景：旧实现用 TouchDelegate 把把手向外扩 48dp，实测**完全不生效**
+        // （只有视觉矩形本身可点）。根因是 mTouchDelegate 唯一的查询点在
+        // View.onTouchEvent，而 ViewGroup 只有在「没有任何子视图命中」时才走到
+        // super —— 把手父容器里的 WebView 铺满全屏，手指一落就被它命中，
+        // 委托永远不被查询。现在改成真实的透明命中视图，位置由 hitRect 算。
+        //
+        // 这组断言守「几何」这一半（另一半是结构探针：命中层确实存在且可点）。
+        val minTouch3 = (IslandChrome.HANDLE_MIN_TOUCH_DP * d3).toInt()
+        check(minTouch3 == 144, "48dp at density 3 is 144px: $minTouch3")
+
+        val hLeft = IslandChrome.hitRect(left, 1220, 2640, minTouch3)
+        check(hLeft.w == 144 && hLeft.h == 144, "hit rect is 48dp square, not the 26dp visual: $hLeft")
+        check(hLeft.x <= left.x && hLeft.x + hLeft.w >= left.x + left.w &&
+            hLeft.y <= left.y && hLeft.y + hLeft.h >= left.y + left.h,
+            "hit rect must fully cover the visual rect (left): visual=$left hit=$hLeft")
+        // 贴左边时视觉矩形中心距屏幕左沿只有 39px，一半的 48dp 会落到屏幕外 ——
+        // 必须夹回 (0,0) 起，否则命中层有一半是无效的。
+        check(hLeft.x == 0, "left hit rect clamps into the parent: $hLeft")
+
+        val hRight = IslandChrome.hitRect(right, 1220, 2640, minTouch3)
+        check(hRight.x + hRight.w == 1220, "right hit rect clamps to the parent's right edge: $hRight")
+        check(hRight.x <= right.x && hRight.x + hRight.w >= right.x + right.w,
+            "hit rect must fully cover the visual rect (right): visual=$right hit=$hRight")
+
+        val hTop = IslandChrome.hitRect(top, 1220, 2640, minTouch3)
+        check(hTop.y == 0, "top hit rect clamps to the parent's top edge: $hTop")
+        check(hTop.y <= top.y && hTop.y + hTop.h >= top.y + top.h,
+            "hit rect must fully cover the visual rect (top): visual=$top hit=$hTop")
+
+        // 中心对齐：命中层以视觉矩形中心为中心（夹边时才偏移）。
+        val midVisual = IslandChrome.Metrics(400, 1000, 78, 132)
+        val midHit = IslandChrome.hitRect(midVisual, 1220, 2640, minTouch3)
+        check(midHit.x + midHit.w / 2 == midVisual.x + midVisual.w / 2 &&
+            midHit.y + midHit.h / 2 == midVisual.y + midVisual.h / 2,
+            "hit rect centers on the visual rect when there is room: $midHit")
+
+        // 视觉尺寸已经够大时不再缩小到 48dp —— 取两者较大值。
+        val bigVisual = IslandChrome.Metrics(100, 100, 200, 60)
+        check(IslandChrome.hitRect(bigVisual, 1220, 2640, minTouch3).w == 200,
+            "hit rect never shrinks a visual wider than 48dp")
+        check(IslandChrome.hitRect(bigVisual, 1220, 2640, 300).w == 300,
+            "hit rect honors a larger minTouch")
+
+        // 极小父容器：不能算出负坐标（那会让命中层整个落在屏幕外）。
+        val tiny = IslandChrome.hitRect(IslandChrome.Metrics(0, 48, 26, 44), 20, 30, 48)
+        check(tiny == IslandChrome.Metrics(0, 0, 48, 48), "hit rect stays nonnegative in a tiny parent: $tiny")
+
+        // 纯函数：同输入同输出（曾被做成带状态的，第二次调用会漂）。
+        check(IslandChrome.hitRect(left, 1220, 2640, minTouch3) == hLeft,
+            "hit rect is pure: repeated calls agree")
+
         // 运行模式浮层也用这套色（v1.7.11 追加）：勾选绿与警示橙在两种底色上都要看得清
         check(d.ok == 0xFF22A06B.toInt(), "dark ok unchanged")
         check(d.warn == 0xFFB45309.toInt(), "dark warn unchanged")
