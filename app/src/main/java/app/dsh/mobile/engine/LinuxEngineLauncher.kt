@@ -464,7 +464,17 @@ class LinuxEngineLauncher(private val ctx: Context) {
         //   内层 `env -i` 清掉，所以真正生效的是 [ChrootArgv.buildEngine] 里那份。
         //   这里把 env 也一并传给 buildEngine，保证两边是同一份值。
         if (Sandbox.resolve(ctx) == Sandbox.CHROOT) {
-            val envMap = envVars
+            // ★chroot 模式必须**剔除** DSH_TERMINAL_*（v1.8.3）。
+            //
+            // 那四个量是给「引擎在宿主命名空间」的 seccomp 模式用的：node-pty 兼容层
+            // 读到它们会把 `exec shell` 改写成「经 dsh_alpine 进容器再 exec」。
+            // 而 chroot 模式下引擎**本来就跑在 rootfs 里**，再包一层等于在容器里
+            // 再起一个容器：rootfs / interp / bind 全是**宿主路径**，在 chroot 内
+            // 根本不存在 → 终端起不来（或退化成不可用）。
+            //
+            // 判断依据不是「有没有设变量」，而是「这一层是否已经在容器内」。
+            val envForChroot = envVars.filterNot { it.startsWith("DSH_TERMINAL_") }
+            val envMap = envForChroot
                 .mapNotNull { line ->
                     val i = line.indexOf('=')
                     if (i <= 0) null else line.substring(0, i) to line.substring(i + 1)
@@ -486,7 +496,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
                 Log.i(TAG, "engine via ${ChrootArgv.describe(chrootArgv)}")
                 return LaunchSpec(
                     argv = chrootArgv,
-                    env = envVars,
+                    env = envForChroot,
                     cwd = workspaces,
                     guestCwd = "/ws",
                 )

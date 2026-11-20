@@ -136,7 +136,33 @@ function containerWrap(file, args) {
   }
   // dsh_alpine 的 CLI：dsh_alpine [-m g:h]... <rootfs> <interp> <guest> [args...]
   // loader 把 &argv[base+2] 原样交给 guest，所以 file 与它的参数直接接上即可。
-  return { program: runner, argv: binds.concat([rootfs, interp, file], args || []) };
+  //
+  // ★guest shell 兜底（v1.8.3）：引擎终端默认 shell 是 `/bin/bash`
+  //   （dsh-terminal-bash 的 DEFAULT_BASH_SHELL），参数 `--noprofile --norc -i`。
+  //   而**极简 rootfs 里没有 bash**（Alpine minirootfs 只有 busybox 的 ash，
+  //   `/bin/bash` 不存在；bash 是 bootstrap 阶段 best-effort `apk add` 的，
+  //   离线/装包失败时就没有）。直接把 /bin/bash 当 guest 程序 → exec ENOENT
+  //   → 终端一打开就死，而原生终端用 `/bin/sh` 一切正常，症状很难联想到这里。
+  //
+  //   判据用**磁盘事实**（rootfs 里有没有 bin/bash），不靠配置或猜测；
+  //   换成 /bin/sh 时把 bash 专有参数一并丢掉（ash 不认 --noprofile/--norc）。
+  let guestFile = file;
+  let guestArgs = args || [];
+  if (file === "/bin/bash") {
+    let hasBash = false;
+    try {
+      hasBash = fs.existsSync(path.join(rootfs, "bin/bash"));
+    } catch (_) {
+      hasBash = false;
+    }
+    if (!hasBash) {
+      guestFile = "/bin/sh";
+      guestArgs = guestArgs.filter(
+        (a) => a !== "--noprofile" && a !== "--norc" && a !== "--login" && a !== "-l",
+      );
+    }
+  }
+  return { program: runner, argv: binds.concat([rootfs, interp, guestFile], guestArgs) };
 }
 
 /** 定位助手：优先 PREFIX（引擎根，由 Kotlin 注入），再退回相对本模块的推断。 */
