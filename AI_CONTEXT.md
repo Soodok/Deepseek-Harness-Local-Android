@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-20 凌晨 · `main` 代码提交 `23ce8bf5`（本地，未推）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
+**最后更新**：2026-11-20 深夜 · `main` 代码提交 `07fe1b61`（已推，PR #102 已合并）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -15591,3 +15591,60 @@ GET /memory/v2/get → hasImages=true, shotIndex=[{pos:0,i:0,hasShot:true},{pos:
 - 系统档通过 Application 的 `DynamicColors.applyToActivitiesIfAvailable` 注册，库在 `onActivityPreCreated` 处理；只在支持且选中系统档时启用。Activity 不再调用 `setTheme()`，以免覆盖动态色；预设档只叠对应的 M3 覆盖层。旧设备选中系统档时用蓝色色板，不改用户偏好。
 - 防回归：`_test_theme_flicker.py` 防止状态恢复导致重复重建；`_test_settings_theme_consistency.py` 防止角色映射与主题分派断链；`_test_style_tokens.py` 检查明暗角色别名及设置页兼容着色；`_test_md3_palette_roles.py` 防止覆盖层和系统栏颜色不一致；`_test_material_single_choice.py` 检查单选圆点与弹窗资源接线；`_test_theme_recreate_splash.py` 防止切换主题时启动遮罩错显。
 - Android 单元测试使用 JUnit 4，交由 GitHub Actions 运行。本修订未实测 Android 26–30 蓝色回落、Android 31+ Monet 实际配色、TalkBack 播报或重建次数；需要在真机验收时记录设备、API 级别和实测次数。没有代替真机验收或提前报告本轮 CI 通过。
+
+
+## 第一百四十八章（v1.6.0-beta.20 · 2026-11-20）PR #102 合并落地：两处冲突按「两边成果都留」解决
+
+PR #102（`feat/theme-flicker-fix`，head `9e0fffe7`）合并进 main，合并提交 `07fe1b61`
+（父 `1c286a74` + `9e0fffe7`），已推 origin/main，远端回读 SHA 一致。
+
+**冲突只有两处，都是「同一位置两边各加东西」**：
+
+1. `AI_CONTEXT.md` 尾部 —— main 侧第一百四十七章（记忆带图）与 PR 侧「PR #102」章节
+   都追加在文末。解法：两章全保留，main 章在前、PR 章在后，中间留一个空行。
+2. `app/src/main/res/layout/activity_memory_detail.xml` —— PR 把整页重写成 MD3
+   （MaterialToolbar 换掉旧返回按钮、静态色改 `?attr`），main 在步骤列表前插了
+   逐步截图块。解法：以 PR 版为基线，把 main 的 shots 块（`txtMemShotsTitle` /
+   `scrollMemShots` / `imgMemStrip` / `txtMemShotsHint`）插到 `MaterialDivider`
+   与步骤列表之间，保留 PR 的 `MaterialToolbar` 与全部 `?attr` 令牌。
+
+**踩过的三个坑（留给下次）**：
+
+- 保留 HEAD 侧整块 + 贴 PR 的 `MaterialCardView` 开标签 → 节点被插进
+  `MaterialDivider` 标签体内，XML 结构损坏（divider 属性被挤出去）。
+- 以 PR 为基线但用「行号插入 + 状态机重排缩进」→ 会把 divider 末行缩进改坏、
+  多行注释块错位。可靠做法是**整块字符串替换**：把基线上紧跟 `MaterialDivider`
+  的 `mem_steps_title` TextView 整块换成「shots 块 + 原标题块」。
+- python 读 `git show` 输出必须显式 `encoding="utf-8"`，否则 Windows 下 GBK 解码
+  直接抛 `UnicodeDecodeError`。
+
+**合并后本机实测（全部本机跑，不是引用 CI）**：
+
+| 项 | 结果 |
+|---|---|
+| 全量 py 探针 `for f in scripts/probes/_test_*.py` | **PASS=160 FAIL=0** |
+| `:app:assembleDebug -Ppackage=noruntime -Pabi=arm64-v8a` | **BUILD SUCCESSFUL in 9m 56s**，42 tasks |
+| `:app:testDebugUnitTest` | 9 个测试类 **90 个用例，failures=0 errors=0** |
+| `bash scripts/run-a11y-jvm-test.sh` | **passed=2463 failed=0** |
+| 布局 id ↔ Kotlin 引用 | 14 个 id 全命中，`MemoryDetailActivity` 0 悬空 |
+| `mem_shots_title` / `mem_shots_hint` | 6 个 locale（values/de/pt-rBR/ru/th/zh-rCN）各 1 处 |
+
+**本机构建环境（仓库不含 gradlew，CI 用 setup-gradle 提供）**：
+Gradle 8.9 从 `mirrors.cloud.tencent.com` 下载（官方 services.gradle.org 与
+downloads.gradle.org 都是 307 后连接被重置、阿里云 404），解到
+`C:/Users/Qt/gradledist/gradle-8.9`；`local.properties` 写 `sdk.dir=E:/Android/Sdk`
+（必须正斜杠，反斜杠会被转义层吃掉）。JAVA_HOME 用 `17.35-tem`（Java 17.0.12）。
+
+**合并前备份**：`backup/pre-merge-102` 指向 `1c286a74`（未推的分支，仅本地保险）。
+用户工作区原有的 beta.21 版本号改动（versionCode 397 / versionName 1.6.0-beta.21）
+已在合并前 `git stash`（`app/build.gradle.kts`）并在合并提交后原样 pop 回工作区，
+未混进合并提交。
+
+**分支差异边界**：`git diff --diff-filter=D backup/pre-merge-102 HEAD` 只有 1 个删除
+文件（`app/src/main/res/values/md3_dialogs.xml`），与 PR 声明一致；
+`Theme.Dsh.Dialog` / `Theme.Dsh.Spinner` / `alertDialogTheme` 全仓 0 引用残留。
+
+**未验证项（如实记录）**：本轮只做到「本机编译 + 单元测试 + JVM 行为断言 + py 探针」，
+**未装真机**。PR 声称的「点动态取色不再闪屏」属于运行时视觉行为，需要真机切一次
+系统动态色板并用录屏逐帧确认，本轮没有做；同样未实测 Android 26–30 的蓝色回落
+与 Android 31+ 的 Monet 实际取色。
