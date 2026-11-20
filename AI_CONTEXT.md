@@ -15750,3 +15750,102 @@ path `/C:/Users/Me/a` 后才真红。
 `/lib/main.js` 里 9 处 `127.0.0.1` 全是安全校验，真正的绑定在 `dsh-desktop-host` 里显式选了回环 + `--port 0`；
 `dsh-host-webserver` 的 host 是可配置的，只拒绝通配地址（`0.0.0.0` / `::`），错误文案明确说
 「binding every interface would expose remote code execution to the network」。
+
+## 第一百五十章（v1.6.0-beta.21 · 2026-11-21）收起态把手点不到：TouchDelegate 是死代码，换成真实命中层
+
+宝宝反复反馈「把灵动岛收起后，那个小球点不开」。前几轮一直在查几何、可见性、
+alpha 动画（一百〇五、一百二十五章），这轮换了测法 —— 把 48dp 扩展区按网格逐点
+点击，才量出真相：**扩展区一次都没生效过，只有视觉矩形本身能点**。
+
+### 一、实测证据（emulator-5554，density 440，Android 14，vC397）
+
+LEFT 停靠：把手视觉 `[0,1112][72,1233]`（26x44dp）。逐点结果：
+
+| 点 | 位置含义 | 结果 |
+|---|---|---|
+| (36,1172) | 视觉矩形中心 | OPEN |
+| (68,1172) | 视觉右内边 | OPEN |
+| (76,1172) | 视觉右外 4px（应在 48dp 区内） | **closed** |
+| (110,1172) | 视觉右外 38px（应在 48dp 区内） | **closed** |
+| (36,1228)(36,1233)(36,1245)(36,1290) | 下方扩展区 | **全 closed** |
+
+决定性对照：LEFT 时 grow=(132-72)/2=30，若委托生效，旧代码的错误 rect
+`(-30,-30,102,151)` 会覆盖屏幕左上角。实测 (36,96) / (90,96) / (36,120) /
+(200,96) **全部 closed** —— 不是「矩形位置偏了」，而是**委托根本没被调用**。
+
+### 二、根因（SDK 源码闭环，两层）
+
+源码在 `/e/Android/Sdk/sources/android-36.1/`：
+
+1. **坐标系错**：`android/view/TouchDelegate.java:45-47` 注释原文
+   `Bounds in local coordinates of the containing view that should be mapped
+   to the delegate view.` —— mBounds 必须是**父容器局部坐标**。
+   `onTouchEvent` 里 `mDelegateTargeted = mBounds.contains(x, y)`，x/y 来自父容器
+   派发的 `event.getX()`。旧代码 `Rect(-grow, -grow, handle.width+grow,
+   handle.height+grow)` 按「以把手为原点」写，把手不在父原点时整块错位。
+
+2. **委托永不被查询（真凶）**：`grep -c mTouchDelegate ViewGroup.java` = **0**；
+   唯一查询点在 `View.java:18290`
+   （`if (mTouchDelegate != null) { if (mTouchDelegate.onTouchEvent(event)) ...`）。
+   而 `ViewGroup.dispatchTouchEvent` 只有 `mFirstTouchTarget == null`（没有任何子
+   视图命中）时才走 `super` = `View.onTouchEvent`。把手的父容器是根 FrameLayout，
+   它的 `@id/webView`(match_parent) 与 `@id/splash`(match_parent, clickable,
+   focusable, background=?attr/colorSurface) **铺满全屏**，手指一落就有子视图命中
+   → 永不进 super → **mTouchDelegate 永远是死代码**。
+   附带：`android/webkit/WebView.java:2752 onTouchEvent` 直接转发给 provider，
+   连 super 都不调。
+
+旧断言 `scripts/probes/_test_security_audit.py:238` 只查
+`"applyHandleTouchTarget" in main_act and "TouchDelegate" in main_act`
+—— 守着一段从没生效过的代码，全绿。典型假绿。
+
+### 三、修法：真实存在的透明命中视图
+
+放弃 TouchDelegate，改用一块真 View：
+
+| 文件 | 改动 |
+|---|---|
+| `res/layout/activity_main.xml` | handleBar 之后新增 `@+id/handleHit`（48dp 见方、transparent、clickable、focusable=false、初始 gone）。声明晚于 handleBar → z 序更高 → 先收到触摸 |
+| `IslandChrome.kt` | 新增纯函数 `hitRect(m, parentW, parentH, minTouchPx)`：size=max(minTouch, max(w,h))，中心对齐视觉矩形，再夹进父容器；新增常量 `HANDLE_MIN_TOUCH_DP = 48` |
+| `MainActivity.kt` | 删 `applyHandleTouchTarget`，新增 `placeHandleHit()`（算 hitRect → 套 LayoutParams，仅变化时赋值 → 复位 translation → API≥29 写 systemGestureExclusionRects）；`renderIslandVisibility` 里让 hit 与把手**同进同退**；`applyDock` 后补一次摆位；手势抽成 `attachHandleGesture(source, target)` 同时挂到 hit 与 handle，位移始终作用在 handle 本体，hit 跟 translation |
+| `BehaviourTest.kt` | 第 18 节新增 13 条断言：48dp@x3=144px、hit 覆盖 visual（左/右/上三处）、左贴边 x=0、右贴边 x+w=1220、上贴边 y=0、居中、大视觉不缩水、minTouch 取大值、极小父容器 (20x30)→(0,0,48,48)、纯函数幂等 |
+| `_test_security_audit.py` | 把那条存在性断言换成 6 条形态守卫（布局有 handleHit 且旧函数已消失、clickable+gone、矩形由 hitRect 统一算、可见性同进同退、有手势排除区、拖拽带动 hit） |
+
+### 四、验证（全部实跑）
+
+- **JVM 断言**：2476 条全过（`bash scripts/run-a11y-jvm-test.sh`，JAVA_HOME=D:\新建文件夹\jbr）。
+- **变异验证（证明断言不是假绿）**：① size 取 minTouchPx → `never shrinks a visual wider than 48dp` 变红；
+  ② 去掉 x 夹取 → 两条夹边断言变红（x=-33 / x=1109）；
+  ③ cy=m.y → 覆盖断言与居中断言变红。每次 `cp` 还原 + `diff -q` 校验。
+- **探针负对照**：handleHit 改名 → 46 过 2 败；删可见性同步 → 47 过 1 败（FAIL 文案正确）。
+- **编译**：`compileDebugKotlin`（`-Ppackage=noruntime -Pabi=x86_64 --offline`）1m49s 成功；
+  `assembleDebug`（`-Pabi=x86_64 -Ppackage=full -PruntimeZip=E:/tmp/rt-x86_64-ci.zip`）1m16s 成功，179,255,094 B。
+  ⚠️ 直接 assembleDebug 会因 `rt-arm64-zodded.zip lacks the PTC patch` 失败。
+- **设备实测（三个停靠方向全过）**：
+  - LEFT：视觉 `[0,1112][72,1233]`、命中层 `[0,1106][132,1238]`；区内视觉外 6 点全 OPEN，区外 4 点全 closed。
+  - RIGHT：视觉 `[1008,1112][1080,1233]`、命中层 `[948,1106][1080,1238]`（948+132=1080 贴右沿）；区内 6 点全 OPEN，区外 4 点全 closed。
+  - TOP：视觉 `[479,94][600,166]`、命中层 `[473,66][605,198]`；区内 6 点全 OPEN，区外 4 点全 closed。
+- 门禁：check-i18n 通过、_test_security_audit 48/0、_test_startup_parallelization 17/0、_test_boot_trace 32/0。
+
+### 五、测试踩坑（下次别再踩）
+
+1. **收起入口要用 `btnHide`，不要点空白**：TOP 停靠时点 (540,1400) 关面板不可靠，
+   会得到「区内点 closed / 区外也 closed」的假数据。改用 `input tap 867 155`（btnHide）后稳定。
+2. **`run-as` 写 prefs 前必须先建目录**：`run-as app.dsh.mobile mkdir -p shared_prefs`，
+   否则报 `cp: shared_prefs/dsh_ui.xml: No such file or directory`。
+3. **adb push 用 `E:/tmp/...` Windows 形式** + `MSYS2_ARG_CONV_EXCL="*"`。
+4. **gradle 在 `/c/Users/Qt/.gradle/wrapper/dists/gradle-9.3.1-bin/*/gradle-9.3.1/bin/gradle.bat`**
+   （项目无 gradlew；9.1.0 已不在 disk 上）。
+5. `uiautomator dump` 偶发 `could not get idle state`，等几百毫秒重试即可。
+
+### 六、未做 / 下一步
+
+- **未推送到 origin**（本地领先 1 个提交）。
+- **未在真机复验**（192.168.101.21 当时被真人占用）。
+- **`systemGestureExclusionRects` 未在真实手势导航下验证**：模拟器用 `input tap` 注入事件，
+  绕过了系统手势识别层，这条只能真机验。
+- BOTTOM 停靠（底部工具栏模式）未逐点测。
+- `OnboardingActivity.kt:249` 注释仍写着「和 MainActivity.applyHandleTouchTarget 同一套做法」，
+  那处 TouchDelegate 坐标系是对的、没坏，只是注释过时。
+- 顺带记录：该轮冷启 `profile-plugins 34s` + `health-poll 11.8s` 偏大，但那是 uiautomator
+  高频 dump + 磁盘只剩 3.3G 的环境，不能当基线。
