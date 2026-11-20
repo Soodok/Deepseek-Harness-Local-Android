@@ -374,3 +374,8 @@ docs/ui-preview/.preview-server.json
 # 签名单钥不一致的解释文案（issue #94）：指纹对照必须真的从判定分支写出来，
 # 六套 locale 的新串必须带占位符 —— 任一退回去都得打红。
 !/scripts/probes/_test_update_signature_hint.py
+# Windows 远端目录绑定（dsh-hardssh 0.2.13 实测）：路径层必须方言感知，命令层必须对
+# Windows 根明示不支持。探针跑真实补丁脚本 + 0.2.13 原始片段快照（fixtures）。
+!/scripts/probes/_test_hardssh_windows_paths.py
+!/scripts/probes/fixtures/
+!/scripts/probes/fixtures/**
