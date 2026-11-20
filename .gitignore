@@ -383,3 +383,4 @@ docs/ui-preview/.preview-server.json
 !/scripts/probes/_test_hardssh_windows_paths.py
 !/scripts/probes/fixtures/
 !/scripts/probes/fixtures/**
+!/scripts/probes/_test_report_bundle.py

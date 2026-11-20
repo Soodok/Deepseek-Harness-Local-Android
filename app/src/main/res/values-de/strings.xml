@@ -1985,4 +1985,32 @@
     <string name="developer_options_security_note">Dieses Menü gewährt keinen Root-, Shizuku- oder anderen Systemzugriff. Jede Aktion benötigt weiterhin eine eigene Berechtigungsprüfung.</string>
     <string name="developer_options_unlocked">Entwickleroptionen aktiviert. Sie finden sie unter Einstellungen → System.</string>
     <string name="developer_options_disabled_toast">Entwickleroptionen ausgeblendet. Tippen Sie siebenmal auf die Versionsinformation, um sie erneut anzuzeigen.</string>
+    <string name="report_title">Problem melden</string>
+    <string name="report_intro">Beschreibe, was schiefgelaufen ist. Erst mit „Senden“ wird etwas übertragen; vorher kannst du den genauen Text ansehen.</string>
+    <string name="report_hint_title">Kurze Zusammenfassung</string>
+    <string name="report_hint_body">Was ist passiert und was hast du erwartet? Schritte zum Nachvollziehen helfen am meisten.</string>
+    <string name="report_hint_contact">Kontakt (optional)</string>
+    <string name="report_attach_logs">Letzte Protokolle anhängen (engine.log + logcat)</string>
+    <string name="report_attach_device">Gerätemodell mitschicken</string>
+    <string name="report_preview">Vorschau</string>
+    <string name="report_copytxt">Kopieren</string>
+    <string name="report_send">Senden</string>
+    <string name="report_mail">E-Mail</string>
+    <string name="report_github">GitHub</string>
+    <string name="report_consent">Token, Schlüssel, Telefon- und Ausweisnummern werden vor dem Senden automatisch entfernt. Unter 14 Jahren bitte nicht selbst absenden.</string>
+    <string name="report_preview_title">Zu sendender Inhalt</string>
+    <string name="report_preview_close">Schließen</string>
+    <string name="report_need_content">Bitte beschreibe zuerst das Problem.</string>
+    <string name="report_sending">Wird gesendet...</string>
+    <string name="report_sent_title">Danke!</string>
+    <string name="report_sent_body">Meldung erhalten, Kennung %1$s.</string>
+    <string name="report_failed_title">Senden fehlgeschlagen</string>
+    <string name="report_failed_body">%1$s
+
+Du kannst die Meldung kopieren und in der Gruppe posten.</string>
+    <string name="report_copied">In die Zwischenablage kopiert</string>
+    <string name="report_github_too_long">Die Meldung ist lang; sie wurde kopiert – bitte in den Issue-Text einfügen.</string>
+    <string name="report_mail_subject">dsh-android Problembericht</string>
+    <string name="setting_report">Problem melden</string>
+    <string name="setting_report_sub">Protokolle ohne GitHub-Konto an den Entwickler senden</string>
 </resources>

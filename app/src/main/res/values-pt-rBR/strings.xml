@@ -1939,4 +1939,32 @@
     <string name="developer_options_security_note">Ativar este menu não concede Root, Shizuku nem outras permissões do sistema. Cada operação continua exigindo sua própria autorização.</string>
     <string name="developer_options_unlocked">Opções do desenvolvedor ativadas. Acesse em Configurações → Sistema.</string>
     <string name="developer_options_disabled_toast">Opções do desenvolvedor ocultadas. Toque sete vezes nas informações da versão para mostrá-las novamente.</string>
+    <string name="report_title">Relatar um problema</string>
+    <string name="report_intro">Conte o que deu errado. Nada é enviado antes de você tocar em Enviar, e dá para ver o texto exato antes.</string>
+    <string name="report_hint_title">Resumo curto</string>
+    <string name="report_hint_body">O que aconteceu e o que você esperava? Passos para reproduzir ajudam mais.</string>
+    <string name="report_hint_contact">Contato (opcional)</string>
+    <string name="report_attach_logs">Anexar registros recentes (engine.log + logcat)</string>
+    <string name="report_attach_device">Incluir modelo do aparelho</string>
+    <string name="report_preview">Prévia</string>
+    <string name="report_copytxt">Copiar</string>
+    <string name="report_send">Enviar</string>
+    <string name="report_mail">E-mail</string>
+    <string name="report_github">GitHub</string>
+    <string name="report_consent">Tokens, chaves, telefones e documentos são removidos automaticamente antes do envio. Menores de 14 anos não devem enviar por conta própria.</string>
+    <string name="report_preview_title">Conteúdo a ser enviado</string>
+    <string name="report_preview_close">Fechar</string>
+    <string name="report_need_content">Descreva o problema primeiro.</string>
+    <string name="report_sending">Enviando...</string>
+    <string name="report_sent_title">Obrigado!</string>
+    <string name="report_sent_body">Relato recebido, id %1$s.</string>
+    <string name="report_failed_title">Falha ao enviar</string>
+    <string name="report_failed_body">%1$s
+
+Você pode copiar o relato e publicar no grupo.</string>
+    <string name="report_copied">Copiado para a área de transferência</string>
+    <string name="report_github_too_long">O relato é longo; foi copiado – cole no corpo da issue.</string>
+    <string name="report_mail_subject">Relato de problema do dsh-android</string>
+    <string name="setting_report">Relatar um problema</string>
+    <string name="setting_report_sub">Envie registros ao desenvolvedor sem conta no GitHub</string>
 </resources>

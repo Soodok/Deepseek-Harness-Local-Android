@@ -1568,6 +1568,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 反馈问题（v1.6.x）：预览 + 四种出口，不强制 GitHub 账号 -->
+        <activity
+            android:name=".ReportActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <activity
             android:name=".IslandDockActivity"
             android:exported="false"

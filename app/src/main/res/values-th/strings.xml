@@ -1929,4 +1929,32 @@
     <string name="developer_options_security_note">การเปิดเมนูนี้ไม่ได้ให้สิทธิ์ Root, Shizuku หรือสิทธิ์ระบบอื่น ๆ แต่ละการดำเนินการยังต้องตรวจสอบการอนุญาตแยกต่างหาก</string>
     <string name="developer_options_unlocked">เปิดตัวเลือกสำหรับนักพัฒนาแล้ว ดูได้ที่ การตั้งค่า → ระบบ</string>
     <string name="developer_options_disabled_toast">ซ่อนตัวเลือกสำหรับนักพัฒนาแล้ว แตะข้อมูลเวอร์ชัน 7 ครั้งเพื่อเปิดอีกครั้ง</string>
+    <string name="report_title">แจ้งปัญหา</string>
+    <string name="report_intro">เล่าให้ฟังว่าเกิดอะไรขึ้น จะไม่มีการส่งข้อมูลจนกว่าคุณจะกดส่ง และดูข้อความทั้งหมดก่อนได้</string>
+    <string name="report_hint_title">สรุปสั้น ๆ</string>
+    <string name="report_hint_body">เกิดอะไรขึ้นและคาดหวังอะไร ขั้นตอนที่ทำให้เกิดปัญหาช่วยได้มากที่สุด</string>
+    <string name="report_hint_contact">ช่องทางติดต่อ (ไม่บังคับ)</string>
+    <string name="report_attach_logs">แนบไฟล์บันทึกล่าสุด (engine.log + logcat)</string>
+    <string name="report_attach_device">ส่งรุ่นอุปกรณ์ไปด้วย</string>
+    <string name="report_preview">ดูตัวอย่าง</string>
+    <string name="report_copytxt">คัดลอก</string>
+    <string name="report_send">ส่ง</string>
+    <string name="report_mail">อีเมล</string>
+    <string name="report_github">GitHub</string>
+    <string name="report_consent">ระบบจะลบโทเค็น คีย์ เบอร์โทร และเลขบัตรประชาชนโดยอัตโนมัติก่อนส่ง หากอายุต่ำกว่า 14 ปี กรุณาอย่าส่งด้วยตนเอง</string>
+    <string name="report_preview_title">เนื้อหาที่จะส่ง</string>
+    <string name="report_preview_close">ปิด</string>
+    <string name="report_need_content">กรุณาอธิบายปัญหาก่อน</string>
+    <string name="report_sending">กำลังส่ง...</string>
+    <string name="report_sent_title">ขอบคุณ!</string>
+    <string name="report_sent_body">ได้รับรายงานแล้ว หมายเลข %1$s</string>
+    <string name="report_failed_title">ส่งไม่สำเร็จ</string>
+    <string name="report_failed_body">%1$s
+
+คุณคัดลอกรายงานไปโพสต์ในกลุ่มได้</string>
+    <string name="report_copied">คัดลอกไปยังคลิปบอร์ดแล้ว</string>
+    <string name="report_github_too_long">รายงานยาวเกินไป จึงคัดลอกไว้แล้ว กรุณาวางในเนื้อหา issue</string>
+    <string name="report_mail_subject">รายงานปัญหาของ dsh-android</string>
+    <string name="setting_report">แจ้งปัญหา</string>
+    <string name="setting_report_sub">ส่งบันทึกให้นักพัฒนาได้โดยไม่ต้องมีบัญชี GitHub</string>
 </resources>

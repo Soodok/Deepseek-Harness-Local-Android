@@ -1982,4 +1982,32 @@
     <string name="developer_options_security_note">开启此菜单不会自动授予 Root、Shizuku 或其他系统权限。每项操作仍须经过独立授权检查。</string>
     <string name="developer_options_unlocked">已开启开发者选项，可在「设置 → 系统」中查看。</string>
     <string name="developer_options_disabled_toast">开发者选项已隐藏。再次点击版本信息 7 次即可开启。</string>
+    <string name="report_title">反馈问题</string>
+    <string name="report_intro">说说哪里不对。不点「发送」就不会上传任何内容，发送前也可以先预览全文。</string>
+    <string name="report_hint_title">一句话概括</string>
+    <string name="report_hint_body">发生了什么、你期望怎样？能复现的操作步骤最有帮助。</string>
+    <string name="report_hint_contact">联系方式（可选）</string>
+    <string name="report_attach_logs">附带最近日志（engine.log + logcat）</string>
+    <string name="report_attach_device">包含设备型号</string>
+    <string name="report_preview">预览</string>
+    <string name="report_copytxt">复制</string>
+    <string name="report_send">发送</string>
+    <string name="report_mail">邮件</string>
+    <string name="report_github">GitHub</string>
+    <string name="report_consent">发送前会自动去掉 token、密钥、手机号与身份证号。未满 14 周岁请勿自行提交。</string>
+    <string name="report_preview_title">将要发送的内容</string>
+    <string name="report_preview_close">关闭</string>
+    <string name="report_need_content">先填一下问题描述吧。</string>
+    <string name="report_sending">发送中…</string>
+    <string name="report_sent_title">收到了，谢谢！</string>
+    <string name="report_sent_body">报告已收到，编号 %1$s。</string>
+    <string name="report_failed_title">发送失败</string>
+    <string name="report_failed_body">%1$s
+
+可以把报告复制下来，直接发到群里。</string>
+    <string name="report_copied">已复制到剪贴板</string>
+    <string name="report_github_too_long">报告较长，已复制到剪贴板，请粘贴到 Issue 正文里。</string>
+    <string name="report_mail_subject">dsh-android 问题反馈</string>
+    <string name="setting_report">反馈问题</string>
+    <string name="setting_report_sub">不用 GitHub 账号也能把日志发给开发者</string>
 </resources>

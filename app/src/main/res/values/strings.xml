@@ -1979,4 +1979,32 @@
     <string name="developer_options_security_note">Enabling this menu does not grant Root, Shizuku, or other system permissions. Each operation still requires its own authorization.</string>
     <string name="developer_options_unlocked">Developer options enabled. Find them under Settings → System.</string>
     <string name="developer_options_disabled_toast">Developer options hidden. Tap the version information seven times to show them again.</string>
+    <string name="report_title">Report a problem</string>
+    <string name="report_intro">Tell us what went wrong. Nothing is sent until you press Send, and you can preview the exact text first.</string>
+    <string name="report_hint_title">Short summary</string>
+    <string name="report_hint_body">What happened, and what did you expect? Steps to reproduce help most.</string>
+    <string name="report_hint_contact">Contact (optional)</string>
+    <string name="report_attach_logs">Attach recent logs (engine.log + logcat)</string>
+    <string name="report_attach_device">Include device model</string>
+    <string name="report_preview">Preview</string>
+    <string name="report_copytxt">Copy</string>
+    <string name="report_send">Send</string>
+    <string name="report_mail">Email</string>
+    <string name="report_github">GitHub</string>
+    <string name="report_consent">Tokens, keys, phone numbers and ID numbers are removed automatically before sending. Please do not submit on your own if you are under 14.</string>
+    <string name="report_preview_title">Content to be sent</string>
+    <string name="report_preview_close">Close</string>
+    <string name="report_need_content">Please describe the problem first.</string>
+    <string name="report_sending">Sending...</string>
+    <string name="report_sent_title">Thanks!</string>
+    <string name="report_sent_body">Report received, id %1$s.</string>
+    <string name="report_failed_title">Send failed</string>
+    <string name="report_failed_body">%1$s
+
+You can copy the report and post it in the group instead.</string>
+    <string name="report_copied">Copied to clipboard</string>
+    <string name="report_github_too_long">The report is long; it was copied to the clipboard, paste it into the issue body.</string>
+    <string name="report_mail_subject">dsh-android problem report</string>
+    <string name="setting_report">Report a problem</string>
+    <string name="setting_report_sub">Send logs to the developer without a GitHub account</string>
 </resources>

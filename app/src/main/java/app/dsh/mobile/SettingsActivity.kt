@@ -390,6 +390,10 @@ class SettingsActivity : ThemedActivity() {
         // —— 其他：关于 ——
         findViewById<TextView>(R.id.subAbout).text =
             getString(R.string.setting_about_sub, versionName())
+        findViewById<LinearLayout>(R.id.rowReport).setOnClickListener {
+            startActivity(android.content.Intent(this, ReportActivity::class.java))
+        }
+
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }

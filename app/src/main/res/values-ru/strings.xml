@@ -1979,4 +1979,32 @@
     <string name="developer_options_security_note">Включение этого меню не предоставляет Root, Shizuku или другие системные разрешения. Для каждой операции по-прежнему требуется отдельная проверка авторизации.</string>
     <string name="developer_options_unlocked">Параметры разработчика включены. Они доступны в разделе Настройки → Система.</string>
     <string name="developer_options_disabled_toast">Параметры разработчика скрыты. Чтобы снова открыть их, коснитесь сведений о версии семь раз.</string>
+    <string name="report_title">Сообщить о проблеме</string>
+    <string name="report_intro">Расскажите, что пошло не так. Ничего не отправится, пока вы не нажмёте «Отправить»; текст можно посмотреть заранее.</string>
+    <string name="report_hint_title">Краткое описание</string>
+    <string name="report_hint_body">Что произошло и чего вы ожидали? Больше всего помогают шаги воспроизведения.</string>
+    <string name="report_hint_contact">Контакт (необязательно)</string>
+    <string name="report_attach_logs">Приложить свежие журналы (engine.log + logcat)</string>
+    <string name="report_attach_device">Указать модель устройства</string>
+    <string name="report_preview">Просмотр</string>
+    <string name="report_copytxt">Копировать</string>
+    <string name="report_send">Отправить</string>
+    <string name="report_mail">Почта</string>
+    <string name="report_github">GitHub</string>
+    <string name="report_consent">Токены, ключи, номера телефонов и документов удаляются автоматически перед отправкой. Если вам меньше 14 лет, не отправляйте отчёт сами.</string>
+    <string name="report_preview_title">Что будет отправлено</string>
+    <string name="report_preview_close">Закрыть</string>
+    <string name="report_need_content">Сначала опишите проблему.</string>
+    <string name="report_sending">Отправка...</string>
+    <string name="report_sent_title">Спасибо!</string>
+    <string name="report_sent_body">Отчёт получен, номер %1$s.</string>
+    <string name="report_failed_title">Не удалось отправить</string>
+    <string name="report_failed_body">%1$s
+
+Можно скопировать отчёт и опубликовать его в группе.</string>
+    <string name="report_copied">Скопировано в буфер обмена</string>
+    <string name="report_github_too_long">Отчёт слишком длинный: он скопирован — вставьте его в текст issue.</string>
+    <string name="report_mail_subject">Отчёт о проблеме dsh-android</string>
+    <string name="setting_report">Сообщить о проблеме</string>
+    <string name="setting_report_sub">Отправить журналы разработчику без аккаунта GitHub</string>
 </resources>
