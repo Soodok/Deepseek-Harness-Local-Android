@@ -73,12 +73,40 @@ object ApkInstaller {
     fun sameSignature(ctx: Context, apk: File): Boolean = runCatching {
         val archive = certDigestsOfArchive(ctx, apk)
         val installed = certDigestsOfInstalled(ctx)
+        lastMismatch = ""
         if (archive.isEmpty() || installed.isEmpty()) {
             Log.w(TAG, "cannot read certificates (archive=${archive.size}, installed=${installed.size})")
             return false
         }
-        archive.intersect(installed).isNotEmpty()
+        if (archive.intersect(installed).isEmpty()) {
+            lastMismatch = digestPair(installed, archive)
+            // ★把两边的证书指纹打进 logcat（issue #94）。
+            //
+            //   用户看到的只有一句「签名不一致」，无法判断是自己装的是调试包 /
+            //   别人 fork 的包 / 换过渠道 key，也无从报告。指纹前 8 位足够区分
+            //   渠道又不会泄露完整证书，正好给出「你装的是哪个包」的判据。
+            Log.w(TAG, "signature mismatch — " + lastMismatch)
+            return false
+        }
+        true
     }.getOrDefault(false)
+
+    /**
+     * 最近一次 [sameSignature] 判定不一致时的指纹对照（形如
+     * `installed=50f148a5 archive=33e22044`）。
+     *
+     * 为什么要给用户看（issue #94）：现场是「App 内检查更新 → 下载 → 覆盖安装被
+     * 系统拒绝」，而两个包用的 key **本来就不同**（用户装的 1.4.41 是调试签名，
+     * 发布页给的是正式签名）。判定逻辑没错，错的是文案让人以为包坏了。把两个
+     * 指纹前 8 位摆出来，一眼能看出「这是两个渠道，不是一个坏包」。
+     */
+    @Volatile
+    var lastMismatch: String = ""
+        private set
+
+    private fun digestPair(installed: Set<String>, archive: Set<String>): String =
+        "installed=" + installed.joinToString(",") { it.take(8) } +
+            " archive=" + archive.joinToString(",") { it.take(8) }
 
     @Suppress("DEPRECATION")
     private fun certDigestsOfArchive(ctx: Context, apk: File): Set<String> {

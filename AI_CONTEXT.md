@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-19 深夜 · `main` 代码提交 `0228457f`（已推）· 本轮收掉 #123 / #122 / #108 三条 issue，并把 #118 / #119 的既有修复随发行包一起发出；beta.18（394）漏了 #108 第二层，beta.19（395）补全并开箱验证（见第一百四十二章）。
+**最后更新**：2026-11-20 凌晨 · `main` 代码提交 `23ce8bf5`（本地，未推）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -14935,6 +14935,536 @@ CI 全绿（`android-build` / `i18n-check` / `runtime-build`），Release 已发
   但 `assembleRelease` 编译的是**工作区**，所以 `/e/tmp/rel394/` 那两份含
   `FrontendWarmup` / `PortReclaim`（并行会话在写的）。**交付只认 CI 从 tag 构建的产物** ——
   已用 dex 开箱确认 CI 包里没有 `FrontendWarmup`。
+
+---
+
+## 第一百四十三章（v1.6.0-beta.20 · 2026-11-20）WebUI 首屏 1.7 秒空档的真凶：shiki 预热，以及一次构建缓存污染的排查
+
+### 一、结论先行
+
+引擎 WebUI 的「解析完到画面可用」之间那段 1.7 秒空档，来源是前端 bundle 在模块顶层立刻预热
+语法高亮：构造 highlighter 只要 3~21 ms，但紧随其后的三次热身 tokenize 掉 641~843 ms
+（typescript 494~662 / shellscript 121~153 / json 3~6），全部压在首屏主线程上。
+
+已改为 `requestIdleCallback`（无该 API 时退 1200 ms），**实测首屏解析省 797 ms（27.6%）**，
+且第一次滚到代码块时高亮仍是热的。提交 `23ce8bf5`。
+
+### 二、先证伪的那条路：调 oniguruma 的正则懒编译参数（无效）
+
+CPU 采样显示 `Dm @ vendor-*.js` 占 30.5%、`findNextMatchSync` 4.7%，
+调用栈 `Dm ← Lo ← _d ← kd ← gl ← regexConstructor` 指向 vscode-textmate 的 oniguruma 正则编译。
+前端把 `lazyCompileLength` 从 oniguruma 默认的 3000 改成 `Number.POSITIVE_INFINITY`
+（等于让懒编译彻底失效），看起来像是元凶。
+
+配对 A/B 五轮（flutter 分支 beta.86 / emulator-5570，改回 3000 vs 现状 Infinity）：
+
+| 指标 | Infinity | 改回 3000 | 差值 |
+|---|---|---|---|
+| 长任务总计 | 1989 ms | 1912 ms | +77 ms |
+| load 事件 | 1992 ms | 2006 ms | **−14 ms** |
+| 界面到位 | 2818 ms | 2819 ms | **−1 ms** |
+
+5 轮里只有 2 轮更快 —— 属噪声。**该路径证伪，不要再回头调这个参数。**
+
+原因后来才看清（把 `nB()` 拆成四段计时）：
+
+```
+createHighlighter          3 ~ 21 ms     ← 建实例几乎免费
+typescript 预热 tokenize 494 ~ 662 ms    ← 成本全在这
+shellscript 预热 tokenize 121 ~ 153 ms
+json 预热 tokenize           3 ~ 6 ms
+合计                       641 ~ 843 ms
+```
+
+正则编译确实发生，但它发生在**那次预热 tokenize 的第一次匹配**里，不在构造阶段。
+调懒编译阈值只能改「什么时候编译」，改不了「编译多少」，所以调参无效。
+
+### 三、为什么不能直接删预热
+
+删除预热同样能让首屏变快（flutter 分支上配对 5/5 轮全胜，长任务中位 2085→1461 ms），
+但**第一次滚到代码块时现场编译 typescript grammar 要 500~660 ms** —— 只是把卡顿挪到用户眼前。
+首屏恰好没有代码块时会掩盖这个问题，一旦当前会话写了代码就会暴露。
+
+所以最终采用「空闲时预热」：首屏照旧渲染，三次 tokenize 挪进 `requestIdleCallback`。
+
+### 四、实现
+
+`app/src/main/java/app/dsh/mobile/engine/FrontendWarmup.kt`（新建，140 行）
+
+- 两条正则覆盖压缩器的两种惯用法，**顺序敏感**：
+  - `unrefForm` = `\((\w+)=\((\w+)=setTimeout\(\(\)=>\{(\w+)\(\)\},0\)\)\.unref\)==null\|\|\1\.call\(\2\);?`
+  - `plainForm` = `setTimeout\(\(\)=>\{(\w+)\(\)\},0\)(\.unref\?\.\(\);?)? `
+  - 必须先 `unrefForm` 再 `plainForm`：unref 形里含裸 `setTimeout(...)` 子串，先跑 plain 会把
+    内层改坏、外层 `(...).unref)==null||sk.call(ak)` 失去被调函数。
+- `MARKER = "/* dsh-android: idle warm-up v1 */"` 保证幂等；
+- 写盘走 `*.dsh-warm.tmp` + `Files.move(REPLACE_EXISTING, ATOMIC_MOVE)`；
+- 只处理 `assets/index-*.js`，不碰 vendor 与其他 chunk。
+
+接线：`RuntimeInstaller.kt:136`（复用旧磁盘分支）与 `:1008`（首装/显式更新分支）各一行
+`FrontendWarmup.healInstalled(ctx)`，紧跟 `WebViewPolyfill.healInstalled(ctx)`。
+
+### 五、实测（main / vC395 / emulator-5554 / AVD dsh34 / x86_64 / Android 14 / 8GB）
+
+口径：引擎自打的 `webview-first-paint` 累计减 `boot.log` 的 `TOTAL`，即 WebUI 加载段。
+对照组用「assets 目录 chmod 555 让 healInstalled 写不进去」来造 base 态，
+**代码路径完全一致**，不需要另编一个 APK。
+
+| 轮 | base gap | idle gap | base marker | idle marker |
+|---|---|---|---|---|
+| 1 | 2701 | 2011 | 0 | 1 |
+| 2 | 2903 | 2093 | 0 | 1 |
+| 3 | 2890 | 2265 | 0 | 1 |
+| 4 | 2854 | 2273 | 0 | 1 |
+| 5 | 3030 | 2070 | 0 | 1 |
+| **中位** | **2890** | **2093** | | |
+
+**省 797 ms（27.6%），5/5 轮 idle 更快。**
+marker 列证明每组确实处于预期状态（base 未被改写、idle 已改写），不是两组都跑同一份文件。
+
+功能验证：预热完成后 `getLoadedLanguages()` 含 typescript/shellscript/json 及
+ts/cts/mts/bash/sh/shell/zsh 等别名；`codeToHtml('const a = 1',{lang:'typescript'})` 6 ms，
+输出含 `<pre class="shiki css-variables">` 与 `--shiki` 变量。
+
+端到端（关键证据）：设备上还原成原始包 `db3f0af1`（marker=0），重启应用后变
+`85ef4b22`、marker=1 —— 全程未手工干预，确认 `healInstalled` 自己在真机路径上生效。
+在此之前我先用手推的包验证过一次，那时设备上的 md5 恰好就是我手推的版本，
+`healInstalled` 看到 MARKER 直接跳过 —— 那只证明了幂等，没证明自动打补丁。已重做。
+
+### 六、门禁
+
+- `FrontendWarmupTest`：6/6（unrefForm/plainForm 改写、括号平衡、幂等、无锚点原样返回、任意长度压缩名提取）
+- `scripts/probes/_test_frontend_warmup_idle.py`：16/0
+- 全量探针：**PASS=148 FAIL=0**（`PYTHONIOENCODING=utf-8` 下跑；不带该变量会有 20 个 GBK 编码假失败）
+- `check-i18n.py` All passed；`check-ui-tokens.py` All passed；`git diff --check` 干净
+
+负对照（本文件此前的实测）：unref/plain 两条 replace 顺序对调 → 用例打红，还原后 6/0。
+探针侧：只查字面量 `'requestIdleCallback' in kt` 时，把条件改成 `if(false)` 仍绿（假绿），
+已改为把 Kotlin 拼接字符串合并后断言「能力检测 + 真调用」结构；四条负对照各自都能打红。
+
+### 七、撞上的一次构建缓存污染（值得单列）
+
+排查过程中发现应用一启动就崩：
+
+```
+NoClassDefFoundError: Failed resolution of Lapp/dsh/mobile/engine/RuntimeInstaller;
+  at app.dsh.mobile.MainActivity.onResume(MainActivity.kt:474)
+```
+
+**现象与定位**：
+- `app/build/tmp/kotlin-classes/debug/.../RuntimeInstaller.class` 存在（70902 B，magic cafebabe 正常）
+- `app/build/intermediates/project_dex_archive/debug/dexBuilderDebug/out/.../engine/` 下
+  六个内层类 `RuntimeInstaller$Installed.dex`、`$Manifest.dex`、`$install$1.dex` 等都在，
+  **唯独外层 `RuntimeInstaller.dex` 缺失**
+- 同时 `dexBuilderDebug` 报 `UP-TO-DATE`
+- 11 个 dex 全扫，外层类的 `class_def` 一个都没有（内层类都在）
+
+**修法**：删掉整条 dex 流水线的中间产物再构建 —— 只删 `intermediates/dex` 不够，
+必须连 `project_dex_archive`、`mixed_scope_dex_archive`、`sub_project_dex_archive`、
+`dex_metadata_directory`、`global_synthetics_dex` 一起删。
+
+```bash
+rm -rf app/build/intermediates/{project_dex_archive,dex,mixed_scope_dex_archive,\
+sub_project_dex_archive,dex_metadata_directory,global_synthetics_dex}
+```
+
+重建后 `RuntimeInstaller.dex` 为 55844 B，APK 的 `classes6.dex` 里能找到类定义，
+装上去 pid 正常、引擎正常启动。
+
+**推测（未验证）**：并行会话在同一个工作区反复构建（同一份 `app/build`），
+某次中断或并发写让 dexBuilder 的输出目录与它的 up-to-date 记录脱节。
+两次独立构建都崩在同一个类，与「机器损坏」不符、与「共享中间产物被写坏」相符。
+**判断方法**：看 `project_dex_archive/.../dexBuilderDebug/out/` 里是否缺某个外层类
+而内层类齐全 —— 这是最快的指纹。**遇到记得先清 dex 中间产物，不要去怀疑 dex 合并逻辑或源码。**
+
+### 八、本次新增根因（写给自己和后来者）
+
+- **「调到正确参数」不等于「消除成本」**：正则编译在第一次匹配时发生，不在构造时。
+  调 `lazyCompileLength` 改的是时机不是总量，因此无效。
+- **「删掉预热」把卡顿挪给用户**：首屏无代码块不代表用户不会滚到代码块。
+  正确解法是空闲执行，不是取消。
+- **改 dist 产物要验证「是谁改的」**：设备上 md5 与手推版本一致时，
+  `healInstalled` 只会幂等跳过 —— 必须先把文件还原成原始哈希，再重启观察是否自动变化。
+- **CDP `Fetch.enable` 与 `Page.reload` 都会破坏 main 的 token→303→cookie 链**，
+  main 分支测 WebUI 只能用「改设备上的 dist + 依赖应用自打点」，
+  不能用 CDP 拦截替换 bundle。
+- **`adb shell` 里写文件不能用 `cp`（Windows 侧路径不会被识别）**：
+  正确形态是 `adb shell "run-as <pkg> sh -c 'cat > <abs>'" < localfile`。
+  `adb push` 到 `/data/local/tmp` 再 `cp` 也可以，但要注意 `MSYS2_ARG_CONV_EXCL`
+  开启时本地路径必须写成 `E:/tmp/...` 而不是 `/e/tmp/...`。
+- **权限门做 A/B 的好用手段**：`chmod 555 <dir>` 让目标进程写不进去，
+  代码路径不变就能得到「未生效」对照组，比另编一个 APK 省一次完整构建。
+## 第一百四十四章（v1.6.0-beta.20 · 2026-11-20）白屏真因：3080 清场脚本三处静默失效（exit 0 但一个都没杀）
+
+### 一、用户报障与日志
+
+> root + 原生模式：第一次启动正常，杀掉后台再启动就白屏，必须重启手机才能恢复。
+
+用户提供的 engine.log（Xiaomi M332BF / SDK 37 / Android 17）三次启动全是同一句：
+
+```
+---- engine start 1795097999025 ----
+device: Xiaomi M332BF SDK=37 Android=17 OS4.0.8.0.XHPCNXM
+dsh: startup failed: 2 required plugins did not activate
+Failed plugins (1):
+  webserver (required)
+    Package: @deepseek-ai/dsh-host-webserver
+    Error: listen EADDRINUSE: address already in use 127.0.0.1:3080
+Plugins waiting for services (3): web-runtime / open-in-app / client-hmr
+```
+
+即上一轮的引擎 node 成了孤儿仍占着 3080，而本该清场的逻辑没有清掉它。root 模式下引擎链是
+App -> PTY fork -> su 外壳 -> magiskd/ksud -> node，PR_SET_PDEATHSIG 只挂在 su 外壳上，
+App 被强杀时信号传不到 node，node 以 uid 0 变孤儿，新引擎 EADDRINUSE，退避重试到上限后白屏。
+重启手机才清掉孤儿，与「必须重启手机」完全对上。
+
+### 二、根因：三处独立的静默失效
+
+「清场脚本跑完 exit 0」不等于「杀掉了什么」—— 脚本末尾是 true，任何一环失效都会安静地返回 0。
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | awk 字段引用写成反斜杠加数字（Kotlin raw string 里反斜杠是字面字符） | 交给 sh 的文本带反斜杠，awk syntax error，INODES 恒空，case 分支不成立，一个进程都没杀 |
+| 2 | readlink 给的是 socket:[967201]，代码只剥尾部右括号 | ino 留下前导左括号，与 tcp 表里的裸 967201 永远比不上，就算 INODES 有值也匹配不到 |
+| 3 | cmdline 兜底写成 tr 加两个反斜杠 | sh 把 NUL 换成字面「反斜杠 0」，cmdline 里的分隔符还在，case 匹配不到引擎路径 |
+
+三处叠加，从 2026-11-08 的提交 4e49bc34 起，「彻底清场」一直是 no-op。
+
+### 三、设备上的三段式 A/B（emulator-5554，root 会话 + nc -L 占位）
+
+预置：`nc -L -s 127.0.0.1 -p 3080` 占住端口。
+
+| 变体 | 改动 | 监听进程 | 结果 |
+|---|---|---|---|
+| A | 原状（反斜杠 + 不剥括号） | 存活 | 端口仍被占，script-exit=0 |
+| B | 只修 awk（仍不剥括号） | 存活 | 仍失败 —— 证明第 2 条是独立缺陷，不是第 1 条的附属 |
+| C | awk + 两端剥括号 | 被 kill | RESULT-killed，端口释放 |
+
+只修一处会得到「看起来修了但依然跑不动」的假绿 —— 本段最有价值的一条对照。
+
+### 四、改动
+
+- 新建 `app/src/main/java/app/dsh/mobile/engine/PortReclaim.kt`：`script(port)` 与
+  `cmdlineSweepScript(enginePath, homePath)` 都是纯函数；断言落在渲染后的文本上
+  （这类缺陷只有渲染之后才看得出，源码里「片段存在」的断言抓不到）。
+- `EngineSupervisor.reclaimPortByPort()` 改为调用 `PortReclaim.script(port)`；按端口清场后
+  端口仍被占时，再补一层按 cmdline 的清场（不依赖 /proc/net/tcp 表格式的第二条证据链，
+  含 lan-web-proxy 排除，避免误杀局域网代理）。
+- 清场结论写进 engine.log：`[port-reclaim] port=3080 result=free|STILL-IN-USE`。
+  此前这些结论只进 logcat —— 用户导出的正是 engine.log，里面只剩一个没头没尾的 EADDRINUSE，
+  分不清「清场失效」还是「根本没被调用」。
+- cmdline 扫描对每条读失败的 sh 报错追加 `2>/dev/null`（权限拒读时 sh 会替每个 pid 打一行
+  can't open ...: Permission denied，一次清场能刷上百行）。
+
+### 五、装机 E2E（同一台模拟器、同一棵源码、只换 APK）
+
+| APK | md5 | healthy | EADDRINUSE 次数 | engine.log |
+|---|---|---|---|---|
+| 修复前（旧脚本） | 7387f47d | no（124s 超时） | 4 | result=STILL-IN-USE ×12 |
+| 修复后 | 2ba6eb3f | yes（13s） | 0 | result=free |
+
+修复后 logcat 同时出现 `port 3080 — thorough reclaim`、`port 3080 is free after thorough reclaim`、
+`engine healthy on :3080`，孤儿 nc 已消失。
+
+### 六、门禁
+
+- JVM 单测 90/0（PortReclaimTest 8 条：无反斜杠美元符、awk 裸字段、端口插值、按 LISTEN+inode
+  匹配、末尾 bare true、无 CJK、inode 两端剥、tr 单反斜杠）。
+- 探针 `scripts/probes/_test_port_reclaim_script.py` 19/0，含 5 条负对照（去掉前导括号剥离
+  实测打红 B4、tr 写成两个反斜杠实测打红 D3/D4）。
+- 全量 `scripts/probes/_test_*.py`：FAILED_COUNT=0。
+- check-i18n.py：1878 键 6 套齐、Kotlin CJK 字面量 0；check-ui-tokens.py 通过。
+
+### 七、方法学教训
+
+- **「跑完 exit 0」是这类脚本最坏的信号**：它让日志干净、让调用方以为成功，掩盖了三个独立缺陷。
+  修完之后第一件事是把结论写进用户会导出的那份日志，而不是留在 logcat。
+- **占位进程必须选「不会被探测连接打掉」的形态**：`nc -l` 收一次连接就退出，用它测清场会得到
+  「清场成功」的假阳性；`nc -L` 才等价于真正的监听进程。
+- **同 uid 的 -L 监听器 app 侧脚本能杀；root 的不能**（app uid 既读不到 /proc/net/tcp、
+  也读不到别的 uid 的 cmdline，su 只在 ROOT 模式下有路径）。真机 root 孤儿真正依赖的是
+  `Privilege.runSu` 这一路，port 表那条只覆盖同 uid 场景 —— 写在这里，免得后人以为一条脚本全包。
+- 工作区里另一个会话同时在提交（23ce8bf5 / d6918fb7，shiki 预热）；本轮只 git add 自己的
+  5 个路径，未夹带他人改动。
+
+## 一百三十三 · 2026-11-20 容器里 PTY 终端起不来（`3fc9995d` + `4b257c54`）
+
+用户报告：「有人说 linux 容器里 pty 终端不能正常使用」——门脚本、引擎都正常，只有终端不行。
+
+### 三个根因（全部有代码级证据）
+
+1. **`libdsh_pty_exec.so` 是动态 bionic 可执行文件**。实读 APK 内 ELF program header：
+   `PT_INTERP=/system/bin/linker64`、有 `PT_DYNAMIC`。而 chroot 沙箱只挂
+   `/proc /dev /sys /tmp /dev/pts` 与 `/storage/emulated/0`、`/data/user`、`/data/data`
+   （`LinuxSandbox.REQUIRED_MOUNT_POINTS` + `buildBinds`），**没有 `/system`**
+   ⇒ `execv` 找不到解释器。门脚本与引擎跑的是 guest 自己的 node，所以其它功能看不出问题。
+2. **chroot 分支仍注入 `DSH_TERMINAL_*`**：引擎已经在容器里，node-pty 的 shim 又包一层
+   `dsh_alpine`——而 `dsh_alpine` 是宿主 bionic 程序。
+3. **把 `/bin/bash` 无条件当 guest 程序**：引擎默认 shell 是 `/bin/bash`
+   （`dsh-terminal-bash` 的 `DEFAULT_BASH_SHELL`）+ `--noprofile --norc -i`，
+   而 Alpine minirootfs 里只有 busybox 的 ash，`/bin/bash` 不存在 → spawn 即 ENOENT；
+   就算换成 sh，bash 专属参数也会直接报错。
+
+### 修法
+
+- `app/src/main/cpp/CMakeLists.txt`：`dsh_pty_exec` 加 `-static`。重建后
+  `lib/arm64-v8a/libdsh_pty_exec.so` 12008 B → 444032 B，`PT_INTERP=None`、`PT_DYNAMIC=False`。
+- `app/src/main/java/app/dsh/mobile/engine/LinuxEngineLauncher.kt`：chroot 分支先
+  `val envForChroot = envVars.filterNot { it.startsWith("DSH_TERMINAL_") }`，
+  `envMap` 与 `LaunchSpec.env` 都用它。
+- `scripts/patch-node-pty-android.py`：`containerWrap` 里当 `file === "/bin/bash"` 且
+  rootfs 内 `bin/bash` 不存在时，guest 退成 `/bin/sh`，并丢掉
+  `--noprofile/--norc/--login/-l`。
+
+### 验证（分层，如实标注）
+
+- **静态**：APK 内 ELF `PT_INTERP=None / PT_DYNAMIC=False`；arm64 444032 B、x86_64 452528 B。
+- **设备级决定性对照**（emulator-5554，无 `/system` 的 chroot）：
+  - 负对照：`chroot /data/local/tmp/ct2 /sh_dyn -c "echo dyn_ok"`
+    → `chroot: exec /sh_dyn: No such file or directory`（动态 bionic 找不到 linker，**正是现场症状**）
+  - 静态助手同一 chroot：`dsh_pty_exec: usage: ...`，`CHROOT_EXIT=0`
+- **shim 行为**：探针 J 段抽出 `containerWrap` 原文，用 `path.posix` + 桩 fs 在 node 里跑四组：
+  无 bash → `/bin/sh -i`；有 bash → `/bin/bash --noprofile --norc -i`（无回归）；
+  runner 不可执行 / 缺 INTERP → `undefined`。
+- **反向验证**：`guestFile = "/bin/sh"` 改回 `guestFile = file` → I2、J1 立刻红，
+  J1 打出 `['/rootfs','/lib/ld-musl.so','/bin/bash','-i']`。
+- 探针 `_test_linux_terminal_in_container.py` 28 → 33 项全过；`compileReleaseKotlin` 通过；
+  `check-i18n`、`check-ui-tokens` 全过。
+
+### 未做（缺口，别当成已验证）
+
+- **没有跑通完整容器 E2E**：两台上线模拟器都是 x86_64，而发布 APK 只带 `arm64-v8a`；
+  设备上也没部署 Alpine rootfs。所以「打开终端能敲 `apk`」这一步只有代码 + chroot 对照证据，
+  没有真机容器内的终端会话截图。
+- chroot 分支的 env 过滤只有源码/探针证据，没在真机 chroot 模式下起过引擎。
+
+### 复用经验
+
+- 排查「容器里某个功能单独坏」先看**那个二进制是不是动态链接**：chroot 不挂 `/system`，
+  动态 bionic 程序必然 `No such file or directory`，而且报错长得像「文件不存在」，
+  很容易误判成路径写错。
+- 探针里 `path.join` 在 Windows 上拼反斜杠 → 行为验证必须显式 `require('path').posix`，
+  否则得到的是平台假结论。
+
+## 第一百四十五章（v1.6.0-beta.20 · 2026-11-20）20 条 issue 盘点 + #125 崩溃可观测性 + #94 签名文案说人话
+
+本轮不是「再修一批」，而是先把 20 条 open issue **逐条对账**（拉 GitHub API 存
+`E:/tmp/issues_open.json`），再只动真正没被修过的两处。
+
+### 1. 盘点结论：多数已修未告知，两条是真缺口
+
+| issue | 判定 | 依据 |
+| --- | --- | --- |
+| #119 / #118 / #107 | 已修，随 beta.18 发出 | `1b0dba25` / `a9e7d961` / `fe1bc876` 都被 v1.6.0-beta.18 tag 包含 |
+| #123 / #122 / #108 | 已修，随 beta.18/19 发出 | `5233c6d2` + `0228457f`（#108 第二层补丁） |
+| #98 | 已修 | `LinuxEnvironmentManager` 自己读着跳过，注释明写不用 `skipNBytes` |
+| #96 | 已完成 | values-ru 1878 键、0 缺 |
+| #124 | 只需给许可 | zh-TW PR 请求；本仓 i18n 检查只覆盖 6 套 locale |
+| #94 | **文案假绿**，本轮修 | 判定对，但只说「签名不一致」，用户以为包坏了 |
+| #125 | **可观测性缺口**，本轮修 | 修复本身早已在 `d3535531`，但现场跑的是 v1.5.0 旧包 |
+| #83 #106 #91 #76 #59 #41 #60 #26 #2 | 建议 / 老版本 / 需求类 | 不构成本轮代码改动（#76 的 healWorkspaceRegistry 已在，见 `EngineConfig.kt:860`） |
+
+### 2. #125 的真根因：不是没修，是「修了也查不出来」
+
+报告环境 SM-S918B / SDK37 / normal，loader 31104 B sha256 `904ed8f5…` —— 对应
+git 里 `279ef33864`，即 **v1.5.0 时代的产物**。那个版本的 `sigsys_impl` 没有重入
+守卫：zygote 那层 seccomp 只按 syscall 号 TRAP、不看调用者 IP，于是 handler 里的
+重发被外层再 trap 一次 → 递归压穿栈 → SIGSEGV(139) 且**零输出**。
+
+也就是说：#125 的修复早就在主线（`d3535531` 起），用户只是跑了旧包。**本轮真正
+要补的是「让 DSH_ALPINE_DEBUG 真的能说话」。**
+
+#### loader 六处改动（`app/src/main/cpp/dsh_alpine.c`）
+
+1. **DEBUG 开关直扫 envp**：原来 `env_has_("DSH_ALPINE_DEBUG")` 读的是还没填的
+   `g_env_store`（只在 `loader_preload` 里填），在 `ldr_main` 早期求值恒 0 ——
+   这就是「开了 DEBUG 一个字节都不打」的直接原因。改为
+   `g_dbg = envp_has_(envp, ...)`。
+2. **开关与 crash handler 装在 ldr_main 最开头**（rootfs 打开之前）。放在后面时，
+   「rootfs 不存在 / stub 找不到」这类**最早期**失败期间仍然一句不打，而现场报告
+   最需要的正是那一段。
+3. **九个阶段标记**：`rootfs-open` / `find-stub` / `preload` / `install-filter` /
+   `jump-guest`，以及 `child_run_raw` 内的 `map-interp` / `map-guest` /
+   `build-stack` / `jump-entry`。全部挂在 `g_dbg`，未开 DEBUG 零噪音。
+4. **崩溃兜底 `ldr_crash`**：打印 `LOADER: crash sig=` + `LOADER: crash last stage=`
+   后直接 `exit_group(128+sig)`，**不返回**（避开 restorer 差异，rc 语义仍是 139）。
+5. **九处静默 `exit_group(N)` 补文字**：no interp/guest、guest not ELF、interp 无
+   PT_LOAD、各种 mmap / seg map FAIL、stack mmap FAIL。原来这些路径一句话都没有。
+6. **重入守卫命中时打印 syscall 号**：`LOADER: guard-hit nr=`（同号只打一次）。
+   现场报告下次能直接指出是哪个号被外层拦，不必再靠猜。
+
+#### 实测坑（已写进代码注释，别再踩）
+
+- **x86_64 装 handler 必须带 `SA_RESTORER(0x04000000) + sa_restorer`**，否则内核直接
+  返回 -EFAULT，handler 根本没装上，症状是「一行都不打」（比不加还糟）。
+  aarch64 留 0 即可（VDSO restorer 通用）。
+- 基线可复现：用 HEAD 源码 + 仓库同一套 flags 重编 x86_64 得到 `832c585d…`，与
+  仓库里的 `jniLibs/x86_64/libdsh_alpine.so` **完全一致** —— 以后怀疑「产物陈旧」
+  先做这一步，比猜 mtime 可靠。
+
+### 3. 诊断页自检：把假绿色变成有证据的结论
+
+`LinuxActivity.diagnosisItems` 原来的「Runner」一项只看 ELF 头
+（deployLinuxRunner + isFixedBaseLinuxRunner）。#125 里 rootfs 完好、ELF 也对，
+界面照样报 `Runner: OK`，而 runner 每次 SIGSEGV —— 用户被假绿色引向错误方向。
+
+新增：`st.state == READY` 时**真起一次容器**跑 `c:/program files/git/usr/bin/busybox echo runner-ok`
+（`skipReady = true`、timeout 20s）。rc≠0 就原样贴 `rc=…: <输出>`，OK 时附耗时。
+只在用户点「诊断」时发生，**不进冷启路径**。
+
+新串 `linux_workbench_diag_runner_selftest` 六套齐全。
+
+### 4. #94：判定没错，错在文案
+
+用户装 1.4.41 调试签名包，App 内更新提示 v1.4.76，从发布页下载的是**正式签名**包，
+系统拒绝覆盖。判定逻辑本来就对 —— 两个包确实不同钥。
+
+问题在文案只说「签名与已安装应用不一致」，用户只会以为包坏了。新增
+`ApkInstaller.lastMismatch`（失败分支写入 `installed=… archive=…`，各取指纹前
+8 位）与 `app_update_err_signature_detail`；指纹为空时退回旧串，不硬拼空值。
+logcat 同步打这条对照。
+
+### 5. 证据分层
+
+| 层级 | 内容 |
+| --- | --- |
+| 单测 | 9 个测试类 **90 tests / 0 failures / 0 errors** |
+| 构建 | `:app:testDebugUnitTest :app:assembleDebug` BUILD SUCCESSFUL（x86_64，190,138,929 B） |
+| 探针 | 全量 `_test_*.py` **FAILED_COUNT=0**；新增两条见下 |
+| 门禁 | `check-i18n.py` exit 0、`check-ui-tokens.py` exit 0 |
+| 装机（模拟器） | 见下节逐条 |
+
+新增探针 `_test_loader_diagnostics.py`（38 checks，A–G 七组）与
+`_test_update_signature_hint.py`（20 checks）。两者都做了**真负对照**：
+
+- 把 `g_dbg = envp_has_(envp, …)` 改掉 → [A2][A4][A5] 三红；
+- 把 `lastMismatch = digestPair(...)` 删掉 → [A2] 红。
+
+### 6. 设备实测（emulator-5554 / x86_64，`adb root`）
+
+从**装好的 APK 里抽** `lib/x86_64/libdsh_alpine.so`（不是从工作树拿），推到
+`/data/local/tmp/ld_apk` 跑同一 rootfs：
+
+- DEBUG=1 正常路径 → 九个阶段全打 + `hi` / rc=0（不污染正常输出）；
+- DEBUG=1 + SIGSEGV guest → `LOADER: crash sig=11` + `last stage=jump-entry` / rc=139；
+- **无 DEBUG** → 只有 shell 的 `Segmentation fault`，零噪音（负对照成立）；
+- 坏 rootfs + DEBUG=1 → `LOADER: rootfs open FAIL rc=-2` / rc=3（早期失败也有话说了）。
+
+另用自造外层 seccomp 包装（`E:/tmp/crashg/outer*.c`，Trap `openat` / `ppoll`）验证
+「外层再 trap 一次」的路径：pre-guard 的 v1.5.0 源码产物 **Segmentation fault
+rc=139 零输出**，guard 之后的源码产物则正常报错 / 正常跑 —— 与 #125 现场判据一致。
+
+### 未做（缺口，别当成已验证）
+
+- `lastMismatch` 的**界面文案没有真机截图**：本机只有 x86_64 模拟器，触发一次
+  「两个不同 key 的包」需要两个签名包，没造。
+- 诊断页「运行器自检」需要设备上已部署可用 rootfs，本轮没在界面上点「诊断」拍照，
+  只有源码 + 探针证据。
+- `dsh-linux-runtime` 里 `src/dsh_alpine.c` 有**他人 WIP**（bind 目录 O_PATH 真探测），
+  本轮未提交、也未同步；两侧 `dsh_alpine.c` 目前 diff 为空（已核对 sha256 一致）。
+
+### 复用经验
+
+- **报「DEBUG 没有任何输出」先查开关在哪求值**：凡是读一个「稍后才填充」的全局来
+  决定是否调试输出，早期失败永远静默。
+- **崩溃兜底 handler 装失败时，症状与没装一模一样**（什么都不打）。x86_64 上必须
+  带 restorer，别拿 aarch64 的经验套。
+- **诊断页任何「OK」都要有行为证据**：只查 ELF 头 / 文件存在，等于把「没验证」写成
+  「正常」，比不报更危险。
+- 现象级 issue 先核**用户跑的产物哈希**：#125 报告里的 loader 字节数直接指向
+  v1.5.0，省掉一轮误修。
+
+## 第一百四十六章（v1.6.0-beta.20 · 2026-11-20）自研浏览器内核可行性调研：六条路线全堵，瓶颈在引擎不在内核
+
+宝宝问「自己内部搞浏览器内核可不可行？有没有助于增加启动速度」。答案两句话：
+**内核不可能是瓶颈（它 1.78s 就绪，引擎要 6.4～15.2s）；六条候选路线全部物理性堵死。**
+完整报告在 `docs/BROWSER_KERNEL_FEASIBILITY.md`（本章只留结论与可复用事实）。
+
+### 1. 六条路线逐条判定（全部一手依据，非二手转述）
+
+| 路线 | 硬依据 | 判定 |
+| --- | --- | --- |
+| 自造 Chromium 当系统 WebView | 官方 `webview-providers.md`：包名白名单（仅 `com.google.android.webview` +beta/dev/canary、`com.android.webview` 限 userdebug/eng）、**release 签名校验**、`targetSdk >= SDK_INT`，由 `WebViewUpdateService` 强制 | 系统级墙，不成立 |
+| 自造 Chromium 自绘 | `android_build_instructions.md`：需 Linux x86-64 ≥8GB RAM / ≥100GB 盘，且原文 **「Building the Android client on Windows or Mac is not supported and doesn't work」** | 本机不成立 |
+| CEF | `cef-builds.spotifycdn.com/index.json` 平台键实测无 android | 无产物 |
+| GeckoView | arm64 AAR 实测 **91,504,240 B**，解压 **185.3 MB**，`libxul.so` 单文件 **147.4 MB**；API 与 `android.webkit` 完全不同 | 能力有、代价不可接受 |
+| WPE WebKit | README 要求 `Application` 换成 `org.wpewebkit.WPEApplication` 基类；README 自写 `TODO: package, distribute`；maven solrsearch `wpewebkit` = **numFound 0** | 不可消费 |
+| Ultralight / Servo | Ultralight 平台只有 Windows/macOS/Linux；Servo 只有 Android 相关 open issue | 无 Android 产物 |
+
+**换内核的真实调用面**（在 `024a9cb6` 上重跑）：`webView.*(` **51 处**（全在 `MainActivity.kt`）、**18 个**方法、`import android.webkit` 仅 **3 个文件**、MainActivity 提到 WebView **313 行**。
+
+### 2. 内核为什么不可能拖慢启动：两条并行时间线
+
+```
+10:28:48.202  Start proc app.dsh.mobile
+10:28:49.979  preheat page finished (engine still starting)   <== 1.78s，能渲染一页了
+10:28:51.671  boot step spawn: 641ms (total 1719ms)            <== 引擎这才开始起
+10:28:56.646  boot step health-poll: 4975ms (total 6694ms)
+10:28:56.680  engine healthy on :3080
+```
+
+WebView 的 1.78 秒**在引擎 spawn 之前就结束了**，全程被引擎长尾盖住。boot.log 七次冷启：
+
+| spawn | health-poll | TOTAL | 占比 |
+| --- | --- | --- | --- |
+| 590ms | 4843ms | 6450ms | 75.1% |
+| 641ms | 4976ms | 6729ms | 74.0% |
+| 712ms | 5743ms | 7981ms | 72.0% |
+| 822ms | 6133ms | 8337ms | 73.6% |
+| 837ms | 12689ms | 15223ms | 83.3% |
+| 864ms | 6542ms | 8759ms | 74.7% |
+| 904ms | 8668ms | 11055ms | 78.4% |
+
+（模拟器 + 多会话并发环境，方差来自 CPU 争用；真机稳态见第一百四十章热态 2819～3423ms。）
+`spawn` 内部已无所可抠：orphan-cleanup 2ms / heal-shebangs 30ms / heal-pnpm 8ms / patches 197ms / mode-resolve 0ms。
+node 裸启动实测 `real 0.12～0.13s`、`process.uptime()` 107～114ms —— **node 自身不是瓶颈**，编译缓存（14,000 KB / `v24.22.3-x64-964aae3f-10193`）也已在生效。
+
+### 3. 唯一实测打通的提速路径：引擎独立进程 + 接管
+
+| 实验 | 结果 |
+| --- | --- |
+| `run-as` + `setsid` 起 node（脱离 app 进程树） | ppid=1；`am force-stop` 之后**仍存活**，端口仍 LISTEN，请求得 `200 alive-ok`（两轮一致） |
+| 对照 `su` 起的 uid0 detached node | 同样活过 force-stop |
+| app 内的 node 子进程 | force-stop / kill -9 后**必死** |
+| 接管序列（读 engine.log 取 token → 请求 WebUI） | `t_read_log=1～2ms`、`t_webui_respond=26～39ms`、`t_done=30～41ms`（3 次），status 303 |
+
+即「杀掉后台再打开」可以从 6.4～15.2s 降到**几十毫秒**。要改的正是清场语义：
+`reclaimPort()` `:1541` 直接转调 `reclaimPortByPort()` `:1560`（注释 *thorough reclaim, kill every holder*），代码里**没有任何接管分支**；`cleanupOrphanEngine()` `:1661` = `if (!portInUse()) return; reclaimPort()`。
+
+必须一并处理的四个坑（已实测）：
+
+1. **手动直跑引擎入口会崩**：`EngineConfig.dshEntry()` = `engineRoot/lib/node_modules/@deepseek-ai/dsh/lib/bin.js`（不是 `bin/dsh.js`），直跑报 `node-addon-require-builtin` requireStack → 独立进程必须复刻 `EngineConfig.kt:1835-1860` 的完整 env（`DSH_SHZ_PORT`/`DSH_BRIDGE_TOKEN`/`DSH_PET_BRIDGE_TOKEN`/`LD_LIBRARY_PATH`/`PREFIX`/`SHELL`/`HOME`/`DSH_HOME`/`NODE_COMPILE_CACHE`）。
+2. **桥 token 不落盘**：`AgentBridge.currentToken()`（`:149`）每进程 `UUID.randomUUID()`、注释明写不复用；接管后新进程拿不到旧 token → `scr`/`notify`/`shz` 会 403。
+3. **陈旧日志歧义**：`extractTokenUrl()`（`:125`）按 `logOffsetAtSpawn` 字节偏移读，接管场景没有「本次 spawn」，需「进程启动时间 + 端口 + token 行」三重判据。
+4. **cgroup 取决于启动路径（两轮结果相反）**：第 1 轮 `su` 起 → `0::/uid_0/…`、非 top-app、`oom_score_adj=-950`；第 2 轮 `run-as`+`setsid` → `0::/uid_10193/…`、**top-app**、`oom_score_adj=0`。**不能一概而论「脱离 app 必失前台优先级」**，须按实际启动路径逐条量测。
+
+### 4. 另外两条路（判断，未实现）
+
+- **路径 B 前后端分离**：前端 bundle 只有 100 entries / 原始 5.55 MB / zip 1.49 MB（`index.js` 1144.6KB、`vendor.js` 732.9KB），WebView 1.78s 就绪——壳子够快，慢的是引擎。先出本地静态壳再切真实会话，**只改善感知、不减少等待**，风险最低。
+- **路径 C 引擎侧剪枝**：`EngineConfig.kt:1445-1470` trim tier 0 已禁 5 个遥测插件（warm 1330→1160ms 有先例）；`android-overlay.yml` 31 条 `id:`、服务端 HTML 49027 B / 74 client plugins、历史上引擎共加载 338 插件。要逐条确认依赖，不能拍脑袋删。
+
+### 5. 证据分层
+
+| 层级 | 内容 |
+| --- | --- |
+| 实测（最高） | logcat 冷启时间线、boot.log 七次采样、detached 存活两轮、接管序列 3 次计时、node 裸启动 3 次、GeckoView AAR 下载解压字节数、系统 WebView 两份 APK 体积、`webView.*(` 调用点计数 |
+| 产物验签 | `MIN_CHROME=85`（`WebViewDiagnostics.kt:75`）、`scripts/patch-webview-syntax-floor.py` 存在、release APK 42,559,164 B / 1334 entries |
+| 文档原文 | Chromium provider 三条约束、build instructions 平台限制、CEF index.json 平台键、WPE README、Ultralight 官网 |
+| 线索（未采信为结论） | GeckoView 双 ABI 打包实际体积、真机 ROM 后台清理强度 |
+
+### 6. 未验证缺口
+
+1. **全部设备证据来自模拟器**（emulator-5554 / Android 14 / x86_64）。真机上 detached 进程能否活过 MIUI/HyperOS 的「后台清理」**未验证** —— 路径 A 最大未知。
+2. GeckoView 185.3 MB 只算 arm64 单 ABI，双 ABI 更大；其对冷启耗时的实际影响未测（本文只用体量与 API 差异判断）。
+3. 「租 Linux 构建机绕过 Chromium 编译门槛」未做成本核算；即便编出来，provider 签名白名单仍拦着，只能自绘。
+4. 路径 A 的「接管后桥 token 失效 → 403」是代码注释层面的必然，**未在接管场景实测**；修法（落盘 vs 引擎转发）涉及安全审查，不给结论。
+5. env 复刻面**只从渲染代码推断，未逐项实测**。
+
+### 7. 复用经验
+
+- **判定「某组件是否在关键路径」用并行时间线，不用体感。** 两条并行时间线（预热页 1.78s vs 引擎 6.4s）一句话否掉了整个内核提速假设。
+- **系统级约束先查官方 provider 文档，再算工程成本。** Chromium 的包名白名单 + 签名校验是墙不是工作量，先查这一条能省掉「能不能编出来」的全部讨论。
+- **「进程能否活过 force-stop」必须自己起一个 detached 进程来验**，不能从 `START_STICKY` / 前台服务推断。实测与直觉相反：不在 app 进程树里的同 uid 进程能活，app 的子进程必死。
+- **同一现象两轮结果不同时，先查启动路径差异再下结论**（cgroup 那次就是这么翻的）。
 
 ## PR #102：Material 3 单主题审查修订
 

@@ -951,6 +951,7 @@
     <string name="app_update_need_space">Not enough space: %1$d MB needed, %2$d MB available</string>
     <string name="app_update_err_version">Package version mismatch (found %1$d, expected %2$d)</string>
     <string name="app_update_err_signature">Package signature does not match the installed app</string>
+    <string name="app_update_err_signature_detail">A assinatura do pacote não corresponde ao app instalado (%1$s). Isso indica que o APK veio de outra chave de assinatura — build de depuração, outro fork ou repack reassinado — e não que o arquivo esteja corrompido.</string>
     <string name="app_update_err_missing_file">Install package not found, please download again</string>
     <string name="app_update_err_no_browser">No browser available</string>
     <string name="app_update_install_failed_title">Install failed</string>
@@ -1857,6 +1858,7 @@
     <string name="linux_workbench_delete_hint">Toque e segure uma imagem instalada para excluí-la</string>
     <string name="linux_workbench_diag_readiness">Prontidão do motor</string>
     <string name="linux_workbench_diag_ready">Pronto para rodar</string>
+    <string name="linux_workbench_diag_runner_selftest">Autoteste do executor</string>
     <string name="linux_workbench_diag_dns">Proxy DNS</string>
     <string name="linux_workbench_diag_dns_up">Escutando na porta %1$d</string>
     <string name="linux_workbench_diag_dns_down">Não está rodando. Ele é iniciado automaticamente ao instalar pacotes</string>

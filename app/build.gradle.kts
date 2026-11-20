@@ -299,13 +299,13 @@ android {
         // 而 CI 的 npm 原料走的是「上游还没有第一层」那条，打完第一层就 return，
         // 第二层永远补不上。beta.18 的 Release 因此只修了一半。
         // 同时给探针补了「第一层分支也必须转第二层」的结构判据（能打红）。
-        versionCode = 395
+        versionCode = 396
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.19"
+        versionName = "1.6.0-beta.20"
 
         ndk {
             abiFilters += listOf(targetAbi)

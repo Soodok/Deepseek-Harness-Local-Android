@@ -1058,6 +1058,85 @@ static int env_has_(const char *name) {
     return 0;
 }
 
+// 直接扫内核给的 envp（而不是 g_env_store）。
+//
+// 为什么必须单独一个函数：g_env_store 只在 loader_preload() 里被填充，而
+// ldr_main 里判断 `DSH_ALPINE_DEBUG` 的那一行在**调用之前**求值。用 env_has_
+// 就只能得到恒 0 —— 于是带 DSH_ALPINE_DEBUG=1 启动时一行日志都不打，
+// 崩溃现场完全没有线索（issue #125 的「no output at all」就是这个）。
+// ---- 崩溃现场可观测性（issue #125）----
+//
+// 现场反馈：#125 在 arm64 真机上「rootfs 部署成功、runner 每次 SIGSEGV(rc=139)、
+// 一个字节输出都没有」，连 DSH_ALPINE_DEBUG=1 也静默。两个原因各自都要修：
+//   · dbg 用 env_has_() 读到的是尚未填充的 g_env_store → 恒 0（见下方 ldr_main）；
+//   · 就算打开了，也缺少「死在哪个阶段」的锚点 —— 崩溃发生在 child_run_raw 里，
+//     而那里此前完全没有日志。
+//
+// 这里加两个只有 g_dbg 打开时才生效的东西：阶段标记 + 致命信号兜底打印。
+// 正常路径（g_dbg=0）一行都不打，输出与之前完全一致。
+static int g_dbg;
+static const char *g_stage = "boot";
+
+static void ldr_stage(const char *s) {
+    g_stage = s;
+    if (!g_dbg) return;
+    ldr_puts("LOADER: stage ");
+    ldr_puts(s);
+    ldr_puts("\n");
+}
+
+// 致命信号兜底：打印「死在哪个阶段」再 exit(139)，**不返回**。
+//
+// 为什么不返回：返回就要走 sa_restorer（x86_64 必须自己写裸汇编桩），而
+// 信号是在同一条指令上重复触发的 —— 返回等于立刻再挂一次，只在日志里刷屏。
+// 直接 exit_group 既省掉 restorer 的架构差异，也让 rc 保持 139/135 的语义。
+static void ldr_crash(int sig, void *info, void *uc) {
+    (void)info; (void)uc;
+    ldr_puts("LOADER: crash sig=");
+    ldr_log1("", (long)sig, 10);
+    ldr_puts("LOADER: crash last stage=");
+    ldr_puts(g_stage);
+    ldr_puts("\n");
+    raw6(SYS_exit_group, 128 + sig, 0, 0, 0, 0, 0);
+}
+
+// 安装致命信号处理（仅 g_dbg 时调用）。
+//
+// ★x86_64 必须带 SA_RESTORER 并给 restorer —— 这一条实测踩过：
+//   不带时内核在 do_sigaction 里直接判 -EFAULT，**handler 根本没装上**，
+//   进程随后按默认动作死掉，我们一行字都打不出来（看起来像「没装 handler」）。
+//   aarch64 走 VDSO 的通用 restorer，留 0 即可（与 ldr_sigaction_sigsys 一致）。
+//   handler 本身不返回，所以不需要 SA_SIGINFO。
+static void ldr_install_crash_handlers(void) {
+    char sa[256];
+    ldr_memset(sa, 0, sizeof(sa));
+    *(unsigned long *)(sa + 0) = (unsigned long)ldr_crash;
+#if defined(DSH_ARCH_AARCH64)
+    *(unsigned long *)(sa + 8) = 0x40000000UL;                    // SA_NODEFER
+    *(unsigned long *)(sa + 16) = 0;
+#else
+    *(unsigned long *)(sa + 8) = 0x40000000UL | 0x04000000UL;      // SA_NODEFER | SA_RESTORER
+    *(unsigned long *)(sa + 16) = (unsigned long)__dsh_rt_sigreturn;
+#endif
+    raw6(SYS_rt_sigaction, 11 /*SIGSEGV*/, (long)sa, 0, 8, 0, 0);
+    raw6(SYS_rt_sigaction,  7 /*SIGBUS*/,  (long)sa, 0, 8, 0, 0);
+    raw6(SYS_rt_sigaction,  4 /*SIGILL*/,  (long)sa, 0, 8, 0, 0);
+    raw6(SYS_rt_sigaction,  6 /*SIGABRT*/, (long)sa, 0, 8, 0, 0);
+}
+
+static int envp_has_(char **envp, const char *name) {
+    if (!envp) return 0;
+    unsigned nl = 0;
+    while (name[nl]) nl++;
+    for (int i = 0; envp[i]; i++) {
+        const char *e = envp[i];
+        unsigned k = 0;
+        while (k < nl && e[k] == name[k]) k++;
+        if (k == nl && e[k] == (char)61) return 1;
+    }
+    return 0;
+}
+
 static void env_fill_defaults(void) {
     if (!env_has_("HOME") && g_env_count < 127)
         scopy_(g_env_store[g_env_count++], "HOME=/root");
@@ -1143,11 +1222,11 @@ static int map_seg_file(long fd, unsigned long target_base, const Elf64_Phdr *ph
 // ================= 子进程：纯 raw syscall 加载并跳转 =================
 static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
     unsigned long ilen = g_interp_len, glen = g_guest_len;
-    if (!ilen || !glen) raw6(SYS_exit_group, 126, 0, 0, 0, 0, 0);
+    if (!ilen || !glen) { ldr_puts("LOADER: no interp/guest\n"); raw6(SYS_exit_group, 126, 0, 0, 0, 0, 0); }
 
     Elf64_Ehdr *ieh = (Elf64_Ehdr *)g_interp_buf;
     Elf64_Ehdr *geh = (Elf64_Ehdr *)g_guest_buf;
-    if (geh->e_ident[0] != 0x7F) raw6(SYS_exit_group, 125, 0, 0, 0, 0, 0);
+    if (geh->e_ident[0] != 0x7F) { ldr_puts("LOADER: guest not ELF\n"); raw6(SYS_exit_group, 125, 0, 0, 0, 0, 0); }
 
 
 
@@ -1169,6 +1248,7 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
         if (((Elf64_Phdr *)(g_guest_buf + geh->e_phoff))[i].p_type == PT_INTERP) { guest_static = 0; break; }
     }
 
+    ldr_stage("map-interp");
     // ---- 映射 interp ----
     Elf64_Phdr *iph = (Elf64_Phdr *)(g_interp_buf + ieh->e_phoff);
     unsigned long ilo = ~0UL, ihi = 0;
@@ -1179,7 +1259,7 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
         if (s < ilo) ilo = s;
         if (e > ihi) ihi = e;
     }
-    if (ilo == ~0UL && !guest_static) raw6(SYS_exit_group, 124, 0, 0, 0, 0, 0);
+    if (ilo == ~0UL && !guest_static) { ldr_puts("LOADER: interp has no PT_LOAD\n"); raw6(SYS_exit_group, 124, 0, 0, 0, 0, 0); }
     if (guest_static) { ilo = 0; ihi = 0; }
     unsigned long ispan = ihi - ilo;
     (void)ispan;
@@ -1207,17 +1287,20 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
         if (rv < 0 && rv > -4096) {
             rv = raw6(SYS_mmap, want, (long)ispan, 3 /*RW*/, 0x32 /*PRIVATE|ANON|FIXED*/, -1, 0);
         }
-        if (rv < 0 && rv > -4096) raw6(SYS_exit_group, 123, 0, 0, 0, 0, 0);
-        if (rv != want) raw6(SYS_exit_group, 123, 0, 0, 0, 0, 0);
+        if (rv < 0 && rv > -4096) { ldr_puts("LOADER: interp mmap FAIL\n"); raw6(SYS_exit_group, 123, 0, 0, 0, 0, 0); }
+        if (rv != want) { ldr_puts("LOADER: interp mmap misplaced\n"); raw6(SYS_exit_group, 123, 0, 0, 0, 0, 0); }
     }
     if (!guest_static) {
         for (int i = 0; i < ieh->e_phnum; i++) {
             if (iph[i].p_type != PT_LOAD) continue;
-            if (map_seg_file((long)g_interp_fd, IHI, &iph[i]) != 0)
+            if (map_seg_file((long)g_interp_fd, IHI, &iph[i]) != 0) {
+                ldr_puts("LOADER: interp seg map FAIL\n");
                 raw6(SYS_exit_group, 131, 0, 0, 0, 0, 0);
+            }
         }
     }
 
+    ldr_stage("map-guest");
     // ---- 映射 guest ----
     Elf64_Phdr *gph = (Elf64_Phdr *)(g_guest_buf + geh->e_phoff);
     unsigned long glo = ~0UL, ghi = 0;
@@ -1228,7 +1311,7 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
         if (s < glo) glo = s;
         if (e > ghi) ghi = e;
     }
-    if (glo == ~0UL) raw6(SYS_exit_group, 122, 0, 0, 0, 0, 0);
+    if (glo == ~0UL) { ldr_puts("LOADER: guest has no PT_LOAD\n"); raw6(SYS_exit_group, 122, 0, 0, 0, 0, 0); }
     unsigned long gspan = ghi - glo;
     {
         // 同上：FIXED_NOREPLACE 在 4.17 之前的内核上会被忽略，必须校验落位地址。
@@ -1242,15 +1325,18 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
         if (rv < 0 && rv > -4096) {
             rv = raw6(SYS_mmap, gwant, (long)gspan, 3, 0x32 /*FIXED*/, -1, 0);
         }
-        if (rv < 0 && rv > -4096) raw6(SYS_exit_group, 121, 0, 0, 0, 0, 0);
-        if (rv != gwant) raw6(SYS_exit_group, 121, 0, 0, 0, 0, 0);
+        if (rv < 0 && rv > -4096) { ldr_puts("LOADER: guest mmap FAIL\n"); raw6(SYS_exit_group, 121, 0, 0, 0, 0, 0); }
+        if (rv != gwant) { ldr_puts("LOADER: guest mmap misplaced\n"); raw6(SYS_exit_group, 121, 0, 0, 0, 0, 0); }
     }
     for (int i = 0; i < geh->e_phnum; i++) {
         if (gph[i].p_type != PT_LOAD) continue;
-        if (map_seg_file((long)g_guest_fd, GHI, &gph[i]) != 0)
+        if (map_seg_file((long)g_guest_fd, GHI, &gph[i]) != 0) {
+            ldr_puts("LOADER: guest seg map FAIL\n");
             raw6(SYS_exit_group, 132, 0, 0, 0, 0, 0);
+        }
     }
 
+    ldr_stage("build-stack");
     // ---- 建栈 ----
     // 栈从 8MB 降到 2MB：实测 guest 程序极少用到 >2MB 栈，
     // 而每次 exec 都 mmap 8MB 匿名区是有代价的（page table + 清零）。
@@ -1258,7 +1344,7 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
     // 避免每次 exec 预填 512 个页表项（那是固定开销的主要部分之一）。
     unsigned long stksz = 2UL << 20;
     long stk = raw6(SYS_mmap, 0, (long)stksz, 3 /*RW*/, 0x22, -1, 0);
-    if (stk < 0 && stk > -4096) raw6(SYS_exit_group, 120, 0, 0, 0, 0, 0);
+    if (stk < 0 && stk > -4096) { ldr_puts("LOADER: stack mmap FAIL\n"); raw6(SYS_exit_group, 120, 0, 0, 0, 0, 0); }
     unsigned char *sp = (unsigned char *)(stk + stksz);
 
     // 字符串区（逆序压）
@@ -1341,6 +1427,7 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
     for (int i = ac - 1; i >= 0; i--) { sp -= 8; *(uint64_t *)sp = (uint64_t)ap[i]; }
     sp -= 8; *(uint64_t *)sp = (uint64_t)ac;
 
+    ldr_stage("jump-entry");
     // 静态：直接从 guest 入口进；动态：先进 interp 的入口
     unsigned long entry = guest_static ? (GHI + geh->e_entry) : (IHI + ieh->e_entry);
     // ★跳转前必须解除 SIGSYS 阻塞：本函数可能在 SIGSYS handler 内被调用
@@ -1784,6 +1871,17 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     if ((trap_ip >> 32) == (unsigned long)DSH_LOADER_BASE_HI) {
         g_guard_hits++;
         if (nr > 0 && nr < 512) g_guard_nr[nr]++;
+        // ★debug 下把「是哪个号被外层拦了」打出来（issue #125）。
+        //
+        //   重入守卫只能判定「这次重发必然再被拦」，无法知道是**哪个** syscall：
+        //   不同设备的 zygote seccomp 策略不同（同族历史上依次踩过 poll(7)、
+        //   select(23)、fork(57)、execveat(322)）。现场报告若能带上这个号，
+        //   下次就能直接加翻译规则，不必再靠猜。
+        //   每个号只打一次（多线程下反复刷屏没有信息量）。
+        if (g_dbg && nr > 0 && nr < 512 && g_guard_nr[nr] == 1) {
+            ldr_puts("LOADER: guard-hit nr=");
+            ldr_log1("", nr, 10);
+        }
         r[0] = (unsigned long long)(long)-EPERM;
         return;
     }
@@ -4091,6 +4189,18 @@ int ldr_main(int argc, char **argv, char **envp) {
         ldr_puts("usage: dsh-alpine [-m g:h]... <rootfs> <interp> <guest> [args...]");
         return 2;
     }
+    // ★诊断开关与崩溃兜底**必须在最开头**就装好（issue #125）。
+    //
+    //   放在 rootfs 打开之后（原实现）的代价：最早期那几类失败
+    //   （rootfs 不存在 / stub 找不到 / interp 读不出来）发生时 g_dbg 还是 0，
+    //   于是 DSH_ALPINE_DEBUG=1 也一句话不打 —— 用户以为「DEBUG 没生效」，
+    //   实际是开关装得太晚。这里只依赖 envp，此时环境指针已经可用。
+    //
+    //   ⚠️ 必须直接扫 envp，**不能**用 env_has_()：env_has_ 读的是 g_env_store，
+    //   它要到 loader_preload() 才被填充，在这里求值恒 0 —— 这正是 #125 里
+    //   「开了 DEBUG 一个字节都没有」的直接原因。
+    g_dbg = envp_has_(envp, "DSH_ALPINE_DEBUG");
+    if (g_dbg) ldr_install_crash_handlers();
     g_force_container_path = 1;
     const char *rootfs = argv[base];
     scopy_(g_interp_path, argv[base + 1]);
@@ -4103,8 +4213,9 @@ int ldr_main(int argc, char **argv, char **envp) {
     //   留在低位的 rootfs fd 会被顶掉且 fstat 才发现，表现为「库文件 Permission denied」。
     { long hi = raw6(SYS_fcntl, g_rootfs_fd, 0 /*F_DUPFD*/, 1024, 0, 0, 0);
       if (hi >= 1024) { raw6(SYS_close, g_rootfs_fd, 0, 0, 0, 0, 0); g_rootfs_fd = (int)hi; } }
+    ldr_stage("find-stub");
     find_stub();
-    if (!g_stub_ip) return 4;
+    if (!g_stub_ip) { ldr_puts("LOADER: find_stub FAIL\n"); return 4; }
     // 记录 rootfs 的宿主真实路径（getcwd 前缀裁剪用）
     g_rootfs_host_len = 0;
     { const char *rp = rootfs; char *dp = g_rootfs_host;
@@ -4118,8 +4229,21 @@ int ldr_main(int argc, char **argv, char **envp) {
     // 被 "LOADER: rootfs_fd=1024 stub=0x..." 占掉两行 —— 用户打开终端看到的是
     // 调试噪声而不是提示符。只有排查问题（App 侧把 DSH_ALPINE_DEBUG 传进 envp）
     // 时才该出现。
-    const int dbg = env_has_("DSH_ALPINE_DEBUG");
-    if (dbg) ldr_log2("LOADER: rootfs_fd=", (long)g_rootfs_fd, " stub=0x", (long)g_stub_ip);
+    //
+    // ⚠️ 开关与 crash handler 已在 ldr_main 最开头装好（见那里的注释）：若等到
+    //   这里才设 g_dbg，那么「rootfs 打不开」「stub 找不到」这类**最早期**的失败
+    //   期间一句话都不会打，而现场报告里最需要的就是这一段。
+    const int dbg = g_dbg;
+    if (dbg) {
+        ldr_log2("LOADER: rootfs_fd=", (long)g_rootfs_fd, " stub=0x", (long)g_stub_ip);
+        ldr_puts("LOADER: argv interp=");
+        ldr_puts(argv[base + 1]);
+        ldr_puts("\n");
+        ldr_puts("LOADER: argv rootfs=");
+        ldr_puts(rootfs);
+        ldr_puts("\n");
+    }
+    ldr_stage("rootfs-open");
 
     // 父进程先预读（此时 TLS 是 bionic，libc 安全）
     {
@@ -4127,7 +4251,8 @@ int ldr_main(int argc, char **argv, char **envp) {
         gv[n++] = (char *)argv[base + 2];
         for (int i = base + 3; i < argc && n < 31; i++) gv[n++] = argv[i];
         gv[n] = 0;
-        if (loader_preload(argv[base + 2], gv, envp, 1) != 0) { ldr_puts("LOADER: preload FAIL"); return 5; }
+        ldr_stage("preload");
+        if (loader_preload(argv[base + 2], gv, envp, 1) != 0) { ldr_puts("LOADER: preload FAIL\n"); return 5; }
         if (dbg) ldr_log2("LOADER: preloaded interp=", (long)g_interp_len, " guest=", (long)g_guest_len);
     }
 
@@ -4137,7 +4262,9 @@ int ldr_main(int argc, char **argv, char **envp) {
     //   带 filter 的进程跑它必 Bad system call（实测 status=31）。
     //   实测：父 PR_GET_SECCOMP=2 / cleaner=0 / Adreno 840 硬件 GPU 可用。
     ldr_prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+    ldr_stage("install-filter");
     install_filter();
+    ldr_stage("jump-guest");
     child_run_raw(0);   // 直接在本进程加载（首次不计 execve）
     return 10;
 }

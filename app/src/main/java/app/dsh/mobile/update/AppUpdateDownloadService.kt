@@ -150,10 +150,19 @@ class AppUpdateDownloadService : DownloadSession() {
         }
         if (!ApkInstaller.sameSignature(this, dest)) {
             // 签名不一致：换过渠道 key、别人 fork 的包，或代理投毒。三种都不该装。
+            //
+            // ★文案带上两边指纹（issue #94）：用户装的是调试签名包、发布页给的是
+            //   正式签名包时，「签名不一致」会被理解成「包坏了」。摆出
+            //   `installed=50f148a5 archive=33e22044` 才能一眼看出是两个渠道。
+            val mismatch = ApkInstaller.lastMismatch
             dest.delete()
             return TaskResult.Failure(
                 getString(R.string.app_update_failed_title),
-                getString(R.string.app_update_err_signature),
+                if (mismatch.isBlank()) {
+                    getString(R.string.app_update_err_signature)
+                } else {
+                    getString(R.string.app_update_err_signature_detail, mismatch)
+                },
                 openApp(),
             )
         }

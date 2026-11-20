@@ -15,6 +15,20 @@ add_library(dshpty SHARED dsh_pty.c)
 add_executable(dsh_pty_exec dsh_pty_exec.c)
 set_target_properties(dsh_pty_exec PROPERTIES OUTPUT_NAME "libdsh_pty_exec.so")
 
+# ★必须静态链接（v1.8.3）。
+#
+# 动态 bionic 可执行文件的 `PT_INTERP` 是 `/system/bin/linker64`（实测从
+# APK 里读 ELF program header：`PT_INTERP = /system/bin/linker64`、有 PT_DYNAMIC）。
+# 而 **chroot 沙箱模式**下引擎跑在 rootfs 里，chroot 只挂
+# `/proc /dev /sys /tmp /dev/pts` 与 `/data` 系（见 LinuxSandbox.REQUIRED_MOUNT_POINTS）
+# —— **没有 /system**。于是 `execv(dsh_pty_exec)` 找不到解释器直接 ENOENT，
+# node-pty 起不来 → Web / PTY 终端在整个 chroot 模式下不可用，而其它功能都正常
+# （门脚本、引擎本身跑的是 guest 自己的 node）—— 症状正好是「只有 pty 终端不能用」。
+#
+# 静态链接没有 PT_INTERP，内核直接装载，任何 rootfs 里都能跑；
+# 本文件不调用 `__android_log_print`，也不需要额外的 bionic 运行时。
+target_link_options(dsh_pty_exec PRIVATE "-static")
+
 # 16KB 页对齐：Android 15+ 部分 aarch64 真机内核使用 16384 字节页，
 # LOAD p_align=4096 的 so 在其上 dlopen 会报 "program alignment" 失败。
 # 不依赖 NDK r27+ 的默认行为，对所有 ndkVersion 显式生效。

@@ -357,3 +357,20 @@ docs/ui-preview/.preview-server.json
 # 那种改动只会让启动变慢，所有门禁照样全绿。三条热点各对应一次实测修复，
 # 四条负对照都能打红（去掉剪枝、guardian 回 listFiles、去掉 resolveEarly 调用）。
 !/scripts/probes/_test_boot_hotspots.py
+
+# 前端语法高亮预热的空闲化：删掉预热也能让首绘变快，但第一次滚到代码块时
+# 现场编译 typescript grammar 要 500~660 ms —— 只是把卡顿挪到用户眼前。
+# 探针同时禁止「保留立即预热」和「完全不预热」，只放行空闲执行。
+!/scripts/probes/_test_frontend_warmup_idle.py
+
+# 3080 清场脚本的转义纪律：raw string 里写「反斜杠 + 美元符」或「两个反斜杠的 \0」
+# 都只会得到一条 exit 0 的静默 no-op —— 探针必须能把这些形态打红。
+!/scripts/probes/_test_port_reclaim_script.py
+
+# loader 崩溃可观测性（issue #125）：DEBUG 开关必须直扫 envp（读 g_env_store 恒 0），
+# 阶段标记与致命信号兜底都挂在 g_dbg 上 —— 任一退回去都得打红。
+!/scripts/probes/_test_loader_diagnostics.py
+
+# 签名单钥不一致的解释文案（issue #94）：指纹对照必须真的从判定分支写出来，
+# 六套 locale 的新串必须带占位符 —— 任一退回去都得打红。
+!/scripts/probes/_test_update_signature_hint.py

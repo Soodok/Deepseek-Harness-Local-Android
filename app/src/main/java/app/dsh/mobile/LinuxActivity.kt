@@ -3256,6 +3256,47 @@ class LinuxActivity : ThemedActivity() {
             )
         }
 
+        // ★运行器**真跑一次**（issue #125）。
+        //
+        // 上面那两项（deployLinuxRunner + isFixedBaseLinuxRunner）只看 ELF 头，
+        // 于是 rootfs 完整、runner 静态基线也对时，界面报「Runner: OK」，而现场
+        // runner 每次调用都 SIGSEGV(rc=139) —— 用户被一条**没有验证过**的 OK
+        // 结论指向错误的排查方向（去查 apk 镜像、去查 rootfs），实际是 loader 崩。
+        //
+        // 判据换成「在这个 rootfs 里真的能跑一条命令」：起一次容器跑
+        // `/bin/busybox echo`，退出码非 0 就如实贴出原始输出（含 rc 与 stderr），
+        // 让「Runner: OK」变成有证据的结论。
+        //
+        // 成本：一次容器 fork（实测 200~300ms），只在用户主动点「诊断」时发生，
+        // 不进冷启路径。
+        if (st.state == LinuxEnvironmentManager.State.READY) {
+            val self = runCatching {
+                LinuxContainerRunner.get(this).run(
+                    guestPath = "/bin/busybox",
+                    args = listOf("echo", "runner-ok"),
+                    timeoutMs = 20_000L,
+                    skipReady = true,
+                )
+            }.getOrNull()
+            items += when {
+                self == null -> ReportDialog.Item(
+                    warn,
+                    getString(R.string.linux_workbench_diag_runner_selftest),
+                    getString(R.string.linux_diag_unreadable),
+                )
+                self.ok && self.combined().contains("runner-ok") -> ReportDialog.Item(
+                    ok,
+                    getString(R.string.linux_workbench_diag_runner_selftest),
+                    self.combined() + " (" + self.durationMs + " ms)",
+                )
+                else -> ReportDialog.Item(
+                    bad,
+                    getString(R.string.linux_workbench_diag_runner_selftest),
+                    "rc=" + self.exitCode + if (self.combined().isBlank()) "" else ": " + self.combined(),
+                )
+            }
+        }
+
         val port = LinuxDnsProxy.currentPort()
         items += if (port > 0) {
             ReportDialog.Item(
