@@ -15185,3 +15185,62 @@ App 被强杀时信号传不到 node，node 以 uid 0 变孤儿，新引擎 EADD
   `Privilege.runSu` 这一路，port 表那条只覆盖同 uid 场景 —— 写在这里，免得后人以为一条脚本全包。
 - 工作区里另一个会话同时在提交（23ce8bf5 / d6918fb7，shiki 预热）；本轮只 git add 自己的
   5 个路径，未夹带他人改动。
+
+## 一百三十三 · 2026-11-20 容器里 PTY 终端起不来（`3fc9995d` + `4b257c54`）
+
+用户报告：「有人说 linux 容器里 pty 终端不能正常使用」——门脚本、引擎都正常，只有终端不行。
+
+### 三个根因（全部有代码级证据）
+
+1. **`libdsh_pty_exec.so` 是动态 bionic 可执行文件**。实读 APK 内 ELF program header：
+   `PT_INTERP=/system/bin/linker64`、有 `PT_DYNAMIC`。而 chroot 沙箱只挂
+   `/proc /dev /sys /tmp /dev/pts` 与 `/storage/emulated/0`、`/data/user`、`/data/data`
+   （`LinuxSandbox.REQUIRED_MOUNT_POINTS` + `buildBinds`），**没有 `/system`**
+   ⇒ `execv` 找不到解释器。门脚本与引擎跑的是 guest 自己的 node，所以其它功能看不出问题。
+2. **chroot 分支仍注入 `DSH_TERMINAL_*`**：引擎已经在容器里，node-pty 的 shim 又包一层
+   `dsh_alpine`——而 `dsh_alpine` 是宿主 bionic 程序。
+3. **把 `/bin/bash` 无条件当 guest 程序**：引擎默认 shell 是 `/bin/bash`
+   （`dsh-terminal-bash` 的 `DEFAULT_BASH_SHELL`）+ `--noprofile --norc -i`，
+   而 Alpine minirootfs 里只有 busybox 的 ash，`/bin/bash` 不存在 → spawn 即 ENOENT；
+   就算换成 sh，bash 专属参数也会直接报错。
+
+### 修法
+
+- `app/src/main/cpp/CMakeLists.txt`：`dsh_pty_exec` 加 `-static`。重建后
+  `lib/arm64-v8a/libdsh_pty_exec.so` 12008 B → 444032 B，`PT_INTERP=None`、`PT_DYNAMIC=False`。
+- `app/src/main/java/app/dsh/mobile/engine/LinuxEngineLauncher.kt`：chroot 分支先
+  `val envForChroot = envVars.filterNot { it.startsWith("DSH_TERMINAL_") }`，
+  `envMap` 与 `LaunchSpec.env` 都用它。
+- `scripts/patch-node-pty-android.py`：`containerWrap` 里当 `file === "/bin/bash"` 且
+  rootfs 内 `bin/bash` 不存在时，guest 退成 `/bin/sh`，并丢掉
+  `--noprofile/--norc/--login/-l`。
+
+### 验证（分层，如实标注）
+
+- **静态**：APK 内 ELF `PT_INTERP=None / PT_DYNAMIC=False`；arm64 444032 B、x86_64 452528 B。
+- **设备级决定性对照**（emulator-5554，无 `/system` 的 chroot）：
+  - 负对照：`chroot /data/local/tmp/ct2 /sh_dyn -c "echo dyn_ok"`
+    → `chroot: exec /sh_dyn: No such file or directory`（动态 bionic 找不到 linker，**正是现场症状**）
+  - 静态助手同一 chroot：`dsh_pty_exec: usage: ...`，`CHROOT_EXIT=0`
+- **shim 行为**：探针 J 段抽出 `containerWrap` 原文，用 `path.posix` + 桩 fs 在 node 里跑四组：
+  无 bash → `/bin/sh -i`；有 bash → `/bin/bash --noprofile --norc -i`（无回归）；
+  runner 不可执行 / 缺 INTERP → `undefined`。
+- **反向验证**：`guestFile = "/bin/sh"` 改回 `guestFile = file` → I2、J1 立刻红，
+  J1 打出 `['/rootfs','/lib/ld-musl.so','/bin/bash','-i']`。
+- 探针 `_test_linux_terminal_in_container.py` 28 → 33 项全过；`compileReleaseKotlin` 通过；
+  `check-i18n`、`check-ui-tokens` 全过。
+
+### 未做（缺口，别当成已验证）
+
+- **没有跑通完整容器 E2E**：两台上线模拟器都是 x86_64，而发布 APK 只带 `arm64-v8a`；
+  设备上也没部署 Alpine rootfs。所以「打开终端能敲 `apk`」这一步只有代码 + chroot 对照证据，
+  没有真机容器内的终端会话截图。
+- chroot 分支的 env 过滤只有源码/探针证据，没在真机 chroot 模式下起过引擎。
+
+### 复用经验
+
+- 排查「容器里某个功能单独坏」先看**那个二进制是不是动态链接**：chroot 不挂 `/system`，
+  动态 bionic 程序必然 `No such file or directory`，而且报错长得像「文件不存在」，
+  很容易误判成路径写错。
+- 探针里 `path.join` 在 Windows 上拼反斜杠 → 行为验证必须显式 `require('path').posix`，
+  否则得到的是平台假结论。
