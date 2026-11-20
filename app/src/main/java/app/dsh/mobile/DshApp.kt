@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.Application
 import app.dsh.mobile.engine.EngineSupervisor
+import com.google.android.material.color.DynamicColors
 import app.dsh.mobile.engine.ExtensionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,20 @@ class DshApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 动态取色：官方推荐在 Application 里注册一次，由 ActivityLifecycleCallbacks
+        // 在 onActivityPreCreated 阶段套用主题覆盖层。
+        // https://developer.android.com/develop/ui/views/theming/dynamic-colors
+        //
+        // 条件：Android 12+ 且用户在「主题」页打开了动态取色。
+        // 前提是 Activity 不要自己 setTheme()，否则会把这层覆盖冲掉。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            DynamicColors.applyToActivitiesIfAvailable(
+                this,
+                com.google.android.material.color.DynamicColorsOptions.Builder()
+                    .setPrecondition { activity, _ -> ThemeAccent.dynamicEnabled(activity) }
+                    .build(),
+            )
+        }
         // 让插件兼容性检查能读到内置引擎版本（issue #66：判定插件要求的引擎
         // 版本是否高于我们内置的版本）。用 applicationContext，不泄漏 Activity。
         app.dsh.mobile.engine.NativePluginCheck.attachContext(this)

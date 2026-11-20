@@ -117,22 +117,33 @@ check('D1 card token keeps a 1dp stroke (separation must survive dark mode)',
       _stroke is not None
       and re.search(r'android:width="(?:1dp|\?attr/dshCardStroke)"', _stroke.group(0)) is not None
       and ('@color/stroke' in _stroke.group(0) or '?attr/dshStroke' in _stroke.group(0)))
-check('D2 group card corners come from md3_card_radius',
-      '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
+check('D2 group card corners come from the card radius token',
+      re.search(r'<corners[^>]*android:radius="\?attr/dshCardRadius"', bg_card) is not None
+      or '@dimen/md3_card_radius' in bg_card or '18dp' in bg_card)
 
 group = os.path.join(RES, 'drawable', 'bg_md3_group.xml')
 check('D3 group border drawable exists (one card per group, not per row)',
       os.path.exists(group) and '<stroke' in read(group))
 
 themes = read(os.path.join(RES, 'values', 'themes.xml'))
+# v1.6.x 主题重做后，语义色统一映射到 md3_* 设计令牌（同一份色板，只是命名对齐 MD3）。
+# 主题里的语义角色必须显式映射到自有色板（不能落回 Material 默认暖灰板）。
+# 单主题收敛后，surface/text 直接指向自有 @color/surface、@color/text_primary，
+# 与指向 md3_* 的写法等价 —— 两种都算合法，只要不是 Material 内置默认值。
 check('D4 MD3 semantic colours map back to our palette',
-      'name="colorOnSurface">@color/text_primary<' in themes
-      and 'name="colorSurface">@color/surface<' in themes
-      and 'name="colorPrimary">@color/accent<' in themes)
+      re.search(r'name="colorOnSurface">@color/(md3_on_surface|text_primary)<', themes) is not None
+      and re.search(r'name="colorSurface">@color/(md3_surface|surface)<', themes) is not None
+      and re.search(r'name="colorPrimary">@color/(accent|md3_primary)<', themes) is not None)
+# 完整色阶：缺一个就会让对应组件退化成默认色
+for token in ('colorSurfaceContainer', 'colorSurfaceContainerHigh',
+              'colorSurfaceContainerHighest', 'colorOutlineVariant',
+              'colorError', 'colorOnPrimary'):
+    check('D4 theme defines %s' % token, 'name="%s">' % token in themes)
 
 src_dir = os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile')
+dshapp = read(os.path.join(src_dir, 'DshApp.kt'))
 themed_kt = read(os.path.join(src_dir, 'ThemedActivity.kt'))
-accent_kt = read(os.path.join(src_dir, 'Accent.kt'))
+themes_txt = read(os.path.join(RES, 'values', 'themes.xml'))
 
 
 def strip_kotlin_comments(src):
@@ -141,18 +152,24 @@ def strip_kotlin_comments(src):
     return re.sub(r'//[^\n]*', '', src)
 
 
-# Monet 只能给「跟随壁纸」用，而且连它也不能「注入」：
-# DynamicColors.applyToActivityIfAvailable 在 API 31+ 走 ColorResourcesOverride →
-# ResourcesLoader 替换颜色资源，会改动本 Activity 的 Resources 配置，系统随即再派一次
-# configuration change → 第二次 relaunch（真机 / Android 14 实测：点一下闪两次）。
-# 所以动态取色改为 SystemAccent 直接读 android.R.color.system_accent1_*，不碰 Resources。
-# 本条守住的是「没有任何一处再注入 DynamicColors」＋「动态分支确实走 SystemAccent」。
-check('D5 DynamicColors is never injected (it rewrites Resources and re-triggers a relaunch)',
-      'DynamicColors.applyTo' not in strip_kotlin_comments(themed_kt)
-      and 'setContentBasedSource' not in themed_kt)
-check('D5b dynamic accent reads SystemAccent instead of the theme',
-      'SystemAccent.primary(' in accent_kt
-      and 'MaterialColors.getColor' not in strip_kotlin_comments(accent_kt))
+# 2026-11 收敛：全站唯一一套 Material 3 主题（Theme.Dsh 本身即 M3 语义色 + dsh 令牌），
+# 经典风格与 Theme.Dsh.MD3 副本已删除；配色方案改由 ThemeOverlay.Dsh.Palette.* 切换，
+# 系统动态取色仍按官方推荐在 Application 里注册（受用户开关约束）。
+check('D5 single Material 3 theme (Theme.Dsh.MD3 removed)',
+      'name="Theme.Dsh.MD3"' not in themes_txt
+      and re.search(r'<style name="Theme\.Dsh" parent="Theme\.Material3\.', themes_txt) is not None)
+check('D5 DynamicColors registered once in Application, gated by the palette choice',
+      'DynamicColors.applyToActivitiesIfAvailable' in dshapp
+      and 'ThemeAccent.dynamicEnabled' in dshapp)
+check('D5 no per-activity DynamicColors injection',
+      'DynamicColors.applyTo' not in strip_kotlin_comments(themed_kt))
+check('D5 palette overlay is applied after theme setup',
+      re.search(r'ThemeManager\.syncAppCompatNight\(this\)\n'
+                r'\s*val paletteOverlay = ThemeAccent\.overlayRes\(this\)\n'
+                r'\s*if \(paletteOverlay != 0\) theme\.applyStyle\(paletteOverlay, true\)',
+                themed_kt) is not None)
+check('D5 no content-based pseudo dynamic colour',
+      'setContentBasedSource' not in dshapp and 'setContentBasedSource' not in themed_kt)
 
 icon_tint = 0
 app_tint = 0

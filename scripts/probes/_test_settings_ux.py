@@ -141,7 +141,11 @@ voice_kt = read(os.path.join(JAVA, "VoiceServiceActivity.kt")) if exists(os.path
 
 check("AppearanceActivity.kt exists", bool(appearance_kt))
 # v1.5.8：合并页已按宝宝要求拆掉（语音→VoiceServiceActivity，插件→PluginStoreActivity）
-check("old combined ExtensionVoice page removed", not ext_voice_kt and not ext_voice_layout)
+check("old combined ExtensionVoice activity removed", not ext_voice_kt)
+# activity_extension.xml is now the standalone extension settings page in upstream main,
+# not the retired combined voice+extension page.
+check("extension layout has no combined voice/plugin row",
+      "rowVoicePlugins" not in ext_voice_layout and "setting_voice_plugins_sub" not in ext_voice_layout)
 for name, src in (("AppearanceActivity", appearance_kt), ("VoiceServiceActivity", voice_kt)):
     check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
     check(name + ": follows OrientationPrefs",
@@ -153,9 +157,10 @@ def has_id(text, rid):
     return re.search(r'android:id="@\+id/' + rid + r'"', text) is not None
 
 
-for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowAccent", "rowLayoutMode"):
+for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowLayoutMode"):
     check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
     check("appearance layout: row " + row, has_id(appearance_layout, row))
+check("appearance layout: no legacy preset accent entry", not has_id(appearance_layout, "rowAccent"))
 
 # v1.5.x：文件保存目录从「外观与显示」挪到设置页「数据与会话」分组 ——
 # 它讲的是数据落在哪，不是外观。这里改成反向断言：外观页不该再有它，
@@ -171,26 +176,26 @@ check("appearance code: settings-follow switch wired",
       "setFollowInSettings" in appearance_kt and "OrientationPrefs.followInSettings" in appearance_kt)
 # v1.4.58：扩展中心回主页第一屏，其余语音/插件行留在子页
 check("main layout: rowExt on first screen", has_id(layout, "rowExt"))
-check("extension layout: rowExt moved out", not has_id(ext_voice_layout, "rowExt"))
+check("extension layout: rowExt moved to main settings",
+      has_id(read(os.path.join(RES, "layout", "activity_settings.xml")), "rowExt"))
 # 旧合并子页的行一个都不该再出现在主页；其中桌宠改为落在外观页
 for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
 check("main layout: rowPet moved out (now in appearance)", not has_id(layout, "rowPet"))
 check("appearance layout: rowPet moved in", has_id(appearance_layout, "rowPet"))
 
-# v1.5.x MD3：分区标题保留（原结构），组内每行是一条独立分段卡片，
-# 靠 bg_md3_seg_{top,mid,bottom,single} 实现「首行上圆角／中间平角／末行下圆角」。
-# 行仍然是 LinearLayout —— SettingsActivity.rowsOf() 硬依赖该类型。
-check("main layout: MD3 segmented rows", layout.count("bg_md3_seg_") >= 4)
-# 2026-11-10：分组标题从「亮蓝 TitleSmall」改为「灰字 LabelMedium」。
-# 两种都算数，但下面单独锁一次「必须是灰、不能再用 colorPrimary」。
-check("main layout: section headers kept",
-      layout.count("textAppearanceTitleSmall") >= 3 or layout.count("textAppearanceLabelMedium") >= 3)
-check("main layout: section headers muted (not colorPrimary)",
-      layout.count("textAppearanceLabelMedium") >= 3
-      and "?attr/colorOnSurfaceVariant" in layout)
-check("main layout: rows stay LinearLayout",
-      layout.count('android:id="@+id/row') == layout.count("bg_md3_seg_"))
+# v1.6.x：改用 Material 3 原生组件，不再自绘分段圆角。
+#   分组 = MaterialCardView，行分隔 = MaterialDivider，
+#   顶栏 = MaterialToolbar，图标容器 = ShapeableImageView。
+# 行根仍是 LinearLayout —— SettingsActivity.rowsOf() 依赖该类型，
+# MD3 Views 也没有提供可替代的 list-item 组件。
+check("main layout: MaterialCardView groups", layout.count("MaterialCardView") >= 4)
+check("main layout: MaterialDivider separators", layout.count("MaterialDivider") >= 4)
+check("main layout: MaterialToolbar top bar", "MaterialToolbar" in layout)
+check("main layout: ShapeableImageView icon chips", layout.count("ShapeableImageView") >= 4)
+check("main layout: no hand-drawn segmented backgrounds", "bg_md3_seg_" not in layout)
+check("main layout: MD3 section headers kept", layout.count("textAppearanceTitleSmall") >= 3)
+check("main layout: rows stay LinearLayout", layout.count('android:id="@+id/row') >= 4)
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
 # v1.7.9：语音服务从「扩展与语音」分组搬到「无障碍」子页，入口与接线一起搬
@@ -248,7 +253,10 @@ for btn, row in (("btnExport", "rowExportData"), ("btnImport", "rowImportData"),
     # 改成可点击 MaterialButton 会拦截父行触摸，造成「按钮看得见但不工作」；
     # 因此移除伪按钮，保留父行 selectable ripple 作为整行操作 affordance。
     check("backup action row %s: no dead pill button %s" % (row, btn), bool(blk) and btn not in block)
-    check("backup action row %s: MD3 segmented ripple retained" % row, bool(blk) and "@drawable/bg_md3_seg_" in block)
+    # v1.6.x：行背景改用原生 ?attr/selectableItemBackground，
+    # 圆角由外层 MaterialCardView 提供，不再自绘分段背景。
+    check("backup action row %s: native ripple retained" % row,
+          bool(blk) and "selectableItemBackground" in block)
     check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in block)
 
 # ------------------------------------------------------- 4. 权限徽章（v1.4.58：按钮删除，整行即入口）
@@ -285,7 +293,7 @@ NEW_KEYS = (
     "report_copy", "report_error",
     "restart_confirm_title", "restart_confirm_body",
 )
-for loc in ("values", "values-de", "values-zh-rCN", "values-pt-rBR"):
+for loc in ("values", "values-de", "values-zh-rCN", "values-pt-rBR", "values-th", "values-ru"):
     strings = read(os.path.join(RES, loc, "strings.xml"))
     missing = [k for k in NEW_KEYS if ('name="%s"' % k) not in strings]
     check("i18n: %s has all %d new keys" % (loc, len(NEW_KEYS)), not missing, "missing " + ", ".join(missing))

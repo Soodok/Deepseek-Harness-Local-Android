@@ -1,6 +1,5 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -8,7 +7,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import com.google.android.material.slider.Slider
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 import android.widget.Toast
@@ -29,15 +29,9 @@ class AppearanceActivity : ThemedActivity() {
     private var orientMode: OrientationMode = OrientationMode.PORTRAIT
     private var pageScale = DEFAULT_PAGE_SCALE
 
-    /**
-     * 本页上次「已生效」的主题 / 强调色 / 布局快照（v1.7.9）。
-     *
-     * 之前本页**完全没有快照比对**：从「主题」子页改完强调色返回，
-     * 既不会重建也不刷新文字 —— 第 2 行「主题」的当前值仍显示「天蓝（默认）」，
-     * 而子页里明明是靛蓝。这是用户看到「切换没效果」最直接的一处。
-     */
+    /** 本页已应用的外观主题与布局快照；颜色只使用系统动态取色，不显示预设色名。 */
     private var appliedTheme: ThemeMode = ThemeMode.DARK
-    private var appliedAccent: Int = 0
+    private var appliedPalette: String = ThemeAccent.BLUE
     private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
     override fun attachBaseContext(newBase: Context) {
@@ -53,10 +47,10 @@ class AppearanceActivity : ThemedActivity() {
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
         appliedTheme = ThemePref.get(this)
-        appliedAccent = Accent.current(this).argb
+        appliedPalette = ThemeAccent.selected(this)
         appliedLayout = SettingsLayoutMode.current(this)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         // 桌面宠物（v1.5.8 从「语音与插件」挪到外观与显示）：独立设置页管权限/包/开关。
         runCatching {
             findViewById<android.view.View>(R.id.rowPet).setOnClickListener {
@@ -70,6 +64,10 @@ class AppearanceActivity : ThemedActivity() {
             showOrientDialog()
         }
         findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(orientMode))
+
+        findViewById<LinearLayout>(R.id.rowIslandDock).setOnClickListener {
+            startActivity(Intent(this, IslandDockActivity::class.java))
+        }
 
         // —— 设置页跟随屏幕方向（v1.5.x）——
         // 默认关：手机上的设置页固定竖屏（v1.4.64 的诉求），平板跟随上面的朝向选择。
@@ -162,13 +160,8 @@ class AppearanceActivity : ThemedActivity() {
                 .show()
         }
 
-        // —— 外观主题（深色/浅色/跟随系统）—— 与引导页写同一份偏好（ThemePref）
+        // 主题页统一管理明暗模式和颜色方案；不再显示旧的预设色名。
         findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
-            showThemeDialog()
-        }
-
-        // —— 主题（v1.5.x）：预设 / 自定义 / 动态取色都在独立页面里 ——
-        findViewById<LinearLayout>(R.id.rowAccent)?.setOnClickListener {
             startActivity(Intent(this, ThemeActivity::class.java))
         }
 
@@ -191,12 +184,15 @@ class AppearanceActivity : ThemedActivity() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
-        // 从「主题」子页返回：主题/强调色/布局任一变了就重建，让 ?attr/colorPrimary
-        // 与 @color/accent 重新解析（v1.7.9，原先这里没有任何比对）。
-        if (appliedTheme != ThemePref.get(this) ||
-            appliedAccent != Accent.current(this).argb ||
-            appliedLayout != SettingsLayoutMode.current(this)
-        ) {
+        // 从外观子页返回：主题/布局变化时重建，动态色角色由 Application 生命周期回调重新套用。
+        val themeNow = ThemePref.get(this)
+        val paletteNow = ThemeAccent.selected(this)
+        val layoutNow = SettingsLayoutMode.current(this)
+        val changed = appliedTheme != themeNow || appliedPalette != paletteNow || appliedLayout != layoutNow
+        appliedTheme = themeNow
+        appliedPalette = paletteNow
+        appliedLayout = layoutNow
+        if (changed) {
             recreate()
             return
         }
@@ -215,11 +211,10 @@ class AppearanceActivity : ThemedActivity() {
      */
     private fun refreshValueRows() {
         findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
-        findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
         findViewById<TextView>(R.id.valLayoutMode)?.text =
             getString(SettingsLayoutMode.current(this).labelRes)
-        findViewById<TextView>(R.id.valLayoutMode)?.deprecatedAccent()
-        findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
+        findViewById<TextView>(R.id.valIslandDock)?.text =
+            getString(islandDockLabel(CustomVisualPref.islandDock(this)))
     }
 
     /**
@@ -255,6 +250,13 @@ class AppearanceActivity : ThemedActivity() {
         OrientationMode.AUTO -> R.string.setting_orient_auto
     }
 
+    private fun islandDockLabel(dock: IslandDock): Int = when (dock) {
+        IslandDock.TOP -> R.string.setting_island_dock_top
+        IslandDock.LEFT -> R.string.setting_island_dock_left
+        IslandDock.RIGHT -> R.string.setting_island_dock_right
+        IslandDock.BOTTOM -> R.string.setting_island_dock_toolbar
+    }
+
     /**
      * 屏幕朝向选择：竖屏 / 横屏 / 自动 单选列表。
      * 落库后由 MainActivity.onResume 检测并统一应用。
@@ -284,11 +286,11 @@ class AppearanceActivity : ThemedActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
-            .showMd3()
+            .show()
     }
 
     /**
-     * 页面缩放对话框：SeekBar 滑条连续拖动（范围 50–150，步长 5），实时显示百分比。
+     * 页面缩放对话框：Material Slider连续拖动（范围 50–150，步长 5），实时显示百分比。
      * 落库后 MainActivity onResume 读取并 reload 生效。
      */
     private fun showScaleDialog() {
@@ -298,20 +300,17 @@ class AppearanceActivity : ThemedActivity() {
             text = "$pageScale%"
             setPadding(0, dp(8), 0, dp(4))
         }
-        val bar = SeekBar(this).apply {
-            max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
-            progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            progressTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@AppearanceActivity).argb)
-            thumbTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@AppearanceActivity).argb)
-            setPadding(dp(24), 0, dp(24), 0)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                    value.text = "${MIN_PAGE_SCALE + progress * SCALE_STEP}%"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
+        val bar = Slider(this).apply {
+            valueFrom = MIN_PAGE_SCALE.toFloat()
+            valueTo = MAX_PAGE_SCALE.toFloat()
+            stepSize = SCALE_STEP.toFloat()
+            val index = ((pageScale - MIN_PAGE_SCALE) / SCALE_STEP)
+                .coerceIn(0, (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP)
+            this.value = (MIN_PAGE_SCALE + index * SCALE_STEP).toFloat()
+            contentDescription = getString(R.string.scale_title)
+            addOnChangeListener { _, scale, _ -> value.text = "${scale.toInt()}%" }
         }
+        value.text = "${bar.value.toInt()}%"
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(16), dp(24), dp(8))
@@ -322,13 +321,13 @@ class AppearanceActivity : ThemedActivity() {
             .setTitle(getString(R.string.scale_title))
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                pageScale = MIN_PAGE_SCALE + bar.progress * SCALE_STEP
+                pageScale = bar.value.toInt()
                 getSharedPreferences(PREFS_UI, MODE_PRIVATE)
                     .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
                 findViewById<TextView>(R.id.valScale).text = "$pageScale%"
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showMd3()
+            .show()
     }
 
     /** 外观主题：深色 / 浅色 / 跟随系统。选完 recreate 才会重新取 values(-night) 资源。 */
@@ -372,23 +371,6 @@ class AppearanceActivity : ThemedActivity() {
 
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    /** 给设置项的当前值文字上强调色（v1.4.23，配色可切换后动态取色） */
-    private fun TextView.deprecatedAccent() {
-        setTextColor(Accent.current(this.context).argb)
-    }
-
-    /**
-     * 统一弹窗样式。
-     *
-     * v1.8.1 起**不再**在这里换背景：窗口 attach 之后再
-     * `setBackgroundDrawableResource` 会让面板首帧后突然从「内缩一圈」撑成整窗，
-     * 真机逐帧实测就是「先在上方闪一下再归位」。容器色/圆角/inset 现由
-     * 主题 `materialAlertDialogTheme`（ThemeOverlay.Dsh.MaterialAlertDialog）
-     * 在 builder 构造期定好，首帧即终态。
-     */
-    private fun AlertDialog.Builder.showMd3(): AlertDialog =
-        create().apply { show() }
 
     private companion object {
         const val PREFS_UI = DshApp.PREFS_UI

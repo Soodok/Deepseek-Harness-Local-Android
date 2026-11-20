@@ -29,6 +29,7 @@
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 JAVA = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile")
@@ -170,19 +171,25 @@ check("运行时缺包时开关置灰",
       "swChatImport.isEnabled = runtimeHasPlugin" in bp,
       "能点亮却点不动，比灰着更误导")
 
-# ─────────────────────────── E. 布局：新行是分段末行 ───────────────────────────
+# ─────────────────────────── E. 布局：新行是 Material 卡片末行 ───────────────────────────
 lay = read(LAYOUT)
 check("布局有 rowChatImport", '@+id/rowChatImport' in lay)
 check("布局有 swChatImport", '@+id/swChatImport' in lay)
 check("文案走字符串资源（不硬编码）",
       '@string/setting_chat_import' in lay
       and '@string/setting_chat_import_sub' in lay)
-# 分段末行只能有一处 bottom 背景 —— 加行的人容易忘了把上一行的 bottom 改回 mid。
-bottoms = lay.count("@drawable/bg_md3_seg_bottom")
-check("分段末行唯一（新行接管 bottom）", bottoms == 1, "bottom 背景出现 %d 次" % bottoms)
-i_row = lay.find('@+id/rowChatImport')
-i_bottom = lay.find("@drawable/bg_md3_seg_bottom")
-check("bottom 背景落在新行上", 0 <= i_bottom and i_row < i_bottom)
+# The card owns the rounded corners, and a divider separates the two rows.
+android = "{http://schemas.android.com/apk/res/android}"
+root = ET.fromstring(lay)
+row = next((node for node in root.iter() if node.get(android + "id") == "@+id/rowChatImport"), None)
+card = next((node for node in root.iter("com.google.android.material.card.MaterialCardView")
+             if row is not None and row in node.iter()), None)
+children = list(card[0]) if card is not None and len(card) == 1 else []
+check("导入开关位于 Material 卡片末行，前面是分隔线", len(children) >= 3
+      and children[-1] is row
+      and children[-2].tag == "com.google.android.material.divider.MaterialDivider"
+      and children[-3].get(android + "id") == "@+id/rowConfigFiles"
+      and row.get(android + "background") == "?attr/selectableItemBackground")
 
 # ──────────────────────────── F. 六套 locale 的文案 ────────────────────────────
 for loc in LOCALES:

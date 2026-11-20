@@ -3,7 +3,7 @@ package app.dsh.mobile
 import kotlin.math.roundToInt
 
 /** 灵动岛停靠在屏幕哪条边。 */
-enum class IslandDock { TOP, LEFT, RIGHT }
+enum class IslandDock { TOP, LEFT, RIGHT, BOTTOM }
 
 /**
  * 灵动岛靠边展开的几何计算（v1.5.6）。
@@ -48,14 +48,16 @@ object IslandChrome {
         density: Float,
         yCenter: Int,
     ): Metrics {
-        val w = px(COLLAPSED_W_DP, density)
-        val h = px(COLLAPSED_H_DP, density)
+        val horizontalBottom = dock == IslandDock.BOTTOM
+        val w = px(if (horizontalBottom) COLLAPSED_H_DP else COLLAPSED_W_DP, density)
+        val h = px(if (horizontalBottom) COLLAPSED_W_DP else COLLAPSED_H_DP, density)
         val safe = px(EDGE_SAFE_DP, density)
-        val y = (yCenter - h / 2).coerceIn(safe, (screenH - h - safe).coerceAtLeast(safe))
+        val y = if (horizontalBottom) (screenH - h).coerceAtLeast(0) else
+            (yCenter - h / 2).coerceIn(safe, (screenH - h - safe).coerceAtLeast(safe))
         val x = when (dock) {
             IslandDock.LEFT -> 0
             IslandDock.RIGHT -> (screenW - w).coerceAtLeast(0)
-            IslandDock.TOP -> ((screenW - w) / 2).coerceAtLeast(0)
+            IslandDock.TOP, IslandDock.BOTTOM -> ((screenW - w) / 2).coerceAtLeast(0)
         }
         return Metrics(x, y, w, h)
     }
@@ -73,10 +75,10 @@ object IslandChrome {
         contentH: Int,
         yCenter: Int,
     ): Metrics {
-        val w = px(PANEL_W_DP, density)
+        val w = px(PANEL_W_DP, density).coerceAtMost(screenW.coerceAtLeast(0))
         val safe = px(EDGE_SAFE_DP, density)
-        val maxH = (screenH * MAX_HEIGHT_RATIO).roundToInt()
-        val h = contentH.coerceIn(px(120, density), maxH)
+        val maxH = (screenH * MAX_HEIGHT_RATIO).roundToInt().coerceAtLeast(0)
+        val h = contentH.coerceIn(minOf(px(120, density), maxH), maxH)
         val y = (yCenter - h / 2).coerceIn(safe, (screenH - h - safe).coerceAtLeast(safe))
         val x = when (dock) {
             IslandDock.RIGHT -> (screenW - w).coerceAtLeast(0)
@@ -97,6 +99,7 @@ object IslandChrome {
      * 而且它是纯函数，能在宿主 JVM 上断言（真机重现需要特定 insets 时序）。
      *
      * @param safeTopPx 顶部安全边（状态栏 / 挖孔下沿）。贴顶时 y 取它和 10dp 的较大值。
+     * @param safeBottomPx Bottom inset in pixels; negative values are treated as zero.
      * @param ratio     沿边位置（0..1）——只影响沿边那一维，另一维贴边为 0。
      */
     fun collapsedRect(
@@ -106,9 +109,11 @@ object IslandChrome {
         density: Float,
         ratio: Float,
         safeTopPx: Int = 0,
+        safeBottomPx: Int = 0,
     ): Metrics {
-        val wDp = if (dock == IslandDock.TOP) COLLAPSED_H_DP else COLLAPSED_W_DP
-        val hDp = if (dock == IslandDock.TOP) COLLAPSED_W_DP else COLLAPSED_H_DP
+        val horizontal = dock == IslandDock.TOP || dock == IslandDock.BOTTOM
+        val wDp = if (horizontal) COLLAPSED_H_DP else COLLAPSED_W_DP
+        val hDp = if (horizontal) COLLAPSED_W_DP else COLLAPSED_H_DP
         val w = px(wDp, density)
         val h = px(hDp, density)
         val safe = px(EDGE_SAFE_DP, density)
@@ -118,6 +123,12 @@ object IslandChrome {
             IslandDock.TOP -> Metrics(
                 x = (r * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0)),
                 y = topBase,
+                w = w,
+                h = h,
+            )
+            IslandDock.BOTTOM -> Metrics(
+                x = (r * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0)),
+                y = (parentH - h - safeBottomPx.coerceAtLeast(0)).coerceAtLeast(0),
                 w = w,
                 h = h,
             )

@@ -130,7 +130,7 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
         applyFontSize(fontSp())
         buildExtraKeys(findViewById(R.id.pty_keys))
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.pty_font_dec).setOnClickListener { bumpFont(-1) }
         findViewById<TextView>(R.id.pty_font_inc).setOnClickListener { bumpFont(+1) }
         newBtn?.setOnClickListener { startTerminal() }

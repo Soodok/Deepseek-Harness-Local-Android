@@ -1,13 +1,14 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.content.DialogInterface
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
 import android.widget.LinearLayout
-import android.widget.ProgressBar
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import android.widget.ScrollView
 import android.widget.TextView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 装包进度窗（v1.5.4）：给 Linux 模式下的 `apk add` / `apt-get` 用。
@@ -84,7 +85,8 @@ object PkgProgressDialog {
                 dp(180),
             ).apply { topMargin = dp(8) }
         }
-        val spinner = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
+        val spinner = LinearProgressIndicator(activity).apply {
+            trackThickness = dp(3)
             isIndeterminate = true
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -135,7 +137,7 @@ object PkgProgressDialog {
             scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
         }
 
-        val dialog = AlertDialog.Builder(activity)
+        val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(title)
             .setView(body)
             .setPositiveButton(activity.getString(R.string.pkg_progress_background), null)
@@ -145,7 +147,7 @@ object PkgProgressDialog {
 
         dialog.setOnShowListener {
             // 「后台运行」：只关窗，线程继续跑，装完再弹结果。
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 closed = true
                 dialog.dismiss()
                 android.widget.Toast.makeText(
@@ -155,7 +157,7 @@ object PkgProgressDialog {
                 ).show()
             }
             // 「复制全部」：一次性把整窗日志进剪贴板。
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
                 val cm = activity.getSystemService(Activity.CLIPBOARD_SERVICE)
                     as android.content.ClipboardManager
                 val all = synchronized(linesLock) {
@@ -207,9 +209,9 @@ object PkgProgressDialog {
                     spinner.progress = 0
                     spinner.visibility = android.view.View.GONE
                     dialog.setTitle(failedTitle)
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).text =
+                    dialog.getButton(DialogInterface.BUTTON_POSITIVE).text =
                         activity.getString(R.string.pkg_progress_close)
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                         closed = true
                         dialog.dismiss()
                     }

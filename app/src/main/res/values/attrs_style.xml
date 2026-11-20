@@ -8,7 +8,7 @@
   于是同一页里「图标色冷、卡片底暖」，切风格必然花脸。
 
   解法：把自定义语义色也升级成主题属性。布局改成 ?attr/dshXxx 之后，
-  Theme.Dsh（经典冷蓝灰）与 Theme.Dsh.MD3（暖灰青墨）各自给一套值，
+  主题（Theme.Dsh，Material 3）给它一套值，配色方案再用 ThemeOverlay 覆盖，
   一处切换全站生效，且不需要 API 31 的 ColorResourcesOverride。
 
   命名前缀 dsh 是必须的：不带前缀会和 Material 的 colorXxx 撞名，

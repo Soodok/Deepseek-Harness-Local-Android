@@ -23,32 +23,15 @@
 -->
 <resources>
 
-    <!-- 容器：填充色跟随风格令牌，圆角跟随形态令牌，四边 inset 对称 24dp -->
+    <!-- Keep the library's M3 shape, typography and colors. Only replace the
+         single-choice row to explicitly wire its stateful radio drawable. -->
     <style name="DshMaterialAlertDialog" parent="MaterialAlertDialog.Material3">
-        <item name="backgroundTint">?attr/dshDialogBg</item>
-        <!-- 默认 80dp 的上下 inset 是 Material 2 时代给键盘留的，太夸张；
-             对称 24dp 才是 M3 弹窗的观感，也避免「面板只占一小块」 -->
-        <item name="backgroundInsetStart">24dp</item>
-        <item name="backgroundInsetEnd">24dp</item>
-        <item name="backgroundInsetTop">24dp</item>
-        <item name="backgroundInsetBottom">24dp</item>
-        <item name="shapeAppearance">@style/ShapeAppearance.Dsh.Dialog</item>
-    </style>
-
-    <!-- 弹窗圆角 = 卡片圆角令牌（经典 18dp / MD3 24dp），跟随界面风格 -->
-    <style name="ShapeAppearance.Dsh.Dialog" parent="">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">?attr/dshCardRadius</item>
+        <item name="singleChoiceItemLayout">@layout/dialog_single_choice</item>
     </style>
 
     <!-- MaterialAlertDialogBuilder 从当前 Activity 主题取这个 overlay -->
     <style name="ThemeOverlay.Dsh.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="alertDialogStyle">@style/DshMaterialAlertDialog</item>
-        <item name="colorSurfaceContainerHigh">?attr/dshDialogBg</item>
-        <item name="colorOnSurface">?attr/dshTextPrimary</item>
-        <item name="colorOnSurfaceVariant">?attr/dshTextSecondary</item>
-        <item name="colorPrimary">?attr/dshAccent</item>
-        <item name="colorOutline">?attr/dshDivider</item>
     </style>
 
 </resources>

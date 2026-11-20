@@ -1,7 +1,6 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -75,7 +74,7 @@ object LanAccessDialog {
             setPadding(0, dp(ctx, 16), 0, 0)
         })
 
-        AlertDialog.Builder(ctx)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.lan_dialog_title)
             .setView(box)
             .setPositiveButton(android.R.string.ok, null)

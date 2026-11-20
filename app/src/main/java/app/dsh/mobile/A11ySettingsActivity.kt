@@ -1,12 +1,12 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
-import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 无障碍（v1.7.9）—— 设置 → 权限与能力 → 无障碍。
@@ -34,7 +34,7 @@ class A11ySettingsActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings_a11y)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<MaterialToolbar>(R.id.btnBack).setNavigationOnClickListener { finish() }
 
         findViewById<android.view.View>(R.id.rowA11yService).setOnClickListener { toggleService() }
         findViewById<android.view.View>(R.id.rowA11yMemory).setOnClickListener {
@@ -130,7 +130,7 @@ class A11ySettingsActivity : ThemedActivity() {
 
     /** 安全边界：只读说明（这些规则是代码里的硬约束，不是可配项）。 */
     private fun showSafety() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.a11y_row_safety)
             .setMessage(R.string.a11y_safety_body)
             .setPositiveButton(android.R.string.ok, null)

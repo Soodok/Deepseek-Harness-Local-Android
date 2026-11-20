@@ -24,6 +24,7 @@ import app.dsh.mobile.engine.LinuxDnsProxy
 import app.dsh.mobile.engine.LinuxEnvironmentManager
 import app.dsh.mobile.engine.LinuxPackageManager
 import app.dsh.mobile.engine.LinuxRootfsCatalog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -78,7 +79,6 @@ class LinuxActivity : ThemedActivity() {
      * 配色按「深色工作台」设计 —— 套 Material 3 暖灰会让自绘部分与
      * `?attr/dshXxx` 部分互相打架。等它的自绘层也改成令牌驱动后再纳入。
      */
-    override val followsStyle: Boolean get() = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var env: LinuxEnvironmentManager
@@ -2405,12 +2405,12 @@ class LinuxActivity : ThemedActivity() {
         } else {
             getString(R.string.linux_workbench_install_body, wholeMb(size.download), wholeMb(size.installed))
         }
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.linux_workbench_install_title, title))
             .setMessage(body)
             .setPositiveButton(R.string.linux_workbench_install_go) { _, _ -> installPackages(packages, size) }
             .setNegativeButton(android.R.string.cancel, null)
-            .showRounded()
+            .show()
     }
 
     /**
@@ -2425,12 +2425,12 @@ class LinuxActivity : ThemedActivity() {
             return
         }
         val opt = LinuxRootfsCatalog.active(this)
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.linux_workbench_repair_title)
             .setMessage(getString(R.string.linux_workbench_repair_body, opt.displayName + " " + opt.versionLabel))
             .setPositiveButton(R.string.linux_workbench_repair_go) { _, _ -> deploy(force = true) }
             .setNegativeButton(android.R.string.cancel, null)
-            .showRounded()
+            .show()
     }
 
     // ================= 镜像是否真的装好 =================
@@ -2845,7 +2845,10 @@ class LinuxActivity : ThemedActivity() {
         // 卡片自己吃掉点击：否则点在卡片的留白上会穿到背景层，把浮层关掉
         card.isClickable = true
         val width = minOf(dp(320), resources.displayMetrics.widthPixels - dp(48))
-        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply {
+            topMargin = dp(24)
+            bottomMargin = dp(24)
+        })
         container.addView(
             host,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
@@ -2910,7 +2913,7 @@ class LinuxActivity : ThemedActivity() {
 
     /** 重启引擎：有中断后果，先确认。确认框与「诊断与维护」页里那一个用同一组文案 */
     private fun confirmRestartEngine() {
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.restart_confirm_title))
             .setMessage(getString(R.string.restart_confirm_body))
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -2918,14 +2921,8 @@ class LinuxActivity : ThemedActivity() {
                 toast(getString(R.string.linux_workbench_restart_done))
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showRounded()
+            .show()
     }
-
-    /** 与设置页的对话框同一个圆角底板 */
-    private fun android.app.AlertDialog.Builder.showRounded(): android.app.AlertDialog =
-        create().apply {
-            show()
-        }
 
     // ================= 删除镜像 =================
 
@@ -2955,12 +2952,12 @@ class LinuxActivity : ThemedActivity() {
                 reportFailure(getString(R.string.linux_workbench_delete_running))
                 return@launch
             }
-            android.app.AlertDialog.Builder(this@LinuxActivity)
+            MaterialAlertDialogBuilder(this@LinuxActivity)
                 .setTitle(getString(R.string.linux_workbench_delete_title, name))
                 .setMessage(getString(R.string.linux_workbench_delete_body, mb(probe.second)))
                 .setPositiveButton(R.string.action_delete) { _, _ -> deleteImage(opt, name, probe.second) }
                 .setNegativeButton(android.R.string.cancel, null)
-                .showRounded()
+                .show()
         }
     }
 

@@ -2,7 +2,6 @@ package app.dsh.mobile.pet
 
 import android.app.Activity
 import app.dsh.mobile.ThemedActivity
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
@@ -16,6 +15,7 @@ import app.dsh.mobile.LocaleHelper
 import app.dsh.mobile.MaxWidthLinearLayout
 import app.dsh.mobile.OrientationPrefs
 import app.dsh.mobile.R
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 台词库编辑器：11 个分类、一行一句；支持导出/导入文件、分类恢复默认、全部恢复内置。
@@ -191,7 +191,7 @@ class PetLinesActivity : ThemedActivity() {
     }
 
     private fun confirmResetCategory(catId: String) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.pet_lines_reset_cat)
             .setMessage(R.string.pet_lines_reset_cat_confirm)
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -204,7 +204,7 @@ class PetLinesActivity : ThemedActivity() {
     }
 
     private fun confirmResetAll() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.pet_lines_reset_all)
             .setMessage(R.string.pet_lines_reset_all_confirm)
             .setPositiveButton(android.R.string.ok) { _, _ ->

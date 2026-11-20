@@ -98,7 +98,8 @@ class MemoryDetailActivity : ThemedActivity() {
         // 点拼图弹大图：手机竖屏下 140dp 高只够看布局骨架，读文字得放大。
         imgStrip.setOnClickListener { showStripLarge() }
 
-        findViewById<View>(R.id.btnMemDetailBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
         findViewById<View>(R.id.btnMemLabel).setOnClickListener { showLabelDialog() }
         findViewById<View>(R.id.btnMemDelete).setOnClickListener { confirmDelete() }
         btnToggle.setOnClickListener { toggleState() }
@@ -207,7 +208,7 @@ class MemoryDetailActivity : ThemedActivity() {
 
     private fun render(reply: MemoryBridge.Reply) {
         val o = reply.json
-        if (o == null) {
+        if (!reply.ok || o == null) {
             txtTitle.text = getString(R.string.mem_load_failed)
             toast(getString(R.string.mem_offline))
             return
@@ -247,9 +248,17 @@ class MemoryDetailActivity : ThemedActivity() {
 
     private fun stepLine(text: String, primary: Boolean): TextView = TextView(this).apply {
         this.text = text
-        textSize = 12f
-        setTextColor(getColor(if (primary) R.color.text_primary else R.color.text_secondary))
-        setPadding(0, dp(4), 0, dp(4))
+        setTextAppearance(
+            if (primary) com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
+            else com.google.android.material.R.style.TextAppearance_Material3_BodySmall,
+        )
+        val attr = if (primary) com.google.android.material.R.attr.colorOnSurface
+        else com.google.android.material.R.attr.colorOnSurfaceVariant
+        val color = android.util.TypedValue()
+        if (theme.resolveAttribute(attr, color, true)) {
+            setTextColor(if (color.resourceId != 0) getColor(color.resourceId) else color.data)
+        }
+        setPadding(0, dp(6), 0, dp(6))
     }
 
     // ==================== 标注 ====================

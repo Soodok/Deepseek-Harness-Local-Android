@@ -1,7 +1,6 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -132,7 +131,7 @@ object RemoteAccessSheet {
                     text = "${p.name}\n${df.format(java.util.Date(p.at))}"
                     setTextColor(0xFFE57373.toInt())
                     setOnClickListener {
-                        AlertDialog.Builder(ctx)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
                             .setTitle(R.string.remote_access_revoke)
                             .setMessage(ctx.getString(R.string.remote_access_revoke_msg, p.name))
                             .setNegativeButton(R.string.action_cancel, null)
@@ -160,7 +159,7 @@ object RemoteAccessSheet {
             }
         }
 
-        val dialog = AlertDialog.Builder(activity)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.setting_remote_access)
             .setView(root)
             .setPositiveButton(R.string.remote_access_regenerate) { _, _ ->
@@ -169,7 +168,7 @@ object RemoteAccessSheet {
                 onChanged()
             }
             .setNeutralButton(R.string.remote_access_reset_key) { _, _ ->
-                AlertDialog.Builder(ctx)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.remote_access_reset_key)
                     .setMessage(R.string.remote_access_reset_key_msg)
                     .setNegativeButton(R.string.action_cancel, null)

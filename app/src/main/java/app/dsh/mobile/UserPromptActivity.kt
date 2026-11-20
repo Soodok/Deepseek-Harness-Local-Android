@@ -32,7 +32,7 @@ class UserPromptActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_user_prompt)
 
-        findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         val editor = findViewById<EditText>(R.id.editorPrompt)
         val hint = findViewById<TextView>(R.id.txtPath)

@@ -41,10 +41,12 @@ check("Settings layout: developer row exists and starts hidden",
 about_rows = [node for node in layout.iter() if node.get(android_id) == "@+id/rowAbout"]
 row_order = [node.get(android_id) for node in layout.iter()
              if node.get(android_id) in ("@+id/rowDeveloperOptions", "@+id/rowAbout")]
-check("Settings layout: developer row precedes About and uses middle segment styling",
+# v1.6.x 起设置页改用 MaterialCardView 分组 + MaterialDivider 行分隔（不再自绘分段
+# 背景 bg_md3_seg_*），所以断言「可点击的卡片行」而不是旧的 seg 背景。
+check("Settings layout: developer row precedes About and is a clickable card row",
       len(rows) == 1 and len(about_rows) == 1 and
       row_order == ["@+id/rowDeveloperOptions", "@+id/rowAbout"] and
-      rows[0].get("{http://schemas.android.com/apk/res/android}background") == "@drawable/bg_md3_seg_mid" and
+      rows[0].get("{http://schemas.android.com/apk/res/android}background") == "?attr/selectableItemBackground" and
       rows[0].get("{http://schemas.android.com/apk/res/android}clickable") == "true" and
       rows[0].get("{http://schemas.android.com/apk/res/android}focusable") == "true")
 

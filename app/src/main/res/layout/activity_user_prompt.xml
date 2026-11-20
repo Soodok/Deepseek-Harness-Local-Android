@@ -7,41 +7,23 @@
     android:background="?android:attr/colorBackground">
 
     <!-- 顶部栏：返回 + 标题（与设置页一致） -->
-    <LinearLayout
+        <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/md3_topbar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/setting_user_prompt"
-            android:textColor="?attr/colorOnSurface"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
-
-        <TextView
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/setting_user_prompt"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface">
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSave"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingHorizontal="18dp"
-            android:text="@string/user_prompt_save"
-            android:textColor="?attr/dshAccent"
-            android:textSize="16sp"
-            android:background="?android:attr/selectableItemBackgroundBorderless" />
-    </LinearLayout>
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:text="@string/user_prompt_save" />
+    </com.google.android.material.appbar.MaterialToolbar>
 
     <TextView
         android:layout_width="match_parent"
@@ -53,22 +35,28 @@
         android:textSize="13sp"
         android:lineSpacingExtra="3dp" />
 
-    <EditText
-        android:id="@+id/editorPrompt"
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/promptInputLayout"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginHorizontal="16dp"
+        android:layout_marginHorizontal="@dimen/md3_page_padding"
         android:layout_marginTop="12dp"
-        android:padding="14dp"
-        android:gravity="top|start"
-        android:inputType="textMultiLine|textCapSentences"
-        android:textColor="?attr/colorOnSurface"
-        android:textColorHint="?attr/dshTextMuted"
-        android:textSize="15sp"
-        android:lineSpacingExtra="4dp"
-        android:background="@drawable/bg_search_field"
-        android:scrollbars="vertical" />
+        android:hint="@string/user_prompt_placeholder"
+        app:boxBackgroundColor="?attr/colorSurfaceContainerLowest">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/editorPrompt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="top|start"
+            android:inputType="textMultiLine|textCapSentences"
+            android:padding="14dp"
+            android:lineSpacingExtra="4dp"
+            android:scrollbars="vertical"
+            android:textAppearance="?attr/textAppearanceBodyLarge" />
+    </com.google.android.material.textfield.TextInputLayout>
 
     <TextView
         android:id="@+id/txtPath"

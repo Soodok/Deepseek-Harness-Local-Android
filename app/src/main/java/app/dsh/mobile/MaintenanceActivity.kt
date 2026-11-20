@@ -1,7 +1,8 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
+import android.content.Context
 import android.os.Bundle
+import android.view.Gravity
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -10,6 +11,10 @@ import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.HomeResetter
 import app.dsh.mobile.engine.SelfCheck
+import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.CircularProgressIndicator
+import java.text.NumberFormat
 
 /**
  * 维护与高级（v1.4.45）：从设置主页收拢的诊断与高风险操作子页。
@@ -22,6 +27,13 @@ class MaintenanceActivity : ThemedActivity() {
     /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
     override val usesSettingsBackground: Boolean get() = true
 
+    private var cleanProgress: MaterialProgressDialog? = null
+
+    override fun onDestroy() {
+        cleanProgress?.dismiss()
+        cleanProgress = null
+        super.onDestroy()
+    }
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -32,7 +44,7 @@ class MaintenanceActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_maintenance)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // —— 插件应急总开关（v1.4.27）：插件把 WebUI 弄坏但引擎还活着时的逃生门 ——
         findViewById<LinearLayout>(R.id.rowPluginKill).setOnClickListener {
@@ -142,7 +154,7 @@ class MaintenanceActivity : ThemedActivity() {
 
         // —— 重启引擎：有中断后果，先确认再动手（v1.4.45 起）——
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.restart_confirm_title))
                 .setMessage(getString(R.string.restart_confirm_body))
                 .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -150,7 +162,7 @@ class MaintenanceActivity : ThemedActivity() {
                     Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .showStyled()
+                .show()
         }
 
         // —— 深度清理 / 彻底重置（v1.4.56，用户反馈「体检修不好只能重装」）——
@@ -341,12 +353,12 @@ class MaintenanceActivity : ThemedActivity() {
                     HomeResetter.Mode.RESET ->
                         getString(R.string.reset_home_confirm_body, formatSize(willDelete))
                 }
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(titleId)
                     .setMessage(body)
                     .setNegativeButton(android.R.string.cancel, null)
                     .setPositiveButton(R.string.action_choose_backup) { _, _ -> pickBackupLocation(mode) }
-                    .showStyled()
+                    .show()
             }
         }.apply { isDaemon = true }.start()
     }
@@ -391,7 +403,7 @@ class MaintenanceActivity : ThemedActivity() {
             hint = getString(R.string.reset_type_hint)
             setSingleLine()
         }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.reset_final_title)
             .setMessage(getString(R.string.reset_final_body))
             .setView(input)
@@ -403,7 +415,7 @@ class MaintenanceActivity : ThemedActivity() {
                     Toast.makeText(this, getString(R.string.reset_wrong_word), Toast.LENGTH_SHORT).show()
                 }
             }
-            .showStyled()
+            .show()
     }
 
     /**
@@ -413,11 +425,8 @@ class MaintenanceActivity : ThemedActivity() {
      * API 凭证和会话历史，不可接受。DEEP 保持一致行为，避免两套语义。
      */
     private fun executeClean(mode: HomeResetter.Mode, target: android.net.Uri) {
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.backup_running))
-            setCancelable(false)
-            show()
-        }
+        val progress = MaterialProgressDialog(this, getString(R.string.backup_running))
+        cleanProgress = progress
         Thread {
             var backupErr: String? = null
             try {
@@ -428,7 +437,9 @@ class MaintenanceActivity : ThemedActivity() {
                     out.use {
                         HomeResetter.backupTo(this, it) { done ->
                             runOnUiThread {
-                                progress.setMessage(getString(R.string.backup_progress, formatSize(done)))
+                                if (progress.isShowing) {
+                                    progress.setMessage(getString(R.string.backup_progress, formatSize(done)))
+                                }
                             }
                         }
                     }
@@ -440,16 +451,20 @@ class MaintenanceActivity : ThemedActivity() {
             if (backupErr != null) {
                 runOnUiThread {
                     progress.dismiss()
-                    AlertDialog.Builder(this)
+                    cleanProgress = null
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.backup_failed_title)
                         .setMessage(getString(R.string.backup_failed_body, backupErr ?: ""))
                         .setPositiveButton(android.R.string.ok, null)
-                        .showStyled()
+                        .show()
                 }
                 return@Thread
             }
 
-            runOnUiThread { progress.setMessage(getString(R.string.clean_running)) }
+            runOnUiThread {
+                if (progress.isShowing) progress.setMessage(getString(R.string.clean_running))
+            }
             val app = application as DshApp
             // 停引擎：运行中删除会让引擎崩溃在半途
             runCatching { app.supervisor.stopForMaintenance() }
@@ -469,7 +484,9 @@ class MaintenanceActivity : ThemedActivity() {
 
             runOnUiThread {
                 progress.dismiss()
-                AlertDialog.Builder(this)
+                cleanProgress = null
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(if (result.ok) R.string.clean_done_title else R.string.clean_partial_title)
                     .setMessage(cleanSummary(mode, result))
                     .setPositiveButton(R.string.action_restart_now) { _, _ ->
@@ -478,7 +495,7 @@ class MaintenanceActivity : ThemedActivity() {
                         finish()
                     }
                     .setNegativeButton(android.R.string.cancel, null)
-                    .showStyled()
+                    .show()
                 refreshHomeUsage()
             }
         }.start()
@@ -582,7 +599,7 @@ class MaintenanceActivity : ThemedActivity() {
             Toast.makeText(this, getString(R.string.plugin_kill_none), Toast.LENGTH_SHORT).show()
             return
         }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(
                 if (restore) R.string.plugin_kill_restore_title
                 else R.string.plugin_kill_disable_title,
@@ -597,7 +614,7 @@ class MaintenanceActivity : ThemedActivity() {
             )
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ -> applyKillSwitch(restore) }
-            .showStyled()
+            .show()
     }
 
     /** 包名列表：超过 8 个只列前 8 个 + 「等 N 个」，避免对话框撑满屏幕 */
@@ -630,9 +647,58 @@ class MaintenanceActivity : ThemedActivity() {
         refreshPluginKill()
     }
 
-    /** 统一弹窗样式：覆盖自绘圆角背景 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            show()
+}
+
+/** Shared non-cancelable Material progress UI; callers own its activity lifecycle. */
+internal class MaterialProgressDialog(
+    context: Context,
+    message: CharSequence,
+    title: CharSequence? = null,
+    determinate: Boolean = false,
+) {
+    private val builder = MaterialAlertDialogBuilder(context)
+    private val label = TextView(builder.context)
+    private val indicator = CircularProgressIndicator(builder.context).apply {
+        isIndeterminate = !determinate
+        max = 100
+    }
+    private val percentFormat = if (determinate) NumberFormat.getPercentInstance() else null
+    private var messageText = message
+    private val dialog: AlertDialog
+
+    init {
+        val density = builder.context.resources.displayMetrics.density
+        val padding = (24 * density).toInt()
+        val content = LinearLayout(builder.context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPaddingRelative(padding, if (title == null) padding else (16 * density).toInt(), padding, padding)
+            addView(indicator, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginEnd = (16 * density).toInt() })
+            addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
+        updateLabel()
+        dialog = builder.setTitle(title).setView(content).setCancelable(false).show()
+    }
+
+    val isShowing: Boolean get() = dialog.isShowing
+
+    fun setMessage(message: CharSequence) {
+        messageText = message
+        updateLabel()
+    }
+
+    fun setProgress(percent: Int) {
+        indicator.progress = percent.coerceIn(0, indicator.max)
+        updateLabel()
+    }
+
+    fun dismiss() = dialog.dismiss()
+
+    private fun updateLabel() {
+        label.text = percentFormat?.let {
+            "$messageText\n${it.format(indicator.progress.toDouble() / indicator.max)}"
+        } ?: messageText
+    }
 }

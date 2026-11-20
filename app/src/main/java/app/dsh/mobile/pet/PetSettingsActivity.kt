@@ -2,8 +2,6 @@ package app.dsh.mobile.pet
 
 import android.app.Activity
 import app.dsh.mobile.ThemedActivity
-import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -20,6 +18,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.DshApp
 import app.dsh.mobile.LocaleHelper
+import app.dsh.mobile.MaterialProgressDialog
 import app.dsh.mobile.MaxWidthLinearLayout
 import app.dsh.mobile.OrientationPrefs
 import app.dsh.mobile.PluginStoreActivity
@@ -44,7 +43,7 @@ class PetSettingsActivity : ThemedActivity() {
     private lateinit var content: LinearLayout
     private var enableSwitch: Switch? = null
     /** 当前展示的进度对话框：同一时刻只允许一个，统一由 [dismissProgress] 收口。 */
-    private var progressDlg: ProgressDialog? = null
+    private var progressDlg: MaterialProgressDialog? = null
     /** 已销毁标记：后台回调靠它丢弃 UI 更新，别再去碰一个死掉的 Activity。 */
     private val dead = AtomicBoolean(false)
     /** 订阅后台下载状态；Activity 销毁时取消，避免泄漏。 */
@@ -130,15 +129,14 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     /** 同一时刻只留一个进度框：先收掉上一个，再建新的。 */
-    private fun showProgress(build: ProgressDialog.() -> Unit = {}): ProgressDialog {
+    private fun showImportProgress() {
         dismissProgress()
-        val d = ProgressDialog(this).apply {
-            setCancelable(false)
-            build()
-            show()
-        }
-        progressDlg = d
-        return d
+        progressDlg = MaterialProgressDialog(
+            this,
+            message = getString(R.string.pet_pack_keep_open),
+            title = getString(R.string.pet_pack),
+            determinate = true,
+        )
     }
 
     private fun dismissProgress() {
@@ -358,7 +356,7 @@ class PetSettingsActivity : ThemedActivity() {
         // 硬门禁（2026-10-27 起，用户明确要求不能跳过）：
         // 悬浮窗权限 / 资源包 / 桥插件，三者缺一都不允许开启，弹窗只做引导、没有旁路。
         if (!canDraw) {
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.pet_permission)
                 .setMessage(R.string.pet_permission_rationale)
                 .setPositiveButton(R.string.pet_permission) { _, _ -> openOverlaySettings() }
@@ -369,7 +367,7 @@ class PetSettingsActivity : ThemedActivity() {
         }
         if (PetPrefs.packId(this) == null) {
             // 没资源包：桌宠没有任何可画的内容，直接不给开，引导去装包。
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.pet_pack)
                 .setMessage(R.string.pet_gate_pack_missing_msg)
                 .setPositiveButton(R.string.pet_pack_download) { _, _ ->
@@ -385,7 +383,7 @@ class PetSettingsActivity : ThemedActivity() {
         if (outdated) {
             // 硬门禁：< 0.3.1 的桥插件不带 token，协议 v2 下必然 403，
             // 开了也是「连接着但永远没气泡」，不给任何旁路。
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.pet_plugin)
                 .setMessage(R.string.pet_plugin_outdated_msg)
                 .setPositiveButton(R.string.pet_plugin_upgrade) { _, _ ->
@@ -400,7 +398,7 @@ class PetSettingsActivity : ThemedActivity() {
         if (!plugin.bridgeReady) {
             // 没装 / 装了没启用：同样是硬门禁 —— 没桥插件的桌宠只会待机，
             // 永远不会响应工作状态，不允许「仍然开启」。
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.pet_plugin)
                 .setMessage(R.string.pet_gate_plugin_missing_msg)
                 .setPositiveButton(R.string.pet_gate_install) { _, _ ->
@@ -495,17 +493,11 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun startImport(uri: Uri) {
-        showProgress {
-            setTitle(R.string.pet_pack)
-            setMessage(getString(R.string.pet_pack_keep_open))
-            isIndeterminate = false
-            max = 100
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-        }
+        showImportProgress()
         PetPackInstaller.install(
             this,
             uri,
-            onProgress = { p -> uiIfAlive { runCatching { progressDlg?.progress = p.coerceIn(0, 100) } } },
+            onProgress = { p -> uiIfAlive { progressDlg?.setProgress(p) } },
             onDone = { result ->
                 // 导入回调在后台线程：UI 一律经 uiIfAlive 回主线程；Activity 已经没了
                 // 时由 onDestroy 收掉对话框，这里直接丢。
@@ -716,7 +708,7 @@ class PetSettingsActivity : ThemedActivity() {
         val t = installedAtText(p)
         val msg = getString(R.string.pet_pack_clear_confirm, p.name) +
             if (t.isBlank()) "" else "\n$t"
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.pet_pack_clear)
             .setMessage(msg)
             .setPositiveButton(android.R.string.ok) { d, _ ->
@@ -752,7 +744,7 @@ class PetSettingsActivity : ThemedActivity() {
             setText(PetPrefs.packIndexUrl(this@PetSettingsActivity))
             setSelection(text.length)
         }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.pet_pack_source)
             .setView(input)
             .setPositiveButton(android.R.string.ok) { d, _ ->
@@ -920,10 +912,11 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun chooseSize() {
-        val values = PetPrefs.SIZE_LEVELS
+        val size = PetPrefs.sizeDp(this)
+        val values = (PetPrefs.SIZE_LEVELS.toList() + size).distinct().sorted()
         val labels = values.map { getString(R.string.pet_size_value, it) }.toTypedArray()
-        val current = values.indexOfFirst { it == PetPrefs.sizeDp(this) }
-        AlertDialog.Builder(this)
+        val current = values.indexOf(size)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.pet_size)
             .setSingleChoiceItems(labels, current) { dlg, which ->
                 PetPrefs.setSizeDp(this, values[which])

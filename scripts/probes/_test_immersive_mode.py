@@ -145,7 +145,9 @@ def main():
         "navHidden" in pad_expr or "immersiveNav" in pad_expr,
         "C2 bottomPad 参考了「导航栏已隐藏」这一状态（否则白带还在）",
     )
-    ok("imeBottom > 0" in pad_expr, "C3 键盘弹起时仍然让位（IME 不受 nav 档位影响）")
+    ok(re.search(r"val imeAffectsViewport = imeVisible \|\| imeBottom > 0", code) is not None
+       and re.search(r"if \(imeAffectsViewport\)\s*\{\s*imeBottom\b", pad_expr) is not None,
+       "C3 键盘弹起时仍然让位（IME 不受 nav 档位影响）")
 
     print("[D] 生命周期：系统会重置，必须重断言")
     ok(code.count("immersiveNavEnabled") >= 3, "D1 nav 档在 >=3 处被重新读取（应用 / 重断言 / insets 回调）")

@@ -344,9 +344,12 @@ class DshAccessibilityService : AccessibilityService() {
             StatusOverlay.flashNotice(getString(R.string.voice_need_permission), 4_000L)
             return
         }
-        // 三个通道任一可用就放行（优先级见 listenIntoPanel）：
-        // 系统识别 → 云端 API（已配 key）
-        val usable = AsrManager.isAvailable(this) || CloudAsr.isConfigured(this)
+        // Only check the selected channel; unselected configured APIs must not be used.
+        val usable = when (AsrManager.voiceMode(this)) {
+            AsrManager.VoiceMode.SYSTEM -> AsrManager.isAvailable(this)
+            AsrManager.VoiceMode.API -> CloudAsr.isConfigured(this)
+            AsrManager.VoiceMode.LEGACY -> AsrManager.isAvailable(this) || CloudAsr.isConfigured(this)
+        }
         if (!usable) {
             StatusOverlay.flashNotice(getString(R.string.voice_no_service), 4_000L)
             return
@@ -465,32 +468,23 @@ class DshAccessibilityService : AccessibilityService() {
     private fun listenIntoPanel() {
         val panel = voicePanel
 
-        // 通道优先级（v1.2.75，主人决定去掉本地模型）：
-        //   ① 系统自带识别（零配置、离线、质量好）—— 有就用它
-        //   ② 系统没有 → 云端 API（免费或自建，只要 OpenAI 兼容即可）
-        // 不再保留离线 Vosk：small 模型质量太差，大模型（228MB）又不划算，
-        // 本项目追求"干更多事"而非塞满体积（主人决策）。
-        if (AsrManager.isAvailable(this)) {
-            startSystemListening(panel)
+        val mode = AsrManager.voiceMode(this)
+        if (mode != AsrManager.VoiceMode.API && AsrManager.isAvailable(this)) {
+            startSystemListening(panel, allowCloudFallback = mode == AsrManager.VoiceMode.LEGACY)
             return
         }
-        if (CloudAsr.isConfigured(this)) {
+        if (mode != AsrManager.VoiceMode.SYSTEM && CloudAsr.isConfigured(this)) {
             startCloudListening(panel)
             return
         }
 
-        // 两条路都不可用：明确告诉用户去配云端 API（设置页有入口）
+        // 所选通道不可用。
         panel?.setHint(getString(R.string.voice_no_service))
         StatusOverlay.setListening(false)
     }
 
-    /**
-     * ① 系统自带识别（首选）。
-     *
-     * 系统 SpeechRecognizer 通常自带离线包且质量好、零配置、不联网 ——
-     * 只要设备有识别服务就用它（主人指定「软件优先使用系统自带识别」）。
-     */
-    private fun startSystemListening(panel: VoicePanel?) {
+    /** 系统服务可自行联网；EXTRA_PREFER_OFFLINE 只是提示，不是隐私保证。 */
+    private fun startSystemListening(panel: VoicePanel?, allowCloudFallback: Boolean) {
         StatusOverlay.setListening(true)
         recordingForBuzz = true   // 与 buzzStart() 配对
         startWatchdog()           // 面板消失即释放麦克风
@@ -511,7 +505,7 @@ class DshAccessibilityService : AccessibilityService() {
             onError = { msg ->
                 // 系统识别中途失败（如没装离线包）→ 若配了云端，自动切过去接着听
                 Log.w("DshA11y", "system asr error: $msg")
-                if (CloudAsr.isConfigured(this)) {
+                if (allowCloudFallback && AsrManager.voiceMode(this) == AsrManager.VoiceMode.LEGACY && CloudAsr.isConfigured(this)) {
                     // ⚠️ v1.2.92：切通道前**清空面板里系统识别的残留**。
                     // 云端通道是「追加」语义，旧版直接切过去 → 系统识别留下的半句
                     // 会和云端结果拼在一起，主人实测「一次性复制两段发出去」。

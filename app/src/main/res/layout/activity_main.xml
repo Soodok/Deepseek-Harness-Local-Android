@@ -3,6 +3,7 @@
      的边界之外（elevation 阴影是向外扩散的），默认的裁剪会把它整片切掉 ——
      表现为「设了 elevation 却完全没有阴影」，而在真机上看不出任何报错。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -15,19 +16,18 @@
         android:layout_height="match_parent" />
 
     <!-- 安装/启动进度条：Installing 显示真实解压百分比，Starting 转不确定动画 -->
-    <ProgressBar
+    <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/installProgress"
-        style="?android:attr/progressBarStyleHorizontal"
+        style="@style/Widget.Material3.LinearProgressIndicator"
         android:max="10000"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="3dp"
-        android:maxHeight="3dp"
+        app:trackThickness="3dp"
         android:layout_gravity="top"
         android:layout_marginTop="40dp"
         android:indeterminate="true"
-        android:progressTint="?attr/dshAccent"
-        android:progressBackgroundTint="?attr/dshStroke"
+        app:indicatorColor="?attr/colorPrimary"
+        app:trackColor="?attr/colorPrimaryContainer"
         android:elevation="4dp"
         android:visibility="gone" />
 
@@ -101,7 +101,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_back"
-            android:tint="@color/island_success"
+            android:tint="?attr/colorTertiary"
             android:visibility="gone"
             android:contentDescription="@string/btn_back"
             android:background="@drawable/bg_island_btn" />

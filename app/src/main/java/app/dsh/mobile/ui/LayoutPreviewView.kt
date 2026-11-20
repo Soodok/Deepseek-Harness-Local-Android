@@ -24,8 +24,8 @@ import app.dsh.mobile.Accent
  *    所以这里画的是左右两列，而不是把单列图旋转。用户看的是后果，不是动画。
  * 2. **圆角与宿主卡片一致（10dp）**：预览框本身要看起来像「一块屏幕」，
  *    但又不能像真的手机外壳 —— 太重会喧宾夺主。
- * 3. **强调色实时读取**：[Accent.current] 每次 onDraw 重新取，
- *    用户在第 4 页换配色时，第 2 页的预览条也跟着变色，不必重建。
+ * 3. **强调色按当前视图实例解析**：配色切换会重建引导 Activity，因此无需在每一帧
+ *    重新解析主题。
  */
 class LayoutPreviewView @JvmOverloads constructor(
     context: Context,
@@ -69,6 +69,7 @@ class LayoutPreviewView @JvmOverloads constructor(
     }
     private val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+        color = (Accent.current(context).argb and 0x00FFFFFF) or 0x33000000
     }
 
     private val rect = RectF()
@@ -105,8 +106,6 @@ class LayoutPreviewView @JvmOverloads constructor(
         canvas.drawRoundRect(rect, radius, radius, frame)
 
         // 顶部标题条：强调色柔底
-        val accent = Accent.current(context).argb
-        accentPaint.color = (accent and 0x00FFFFFF) or 0x33000000
         val topH = h * 0.13f
         rect.set(pad, pad, w - pad, pad + topH)
         canvas.drawRoundRect(rect, 4f * d, 4f * d, accentPaint)
