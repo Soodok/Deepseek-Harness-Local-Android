@@ -1874,6 +1874,7 @@
     <string name="linux_workbench_delete_hint">长按已安装的镜像可以删除</string>
     <string name="linux_workbench_diag_readiness">引擎可用性</string>
     <string name="linux_workbench_diag_ready">可以运行</string>
+    <string name="linux_workbench_diag_runner_selftest">运行器自检</string>
     <string name="linux_workbench_diag_dns">DNS 代理</string>
     <string name="linux_workbench_diag_dns_up">监听端口 %1$d</string>
     <string name="linux_workbench_diag_dns_down">没有运行；装包时会自动拉起</string>

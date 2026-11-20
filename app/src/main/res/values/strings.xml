@@ -1871,6 +1871,7 @@
     <string name="linux_workbench_delete_hint">Long-press an installed image to delete it</string>
     <string name="linux_workbench_diag_readiness">Engine readiness</string>
     <string name="linux_workbench_diag_ready">Ready to run</string>
+    <string name="linux_workbench_diag_runner_selftest">Runner self-test</string>
     <string name="linux_workbench_diag_dns">DNS proxy</string>
     <string name="linux_workbench_diag_dns_up">Listening on port %1$d</string>
     <string name="linux_workbench_diag_dns_down">Not running. It is started automatically when packages are installed</string>

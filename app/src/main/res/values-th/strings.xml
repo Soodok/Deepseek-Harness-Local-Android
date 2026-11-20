@@ -1821,6 +1821,7 @@
     <string name="linux_workbench_delete_hint">กดค้างที่อิมเมจที่ติดตั้งแล้วเพื่อลบ</string>
     <string name="linux_workbench_diag_readiness">ความพร้อมของเอนจิน</string>
     <string name="linux_workbench_diag_ready">พร้อมทำงาน</string>
+    <string name="linux_workbench_diag_runner_selftest">ทดสอบตัวรันเอง</string>
     <string name="linux_workbench_diag_dns">พร็อกซี DNS</string>
     <string name="linux_workbench_diag_dns_up">รับฟังที่พอร์ต %1$d</string>
     <string name="linux_workbench_diag_dns_down">ไม่ได้ทำงาน ระบบจะเริ่มให้อัตโนมัติเมื่อติดตั้งแพ็กเกจ</string>

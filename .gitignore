@@ -366,3 +366,11 @@ docs/ui-preview/.preview-server.json
 # 3080 清场脚本的转义纪律：raw string 里写「反斜杠 + 美元符」或「两个反斜杠的 \0」
 # 都只会得到一条 exit 0 的静默 no-op —— 探针必须能把这些形态打红。
 !/scripts/probes/_test_port_reclaim_script.py
+
+# loader 崩溃可观测性（issue #125）：DEBUG 开关必须直扫 envp（读 g_env_store 恒 0），
+# 阶段标记与致命信号兜底都挂在 g_dbg 上 —— 任一退回去都得打红。
+!/scripts/probes/_test_loader_diagnostics.py
+
+# 签名单钥不一致的解释文案（issue #94）：指纹对照必须真的从判定分支写出来，
+# 六套 locale 的新串必须带占位符 —— 任一退回去都得打红。
+!/scripts/probes/_test_update_signature_hint.py

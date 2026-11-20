@@ -1877,6 +1877,7 @@
     <string name="linux_workbench_delete_hint">Installiertes Image lange drücken, um es zu löschen</string>
     <string name="linux_workbench_diag_readiness">Engine-Bereitschaft</string>
     <string name="linux_workbench_diag_ready">Startbereit</string>
+    <string name="linux_workbench_diag_runner_selftest">Runner-Selbsttest</string>
     <string name="linux_workbench_diag_dns">DNS-Proxy</string>
     <string name="linux_workbench_diag_dns_up">Lauscht auf Port %1$d</string>
     <string name="linux_workbench_diag_dns_down">Läuft nicht. Er wird beim Installieren von Paketen automatisch gestartet</string>

@@ -1871,6 +1871,7 @@
     <string name="linux_workbench_delete_hint">Удерживайте установленный образ, чтобы удалить его</string>
     <string name="linux_workbench_diag_readiness">Готовность движка</string>
     <string name="linux_workbench_diag_ready">Готов к запуску</string>
+    <string name="linux_workbench_diag_runner_selftest">Самопроверка раннера</string>
     <string name="linux_workbench_diag_dns">DNS-прокси</string>
     <string name="linux_workbench_diag_dns_up">Слушает порт %1$d</string>
     <string name="linux_workbench_diag_dns_down">Не запущен. Запускается автоматически при установке пакетов</string>
