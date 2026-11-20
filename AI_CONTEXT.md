@@ -15244,3 +15244,131 @@ App 被强杀时信号传不到 node，node 以 uid 0 变孤儿，新引擎 EADD
   很容易误判成路径写错。
 - 探针里 `path.join` 在 Windows 上拼反斜杠 → 行为验证必须显式 `require('path').posix`，
   否则得到的是平台假结论。
+
+## 第一百四十五章（v1.6.0-beta.20 · 2026-11-20）20 条 issue 盘点 + #125 崩溃可观测性 + #94 签名文案说人话
+
+本轮不是「再修一批」，而是先把 20 条 open issue **逐条对账**（拉 GitHub API 存
+`E:/tmp/issues_open.json`），再只动真正没被修过的两处。
+
+### 1. 盘点结论：多数已修未告知，两条是真缺口
+
+| issue | 判定 | 依据 |
+| --- | --- | --- |
+| #119 / #118 / #107 | 已修，随 beta.18 发出 | `1b0dba25` / `a9e7d961` / `fe1bc876` 都被 v1.6.0-beta.18 tag 包含 |
+| #123 / #122 / #108 | 已修，随 beta.18/19 发出 | `5233c6d2` + `0228457f`（#108 第二层补丁） |
+| #98 | 已修 | `LinuxEnvironmentManager` 自己读着跳过，注释明写不用 `skipNBytes` |
+| #96 | 已完成 | values-ru 1878 键、0 缺 |
+| #124 | 只需给许可 | zh-TW PR 请求；本仓 i18n 检查只覆盖 6 套 locale |
+| #94 | **文案假绿**，本轮修 | 判定对，但只说「签名不一致」，用户以为包坏了 |
+| #125 | **可观测性缺口**，本轮修 | 修复本身早已在 `d3535531`，但现场跑的是 v1.5.0 旧包 |
+| #83 #106 #91 #76 #59 #41 #60 #26 #2 | 建议 / 老版本 / 需求类 | 不构成本轮代码改动（#76 的 healWorkspaceRegistry 已在，见 `EngineConfig.kt:860`） |
+
+### 2. #125 的真根因：不是没修，是「修了也查不出来」
+
+报告环境 SM-S918B / SDK37 / normal，loader 31104 B sha256 `904ed8f5…` —— 对应
+git 里 `279ef33864`，即 **v1.5.0 时代的产物**。那个版本的 `sigsys_impl` 没有重入
+守卫：zygote 那层 seccomp 只按 syscall 号 TRAP、不看调用者 IP，于是 handler 里的
+重发被外层再 trap 一次 → 递归压穿栈 → SIGSEGV(139) 且**零输出**。
+
+也就是说：#125 的修复早就在主线（`d3535531` 起），用户只是跑了旧包。**本轮真正
+要补的是「让 DSH_ALPINE_DEBUG 真的能说话」。**
+
+#### loader 六处改动（`app/src/main/cpp/dsh_alpine.c`）
+
+1. **DEBUG 开关直扫 envp**：原来 `env_has_("DSH_ALPINE_DEBUG")` 读的是还没填的
+   `g_env_store`（只在 `loader_preload` 里填），在 `ldr_main` 早期求值恒 0 ——
+   这就是「开了 DEBUG 一个字节都不打」的直接原因。改为
+   `g_dbg = envp_has_(envp, ...)`。
+2. **开关与 crash handler 装在 ldr_main 最开头**（rootfs 打开之前）。放在后面时，
+   「rootfs 不存在 / stub 找不到」这类**最早期**失败期间仍然一句不打，而现场报告
+   最需要的正是那一段。
+3. **九个阶段标记**：`rootfs-open` / `find-stub` / `preload` / `install-filter` /
+   `jump-guest`，以及 `child_run_raw` 内的 `map-interp` / `map-guest` /
+   `build-stack` / `jump-entry`。全部挂在 `g_dbg`，未开 DEBUG 零噪音。
+4. **崩溃兜底 `ldr_crash`**：打印 `LOADER: crash sig=` + `LOADER: crash last stage=`
+   后直接 `exit_group(128+sig)`，**不返回**（避开 restorer 差异，rc 语义仍是 139）。
+5. **九处静默 `exit_group(N)` 补文字**：no interp/guest、guest not ELF、interp 无
+   PT_LOAD、各种 mmap / seg map FAIL、stack mmap FAIL。原来这些路径一句话都没有。
+6. **重入守卫命中时打印 syscall 号**：`LOADER: guard-hit nr=`（同号只打一次）。
+   现场报告下次能直接指出是哪个号被外层拦，不必再靠猜。
+
+#### 实测坑（已写进代码注释，别再踩）
+
+- **x86_64 装 handler 必须带 `SA_RESTORER(0x04000000) + sa_restorer`**，否则内核直接
+  返回 -EFAULT，handler 根本没装上，症状是「一行都不打」（比不加还糟）。
+  aarch64 留 0 即可（VDSO restorer 通用）。
+- 基线可复现：用 HEAD 源码 + 仓库同一套 flags 重编 x86_64 得到 `832c585d…`，与
+  仓库里的 `jniLibs/x86_64/libdsh_alpine.so` **完全一致** —— 以后怀疑「产物陈旧」
+  先做这一步，比猜 mtime 可靠。
+
+### 3. 诊断页自检：把假绿色变成有证据的结论
+
+`LinuxActivity.diagnosisItems` 原来的「Runner」一项只看 ELF 头
+（deployLinuxRunner + isFixedBaseLinuxRunner）。#125 里 rootfs 完好、ELF 也对，
+界面照样报 `Runner: OK`，而 runner 每次 SIGSEGV —— 用户被假绿色引向错误方向。
+
+新增：`st.state == READY` 时**真起一次容器**跑 `c:/program files/git/usr/bin/busybox echo runner-ok`
+（`skipReady = true`、timeout 20s）。rc≠0 就原样贴 `rc=…: <输出>`，OK 时附耗时。
+只在用户点「诊断」时发生，**不进冷启路径**。
+
+新串 `linux_workbench_diag_runner_selftest` 六套齐全。
+
+### 4. #94：判定没错，错在文案
+
+用户装 1.4.41 调试签名包，App 内更新提示 v1.4.76，从发布页下载的是**正式签名**包，
+系统拒绝覆盖。判定逻辑本来就对 —— 两个包确实不同钥。
+
+问题在文案只说「签名与已安装应用不一致」，用户只会以为包坏了。新增
+`ApkInstaller.lastMismatch`（失败分支写入 `installed=… archive=…`，各取指纹前
+8 位）与 `app_update_err_signature_detail`；指纹为空时退回旧串，不硬拼空值。
+logcat 同步打这条对照。
+
+### 5. 证据分层
+
+| 层级 | 内容 |
+| --- | --- |
+| 单测 | 9 个测试类 **90 tests / 0 failures / 0 errors** |
+| 构建 | `:app:testDebugUnitTest :app:assembleDebug` BUILD SUCCESSFUL（x86_64，190,138,929 B） |
+| 探针 | 全量 `_test_*.py` **FAILED_COUNT=0**；新增两条见下 |
+| 门禁 | `check-i18n.py` exit 0、`check-ui-tokens.py` exit 0 |
+| 装机（模拟器） | 见下节逐条 |
+
+新增探针 `_test_loader_diagnostics.py`（38 checks，A–G 七组）与
+`_test_update_signature_hint.py`（20 checks）。两者都做了**真负对照**：
+
+- 把 `g_dbg = envp_has_(envp, …)` 改掉 → [A2][A4][A5] 三红；
+- 把 `lastMismatch = digestPair(...)` 删掉 → [A2] 红。
+
+### 6. 设备实测（emulator-5554 / x86_64，`adb root`）
+
+从**装好的 APK 里抽** `lib/x86_64/libdsh_alpine.so`（不是从工作树拿），推到
+`/data/local/tmp/ld_apk` 跑同一 rootfs：
+
+- DEBUG=1 正常路径 → 九个阶段全打 + `hi` / rc=0（不污染正常输出）；
+- DEBUG=1 + SIGSEGV guest → `LOADER: crash sig=11` + `last stage=jump-entry` / rc=139；
+- **无 DEBUG** → 只有 shell 的 `Segmentation fault`，零噪音（负对照成立）；
+- 坏 rootfs + DEBUG=1 → `LOADER: rootfs open FAIL rc=-2` / rc=3（早期失败也有话说了）。
+
+另用自造外层 seccomp 包装（`E:/tmp/crashg/outer*.c`，Trap `openat` / `ppoll`）验证
+「外层再 trap 一次」的路径：pre-guard 的 v1.5.0 源码产物 **Segmentation fault
+rc=139 零输出**，guard 之后的源码产物则正常报错 / 正常跑 —— 与 #125 现场判据一致。
+
+### 未做（缺口，别当成已验证）
+
+- `lastMismatch` 的**界面文案没有真机截图**：本机只有 x86_64 模拟器，触发一次
+  「两个不同 key 的包」需要两个签名包，没造。
+- 诊断页「运行器自检」需要设备上已部署可用 rootfs，本轮没在界面上点「诊断」拍照，
+  只有源码 + 探针证据。
+- `dsh-linux-runtime` 里 `src/dsh_alpine.c` 有**他人 WIP**（bind 目录 O_PATH 真探测），
+  本轮未提交、也未同步；两侧 `dsh_alpine.c` 目前 diff 为空（已核对 sha256 一致）。
+
+### 复用经验
+
+- **报「DEBUG 没有任何输出」先查开关在哪求值**：凡是读一个「稍后才填充」的全局来
+  决定是否调试输出，早期失败永远静默。
+- **崩溃兜底 handler 装失败时，症状与没装一模一样**（什么都不打）。x86_64 上必须
+  带 restorer，别拿 aarch64 的经验套。
+- **诊断页任何「OK」都要有行为证据**：只查 ELF 头 / 文件存在，等于把「没验证」写成
+  「正常」，比不报更危险。
+- 现象级 issue 先核**用户跑的产物哈希**：#125 报告里的 loader 字节数直接指向
+  v1.5.0，省掉一轮误修。
