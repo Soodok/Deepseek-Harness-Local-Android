@@ -15648,3 +15648,105 @@ downloads.gradle.org 都是 307 后连接被重置、阿里云 404），解到
 **未装真机**。PR 声称的「点动态取色不再闪屏」属于运行时视觉行为，需要真机切一次
 系统动态色板并用录屏逐帧确认，本轮没有做；同样未实测 Android 26–30 的蓝色回落
 与 Android 31+ 的 Monet 实际取色。
+
+## 第一百四十九章（v1.6.0-beta.21 · 2026-11-20/21）hardssh 绑 Windows 远端：路径层方言化 + 命令层明示不支持
+
+宝宝报：手机连 Windows + OpenSSH，TCP 通、密钥交换完成、密码认证通过（服务端 sshd 日志有
+`Accepted password`），但绑定目录时失败退出，**整个过程没有任何 SFTP 或命令执行记录**。
+
+### 根因（5 处 POSIX 假定，全部在源码里核实）
+
+| 位置 | 症状 |
+|---|---|
+| `src/backend.ts:176` `normalizeRemoteRoot` | `root.includes('\\') || !posix.isAbsolute(root)` → 抛 `root-mismatch`，`C:/Users/x` 与 `C:\\Users\\x` 都在这里被拒 |
+| `src/ssh/engine.ts:80` `wrapCommandWithServerBudget` | 把命令包成 `if command -v timeout ...; then timeout -k ... "${SHELL:-/bin/sh}" -c ...`，cmd.exe 不认，**连降级机会都没有** |
+| `src/remote/remote-subprocess.ts:160` | `terminalEnvironment` 硬编码 `{platform:'posix'}` |
+| 同文件 `:140` 注释 | 「The SSH world is POSIX-only in this plugin, so platform is a constant」 |
+| `src/ssh/capabilities/service.ts:127` `classifyPlatform` | **其实能识别 `windows`**（`/windows|mingw|msys|cygwin/i`），但全仓无人消费该字段 |
+
+用户描述的「没有任何 SFTP / 命令记录」对得上：失败发生在 `backend.ts` 的路径校验，
+比 `sftp.realpath` 还早。
+
+另一条有用的发现：`src/remote/sftp-search.ts` 头注释写明「Nothing here shells out: the walk
+drives engine.ls」。**搜索阶梯本来就有纯 SFTP 兜底**，所以只要路径层通了，
+`read` / `write` / `edit` / `glob` / `grep` 立刻可用，命令层可以后做。
+
+### 修法：`scripts/patch-hardssh-windows-paths.py`
+
+客户端补丁，在 `scripts/pack-hardssh.sh` 解包裁剪后、依赖安装前注入（3b 段），带 `--check` 幂等。
+10 条锚点替换 + 2 处 helper 注入；锚点命中数 ≠ 1 时 exit 1 **fail-closed**。
+
+helper 一律带 `dsh` 前缀（`dshCanonicalPath` / `dshIsWindowsRemoteRoot` / `dshIsAbsoluteRemotePath` /
+`DSH_WIN_DRIVE_ABS`）—— 首版用 `canonicalRemotePath` 与产物里既有的同名函数撞车，
+真实 bundle `node --check` 直接 `Identifier already declared`。
+
+收敛规则：`C:\\x` / `C:/x` / `/c:/x` → `/C:/x`（盘符大写、正斜杠、去尾斜杠、`C:` → `/C:`）；
+相对路径仍拒绝。`confine` / `contains` / `isInside` 在 Windows 根下大小写折叠，POSIX 根保持敏感。
+P0：`resolveExecutable` 对 Windows 根抛中文明确错误，只声明支持 SFTP 文件读写/搜索。
+
+**为什么必须大小写不敏感**：Win32 OpenSSH 9.5 的 `sftp.realpath` 实测对 `/c:/Users/Qt` **原样返回小写 c**（不折叠），
+这点是实测出来的，不是猜的。
+
+### 验证（真实 Windows OpenSSH，不是 mock）
+
+自建独立 sshd 实例 `/e/tmp/sshtest`（Port 2222 / 公钥认证 / `sftp-server.exe` / DEBUG1）。
+两个坑：hostkey 必须 `icacls ... /inheritance:r /grant:r "SOODOK\soodok:(R)"` 否则 `UNPROTECTED PRIVATE KEY` 退出；
+`(sshd -f ... &)` 会随 shell 退出，必须 `powershell Start-Process` 起。
+
+| 证据 | 结果 |
+|---|---|
+| `/e/tmp/e2e_win.cjs` 四种输入收敛 | canonical 全部 `/C:/Users/Qt`、realpath 一致、readdir 各 **160 项**，PASS=8 FAIL=0 |
+| `/e/tmp/e2e_rw.cjs` 读写搜索地板 | realpath/writeFile/stat(42)/readFile/readdir(161)/rename/unlink/越界拒绝/前缀兄弟不误判，**PASS=9 FAIL=0** |
+| `/e/tmp/neg.cjs` 负对照（未打补丁的原始函数） | `C:/Users/Qt` 与反斜杠写法均 `root-mismatch: remote root must be an absolute POSIX path` |
+| `/e/tmp/p0.cjs` 命令层拒绝 | 两种写法均抛中文「只适配 SFTP 文件读写/搜索…请改用文件类工具」 |
+| `scripts/probes/_test_hardssh_windows_paths.py` | **PASS=9 FAIL=0**（A 锚点可打 / B–J 26 条行为断言 / D 幂等 / E fail-closed / F 真实包） |
+
+变异反验 3 条全红、还原全绿：`isInside` 去 `toLowerCase` → C1 红；`confine` 去大小写折叠 → D1 红；
+helper 不剥前导斜杠 → A3 红。**首版 D1 用例输入本就小写、变异不红**（假绿），改成 root `/c:/users/me` +
+path `/C:/Users/Me/a` 后才真红。
+
+### 已知限制：脱离宿主 runtime 无法独立 import
+
+`node --check` 只验语法。真做 ESM `import()` 时依次缺 `@deepseek-ai/dsh-timeout`（写了 stub
+`export const MAX_TIMER_DELAY_MS = 2147483647`）与 `@deepseek-ai/schemastery`。
+结论：bundle 是 dsh 插件，脱离宿主跑不起来，这条路走不通 —— 改用「APK 内字节比对 + 真实 OpenSSH 行为断言」两线取证。
+
+### 交付
+
+- 提交 `eb725b8d` fix(hardssh) 6 文件 583 行（补丁脚本 + fixture 快照 + 探针 + pack-hardssh.sh 接线）。
+- 提交 `7f6f2c27` docs(ssh)：`docs/SSH.md` 补 47 行「Windows 远端（半支持，实测边界）」，含四种写法收敛表、
+  可用/不可用工具、cmd.exe 语法原因、P0–P3 分期、实测依据。已推 origin/main。
+- 构建 `-Pabi=arm64-v8a -Ppackage=noruntime -PhardsshDir=E:/tmp/hardssh2/hardssh`：**BUILD SUCCESSFUL in 5m 1s**，
+  `app-release.apk` **46,652,063 B / md5 27db28c6dc38f68b6d2fcb77866182ab**（versionCode 397 / 1.6.0-beta.21）。
+- **APK 内实测**（python zipfile）：`assets/hardssh` 共 **215 条目**（lib 13 / node_modules 197 / 其余 5），
+  `lib/index.js` **396,819 B** md5 `08d2a919c870fa8aa4016c47471d3b70`、`lib/health-Byv4nAVe.js` **13,591 B**
+  md5 `e5be4c3fa101d3b93c1ed1274336e970`，两者与 `/e/tmp/hardssh2/hardssh` **逐字节相同**，各含 **1 处**
+  `dsh-patch: windows-paths` 标记；`bundleSha256 = e3cb5a79…e413`。
+- 门禁：`check-i18n` **EXIT=0**、`check-ui-tokens` **EXIT=0**。
+
+### 当前阻塞（供下次接手）
+
+装机失败：`adb install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。emulator-5554 上已装的包是
+**Android Debug 证书**（`CN=Android Debug`，SHA-256 `4dcec87d…9585`，pm 侧签名摘要 `a7c3cb58`），
+新包是 release 证书（`CN=DSH Mobile`，SHA-256 `d28ca4f5…92c8`，来自 `keystore/dsh-release.keystore`）。
+本机 `~/.android/debug.keystore` 不存在，仓内 `debug-signing/` 也没有，无法补出同签名的包 ——
+要么 `adb uninstall` 重装（emulator-5554 是纯测试机，清数据可接受），要么从团队密码库取
+`debug-signing/dsh-debug.keystore` 覆盖安装。
+
+另一件未验证：设备上 `HardsshInstaller.ensureInstalled()`（`EngineSupervisor.kt:874` 调用）**未观察到执行** ——
+`files/` 只有 `dsh-home` / `engine` / `inbox` / `plugin-staging` / `profileInstalled`，
+`files/engine/lib/node_modules` 不存在，logcat 无 `HardsshInstaller` 行。原因是九页向导没走完、引擎未启动。
+装上包后走完向导即可验证 `files/engine/lib/node_modules/@xiaopb/dsh-hardssh` 是否落盘。
+
+### 顺带的独立结论：桌面版不需要新做「局域网通道」
+
+宝宝问桌面版有没有计划提供等价的「局域网访问」开关。实测：**已经有了**。
+
+`dsh --profile web --host 192.168.101.9 --port 18099 --no-open` 启动成功，日志打印带 token 的 URL；
+不带 token → 401，带 `?token=` → 303 下发 `dsh-auth-*` cookie（HttpOnly，JWT 形状 `v1.<base64>.<sig>`），
+带 cookie 访问 `/` → 200 返回真实 index.html。伪造 `Host: 127.0.0.1` 打局域网 IP → 401（围栏生效）。
+
+所以缺的不是反代，而是「一键开关 + 验证码 UI」。另外「桌面版硬绑 127.0.0.1」的说法是误读：
+`/lib/main.js` 里 9 处 `127.0.0.1` 全是安全校验，真正的绑定在 `dsh-desktop-host` 里显式选了回环 + `--port 0`；
+`dsh-host-webserver` 的 host 是可配置的，只拒绝通配地址（`0.0.0.0` / `::`），错误文案明确说
+「binding every interface would expose remote code execution to the network」。
