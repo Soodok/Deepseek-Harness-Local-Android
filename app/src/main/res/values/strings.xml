@@ -1750,6 +1750,8 @@
     <string name="mem_pull_hint">Pull down to refresh</string>
     <string name="mem_offline">Cannot reach the engine bridge. Start the engine, then pull down to refresh.</string>
     <string name="mem_detail_title">Memory detail</string>
+    <string name="mem_shots_title">Screens</string>
+    <string name="mem_shots_hint">One image of every step, left to right. S = before the first step.</string>
     <string name="mem_steps_title">Steps</string>
     <string name="mem_step_line">%1$d. %2$s</string>
     <string name="mem_step_no_target">(no target)</string>

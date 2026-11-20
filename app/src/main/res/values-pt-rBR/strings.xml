@@ -1710,6 +1710,8 @@
     <string name="mem_pull_hint">Puxe para baixo para atualizar</string>
     <string name="mem_offline">Sem conexão com a ponte do motor. Inicie o motor e puxe para baixo.</string>
     <string name="mem_detail_title">Detalhe da memória</string>
+    <string name="mem_shots_title">Telas</string>
+    <string name="mem_shots_hint">Uma imagem por etapa, da esquerda para a direita. S = antes da primeira etapa.</string>
     <string name="mem_steps_title">Passos</string>
     <string name="mem_step_line">%1$d. %2$s</string>
     <string name="mem_step_no_target">(sem alvo)</string>

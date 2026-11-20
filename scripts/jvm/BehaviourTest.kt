@@ -48,6 +48,7 @@ import app.dsh.mobile.engine.TraceExpect
 import app.dsh.mobile.engine.TraceEndpoint
 import app.dsh.mobile.engine.PruneResult
 import app.dsh.mobile.engine.PrunedStep
+import app.dsh.mobile.engine.StepShotLayout
 import app.dsh.mobile.engine.TraceContract
 import app.dsh.mobile.engine.TraceRetention
 import app.dsh.mobile.engine.MemoryContract
@@ -133,6 +134,7 @@ object BehaviourTest {
         navigationEscape()
         assertGuestPaths()
         assertExtVersionPlan()
+        assertStepShots()
         assertStubMatchesService()
 
         println()
@@ -3138,6 +3140,130 @@ object BehaviourTest {
     // scripts/jvm/DshAccessibilityServiceStub.kt（真实类编不动宿主机 JVM）。
     // stub 一旦和真实服务脱节，编译仍然会过 —— 那是最难查的一类假绿。
     // 所以这里读真实源码，逐个确认方法名还在。
+    /**
+     * 逐步截图（v1.7.x）：侧车编解码 + 剪枝映射 + 拼接布局。
+     *
+     * 这三件事**都不会崩**，错了只会静默地把第 3 步的图挂到第 5 步旁边、
+     * 或者拼出一张越界/重叠的画布 —— 源码 grep 完全看不出来，只能在 JVM 上
+     * 按真实数据算一遍。所以这里断言的是坐标与顺序，不是「函数存在」。
+     */
+    private fun assertStepShots() {
+        val L = StepShotLayout
+
+        // ---- 侧车编解码 ----
+        val t = StepShotLayout.Thumb(3, 320, 691, "3.webp", 20480)
+        val line = L.encodeLine(t)
+        check(line == "3\t320\t691\t3\t20480\t3.webp", "侧车行格式固定为 6 列 TSV")
+        val back = L.decodeLine(line)
+        check(back != null && back == t, "侧车编解码往返一致")
+        check(back?.aspect() == t.aspect(), "宽高比按 h/w 计算")
+        check(t.label() == "3", "普通步的角标是步号")
+
+        val start = StepShotLayout.Thumb(L.START_INDEX, 320, 691, "start.webp", 1)
+        check(start.label() == L.START_LABEL, "起手一屏的角标是 S（不是 -1）")
+        check(L.decodeLine(L.encodeLine(start))?.stepIndex == L.START_INDEX, "起手索引 -1 能往返")
+
+        // 容忍度：坏行返回 null，不抛
+        check(L.decodeLine("") == null, "空行解出 null")
+        check(L.decodeLine("abc\t1\t2\tx\t3\tf.webp") == null, "索引不是数字时解出 null")
+        check(L.decodeLine("1") == null, "缺列时解出 null")
+        // 旧版两列形态：接受但尺寸未知
+        val legacy = L.decodeLine("2\t2.webp")
+        check(legacy != null && legacy.fileName == "2.webp", "两列旧形态仍能解出（向后兼容）")
+        check(legacy != null && !legacy.isValid(), "两列旧形态尺寸未知 → isValid=false")
+        check(StepShotLayout.Thumb(0, 0, 0, "x.webp").aspect() == 0f, "脏尺寸的宽高比退化为 0，不产生 NaN")
+
+        // 同一 index 出现两次：后写的那张才是最终界面
+        val merged = L.parseAll("0\t320\t691\t0\t1\ta.webp\n0\t320\t691\t0\t2\tb.webp\n")
+        check(merged.size == 1 && merged[0].fileName == "b.webp", "同一 index 重复时保留最后一条")
+        check(merged[0].bytes == 2L, "重复行的 bytes 也取最后一条")
+
+        // ---- 剪枝映射 ----
+        val all = listOf(
+            StepShotLayout.Thumb(-1, 320, 691, "start.webp", 9),
+            StepShotLayout.Thumb(0, 320, 691, "0.webp", 9),
+            StepShotLayout.Thumb(1, 320, 691, "1.webp", 9),
+            StepShotLayout.Thumb(2, 320, 691, "2.webp", 9),
+            StepShotLayout.Thumb(3, 320, 691, "3.webp", 9),
+        )
+        val kept = L.pickForKept(all, listOf(0, 2, 3))
+        check(kept.size == 4, "剪掉第 1 步后，留下的图是 起手 + 3 步")
+        check(kept.first().stepIndex == L.START_INDEX, "起手一屏永远排第一（即使剪枝删了首步）")
+        check(kept.map { it.stepIndex } == listOf(-1, 0, 2, 3), "保留顺序跟着重放顺序走")
+        check(L.pickForKept(all, listOf(0, 2, 3)).none { it.stepIndex == 1 }, "被剪掉的步不带图")
+        check(L.pickForKept(all, listOf(7)).size == 1, "只留下一个不存在的 index 时只剩起手屏")
+        check(L.pickForKept(emptyList(), listOf(0)).isEmpty(), "没有侧车时一条都不返回")
+        check(L.pickForKept(all, listOf(2, 2, 2)).size == 2, "重复 index 不重复放格子")
+
+        // ---- 布局 ----
+        check(L.plan(0).cells.isEmpty(), "n=0 不产生格子")
+        check(L.plan(0).canvasW == 0, "n=0 画布宽 0（调用方不要建位图）")
+        check(L.plan(-3).cells.isEmpty(), "负数张数按 0 处理，不抛")
+
+        val p1 = L.plan(1, cellW = 200, aspect = 2.16f, gap = 8, labelH = 22)
+        check(p1.cols == 1 && p1.rows == 1, "1 张排 1 行 1 列")
+        check(p1.canvasW == 200 + 8 * 2, "1 列画布宽 = 格宽 + 左右留白")
+        check(p1.canvasH == p1.cellH + 22 + 8 * 2, "1 行画布高 = 图高 + 角标高 + 上下留白")
+        check(p1.cellH == (200 * 2.16f).toInt(), "格高按真实宽高比算，不写死")
+
+        val p3 = L.plan(3, cellW = 200)
+        check(p3.cols == 3 && p3.rows == 1, "3 张排一行（少数几张不该留大片空白）")
+
+        val p4 = L.plan(4, cellW = 200)
+        check(p4.cols == 4 && p4.rows == 1, "4 张排 4 列 1 行")
+
+        val p5 = L.plan(5, cellW = 200)
+        check(p5.cols == 4 && p5.rows == 2, "5 张 → 4 列 2 行（第 5 张单独一行）")
+        check(p5.cells.size == 5, "格子数等于张数")
+        check(p5.canvasH == 2 * (p5.cellH + 22) + 8 * 3, "行高与行间距按行数累加")
+
+        val p9 = L.plan(9, cellW = 200)
+        check(p9.rows == 3, "9 张 → 3 行")
+        check(p9.cells.last().y > p9.cells.first().y, "最后一个格子在最后一行（自上而下排）")
+        check(p9.cells[1].x > p9.cells[0].x, "同一行内自左向右排")
+
+        // 所有格子都必须落在画布内 —— 越界会被 Canvas 静默裁掉，图就少一块
+        var inside = true
+        for (c in p9.cells) {
+            if (c.x < 0 || c.y < 0 || c.x + c.w > p9.canvasW || c.y + c.h > p9.canvasH) inside = false
+        }
+        check(inside, "9 张的所有格子都在画布内（越界会被静默裁掉）")
+
+        // 角标必须在图片上方，否则会压住界面内容
+        var labelAbove = true
+        for (c in p9.cells) if (c.labelY >= c.y) labelAbove = false
+        check(labelAbove, "角标基线在图片区上方，不压住界面内容")
+
+        // 相邻格子不重叠（重叠会让两张图叠在一起，看着像画面错乱）
+        val a = p9.cells[0]
+        val b = p9.cells[1]
+        check(a.x + a.w <= b.x, "同一行相邻格子不重叠")
+
+        // 宽高比缺失时按 2.0 估，不能算出 0 高
+        val pNoAspect = L.plan(2, cellW = 200, aspect = 0f)
+        check(pNoAspect.cellH == 400, "宽高比未知时按 2.0 估（否则格高会算成 0）")
+
+        // ---- 等比缩放 ----
+        // 竖图放进方框：受**高度**限制（320×691 比方框瘦得多），缩放比 200/691
+        val portrait = L.fitInto(320, 691, 200, 200)
+        check(portrait[0] == 92 && portrait[1] == 200, "竖图进方框按高适配，宽度按比例")
+        check(portrait[2] == 54 && portrait[3] == 0, "宽度居中留边（左右各 54），上下贴边")
+        // 竖图放进更宽的框：这时才由宽度决定
+        val tall = L.fitInto(320, 691, 200, 500)
+        check(tall[0] == 200 && tall[1] == 431, "竖图进高框按宽适配，高度按比例")
+        check(portrait[0] <= 200 && portrait[1] <= 200, "缩放后不超过框（绝不拉伸变形）")
+        val square = L.fitInto(400, 400, 200, 400)
+        check(square[0] == 200 && square[1] == 200, "方图放进竖框：按宽适配")
+        check(square[3] == 100, "方图在竖框里垂直居中（上下各留 100）")
+        val bad = L.fitInto(0, 0, 200, 300)
+        check(bad[0] == 200 && bad[1] == 300, "源尺寸为 0 时退化成整框，不产生除零")
+
+        // ---- 预算估算 ----
+        check(L.estimateBytes(emptyList()) == 0L, "空列表估算 0 字节")
+        check(L.estimateBytes(listOf(StepShotLayout.Thumb(0, 1, 1, "a", 0))) == 12_000L, "未知大小时按 12KB 估")
+        check(L.estimateBytes(listOf(StepShotLayout.Thumb(0, 1, 1, "a", 500))) == 500L, "已知大小时用真实值")
+    }
+
     private fun assertStubMatchesService() {
         println("== MemoryReplay stub vs real accessibility service ==")
         val src = findRepoFile("app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt")

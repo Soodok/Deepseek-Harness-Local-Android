@@ -15465,3 +15465,121 @@ node 裸启动实测 `real 0.12～0.13s`、`process.uptime()` 107～114ms ——
 - **系统级约束先查官方 provider 文档，再算工程成本。** Chromium 的包名白名单 + 签名校验是墙不是工作量，先查这一条能省掉「能不能编出来」的全部讨论。
 - **「进程能否活过 force-stop」必须自己起一个 detached 进程来验**，不能从 `START_STICKY` / 前台服务推断。实测与直觉相反：不在 app 进程树里的同 uid 进程能活，app 的子进程必死。
 - **同一现象两轮结果不同时，先查启动路径差异再下结论**（cgroup 那次就是这么翻的）。
+
+## 第一百四十七章（v1.7.x · 2026-11-20）记忆带图：每个动作当时的界面自动拼成一张总览，AI 能"看见"当时长什么样
+
+用户原话（m57798）：「无障碍还能再升级一下，记忆系统允许记忆操作时的图片，将操作时每个步骤当时的图片自动拼在一起展示，让AI知道当时那个界面具体长什么样」。
+
+### 1. 做出来的东西
+
+记忆条目从「纯文本步骤」升级成「步骤 + 每步当时的屏幕缩略图 + 一张拼接总览图」。AI 用 `read_image` 读那张总览，一眼看到全程；任何一步在重放里对不上时，再用
+`GET /memory/v2/shot?id=&step=|pos=` 取单张对比。
+
+新增两个文件，职责刻意分开：
+
+| 文件 | 行数 | 性质 |
+| --- | --- | --- |
+| `app/src/main/java/app/dsh/mobile/engine/StepShotLayout.kt` | 232 | **纯 Kotlin**，无 android 依赖 → 能进宿主 JVM 断言真实坐标与编解码 |
+| `app/src/main/java/app/dsh/mobile/engine/StepShots.kt` | 853 | 取帧 / 缩图 / 落盘 / 拼接 / 预算 / 生命周期 |
+
+侧车格式（`files/traces/<traceId>.shots`，六列 TSV，每行 flush）：
+
+```
+-1	320	675	S	9438	start.webp      # -1 = 起手屏（动作开始前）
+0	320	675	0	9028	0.webp
+1	320	675	1	9490	1.webp
+```
+
+常量：`THUMB_W=320`、`STRIP_CELL_W=200`、`MAX_PER_TRACE=24`、`MAX_TOTAL_BYTES=48MiB`、
+`THUMB_QUALITY=55`、`STRIP_QUALITY=78`、`SHOT_TIMEOUT_MS=1200`、`START_GRACE_MS=3000`。
+
+### 2. 真机实测证据（emulator-5554 · Android 14 · x86_64）
+
+**A. 手动 `POST /memory/v2/learn`**（本轮修掉的「memLearn 漏接 bundle」）：
+```
+POST /memory/v2/learn {"traceId":"t_1795182687857_9955"}
+→ {"ok":true,"id":"m_1795182727633_8501","steps":2,"images":2,
+    "strip":"memory/v2/shots/m_1795182727633_8501/strip.webp"}
+磁盘：memory/v2/shots/m_.../ {start.webp 9688B, 1.webp 2736B, strip.webp 8034B}
+```
+（修复前同一调用返回 `steps:4` 但 `images` 字段不存在、`memory/v2/shots/` 目录压根没建）
+
+**B. 自动学习（`endBoundary → learnQuiet`）**：跑两步真实 tap 后 `GET /task` 触发收边界，
+logcat 无 `auto-learn skipped`，产出 `m_1795184107716_1500`：
+```
+memory/v2/shots/m_1795184107716_1500/
+  start.webp 9444B · 0.webp 8582B · 1.webp 9206B · strip.webp 17060B
+GET /memory/v2/get → hasImages=true, shotIndex=[{pos:0,i:0,hasShot:true},{pos:1,i:1,hasShot:true}]
+```
+拼图实测 632×459（3 格一行，含 S/0/1 角标），视觉核对：S=设置首页、0=网络与互联网页、
+1=Internet 页 —— 与轨迹 `anchor.text` 完全对应。
+
+**C. `memShot` 四种取图口径全部实测**（真机 curl）：
+| 请求 | 返回 |
+| --- | --- |
+| 无参 | strip.webp（"contact sheet of every step"） |
+| `step=-1` | start.webp |
+| `step=1` | 1.webp（"screen right after step i=1"） |
+| `step=0`（该步无图） | 404 `step i=0 has no image` ← 不再隐式回落到位置口径 |
+| `pos=1` | 1.webp |
+| `step=1&pos=1` | 400 `pass either step or pos, not both` |
+| `id=../com.android.settings.json` | 404 `no such memory`（isSafeId 拦下） |
+
+**D. `POST /trace/clear` 清空真的清干净**（本轮修的孤儿漏网）：清前 `traces/shots/` 里
+留着两条主文件已被 TTL 剪掉的旧目录（`t_1795170146160_a273`、`t_1795170274581_3403`），
+清后 `{"ok":true,"cleared":true,"traces":2}` 且 `traces/shots/` 空、`memory/v2/shots/` 的
+记忆图不受影响（清了轨迹不该清记忆）。
+
+### 3. 三轮审查与修复（8 → 4 → 若干）
+
+- **expert-gpt 只读审查（HEAD `024a9cb6`）**：8 条必须修复 —— ①memoryId 路径穿越可删整包记忆
+  ②保护页漏同包 + 用动作前屏 ③`shots` 空占位被 `stringList` 吃掉导致图整体左移
+  ④异步取帧不绑定动作时刻 ⑤入库不等截图落盘 ⑥重学先删旧图、失败还恢复旧路径
+  ⑦`memShot` 双索引返回错图 ⑧`traceClear` 留嵌套图 + 晚到 worker 重建侧车。
+- **checker（GLM-5.3-Flash）交叉复核**：确认 8 项里 7 项真堵住，另指出 4 条新的必修 ——
+  其中 **M1 是最关键的一条，且是本轮改动自己新引入的**：`DiscardPolicy` 静默丢弃时不抛异常
+  也不执行任务，而 `pending++` 与 per-trace 名额已加过 → `pending` 永不归零、
+  `awaitIdle` 每次白等 2.5s、名额烧光后整轨停止截图。已改自定义
+  `java.util.concurrent.RejectedExecutionHandler` + `ShotTask(app,traceId,index)`，
+  拒绝时把两笔账都还回去。M2 是 `TaskRecorder.step(protected=false)` 两处硬编码让
+  `TracePruner` 的整轨保护页拒绝变成死代码 —— 已把 `onProtected` 算好后同时传给
+  `TaskRecorder.step` 与 `StepShots.onStep`。
+
+### 4. 探针 `scripts/probes/_test_a11y_step_shots.py`（288 行 / 72 条断言）
+
+分 A 录制侧 / B 接线 / C 存储 / D 端点 / E AI与UI / F 六语 / G 加固七段。
+关键手法 `fn_body(src,name)` 按「下一个同级 `fun/val/var/internal`」切函数体 ——
+用固定字符窗口会把**下一个函数**里的调用算进来，造成假绿（B3/B4 最初就是这么假绿的）。
+
+**变异反验（真红 → 恢复复绿 → `cmp` 字节一致）**：`isSafeId` 校验失效 → G1b 红；
+`shots` 改回 `stringList` → G3b 红；`traceClear` 去掉 `invalidate` → G7b 红；
+取帧后 stale 判失效 → G4b 红；起手屏宽限判失效 → G4c 红；`resolve` 去掉 canonical → G2 红。
+
+### 5. 门禁（隔离树 `/e/tmp/wt-verify` detach）
+
+| 项 | 结果 |
+| --- | --- |
+| `scripts/check-i18n.py` | All i18n checks passed |
+| 全量探针（152 个） | **PASS=152 FAIL=0** |
+| `bash scripts/run-a11y-jvm-test.sh` | **passed=2455 failed=0** |
+| `:app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | 46,432,788 B APK，装机运行正常 |
+
+### 6. 文档
+- `docs/A11Y_TRACE_CONTRACT.md` §2.4：侧车六列格式、`-1` 语义、容忍两列旧形态、同 index 取最后一条。
+- `docs/A11Y_MEMORY_DESIGN.md` 第 12 节：缺口 / 不阻塞动作路径 / 体积账 / 生命周期 /
+  模型怎么用 / 隐私 / **12.7 已知取舍八条**（事后取帧、不做图像比对、保护判定时间差、
+  快节奏 loop 连丢中段帧、起手帧 3s 宽限、队列满静默丢帧、图目录三种孤儿清理、
+  traceId 复用撞 tombstone）。
+
+### 7. 尚未验证 / 已知边界
+
+1. **真机（PLZ110 / Android 16）未验证**：`adb connect 192.168.101.21:9000` 报 10060 超时
+   （网络掉线），以上全部证据来自 `emulator-5554`（Android 14 / x86_64）。
+2. **快节奏 loop 下中段帧会被连丢**：判据是「不是最新请求的步就丢」，一次取帧
+   100–400ms（撞节流 1.2s），而 fastVerify 乐观步 200–400ms/步。这是刻意取舍（宁少图不错图），
+   量化未在真机采样，只有代码推演。
+3. **`sweepOrphanMemoryDirs` 与 upsert 失败路径**只在代码层断言，未在真机构造「upsert 失败」场景。
+4. **保护判定残余窗口**（dump 时刻 → 截图时刻 0–1.6s）内的同 App 敏感页不被文本判据覆盖，
+   已在 `docs/A11Y_MEMORY_DESIGN.md §12.7` 明示，未试图修。
+5. `latestAsked` 会丢起手屏的量化（30–60%）来自 checker 推演，非真机统计。

@@ -113,6 +113,29 @@ data class MemoryEntry(
      * 实测就出现过「标注过的记忆重复堆积」。taskKey 只在自动学习时写一次，标注不动它。
      */
     val taskKey: String = "",
+    /**
+     * 任务起手那一屏的缩略图（相对 `filesDir` 的路径，空 = 没截到）。
+     *
+     * 与 [shots] 分开的理由：它不对应任何一步，但它是拼图的第一格，
+     * 也是「这条记忆从哪个界面开始」的唯一视觉证据。混进 [shots] 会让
+     * 「第 i 张 = 第 i 步」这个对齐关系失效。
+     */
+    val startShot: String = "",
+    /**
+     * 各步的缩略图，**与 [steps] 等长且一一对齐**（空串 = 这一步没截到图）。
+     *
+     * 为什么按位置对齐而不是存 map：记忆的步骤顺序就是重放顺序，位置即身份；
+     * map 还要多维护一份「键跟着步骤编辑一起改」的一致性。代价是 steps 变了
+     * 就得同步改这个列表 —— 所以 `MemoryStore.upsert` 会做长度归一。
+     */
+    val shots: List<String> = emptyList(),
+    /**
+     * 拼成一张的「全程界面总览图」（相对 `filesDir`，空 = 没有）。
+     *
+     * 这是给模型一眼看全程用的：一次 read_image 就能看到每一步的界面，
+     * 比逐张读省 N-1 次往返与 N-1 份上下文。
+     */
+    val strip: String = "",
 ) {
     fun isActive(): Boolean = state == MemoryContract.STATE_ACTIVE
 
@@ -817,8 +840,29 @@ object MemoryStore {
         return "m_" + now + "_" + Random.nextInt(1000, 10000)
     }
 
+    /**
+     * 把 `shots` 的长度对齐到 `steps`。
+     *
+     * 为什么必须在写入口做：`patch` / `extend` / `fork` 都会改步骤列表，而它们
+     * 不该关心图片。一旦长度不一致，「第 i 张 = 第 i 步」的约定就静默失效 ——
+     * 表现是界面上把第 3 步的图挂在第 5 步旁边，而且**不会报错**。
+     * 这里截断/补空串，让读方永远可以按下标取。
+     */
+    private fun normalizeShots(e: MemoryEntry): MemoryEntry {
+        if (e.steps.isEmpty()) {
+            return if (e.shots.isEmpty()) e else e.copy(shots = emptyList())
+        }
+        if (e.shots.size == e.steps.size) return e
+        val fixed = ArrayList<String>(e.steps.size)
+        for (i in e.steps.indices) fixed.add(e.shots.getOrElse(i) { "" })
+        Log.i(TAG, "shots size " + e.shots.size + " != steps " + e.steps.size + ", normalized")
+        return e.copy(shots = fixed)
+    }
+
     private fun upsertLocked(ctx: Context, raw: MemoryEntry): Boolean {
-        val entry = if (raw.pkg.isBlank()) raw.copy(pkg = MemoryContract.UNKNOWN_PKG) else raw
+        val entry = normalizeShots(
+            if (raw.pkg.isBlank()) raw.copy(pkg = MemoryContract.UNKNOWN_PKG) else raw,
+        )
         if (entry.id.isBlank()) {
             Log.w(TAG, "upsert rejected: entry has no id")
             return false

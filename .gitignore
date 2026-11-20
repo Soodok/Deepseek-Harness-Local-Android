@@ -225,6 +225,10 @@ scripts/probes/*.bin
 !/scripts/probes/_test_screen_mask.py
 !/scripts/probes/_test_protected_pages.py
 !/scripts/probes/_test_a11y_screen_doc.py
+# 逐步截图（v1.7.x）：记忆里带「每步当时的界面」的侧车与拼图。守住的契约是
+# 「哪张图对应哪一步」与三类静默失败（取帧过期、队列吞账、清空后晚到帧重建目录）——
+# 全都不会崩，只会悄悄少一张图或错一步，事后无法归因。
+!/scripts/probes/_test_a11y_step_shots.py
 tasks/
 _bench/
 

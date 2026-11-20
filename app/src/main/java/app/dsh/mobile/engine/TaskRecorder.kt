@@ -138,7 +138,9 @@ object TaskRecorder {
      * @param status 判定结果，取值见 TraceStatus
      * @param via 判定依据，取值见 TraceVia
      * @param ms 从动作发起到判定完成的墙钟耗时
-     * @return 无返回值：写失败也只会让这条轨迹少一行，绝不影响动作本身
+     * @return 这条轨迹里刚落盘的**步序号**（从 0 起）；没在录 / 写失败返回 -1。
+     *         返回而不是让调用方自己数，是因为「哪一步对应哪张截图」必须与落盘的行
+     *         严格对齐 —— 让调用方猜序号，一次并发就会错位（错的图比没图更坏）。
      */
     fun step(
         endpoint: String,
@@ -152,19 +154,21 @@ object TaskRecorder {
         retries: Int = 0,
         caller: String = "loop",
         protected: Boolean = false,
-    ) {
+    ): Int {
         // 快路径：没在录就直接走人，连锁都不碰（这一步是最热的调用点）
-        if (out == null) return
+        if (out == null) return -1
         val now = System.currentTimeMillis()
         synchronized(lock) {
-            val writer = out ?: return
-            if (capped) return
+            val writer = out ?: return -1
+            if (capped) return -1
+            // 先记住这一行要用的序号：下面 stepNo 会自增，返回值必须是**这一行**的。
+            val written = stepNo
             if (stepNo >= TraceContract.MAX_LINES_PER_FILE) {
                 // 跑飞的循环会无限写。到顶就停止落盘，但**不封尾**：
                 // 让 end() 仍能补上尾行，这条轨迹照样能读、能剪（只是末尾缺失）。
                 capped = true
                 Log.w(TAG, "trace " + curId + " reached " + TraceContract.MAX_LINES_PER_FILE + " lines, dropping further steps")
-                return
+                return -1
             }
             val entry = TraceStep(
                 stepNo,
@@ -184,7 +188,7 @@ object TaskRecorder {
             val line = runCatching { TraceCodec.encodeStep(entry) }.getOrElse {
                 failures++
                 if (failures <= 3) Log.w(TAG, "encode step failed: " + it.message)
-                return
+                return -1
             }
             runCatching {
                 writer.write(line)
@@ -195,8 +199,16 @@ object TaskRecorder {
             }.onFailure {
                 failures++
                 if (failures <= 3) Log.w(TAG, "step write failed: " + it.message)
+                // ★ 写失败不能当成功往上报。
+                //
+                // 调用方（MemoryRoutes）拿这个返回值当「第几步」交给 StepShots 截图。
+                // 返回序号却什么都没写进 .jsonl，结果就是「轨迹里没有这一步，但磁盘上
+                // 多了一张图」—— 那张图永远不会有记忆认领它，而且会让人误判轨迹完整。
+                // 契约是「写失败返回 -1」，这里必须守住。
+                return -1
             }
             stepNo++
+            return written
         }
     }
 
@@ -297,6 +309,18 @@ object TaskRecorder {
     }
 
     // ===== 清理 =====
+
+    /**
+     * 列出当前所有轨迹 id（不含扩展名）。
+     *
+     * 给「清空」用：StepShots 需要在删文件**之前**知道有哪些轨迹要作废 ——
+     * 顺序反了就会出现「清空成功但磁盘又长出图」（后台 worker 晚到的帧重建目录）。
+     */
+    fun listIds(ctx: Context): List<String> {
+        val dir = dirOf(ctx)
+        return dir.listFiles { f -> f.isFile && f.name.endsWith(".jsonl") }
+            ?.map { it.name.removeSuffix(".jsonl") } ?: emptyList()
+    }
 
     /** 删全部轨迹（含正在录的那条）。先关句柄再删，否则某些文件系统上删不掉打开中的文件。 */
     fun clear(ctx: Context) {

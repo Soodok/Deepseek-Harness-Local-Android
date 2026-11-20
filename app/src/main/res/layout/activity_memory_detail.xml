@@ -74,6 +74,47 @@
                 android:paddingVertical="2dp"
                 android:textSize="11sp" />
 
+            <!-- 逐步截图拼图（v1.7.x）：整条任务「当时界面长什么样」的总览。
+                 放在步骤列表**之前**——先看全程，再对某一步抠细节，与人翻相册的顺序一致。
+                 用 HorizontalScrollView 是因为四列拼图约 820px，手机竖屏放不下，
+                 缩放就会糊成一片（那就白截了）。 -->
+            <TextView
+                android:id="@+id/txtMemShotsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/mem_shots_title"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <HorizontalScrollView
+                android:id="@+id/scrollMemShots"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/imgMemStrip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="140dp"
+                    android:adjustViewBounds="true"
+                    android:contentDescription="@string/mem_shots_title"
+                    android:scaleType="fitCenter" />
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/txtMemShotsHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/mem_shots_hint"
+                android:textColor="?attr/dshTextSecondary"
+                android:textSize="10sp"
+                android:visibility="gone" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

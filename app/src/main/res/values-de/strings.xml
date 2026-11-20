@@ -1756,6 +1756,8 @@
     <string name="mem_pull_hint">Zum Aktualisieren nach unten ziehen</string>
     <string name="mem_offline">Keine Verbindung zur Engine-Bridge. Engine starten und nach unten ziehen.</string>
     <string name="mem_detail_title">Erinnerung</string>
+    <string name="mem_shots_title">Bildschirme</string>
+    <string name="mem_shots_hint">Ein Bild pro Schritt, von links nach rechts. S = vor dem ersten Schritt.</string>
     <string name="mem_steps_title">Schritte</string>
     <string name="mem_step_line">%1$d. %2$s</string>
     <string name="mem_step_no_target">(kein Ziel)</string>

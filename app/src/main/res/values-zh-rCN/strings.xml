@@ -1753,6 +1753,8 @@
     <string name="mem_pull_hint">下拉刷新</string>
     <string name="mem_offline">连不上引擎桥。先启动引擎，再下拉刷新。</string>
     <string name="mem_detail_title">记忆详情</string>
+    <string name="mem_shots_title">步骤截图</string>
+    <string name="mem_shots_hint">每一步的界面拼成一张，从左到右。S 表示第一步之前。</string>
     <string name="mem_steps_title">步骤</string>
     <string name="mem_step_line">%1$d. %2$s</string>
     <string name="mem_step_no_target">（无目标文本）</string>

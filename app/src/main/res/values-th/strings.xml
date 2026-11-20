@@ -1700,6 +1700,8 @@
     <string name="mem_pull_hint">ดึงลงเพื่อรีเฟรช</string>
     <string name="mem_offline">เชื่อมต่อบริดจ์ของเอนจินไม่ได้ เปิดเอนจินแล้วดึงลงเพื่อรีเฟรช</string>
     <string name="mem_detail_title">รายละเอียดความจำ</string>
+    <string name="mem_shots_title">ภาพหน้าจอ</string>
+    <string name="mem_shots_hint">ภาพของแต่ละขั้นตอนเรียงจากซ้ายไปขวา S = ก่อนขั้นตอนแรก</string>
     <string name="mem_steps_title">ขั้นตอน</string>
     <string name="mem_step_line">%1$d. %2$s</string>
     <string name="mem_step_no_target">(ไม่มีเป้าหมาย)</string>

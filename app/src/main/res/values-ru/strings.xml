@@ -1750,6 +1750,8 @@
     <string name="mem_pull_hint">Потяните вниз, чтобы обновить</string>
     <string name="mem_offline">Нет связи с мостом движка. Запустите движок и потяните вниз, чтобы обновить.</string>
     <string name="mem_detail_title">Подробности воспоминания</string>
+    <string name="mem_shots_title">Экраны</string>
+    <string name="mem_shots_hint">По одному снимку на каждый шаг, слева направо. S — до первого шага.</string>
     <string name="mem_steps_title">Шаги</string>
     <string name="mem_step_line">%1$d. %2$s</string>
     <string name="mem_step_no_target">(без цели)</string>

@@ -857,6 +857,18 @@ object EndpointCatalog {
                     limits = "id 不存在返回 no such memory（不是空对象）。",
                 ),
                 e(
+                    "memory_shot", "GET", "/memory/v2/shot",
+                    "取一条记忆的界面截图（默认返回拼好的总览图）",
+                    params = "id=<记忆 id>  step=<步号，可选；给 -1 取任务起手那一屏>",
+                    examples = listOf(
+                        "dev memory_shot id=m_1234",
+                        "dev memory_shot id=m_1234 step=2",
+                    ),
+                    limits = "① 只返回**绝对路径**，用 read_image 打开，不要 base64；\n" +
+                        "② 省略 step 得到总览拼图：一格一步，角标 S 是任务起手屏，数字是步号；\n" +
+                        "③ 这条记忆没图时返回 no images for this memory（可能是禁止截图的 App，也正常）。",
+                ),
+                e(
                     "memory_save", "POST", "/memory/v2/upsert",
                     "新建或整体覆盖一条任务记忆（AI 干完一件事后自己存）",
                     params = "pkg=<包名>  intent=<一句话目标>  title=<短标题，可选>  steps=<步骤数组，用 dev api 发 JSON>",

@@ -56,6 +56,15 @@ object MemoryRoutes {
                 lastCands = snap.second
                 lastPkg = pkg
                 okSteps = 0
+                // 起手那一屏：记忆拼图的第一格（第一步的「之前」）。
+                // 截图本身在后台 worker 上，这里只是一次入队，不阻塞动作。
+                //
+                // 起手屏也要判保护页：任务常常正是从「设置 → 无障碍」这类页开始的，
+                // 不判就等于把用户最先看到的敏感页存下来。
+                val onProtected = app.dsh.mobile.ProtectedPages.isProtectedFast(
+                    pkg, snap.first.joinToString(" "),
+                )
+                StepShots.onTaskBegin(ctx, TaskRecorder.currentTraceId().orEmpty(), onProtected)
             }
             lastTs = System.currentTimeMillis()
         }.onFailure { Log.w(TAG, "onActionBegin failed: ${it.message}") }
@@ -105,7 +114,15 @@ object MemoryRoutes {
                 after = snap.first
                 cands = snap.second
             }
-            TaskRecorder.step(
+            // 保护页判据必须用**动作后**那一屏（after），不能用 lastFp —— 那是动作前。
+            // loop 步之前固定传 false 是个真缺口：普通页点了「无障碍」入口之后，
+            // 这一屏已经是受保护页面。这个值不只决定「截不截图」，还写进轨迹行：
+            // TracePruner 靠它做整轨拒绝（一条在保护页上完成的任务不该变成可重放记忆），
+            // 恒传 false 会让那道安全网变成死代码。
+            val onProtected = app.dsh.mobile.ProtectedPages.isProtectedFast(
+                pkg, after.joinToString(" "),
+            )
+            val shotIndex = TaskRecorder.step(
                 endpoint = endpoint,
                 args = args,
                 beforeFp = lastFp,
@@ -115,8 +132,13 @@ object MemoryRoutes {
                 via = if (after != lastFp) TraceVia.FRAME else TraceVia.NONE,
                 ms = ms,
                 caller = "loop",
-                protected = false,
+                protected = onProtected,
             )
+            // 这一屏就是「这一步做完时的界面」。loop 步必然是成功步（剪枝不会删），
+            // 所以不判 status。
+            // 这里没有 ctx 参数：svc 本身就是 Context（AccessibilityService），
+            // 不加参数是为了不改 LocalLoopExecutor 的调用签名。
+            StepShots.onStep(svc, TaskRecorder.currentTraceId().orEmpty(), shotIndex, onProtected)
             lastFp = after
             lastCands = cands
             lastPkg = pkg
@@ -161,7 +183,14 @@ object MemoryRoutes {
                 decision == "ok" && !bodySaysFail -> TraceStatus.OK
                 else -> TraceStatus.FAILED
             }
-            TaskRecorder.step(
+            // 保护页判据用**动作后**那一屏（pkg + after）。旧版用 lastPkg/lastFp（动作前），
+            // 于是「本步成功从一个普通页跳到无障碍/开发者选项页」这种最典型的情况
+            // 完全看不出来。这个值不只决定截不截图，还写进轨迹行的 protected 标记 ——
+            // TracePruner 靠它整轨拒绝，恒传 false 会让那道安全网变成死代码。
+            val onProtected = app.dsh.mobile.ProtectedPages.isProtectedFast(
+                pkg, after.joinToString(" "),
+            )
+            val shotIndex = TaskRecorder.step(
                 endpoint = endpointOf(path),
                 args = argsOf(path, body),
                 beforeFp = lastFp,
@@ -171,8 +200,19 @@ object MemoryRoutes {
                 via = if (after != lastFp) TraceVia.FRAME else TraceVia.NONE,
                 ms = if (lastTs > 0) now - lastTs else 0,
                 caller = "bridge",
-                protected = false,
+                protected = onProtected,
             )
+            // 只给**成功步**截图：失败/被拒的步剪枝时会删掉，它们的图永远不会被
+            // 任何记忆引用，截了就是纯浪费（一次取帧 100–400ms + 一张 20KB）。
+            //
+            // 保护页判据必须用**动作后**那一屏（`after`/`pkg`），不是动作前的
+            // `lastFp`/`lastPkg`：本步成功从一个普通页跳到了「无障碍/开发者选项/
+            // 安装未知应用」这类页，靠动作前的屏根本看不出来，像素就这么落了盘。
+            if (status == TraceStatus.OK) {
+                StepShots.onStep(
+                    ctx, TaskRecorder.currentTraceId().orEmpty(), shotIndex, onProtected,
+                )
+            }
             lastFp = after
             lastCands = snap.second
             lastPkg = pkg
@@ -200,6 +240,9 @@ object MemoryRoutes {
                 TaskRecorder.end(okSoFar, "boundary")
             }
             TaskRecorder.pruneOld(ctx)
+            // 轨迹过了 TTL 被删，它的图与侧车也要跟着走；否则「已删轨迹的图」
+            // 会无声地吃满存储，而且没有任何入口能看到它们。
+            StepShots.pruneOrphanTraces(ctx)
             lastFp = emptySet()
             lastCands = emptyList()
             lastTs = 0
@@ -262,22 +305,74 @@ object MemoryRoutes {
                     },
                 )
             }
-            if (existing == null) {
+            // ---- 逐步截图入记忆（v1.7.x）----
+            //
+            // 图片跟着被**保留下来的步**走：剪枝删掉的步，它的图也不进记忆
+            // （否则拼图里会出现一段「AI 看不懂为什么会多出来」的界面）。
+            // 起手那一屏（index = -1）永远保留当第一格 —— 它是这条记忆的起点证据。
+            //
+            // 顺序上必须先等已经接纳的取帧落盘，再打包：截图在后台 worker 上，
+            // `bundle` 只读当时的侧车。不等就会**稳定缺尾图**（真机第一轮就是这个症状：
+            // learn 返回了 id，但 memory/v2/shots 目录压根不存在）。
+            val memId = existing?.id ?: ("m_" + now + "_" + (1000..9999).random())
+            StepShots.awaitIdle(traceId)
+            // ⚠️ 这里**不能**在 bundle 之前 resetMemory：bundle 会把新图写进同一个目录，
+            // 先删掉再打包，一旦 bundle 返回 null（节流/保护页/没图），旧图已经被删光，
+            // 而下面还指望着「保留旧图」—— 结果是旧图必丢、元数据指向不存在的文件。
+            // 正确做法是让 bundle 自己收尾：拷完新图后把目录里不属于这一版的残留文件清掉。
+            val bundle = StepShots.bundle(ctx, traceId, memId, pruned.steps.map { it.sourceIndex })
+            val shotRels = bundle?.shotRels ?: emptyMap()
+            val stepShots = steps.map { shotRels[it.sourceIndex].orEmpty() }
+            if (bundle != null) {
+                Log.i(TAG, "auto-learn: shots=" + bundle.count + " bytes=" + bundle.bytes)
+                StepShots.enforceBudget(ctx, memId)
+            }
+
+            val wrote = if (existing == null) {
                 MemoryStore.upsert(ctx, MemoryEntry(
-                    id = "m_" + now + "_" + (1000..9999).random(), pkg = home,
+                    id = memId, pkg = home,
                     intent = sig, title = sig, steps = steps, createdAt = now,
                     originTraceId = traceId, pending = true, sceneFp = fp.toList(),
                     taskKey = sig, vector = MemoryIndex.embed(sig) ?: emptyList(),
+                    startShot = bundle?.startShot.orEmpty(),
+                    shots = stepShots,
+                    strip = bundle?.strip.orEmpty(),
                 ))
                 Log.i(TAG, "auto-learn: new pending memory for " + home + " steps=" + steps.size)
+                true
             } else {
                 val hits = existing.pendingHits + 1
                 val promoted = hits >= 2
-                MemoryStore.upsert(ctx, existing.copy(
+                val next = existing.copy(
                     steps = steps, pending = !promoted, pendingHits = hits,
                     rev = existing.rev + 1, originTraceId = traceId,
-                ))
+                    // 新学的图覆盖旧的：步骤本身已经换了一版，旧图只会误导
+                    startShot = bundle?.startShot.orEmpty(),
+                    shots = stepShots,
+                    strip = bundle?.strip.orEmpty(),
+                )
+                MemoryStore.upsert(ctx, if (bundle == null) {
+                    // 这次没截到图（服务没开 / 系统节流 / 保护页）：**保留旧图**
+                    // 比清空更合理 —— 旧图至少还对应同一个任务的上一版界面。
+                    next.copy(
+                        startShot = existing.startShot,
+                        shots = existing.shots,
+                        strip = existing.strip,
+                    )
+                } else {
+                    next
+                })
                 Log.i(TAG, "auto-learn: confirmed " + existing.id + " pendingHits=" + hits + " promoted=" + promoted)
+                true
+            }
+            // 入库失败（配额淘汰连写盘都没成 / IO 错）→ 刚落盘的图没人认领，删掉。
+            // 否则磁盘上会留一堆指不到任何记忆的图，还把 48MiB 预算啃掉。
+            if (!wrote) {
+                Log.w(TAG, "auto-learn: upsert failed, dropping shots for " + memId)
+                StepShots.deleteMemory(ctx, memId)
+            } else {
+                // 顺带清掉「目录名不再对应任何存活记忆」的图（容量淘汰不会自己删图）。
+                StepShots.sweepOrphanMemoryDirs(ctx, MemoryStore.list(ctx).map { it.id })
             }
         }.onFailure { Log.w(TAG, "learnQuiet failed: ${it.message}") }
     }
@@ -431,8 +526,18 @@ object MemoryRoutes {
     }
 
     fun traceClear(ctx: Context): Pair<Int, String> = runCatching {
+        // 先让 StepShots 记住「这些轨迹作废了」再清文件：
+        // 后台 worker 可能还排着几条已接纳的取帧，它们会在清空之后才落盘 ——
+        // 于是「清空返回成功」但磁盘上又长出新图。tombstone 让晚到的帧自己丢，
+        // 同时把 shots/<id> 目录与侧车一并带走。
+        // 两个来源合并：① 现存 .jsonl 的 id；② traces/shots 下还留着图目录的 id。
+        // 只看 ① 会漏掉「主文件已被 TTL 剪掉、但图目录还赖着」的孤儿 ——
+        // 真机实测 clear 清完后 traces/shots/ 里仍有两条旧目录。
+        val ids = (TaskRecorder.listIds(ctx) + StepShots.listTraceIdsWithShots(ctx)).distinct()
+        StepShots.invalidate(ctx, ids)
         TaskRecorder.clear(ctx)
-        200 to JSONObject().put("ok", true).put("cleared", true).toString()
+        200 to JSONObject().put("ok", true).put("cleared", true)
+            .put("traces", ids.size).toString()
     }.getOrElse { e ->
         Log.w(TAG, "traceClear failed: ${e.message}")
         500 to JSONObject().put("ok", false).put("error", "trace clear failed").toString()
@@ -466,6 +571,12 @@ object MemoryRoutes {
                 put("misses", e.misses); put("steps", e.steps.size)
                 put("lastUsed", e.lastUsed); put("rev", e.rev)
                 put("fpSize", e.fingerprint().size)
+                // 列表页据此显示「有截图」角标：不然用户得点进去才知道这条记忆带图
+                // 口径与 memGet 不同是**故意的**：列表要回 N 条，逐条 stat 每个
+                // 图片文件会把列表拖成 N×2 次 IO。这里只看字段，get 才看文件真存在。
+                // 代价是预算淘汰后列表角标可能短暂偏乐观 —— 点进去 get 会说真话。
+                put("hasImages", e.strip.isNotBlank() || e.startShot.isNotBlank()
+                    || e.shots.any { it.isNotBlank() })
             })
         }
         200 to JSONObject().put("ok", true).put("count", arr.length()).put("entries", arr).toString()
@@ -493,8 +604,106 @@ object MemoryRoutes {
             put("originTraceId", e.originTraceId)
             put("sceneFp", JSONArray(e.fingerprint()))
             put("steps", steps)
+            // ---- 逐步截图（v1.7.x）----
+            // 只回**绝对路径**，不回 base64：一张 200px 拼图 base64 后约 8 万字符，
+            // 会把这次响应变成上下文黑洞。模型要真看图就 read_image(path)。
+            //
+            // hasImages 判的是**文件真的在不在**，不是字段非空：预算淘汰会整目录删掉图，
+            // 而条目的 startShot/shots/strip 字段还在。只判字段会让模型拿着一条
+            // 已经不存在的路径去 read_image，拿到的是“文件不存在”——比直接说没有更糟。
+            val abs = { rel: String -> StepShots.resolve(ctx, rel)?.takeIf { it.isFile }?.absolutePath.orEmpty() }
+            val stripAbs = abs(e.strip)
+            val startAbs = abs(e.startShot)
+            val imgAbs = e.shots.map { abs(it) }
+            put("strip", stripAbs)
+            put("startShot", startAbs)
+            put("images", JSONArray().apply { for (p in imgAbs) put(p) })
+            put("hasImages", stripAbs.isNotBlank() || startAbs.isNotBlank() || imgAbs.any { it.isNotBlank() })
+            if (stripAbs.isNotBlank()) {
+                put("stripHint", "one contact sheet of every step, read it with the read_image tool")
+            }
+            // 步骤与图片的对应关系（sourceIndex → 有没有图、可用哪个参数取）：
+            // 剪枝后 sourceIndex 不连续，模型光看 get 的 steps[].i 猜不出该怎么取图。
+            put("shotIndex", JSONArray().apply {
+                for ((k, st) in e.steps.withIndex()) {
+                    put(JSONObject().apply {
+                        put("pos", k); put("i", st.sourceIndex)
+                        put("hasShot", imgAbs.getOrElse(k) { "" }.isNotBlank())
+                    })
+                }
+            })
         }.toString()
     }.getOrElse { e -> Log.w(TAG, "memGet failed: ${e.message}"); 500 to err("memory get failed") }
+
+    /**
+     * `GET /memory/v2/shot?id=&step=&pos=` —— 取一条记忆的某张图（回路径，不回 base64）。
+     *
+     * 三种用法：
+     * - 省略 `step`/`pos`：回整条记忆的**拼接总览图**（最常用 —— 一眼看全程）
+     * - `step=N`：回 **`sourceIndex` 为 N** 的那一屏（与 `/memory/v2/get` 的 `steps[].i` 同口径）；`step=-1` 回起手屏
+     * - `pos=K`：回**剪枝后第 K 个位置**的那一屏（0 基，人从界面上数的第几张）
+     *
+     * ## 为什么不再「两个口径都认」
+     *
+     * 早期版本让 `step` 先按位置、再按 sourceIndex 兜底。剪枝后 `sourceIndex=[0,2,3]`
+     * 而 `shots=[A,B,C]`，模型照着 `steps[].i` 请求 `step=2`，位置口径先命中并返回
+     * **C**（第 3 步的图），而正确答案是 B。接口 200、图却错了一步 —— 这种错最坏，
+     * 因为重放时模型会照着错的界面判断。
+     *
+     * 现在两个口径分开：`step` 只认 sourceIndex，`pos` 只认位置，绝不隐式回落。
+     * 找不到就是 404，报错里带上这条记忆的映射表，调用方一眼能看出该用哪个参数。
+     */
+    fun memShot(ctx: Context, query: String): Pair<Int, String> = runCatching {
+        val id = param(query, "id").orEmpty()
+        if (id.isBlank()) return 400 to err("missing id")
+        val e = MemoryStore.get(ctx, id) ?: return 404 to err("no such memory")
+        val stepRaw = param(query, "step").orEmpty()
+        val posRaw = param(query, "pos").orEmpty()
+        val rel: String
+        val hint: String
+        if (stepRaw.isBlank() && posRaw.isBlank()) {
+            if (e.strip.isBlank()) return 404 to err("this memory has no stitched image")
+            rel = e.strip
+            hint = "contact sheet of every step"
+        } else if (stepRaw.isNotBlank() && posRaw.isNotBlank()) {
+            return 400 to err("pass either step or pos, not both")
+        } else if (stepRaw.isNotBlank()) {
+            val n = stepRaw.toIntOrNull() ?: return 400 to err("step must be an integer")
+            if (n == StepShotLayout.START_INDEX) {
+                if (e.startShot.isBlank()) return 404 to err("no start image")
+                rel = e.startShot
+                hint = "screen before step 1"
+            } else {
+                // 只按 sourceIndex 匹配。找不到就给映射表，别猜。
+                val idx = e.steps.indexOfFirst { it.sourceIndex == n }
+                if (idx < 0) {
+                    return 404 to err("no step with i=" + n + ", known i=" + e.steps.map { it.sourceIndex })
+                }
+                val pick = e.shots.getOrNull(idx).orEmpty()
+                if (pick.isBlank()) return 404 to err("step i=" + n + " has no image")
+                rel = pick
+                hint = "screen right after step i=" + n
+            }
+        } else {
+            val k = posRaw.toIntOrNull() ?: return 400 to err("pos must be an integer")
+            if (k < 0 || k >= e.steps.size) {
+                return 404 to err("pos out of range 0.." + (e.steps.size - 1))
+            }
+            val pick = e.shots.getOrNull(k).orEmpty()
+            if (pick.isBlank()) return 404 to err("position " + k + " has no image")
+            rel = pick
+            hint = "screen right after position " + k + " (i=" + e.steps[k].sourceIndex + ")"
+        }
+        val f = StepShots.resolve(ctx, rel)
+        if (f == null || !f.isFile) return 404 to err("image file is gone")
+        200 to JSONObject().apply {
+            put("ok", true)
+            put("id", id)
+            put("path", f.absolutePath)
+            put("bytes", f.length())
+            put("hint", hint + " -- read it with the read_image tool")
+        }.toString()
+    }.getOrElse { e -> Log.w(TAG, "memShot failed: ${e.message}"); 500 to err("memory shot failed") }
 
     fun memDelete(ctx: Context, query: String): Pair<Int, String> = runCatching {
         // 两种形态都认：?id=xxx（query）与 {"id":"xxx"}（body）。
@@ -505,6 +714,8 @@ object MemoryRoutes {
         }
         if (id.isBlank()) return 400 to err("missing id")
         val ok = MemoryStore.delete(ctx, id)
+        // 记忆都没了，它的图不该继续占着存储（也避免看图时看到一条不存在的记忆）
+        if (ok) StepShots.deleteMemory(ctx, id)
         200 to JSONObject().put("ok", ok).put("deleted", ok).toString()
     }.getOrElse { e -> Log.w(TAG, "memDelete failed: ${e.message}"); 500 to err("memory delete failed") }
 
@@ -662,6 +873,19 @@ object MemoryRoutes {
         }
         val id = o.optString("id").ifBlank { "m_" + now + "_" + (1000..9999).random() }
         val existing = MemoryStore.get(ctx, id)
+        // 更新一条已有记忆时，图片字段必须继承 —— 这个入口（模型手动 upsert）
+        // 根本不表达 startShot/shots/strip，如果无条件构造新条目，这些字段就变成空串，
+        // `/memory/v2/get` 从此回 hasImages=false，而磁盘上的图还留着成为孤图。
+        // 判据是「步骤没变」：步骤一一对齐时图仍然对应同一批界面，保留；
+        // 步骤变了（数量或 action/目标不同）则旧图会错位，必须显式清空，不能留悬空引用。
+        val sameSteps = existing != null &&
+            existing.steps.size == steps.size &&
+            existing.steps.indices.all { k ->
+                existing.steps[k].sourceIndex == steps[k].sourceIndex &&
+                    existing.steps[k].action == steps[k].action &&
+                    existing.steps[k].targetText == steps[k].targetText
+            }
+        val keepShots = existing != null && sameSteps
         val entry = MemoryEntry(
             id = id,
             pkg = pkg,
@@ -683,10 +907,21 @@ object MemoryRoutes {
             // 「向量搜索」就名存实亡（实测：模型起来了但分数与纯哈希一模一样，就是因为这里存的是空）。
             vector = MemoryIndex.embed(intent) ?: emptyList(),
             sceneFp = strings(o.optJSONArray("sceneFp")),
+            startShot = if (keepShots) existing!!.startShot else "",
+            shots = if (keepShots) existing!!.shots else emptyList(),
+            strip = if (keepShots) existing!!.strip else "",
         )
+        // 步骤变了 → 旧图不再对应任何一步，连磁盘一起清掉（别留成永远没人认领的孤图）。
+        // 步骤变了（数量或内容）→ 旧图不再对应任何一步，连磁盘一起清掉。
+        // 不能只判「数量变了」：数量相同但 targetText/sourceIndex 改了同样会错配，
+        // 而那种情况下 fields 已清空、目录却留下 —— 变成永远没人认领的孤图。
+        if (existing != null && !sameSteps) {
+            StepShots.deleteMemory(ctx, id)
+        }
         val ok = MemoryStore.upsert(ctx, entry)
         200 to JSONObject().put("ok", ok).put("id", id).put("pkg", pkg)
-            .put("vectorDim", entry.vector.size).toString()
+            .put("vectorDim", entry.vector.size)
+            .put("keptImages", keepShots).toString()
     }.getOrElse { e -> Log.w(TAG, "memUpsert failed: ${e.message}"); 400 to err("bad body") }
 
     /** JSON 对象 → Map（步骤参数：launch 的 package / input 的 text / key 的 code …）。 */
@@ -830,8 +1065,20 @@ object MemoryRoutes {
                 preFp = p.preFp.toList().ifEmpty { if (i == 0) sceneFp else emptyList() },
             ))
         }
+        // ---- 逐步截图入记忆（与 learnQuiet 同一口径）----
+        //
+        // 这里曾经漏接：手动 `/memory/v2/learn` 存出来的记忆**永远没有图**，
+        // 而自动学习那条有。症状是「同一任务，自动学到的有拼图，手动学的没有」，
+        // 真机上就是这么发现的（memory/v2/shots 目录压根不存在）。
+        // 两条入库路径必须共用同一个打包口径，否则迟早再次跑偏。
+        val memId = "m_" + now + "_" + (1000..9999).random()
+        val bundle = StepShots.bundle(ctx, traceId, memId, pruned.steps.map { it.sourceIndex })
+        if (bundle != null) {
+            Log.i(TAG, "memLearn: shots=" + bundle.count + " bytes=" + bundle.bytes)
+            StepShots.enforceBudget(ctx, memId)
+        }
         val entry = MemoryEntry(
-            id = "m_" + now + "_" + (1000..9999).random(),
+            id = memId,
             pkg = homePkgOf(doc, pruned),
             intent = intent,
             title = title,
@@ -843,8 +1090,15 @@ object MemoryRoutes {
             sceneFp = sceneFp,
             taskKey = signatureOf(doc, pruned),
             vector = MemoryIndex.embed(intent) ?: emptyList(),
+            startShot = bundle?.startShot.orEmpty(),
+            shots = steps.map { bundle?.shotRels?.get(it.sourceIndex).orEmpty() },
+            strip = bundle?.strip.orEmpty(),
         )
         val ok = MemoryStore.upsert(ctx, entry)
+        // upsert 失败 → 图没有归属，删掉（否则成了永远没人认领的孤图）。
+        // 成功则顺手清掉「目录名不再对应任何存活记忆」的图目录。
+        if (!ok) StepShots.deleteMemory(ctx, entry.id)
+        else StepShots.sweepOrphanMemoryDirs(ctx, MemoryStore.list(ctx).map { it.id })
         val drops = JSONArray()
         for (d in pruned.drops) {
             drops.put(JSONObject().put("rule", d.rule).put("i", d.sourceIndex).put("why", d.why))
@@ -853,6 +1107,10 @@ object MemoryRoutes {
             put("ok", ok); put("id", entry.id); put("pkg", entry.pkg)
             put("intent", intent); put("pending", entry.pending)
             put("steps", steps.size); put("pruned", pruned.drops.size)
+            // 图有没有入到记忆名下，调用方要能当场看到 —— 否则「记忆存好了但没图」
+            // 只能靠事后翻目录才发现（真机就是这么绕了一圈）。
+            put("images", bundle?.count ?: 0)
+            put("strip", entry.strip)
             put("drops", drops)
         }.toString()
     }.getOrElse { e ->

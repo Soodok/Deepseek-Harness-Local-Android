@@ -1,5 +1,6 @@
 package app.dsh.mobile
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -41,6 +42,13 @@ class MemoryDetailActivity : ThemedActivity() {
     private lateinit var txtRun: TextView
     private lateinit var btnToggle: TextView
     private lateinit var btnTry: TextView
+    private lateinit var imgStrip: android.widget.ImageView
+    private lateinit var scrollShots: android.widget.HorizontalScrollView
+    private lateinit var txtShotsTitle: TextView
+    private lateinit var txtShotsHint: TextView
+
+    /** 拼图位图：点开大图时复用，避免再解码一次（一张 1000px 宽的图解码要几十毫秒）。 */
+    private var stripBmp: android.graphics.Bitmap? = null
 
     private val io = Executors.newSingleThreadExecutor { r ->
         Thread(r, "mem-detail-io").apply { isDaemon = true }
@@ -83,6 +91,12 @@ class MemoryDetailActivity : ThemedActivity() {
         txtRun = findViewById(R.id.txtMemRunResult)
         btnToggle = findViewById(R.id.btnMemToggle)
         btnTry = findViewById(R.id.btnMemTry)
+        imgStrip = findViewById(R.id.imgMemStrip)
+        scrollShots = findViewById(R.id.scrollMemShots)
+        txtShotsTitle = findViewById(R.id.txtMemShotsTitle)
+        txtShotsHint = findViewById(R.id.txtMemShotsHint)
+        // 点拼图弹大图：手机竖屏下 140dp 高只够看布局骨架，读文字得放大。
+        imgStrip.setOnClickListener { showStripLarge() }
 
         findViewById<View>(R.id.btnMemDetailBack).setOnClickListener { finish() }
         findViewById<View>(R.id.btnMemLabel).setOnClickListener { showLabelDialog() }
@@ -101,6 +115,8 @@ class MemoryDetailActivity : ThemedActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stripBmp?.recycle()
+        stripBmp = null
         // shutdown() 而不是 shutdownNow()：试跑可能正在桥上逐步点击，
         // 打断它只会让这次重放的结果丢失，而服务端照样会跑完。
         io.shutdown()
@@ -111,8 +127,82 @@ class MemoryDetailActivity : ThemedActivity() {
     private fun load() {
         submit {
             val r = MemoryBridge.get("/memory/v2/get?id=" + enc(memId))
-            ui.post { render(r) }
+            // 拼图在这里解码：一张约 1000×900 的 WebP 解码要几十毫秒，
+            // 放到 UI 线程会让打开详情页卡一下（用户对「点进去卡住」特别敏感）。
+            val bmp = decodeStrip(r.json?.optString("strip").orEmpty())
+            ui.post {
+                render(r)
+                showStrip(bmp)
+            }
         }
+    }
+
+    /**
+     * 解码拼图，目标宽度约两屏（≈1900px）就够放大看字了。
+     *
+     * 用 inSampleSize 逐级减半而不是 decode 完再缩：原图若被设成 4 列 × 200px 的
+     * 高密度屏版本（可能 1600px 宽），先全解再缩会多占十几 MB 瞬时内存。
+     */
+    private fun decodeStrip(path: String): android.graphics.Bitmap? {
+        if (path.isBlank()) return null
+        val f = java.io.File(path)
+        if (!f.isFile) return null
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            var sample = 1
+            var w = bounds.outWidth.coerceAtLeast(1)
+            while (w / (sample * 2) >= 1900) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeFile(path, opts)
+        }.getOrNull()
+    }
+
+    /** 有图就显示，没图就把整块藏起来（避免留一条空标题让用户以为坏了）。 */
+    private fun showStrip(bmp: android.graphics.Bitmap?) {
+        stripBmp?.recycle()
+        stripBmp = bmp
+        val has = bmp != null
+        txtShotsTitle.visibility = if (has) View.VISIBLE else View.GONE
+        scrollShots.visibility = if (has) View.VISIBLE else View.GONE
+        txtShotsHint.visibility = if (has) View.VISIBLE else View.GONE
+        if (has) {
+            imgStrip.setImageBitmap(bmp)
+            // 记住原始宽高比，弹大图时按同比例放大，不然会被 fitCenter 拉变形
+            imgStrip.tag = bmp!!.width.toFloat() / bmp.height.coerceAtLeast(1).toFloat()
+        } else {
+            imgStrip.setImageDrawable(null)
+        }
+    }
+
+    /**
+     * 弹大图。
+     *
+     * 为什么是 Dialog 里的横向滚动、而不是「打开系统图库」：这条记忆的图与
+     * filesDir 里其它文件一样是私有的，交给外部看图应用等于把记忆内容外泄
+     * （而且有些机型根本没有图库应用可以接 file://）。
+     */
+    private fun showStripLarge() {
+        val bmp = stripBmp ?: return
+        val density = resources.displayMetrics.density
+        val view = android.widget.HorizontalScrollView(this).apply {
+            setBackgroundColor(0xFF101014.toInt())
+            val iv = android.widget.ImageView(context).apply {
+                setImageBitmap(bmp)
+                adjustViewBounds = true
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    (320 * density).toInt(),
+                )
+            }
+            addView(iv)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.mem_shots_title)
+            .setView(view)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun render(reply: MemoryBridge.Reply) {
