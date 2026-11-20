@@ -15372,3 +15372,96 @@ rc=139 零输出**，guard 之后的源码产物则正常报错 / 正常跑 —�
   「正常」，比不报更危险。
 - 现象级 issue 先核**用户跑的产物哈希**：#125 报告里的 loader 字节数直接指向
   v1.5.0，省掉一轮误修。
+
+## 第一百四十六章（v1.6.0-beta.20 · 2026-11-20）自研浏览器内核可行性调研：六条路线全堵，瓶颈在引擎不在内核
+
+宝宝问「自己内部搞浏览器内核可不可行？有没有助于增加启动速度」。答案两句话：
+**内核不可能是瓶颈（它 1.78s 就绪，引擎要 6.4～15.2s）；六条候选路线全部物理性堵死。**
+完整报告在 `docs/BROWSER_KERNEL_FEASIBILITY.md`（本章只留结论与可复用事实）。
+
+### 1. 六条路线逐条判定（全部一手依据，非二手转述）
+
+| 路线 | 硬依据 | 判定 |
+| --- | --- | --- |
+| 自造 Chromium 当系统 WebView | 官方 `webview-providers.md`：包名白名单（仅 `com.google.android.webview` +beta/dev/canary、`com.android.webview` 限 userdebug/eng）、**release 签名校验**、`targetSdk >= SDK_INT`，由 `WebViewUpdateService` 强制 | 系统级墙，不成立 |
+| 自造 Chromium 自绘 | `android_build_instructions.md`：需 Linux x86-64 ≥8GB RAM / ≥100GB 盘，且原文 **「Building the Android client on Windows or Mac is not supported and doesn't work」** | 本机不成立 |
+| CEF | `cef-builds.spotifycdn.com/index.json` 平台键实测无 android | 无产物 |
+| GeckoView | arm64 AAR 实测 **91,504,240 B**，解压 **185.3 MB**，`libxul.so` 单文件 **147.4 MB**；API 与 `android.webkit` 完全不同 | 能力有、代价不可接受 |
+| WPE WebKit | README 要求 `Application` 换成 `org.wpewebkit.WPEApplication` 基类；README 自写 `TODO: package, distribute`；maven solrsearch `wpewebkit` = **numFound 0** | 不可消费 |
+| Ultralight / Servo | Ultralight 平台只有 Windows/macOS/Linux；Servo 只有 Android 相关 open issue | 无 Android 产物 |
+
+**换内核的真实调用面**（在 `024a9cb6` 上重跑）：`webView.*(` **51 处**（全在 `MainActivity.kt`）、**18 个**方法、`import android.webkit` 仅 **3 个文件**、MainActivity 提到 WebView **313 行**。
+
+### 2. 内核为什么不可能拖慢启动：两条并行时间线
+
+```
+10:28:48.202  Start proc app.dsh.mobile
+10:28:49.979  preheat page finished (engine still starting)   <== 1.78s，能渲染一页了
+10:28:51.671  boot step spawn: 641ms (total 1719ms)            <== 引擎这才开始起
+10:28:56.646  boot step health-poll: 4975ms (total 6694ms)
+10:28:56.680  engine healthy on :3080
+```
+
+WebView 的 1.78 秒**在引擎 spawn 之前就结束了**，全程被引擎长尾盖住。boot.log 七次冷启：
+
+| spawn | health-poll | TOTAL | 占比 |
+| --- | --- | --- | --- |
+| 590ms | 4843ms | 6450ms | 75.1% |
+| 641ms | 4976ms | 6729ms | 74.0% |
+| 712ms | 5743ms | 7981ms | 72.0% |
+| 822ms | 6133ms | 8337ms | 73.6% |
+| 837ms | 12689ms | 15223ms | 83.3% |
+| 864ms | 6542ms | 8759ms | 74.7% |
+| 904ms | 8668ms | 11055ms | 78.4% |
+
+（模拟器 + 多会话并发环境，方差来自 CPU 争用；真机稳态见第一百四十章热态 2819～3423ms。）
+`spawn` 内部已无所可抠：orphan-cleanup 2ms / heal-shebangs 30ms / heal-pnpm 8ms / patches 197ms / mode-resolve 0ms。
+node 裸启动实测 `real 0.12～0.13s`、`process.uptime()` 107～114ms —— **node 自身不是瓶颈**，编译缓存（14,000 KB / `v24.22.3-x64-964aae3f-10193`）也已在生效。
+
+### 3. 唯一实测打通的提速路径：引擎独立进程 + 接管
+
+| 实验 | 结果 |
+| --- | --- |
+| `run-as` + `setsid` 起 node（脱离 app 进程树） | ppid=1；`am force-stop` 之后**仍存活**，端口仍 LISTEN，请求得 `200 alive-ok`（两轮一致） |
+| 对照 `su` 起的 uid0 detached node | 同样活过 force-stop |
+| app 内的 node 子进程 | force-stop / kill -9 后**必死** |
+| 接管序列（读 engine.log 取 token → 请求 WebUI） | `t_read_log=1～2ms`、`t_webui_respond=26～39ms`、`t_done=30～41ms`（3 次），status 303 |
+
+即「杀掉后台再打开」可以从 6.4～15.2s 降到**几十毫秒**。要改的正是清场语义：
+`reclaimPort()` `:1541` 直接转调 `reclaimPortByPort()` `:1560`（注释 *thorough reclaim, kill every holder*），代码里**没有任何接管分支**；`cleanupOrphanEngine()` `:1661` = `if (!portInUse()) return; reclaimPort()`。
+
+必须一并处理的四个坑（已实测）：
+
+1. **手动直跑引擎入口会崩**：`EngineConfig.dshEntry()` = `engineRoot/lib/node_modules/@deepseek-ai/dsh/lib/bin.js`（不是 `bin/dsh.js`），直跑报 `node-addon-require-builtin` requireStack → 独立进程必须复刻 `EngineConfig.kt:1835-1860` 的完整 env（`DSH_SHZ_PORT`/`DSH_BRIDGE_TOKEN`/`DSH_PET_BRIDGE_TOKEN`/`LD_LIBRARY_PATH`/`PREFIX`/`SHELL`/`HOME`/`DSH_HOME`/`NODE_COMPILE_CACHE`）。
+2. **桥 token 不落盘**：`AgentBridge.currentToken()`（`:149`）每进程 `UUID.randomUUID()`、注释明写不复用；接管后新进程拿不到旧 token → `scr`/`notify`/`shz` 会 403。
+3. **陈旧日志歧义**：`extractTokenUrl()`（`:125`）按 `logOffsetAtSpawn` 字节偏移读，接管场景没有「本次 spawn」，需「进程启动时间 + 端口 + token 行」三重判据。
+4. **cgroup 取决于启动路径（两轮结果相反）**：第 1 轮 `su` 起 → `0::/uid_0/…`、非 top-app、`oom_score_adj=-950`；第 2 轮 `run-as`+`setsid` → `0::/uid_10193/…`、**top-app**、`oom_score_adj=0`。**不能一概而论「脱离 app 必失前台优先级」**，须按实际启动路径逐条量测。
+
+### 4. 另外两条路（判断，未实现）
+
+- **路径 B 前后端分离**：前端 bundle 只有 100 entries / 原始 5.55 MB / zip 1.49 MB（`index.js` 1144.6KB、`vendor.js` 732.9KB），WebView 1.78s 就绪——壳子够快，慢的是引擎。先出本地静态壳再切真实会话，**只改善感知、不减少等待**，风险最低。
+- **路径 C 引擎侧剪枝**：`EngineConfig.kt:1445-1470` trim tier 0 已禁 5 个遥测插件（warm 1330→1160ms 有先例）；`android-overlay.yml` 31 条 `id:`、服务端 HTML 49027 B / 74 client plugins、历史上引擎共加载 338 插件。要逐条确认依赖，不能拍脑袋删。
+
+### 5. 证据分层
+
+| 层级 | 内容 |
+| --- | --- |
+| 实测（最高） | logcat 冷启时间线、boot.log 七次采样、detached 存活两轮、接管序列 3 次计时、node 裸启动 3 次、GeckoView AAR 下载解压字节数、系统 WebView 两份 APK 体积、`webView.*(` 调用点计数 |
+| 产物验签 | `MIN_CHROME=85`（`WebViewDiagnostics.kt:75`）、`scripts/patch-webview-syntax-floor.py` 存在、release APK 42,559,164 B / 1334 entries |
+| 文档原文 | Chromium provider 三条约束、build instructions 平台限制、CEF index.json 平台键、WPE README、Ultralight 官网 |
+| 线索（未采信为结论） | GeckoView 双 ABI 打包实际体积、真机 ROM 后台清理强度 |
+
+### 6. 未验证缺口
+
+1. **全部设备证据来自模拟器**（emulator-5554 / Android 14 / x86_64）。真机上 detached 进程能否活过 MIUI/HyperOS 的「后台清理」**未验证** —— 路径 A 最大未知。
+2. GeckoView 185.3 MB 只算 arm64 单 ABI，双 ABI 更大；其对冷启耗时的实际影响未测（本文只用体量与 API 差异判断）。
+3. 「租 Linux 构建机绕过 Chromium 编译门槛」未做成本核算；即便编出来，provider 签名白名单仍拦着，只能自绘。
+4. 路径 A 的「接管后桥 token 失效 → 403」是代码注释层面的必然，**未在接管场景实测**；修法（落盘 vs 引擎转发）涉及安全审查，不给结论。
+5. env 复刻面**只从渲染代码推断，未逐项实测**。
+
+### 7. 复用经验
+
+- **判定「某组件是否在关键路径」用并行时间线，不用体感。** 两条并行时间线（预热页 1.78s vs 引擎 6.4s）一句话否掉了整个内核提速假设。
+- **系统级约束先查官方 provider 文档，再算工程成本。** Chromium 的包名白名单 + 签名校验是墙不是工作量，先查这一条能省掉「能不能编出来」的全部讨论。
+- **「进程能否活过 force-stop」必须自己起一个 detached 进程来验**，不能从 `START_STICKY` / 前台服务推断。实测与直觉相反：不在 app 进程树里的同 uid 进程能活，app 的子进程必死。
+- **同一现象两轮结果不同时，先查启动路径差异再下结论**（cgroup 那次就是这么翻的）。
