@@ -986,6 +986,7 @@
     <string name="app_update_need_space">存储空间不足：需要 %1$d MB，当前可用 %2$d MB</string>
     <string name="app_update_err_version">安装包版本不一致（实际 %1$d，应为 %2$d）</string>
     <string name="app_update_err_signature">安装包签名与已安装版本不一致</string>
+    <string name="app_update_err_signature_detail">安装包签名与已安装应用不一致（%1$s）。这说明包来自另一把签名钥——调试包、他人 fork 或重新签名的重打包——而不是文件损坏。</string>
     <string name="app_update_err_missing_file">找不到安装包，请重新下载</string>
     <string name="app_update_err_no_browser">没有可用的浏览器</string>
     <string name="app_update_install_failed_title">安装失败</string>

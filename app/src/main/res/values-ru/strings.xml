@@ -945,6 +945,7 @@
     <string name="app_update_need_space">Недостаточно места: нужно %1$d МБ, доступно %2$d МБ</string>
     <string name="app_update_err_version">Версия пакета не совпадает (найдена %1$d, ожидалась %2$d)</string>
     <string name="app_update_err_signature">Подпись пакета не совпадает с установленным приложением</string>
+    <string name="app_update_err_signature_detail">Подпись пакета не совпадает с установленным приложением (%1$s). Значит, APK подписан другим ключом — отладочная сборка, чужой форк или переподписанный репак, — а не повреждён.</string>
     <string name="app_update_err_missing_file">Установочный пакет не найден, скачайте заново</string>
     <string name="app_update_err_no_browser">Нет доступного браузера</string>
     <string name="app_update_install_failed_title">Установка не удалась</string>

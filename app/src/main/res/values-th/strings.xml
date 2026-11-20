@@ -900,6 +900,7 @@
     <string name="app_update_need_space">พื้นที่ไม่พอ: ต้องการ %1$d MB มี %2$d MB</string>
     <string name="app_update_err_version">เวอร์ชันแพ็กเกจไม่ตรง (พบ %1$d คาดหวัง %2$d)</string>
     <string name="app_update_err_signature">ลายเซ็นแพ็กเกจไม่ตรงกับแอปที่ติดตั้งอยู่</string>
+    <string name="app_update_err_signature_detail">ลายเซ็นของแพ็กเกจไม่ตรงกับแอปที่ติดตั้ง (%1$s) หมายความว่า APK มาจากคีย์ลงนามอื่น เช่น บิลด์ดีบัก ฟอร์กของผู้อื่น หรือรีแพ็กที่ลงนามใหม่ ไม่ใช่ไฟล์เสียหาย</string>
     <string name="app_update_err_missing_file">ไม่พบแพ็กเกจติดตั้ง โปรดดาวน์โหลดใหม่</string>
     <string name="app_update_err_no_browser">ไม่มีเบราว์เซอร์ให้ใช้</string>
     <string name="app_update_install_failed_title">ติดตั้งล้มเหลว</string>

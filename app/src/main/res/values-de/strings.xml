@@ -993,6 +993,7 @@
     <string name="app_update_need_space">Nicht genug Speicher: %1$d MB benötigt, %2$d MB frei</string>
     <string name="app_update_err_version">Paketversion stimmt nicht (gefunden %1$d, erwartet %2$d)</string>
     <string name="app_update_err_signature">Paketsignatur stimmt nicht mit der installierten App überein</string>
+    <string name="app_update_err_signature_detail">Die Paketsignatur passt nicht zur installierten App (%1$s). Das Paket stammt also von einem anderen Signaturschlüssel – etwa ein Debug-Build, ein Fork oder ein neu signiertes Repack – die Datei ist nicht beschädigt.</string>
     <string name="app_update_err_missing_file">Installationspaket fehlt, bitte erneut laden</string>
     <string name="app_update_err_no_browser">Kein Browser verfügbar</string>
     <string name="app_update_install_failed_title">Installation fehlgeschlagen</string>
