@@ -16301,3 +16301,108 @@ dnsPort?.let { add("DSH_DNS_PORT=$it") }
 2. **判据范围宽于被测对象 = 假绿**。这是本项目第三次同类事故（前两次：TouchDelegate 存在性断言、isMissingLocalTargetError 函数名断言）。凡「整份文件里 grep 某个 token」的探针，都要先切片到目标函数体。
 3. **adb 测量陷阱**：`%20` 不是空格（只有 `%s` 是）；`$VAR` 会在 adb shell 侧被宿主先展开，要看真实值用 `printenv`；`input text` 传 CJK 不可靠，改用「写文件 + cat」验证渲染。
 
+
+## 第一百五十二章 启动前清理原子写残留锁（2026-11-21）
+
+### 问题
+引擎所有配置文件写入都走 `@deepseek-ai/dsh-atomic-write` 的 `withFileLock()`：
+在目标文件旁建 `<文件>.lock`（内容 `<pid>\n`），写完 `rm`。进程若在中间被系统杀掉
+（后台清理 / OOM / 用户强停），锁文件就留下了。
+
+上游 `takeOverExitedLock()` 只接管「死 pid」一种：读锁内 pid、`kill(pid, 0)` 得
+`ESRCH` 才接管。其余四种一律等到超时（emulator-5554 实测，2026-11-21）：
+
+| 锁内记录 | 上游行为 | 实测 |
+| --- | --- | --- |
+| `"<pid>\n"` 死进程 | `ESRCH` → 接管 | OK 7ms |
+| `"<pid>\n"` 活着的无关进程 | `kill` 成功，不敢接管 | 超时 3140ms |
+| `""`（写到一半被杀） | 不匹配 `/^\d+\n$/`，判「活着」 | 超时 3109ms |
+| `"notapid\n"` | 同上 | 超时 3094ms |
+| 死 pid + 残留 `.takeover-*` | claim 的 `wx` 创建 `EEXIST` | 超时 3157ms |
+
+最后一种是永久自锁：进程恰好死在「建好 claim、还没删 claim」的窗口里。
+
+### 后果（模拟器实测）
+`echo 1 > $DSH_HOME/.credentials.yaml.lock` 后冷启：
+```
+boot step spawn: 732ms
+dsh: startup failed: 1 required plugin did not activate
+  connection (required)
+    Error: atomic-write: timed out waiting for the writer lock at
+           .../dsh-home/.credentials.yaml.lock
+engine exited: status=256 exit=1
+boot step health-poll: 40484ms
+```
+即 40.5 秒后整个引擎启动失败，用户看到界面停在「正在启动引擎」。
+删锁后同一操作 health-poll 9618ms / total 13488ms 正常就绪。
+
+### 实现
+新增 `app/src/main/java/app/dsh/mobile/engine/StaleLockHealer.kt`（object，约 410 行），
+挂在 `EngineSupervisor` 的 `parallel-preflight` 块第 3 个 `async`
+（`runParallelInit("stale-locks")`，位于 log-sweep 之后、bridge 之前，`spawnEngine` 在其后）。
+
+安全边界：
+1. 只在启动前置阶段跑，再叠 `portInUse(120)` 探测，引擎活着就整体跳过。
+2. 白名单目录逐层枚举（不递归）：`dsh-home` 本身、`llm-deepseek`、`liveshare`、
+   每个 `profiles/<p>`、`profiles/<p>/.plugin-market/repositories`、`.cache/pnpm*`。
+   `node_modules` / `sessions` / `workspaces` 一个都不进。
+3. `session.lock` 永不触碰 —— 那是 `dsh-session-persistence-jsonl` 的 `flock(2)`
+   内核锁（`lib/index.js:648 LEASE_FILENAME`），删文件生成新 inode 会造成真双写；
+   进程一死内核自动释放，不需要清。
+4. 只动 `*.lock` 与 `*.lock.takeover-*`；属主不是自己就不删（同 `healForeignLocks` 判据）。
+5. 每次删除 `Log.w` 记路径 + 记录内容 + pid + alive + isDsh + ageMs。
+
+### 判定：用锁年龄，不用 uid（关键转向）
+第一版用 `/proc/<pid>` 的 `st_uid` 与自比来区分「pid 复用」和「活写者」，
+设备取证证伪：
+```
+真引擎 21660    u:r:untrusted_app_27（同域）  → cmdline 可读
+run-as 起的 21003 u:r:runas_app（同 uid 异域） → EACCES
+init pid 1      u:r:init（异 uid）           → EACCES
+```
+`EACCES` 同时覆盖「别的 uid」和「同 uid 跨 SELinux 域」，单靠它必然两端各错一次。
+
+改用 `FRESH_MS = 20_000L`：`withFileLock` 临界区只有「写临时文件 + rename」，
+毫秒级；`DOCUMENT_LOCK_WAIT_MS=30000` 是**排队等待**上限而非持锁时长。
+所以「已存在 ≥ 20 秒」本身就是「没有活写者」的正面证据。
+
+判定表（`classify`）：
+- `parseHolder(record)` 为 null → **DELETE**（不看年龄；实测新鲜空锁被保留导致
+  health-poll 拖到 7643ms，正是用户报的那一幕）；
+- `pid == selfPid` → DELETE；`!holderAlive` → DELETE；
+- `holderIsDsh == true` → KEEP（活 DSH 绝不删，盖住退避重试窗口）；
+- `oldEnough(ageMs)`（≥20s）→ DELETE；其余 → KEEP 并记 `lock too fresh`。
+
+### 验证
+- 单测 `app/src/test/java/app/dsh/mobile/engine/StaleLockHealerTest.kt`：13 例 0 失败
+  （XML tests=13 failures=0）。含 `malformedRecordsAreAlwaysDeleted` 对
+  age ∈ {OLD, FRESH, -1} × record ∈ {"", "notapid\n", null} 全量断言。
+- 探针 `scripts/probes/_test_stale_lock_heal.py`：22 checks 全绿。含「判定不靠 uid
+  而靠锁年龄」（检查 `FRESH_MS`、`f.lastModified()`+`ageMs`、`st_uid`/`uidOfProcess` 已消失）。
+- `_test_startup_parallelization.py`：`block.count("async {") == 3` → `== 4`，
+  新增 3 条（stale-locks 被 await、探测活引擎、在 spawnEngine 之前），20 通过 0 失败。
+- 四组变异全部能打红并 RESTORED_OK：年龄判据放宽 / 删掉活 DSH 分支 /
+  解析失败回退按年龄 / `NEVER` 改 `emptySet()`。
+- 设备端到端（emulator-5554，x86_64 full，vC405）9 个场景通过：
+  4 把老锁 `removed=4` health-poll 9505ms；2 把新鲜锁 `kept=2` 文件仍在；
+  引擎活着时 `skipped=true removed=0`；takeover 凭据 `removed=2`；
+  最终包 `removed=4 kept=0 failed=0 skipped=false`，health-poll 7793ms / total 10880ms。
+
+### 构建与提交
+- 版本 `versionCode 405 / versionName 1.6.0-beta.29`。
+- APK 180,513,038 B（x86_64 / full / rt-x86_64-ci.zip，offline）。
+- 全量单测 11 文件 114 例 0 失败；i18n 与 ui-tokens 检查通过。
+- 提交 `eadd90c1` fix(engine) 7 文件。
+
+### 遗留
+- `scripts/probes/_test_dsh_alpine_source_sync.py` 当时 4 条红：并行会话在
+  14:31:44 改了 `app/src/main/cpp/dsh_alpine.c`（`/proc/self/fd` 当 linkat 源时
+  改 `AT_EMPTY_PATH` 的修复）但未重编 `jniLibs/arm64-v8a/libdsh_alpine.so`，
+  探针卡在「产物必须晚于源码」。与本章改动无关，需由该会话重编 .so。
+- 设备实测踩坑：`am kill app.dsh.mobile` 杀不掉 App（pid 不变），制造「引擎在跑」
+  要用自写 node 占 3080；node 在 `files/engine/bin/node`（不是 `lib/node`），
+  需 `LD_LIBRARY_PATH=files/engine/lib:files/engine/usr/lib`。
+- toybox 不认 `touch -d '30 minutes ago'` 与 `ls --time-style`，改时间用
+  `touch -t "$(date -d @$OLD +%Y%m%d%H%M.%S)"`；heredoc 在 /data/local/tmp 报
+  Permission denied，改 base64 下发。
+
