@@ -16076,8 +16076,10 @@ head=tail=2 → inputd 已消费 2 条事件（一次 tap 产生 2 条），**�
 
 1. **版本号被两条会话互踩**：设备曾到 465/beta.90，本轮降回 402/beta.26。下次那边再装会
    再次顶掉；需要决定「谁统一发版 / 是否分渠道 versionCode」。
-2. 工作区仍有**并行会话**的未提交改动，本轮提交只挑了自己的 8 个文件，未纳入。完整清单
-   （16 项 = 13 改 + 3 未跟踪，**不含本文**；实测于 `219127ab` 之后，`git diff --stat` 合计 +444/−56）：
+2. 工作区仍有**并行会话**的未提交改动，本轮提交只挑了自己的 8 个文件，未纳入。
+   **清单是会动的**：下面这份拍于 `219127ab` 之后（16 项 = 13 改 + 3 未跟踪）；
+   10:45 再看已是 **17 项 = 14 改 + 3 未跟踪**，多出 `M ReportActivity.kt`。
+   下一个人照此清理前，请先跑一次 `git status --porcelain=v1` 对时，别照抄数字：
    - Kotlin：`PluginStoreActivity.kt`、`engine/InstallErrorSummary.kt`、`engine/PluginCenter.kt`、
      `engine/ProfilePluginProvisioner.kt`；
    - 测试：`InstallErrorSummaryTest.kt`（改）、未跟踪 `PluginSpecSourceTest.kt`；
@@ -16085,6 +16087,7 @@ head=tail=2 → inputd 已消费 2 条事件（一次 tap 产生 2 条），**�
    - 探针：`scripts/probes/_test_plugin_install_errors.py`（改）、未跟踪
      `scripts/probes/_test_plugin_install_selfheal.py`；
    - 仓库配置：`.gitignore`（改）。
+   - 拍完快照后又新增：`ReportActivity.kt`（10:45 起出现在 `git status`）。
    时间线：上述文件 mtime 09:55:58–10:20:00，晚于本轮两个提交（09:38:47 / 10:16:05），
    确认与 Lead 无关。
 3. 未跟踪 `docs/ui-preview/probe-opacity.mjs`（2026-11-13 的 Chrome CDP 取色探针，非本轮产物，仍挂着）。
