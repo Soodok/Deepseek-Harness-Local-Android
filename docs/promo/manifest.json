@@ -13,12 +13,12 @@
   "sources": [
     {
       "file": "source/ui-workspace.png",
-      "origin": "E:/Deepeek harness/_build_v128/emu35-toolbar.png",
+      "origin": "E:/Deepeek harness/dsh-android/docs/promo/assets/emu35-toolbar.png",
       "sha256": "6d9b3c158ad476b1c5955da241489c1bcc956789879eb44f639913b37bdc1094"
     },
     {
       "file": "source/ui-extensions.png",
-      "origin": "E:/Deepeek harness/_build_v128/emu44-tools.png",
+      "origin": "E:/Deepeek harness/dsh-android/docs/promo/assets/emu44-tools.png",
       "sha256": "5da320c5edb4082dddb511bb161a2793a386f7950e49ea04a486fe2d4d11b749"
     },
     {

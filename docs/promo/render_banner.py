@@ -254,8 +254,8 @@ def main():
     SOURCE.mkdir(exist_ok=True)
     QA.mkdir(exist_ok=True)
     assets = [
-        (WORKSPACE / "_build_v128/emu35-toolbar.png", "ui-workspace.png"),
-        (WORKSPACE / "_build_v128/emu44-tools.png", "ui-extensions.png"),
+        ((REPOSITORY / "docs/promo/assets/emu35-toolbar.png"), "ui-workspace.png"),
+        ((REPOSITORY / "docs/promo/assets/emu44-tools.png"), "ui-extensions.png"),
         (REPOSITORY / "app/src/main/res/drawable/ic_launcher_foreground.xml", "ic_launcher_foreground.xml"),
     ]
     for source, name in assets:
