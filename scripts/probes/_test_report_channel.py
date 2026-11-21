@@ -112,7 +112,6 @@ for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"
             if ('name="%s"' % k) not in txt]
     ok("F1 %s strings" % loc, not miss, "missing=%s" % miss)
 
-print("\n%d checks, %d failed" % (checks, failed))
 # ── G 关于页的「永久关闭」开关
 about = read("app/src/main/res/layout/activity_about.xml")
 aboutkt = read("app/src/main/java/app/dsh/mobile/AboutActivity.kt")
@@ -127,4 +126,5 @@ for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"
     ok("G5 %s about switch strings" % loc,
        'name="about_report_off_title"' in txt and 'name="about_report_off_sub"' in txt)
 
+print("\n%d checks, %d failed" % (checks, failed))
 sys.exit(1 if failed else 0)
