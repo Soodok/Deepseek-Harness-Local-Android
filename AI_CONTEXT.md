@@ -15926,7 +15926,19 @@ accept 不被拦，本地永远复现不出来。
   `usr/bin/accbin`、`/data/local/tmp` 同名文件、rootfs/tmp 的 pNN.sh/pNN.out、
   旧 shim、dshframe.bin、X99/X100 socket 与 lock。
 
-### 五、踩坑记录（下次别再踩）
+### 五、顺带复验的触摸链路（同一次装机）
+
+画面通了之后顺手把「触摸回传」也走了一遍（此前从没在画面可用过的时候验过）：
+
+- 点「开启触摸」→ `inputd` 起来，`/tmp/inputd.log` 打出
+  `INPUTD_KV xtest=2.2 display=:99` 与 `PATH=/data/data/app.dsh.mobile/files/dshinput.bin cap=256`。
+- 在画面区点一下 + 拖一段 → `dshinput.bin` 的 mtime 从 `08:14:33` 变成 `08:16:09`，
+  `inputd.log` 末尾出现 `INPUTD_KV done=2`（消费掉两个事件）。
+- 点「停止画面」→ `LinuxFrameSurface` 的 `fps` 从 29.9 掉到 **0.0**、
+  `shown/lastSeq` 冻在 6562 —— 正是「停掉帧服务、保留最后一帧」的预期；
+  `Xvfb` 进程仍在（停止只停帧服务，不停 X server）。
+
+### 六、踩坑记录（下次别再踩）
 
 1. **探针会被 App 自动覆盖回滚**：`installSetuidShim` 的幂等判据是
    「APK 内 zip 条目 size + 落地文件可读」。取证当时 APK 里那个条目是 **3056 B**
