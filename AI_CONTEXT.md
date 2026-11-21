@@ -16571,3 +16571,27 @@ mtime 压到源码之后。
    需要发一个 versionCode ≥ 406、versionName 明确的新 prerelease（未做）。
 3. 并行会话在 `/e/tmp/wt-flutter-native-chat` 推进到 vC466/beta.91，版本号比本轮高
    —— 下次构建前先对时，避免又出现降级挡住 `adb install`。
+
+### 12. 补充实验：公共 DNS 兜底能否绕开冻结（**未验证于真实 App 域**）
+
+思路：容器 `resolv.conf` 里加第二行 `nameserver 223.5.5.5`，让 musl 在代理被冻住时直接走公共 DNS。
+
+已测到的部分（**都不是 untrusted_app_27 域**）：
+- `su 0`（root 域）跑 loader + 双 nameserver，在 `freeze=1`（App 退到后台、代理已被冻）时
+  `apk update` 仍得到 `OK: 27443 distinct packages available` —— 说明「冻结 + 公共 DNS」本身可用；
+- `run-as app.dsh.mobile`（uid 10501、**runas_app** 域）`busybox nslookup mirrors.aliyun.com 223.5.5.5`
+  → 解析成功（`112.13.83.183`）；而 `1.12.12.12` 报 `connection timed out`。
+
+**关键缺口**：真实 App 域 `u:r:untrusted_app_27:s0` 没法从 adb 侧复现
+（`runcon u:r:untrusted_app_27:s0 exec /system/bin/sh` 与 `exec env` 都是
+`Permission denied`；`run-as` 只能进 runas_app 域）。历史结论是
+「UDP 53 被 Android 拦、TCP 53 通」（见 `RESOLV_CONF_GLIBC` 注释与 2026-11-05 实测），
+而**本次 root 域与 runas_app 域都能发 UDP 53** —— 说明拦截策略与域/uid 相关，
+untrusted_app_27 下是否同样放行 **尚未确认**。
+
+还有一条障碍：`LinuxDnsProxy.writeMuslResolvConf` 与
+`LinuxEnvironmentManager.writeDistroConfigPublic` 里写死了
+`listOf("nameserver 127.0.0.1")`，每次 runDistroConfig 都会用 `writeIfChanged` 把我手工加的第二行
+覆盖掉 —— 手工改 `resolv.conf` **不持久**，要做兜底必须改代码。
+
+**已还原现场**：`rootfs/etc/resolv.conf` 现为单行 `nameserver 127.0.0.1`（与代码契约一致）。
