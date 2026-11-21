@@ -1090,7 +1090,7 @@
     <string name="settings_row_plugins">Plugins da comunidade</string>
     <string name="settings_row_plugins_sub">Instale e gerencie plugins da comunidade dsh</string>
     <string name="plugin_net_error">Rede inacessível: não foi possível resolver o registro de plugins. Verifique o Wi-Fi ou os dados móveis e tente novamente.</string>
-    <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
+    <string name="plugin_install_timeout">Ainda instalando — plugins grandes podem levar vários minutos. Verifique a aba Instalados para o status real.</string>
     <string name="setting_official_ui">UI móvel oficial</string>
     <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia). Desligado, vale o layout estreito nativo do mecanismo. Aplica após reiniciar o mecanismo.</string>
     <string name="setting_official_ui_restart_hint">O plugin de layout carrega na inicialização do mecanismo. Reiniciar agora?</string>

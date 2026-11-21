@@ -863,25 +863,45 @@ class PluginStoreActivity : ThemedActivity() {
         // installExecutor 是**单线程**池 —— 万一某个任务仍卡住，后续所有安装
         // 会排队，用户永远看到「安装中」。
         //
-        // 这里挂一个 150 秒的兜底：超时后把按钮恢复成可点状态并提示，
-        // 用户至少能再点一次（真实状态以插件中心列表为准）。
-        // 用 token 防串：回调正常到达就作废这个看门狗。
+        // 这里挂一个兜底：超时后提示「仍在安装」，并**保持按钮禁用**、再挂下一轮。
+        //
+        // v1.7.32：旧实现是一次性 150 秒到点就把按钮恢复成「安装」并弹
+        // 「安装耗时超出预期」—— 但底层现在的判据是「无输出 60 秒」才算卡死、
+        // 绝对上限 30 分钟（见 PluginCenter.CLI_HARD_TIMEOUT_MS）。真机装一个带
+        // 原生依赖的大插件（如 dsh-project-memory：leanvec 83MB + pdfjs-dist）
+        // 在模拟器上就要 133 秒，弱网更久。旧看门狗会在 **pnpm 还在正常下载**时
+        // 把按钮放开，用户点了第二次 → 第二次安装排在单线程池后面，还得再下
+        // 一遍，看起来就像「怎么装都装不上」。
+        //
+        // 现在：到点只提示进度、报道一次真实状态，按钮维持「安装中」禁用；
+        // 一直续挂到 30 分钟（与底层硬上限对齐）才真正放手。
+        // 用 token 防串：回调正常到达就作废整个看门狗。
         val watchdogToken = Any()
         installWatchdog = watchdogToken
-        btn.postDelayed({
-            if (installWatchdog !== watchdogToken) return@postDelayed
-            if (isFinishing || isDestroyed) return@postDelayed
-            btn.text = getString(R.string.plugin_install)
-            btn.isEnabled = true
-            btn.isClickable = true
-            btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
-            Toast.makeText(
-                this@PluginStoreActivity,
-                getString(R.string.plugin_install_timeout),
-                Toast.LENGTH_LONG,
-            ).show()
-            reload(verbose = true)
-        }, 150_000L)
+        // round 从 1 数到 WATCHDOG_MAX_ROUNDS：第 N 轮 = 已经等了 N×150s。
+        // 最后一轮必须同时「提示 + 放开按钮」，否则按钮会永久停在禁用态。
+        fun armWatchdog(round: Int) {
+            btn.postDelayed({
+                if (installWatchdog !== watchdogToken) return@postDelayed
+                if (isFinishing || isDestroyed) return@postDelayed
+                val last = round >= WATCHDOG_MAX_ROUNDS
+                if (last) {
+                    // 到达底层硬上限：这一次确实该放手了，交给用户重试。
+                    btn.text = getString(R.string.plugin_install)
+                    btn.isEnabled = true
+                    btn.isClickable = true
+                    btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                }
+                Toast.makeText(
+                    this@PluginStoreActivity,
+                    getString(R.string.plugin_install_timeout),
+                    Toast.LENGTH_LONG,
+                ).show()
+                reload(verbose = true)
+                if (!last) armWatchdog(round + 1)
+            }, WATCHDOG_INTERVAL_MS)
+        }
+        armWatchdog(1)
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
                 // 回调到了 → 作废看门狗
@@ -1189,6 +1209,22 @@ class PluginStoreActivity : ThemedActivity() {
 
     companion object {
         private const val STORE_CONTENT_MAX_WIDTH_DP = 720
+
+        /**
+         * 安装看门狗的提示间隔（v1.7.32）。
+         *
+         * 150 秒 = 旧实现唯一的「超时」点。现在它不再代表超时，只是「这么久没
+         * 消息了，提一句还在装」；每次到点都会报道一次真实状态并续挂下一轮。
+         */
+        private const val WATCHDOG_INTERVAL_MS = 150_000L
+
+        /**
+         * 看门狗最多续挂几轮，与 [app.dsh.mobile.engine.PluginCenter] 的 30 分钟
+         * 硬上限对齐：12 × 150s = 30min。
+         *
+         * 超过它才真正把按钮放开 —— 那时底层也已经杀了进程，两者不会互相打脸。
+         */
+        private const val WATCHDOG_MAX_ROUNDS = 12
 
         /**
          * 每批渲染的插件卡片数（v1.4.30，issue #62）。

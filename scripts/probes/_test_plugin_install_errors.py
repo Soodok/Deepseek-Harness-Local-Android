@@ -224,7 +224,7 @@ check("lock：有坏 lockfile 判据", "isBrokenLockfileError" in src)
 check("lock：判据认错误码与人话两种形态",
       "ERR_PNPM_LOCKFILE_MISSING_DEPENDENC" in src and "Broken lockfile" in src,
       "用户截图里错误码被弹窗宽度截过，只认错误码会漏判")
-_bke = re.search(r"private fun isBrokenLockfileError\(msg: String\): Boolean =([\s\S]*?)\n\n", src)
+_bke = re.search(r"(?:private|internal) fun isBrokenLockfileError\(msg: String\): Boolean =([\s\S]*?)\n\n", src)
 check("lock：判据函数体取到了", _bke is not None)
 if _bke:
     _bkb = _bke.group(1)
@@ -278,9 +278,10 @@ check("摘要：逻辑已抽到 InstallErrorSummary（可被 JVM 单测喂真实
       "留在 Activity 私有方法里只能靠本探针看字符串，证明不了真实输出")
 check("摘要：pnpm 的 ERR_PNPM 错误码仍然优先",
       'Regex("[A-Z][A-Z0-9_]{6,}")' in ies and "take(40)" in ies)
-check("摘要：先剔纯位置行（Node 的 ESM 栈头 / file:// 模块 URL）",
-      "stripLocationLines" in ies and 'Regex("^file://' in ies,
-      "判据必须是「整行就是一个 file:// URL」的正则匹配")
+check("摘要：先剔纯位置行（Node 的 ESM/CJS 栈头）",
+      "stripLocationLines" in ies and "isLocationOnly" in ies,
+      "判据必须是「整行就是一条路径」的独立谓词（v1.7.32 从单条 file:// 正则"
+      "扩到两种栈头形态，见 _test_plugin_install_selfheal.py）")
 check("摘要：过滤不是裸 contains(\"file://\")",
       'contains("file://")' not in ies,
       "真正的错误行里也会有 file://（如 Cannot find module 'file:///...'），"

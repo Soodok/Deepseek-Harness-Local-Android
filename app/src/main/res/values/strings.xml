@@ -1129,7 +1129,7 @@
     <string name="setting_voice_plugins_sub">Plugin center, ASR apps, voice service, TTS and pet</string>
     <string name="settings_row_plugins">Community plugins</string>
     <string name="settings_row_plugins_sub">Install and manage dsh community plugins</string>
-    <string name="plugin_install_timeout">Install is taking longer than expected. Check the Installed tab for the real status, or try again.</string>
+    <string name="plugin_install_timeout">Still installing — large plugins can take several minutes. Check the Installed tab for the real status.</string>
     <string name="plugin_net_error">Network unreachable: the plugin registry could not be resolved. Check Wi-Fi or mobile data and try again.</string>
     <string name="setting_official_ui">Official mobile UI</string>
     <string name="setting_official_ui_sub">Use the community mobile layout (drawer, bottom action bar, full-screen settings). When off, the upstream narrow-viewport layout is used as-is. Takes effect after the engine restarts.</string>

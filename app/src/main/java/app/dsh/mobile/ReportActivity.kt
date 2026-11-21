@@ -14,6 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
 import java.net.URLEncoder
 import kotlin.concurrent.thread
 
@@ -63,9 +64,13 @@ class ReportActivity : ThemedActivity() {
 
         previewButton.setOnClickListener { showPreview() }
         sendButton.setOnClickListener { send() }
-        findViewById<Button>(R.id.reportCopy).setOnClickListener { copyToClipboard() }
-        findViewById<Button>(R.id.reportMail).setOnClickListener { openMail() }
-        findViewById<Button>(R.id.reportGithub).setOnClickListener { openGithub() }
+        // v1.7.32：布局里这三个是 MaterialButton（style 用的是 M3 Outlined/Text），
+        // 类型写 Button 时 findViewById 按 id 查到的实例是 MaterialButton，
+        // 泛型只是编译期断言 —— 编译能过、运行期也可能抛 ClassCastException。
+        // 统一按布局真实类型取，别再靠 Button 冒充。
+        findViewById<MaterialButton>(R.id.reportCopy).setOnClickListener { copyToClipboard() }
+        findViewById<MaterialButton>(R.id.reportMail).setOnClickListener { openMail() }
+        findViewById<MaterialButton>(R.id.reportGithub).setOnClickListener { openGithub() }
 
         // 上一轮的标题/描述留在输入框里，避免手一滑返回就全丢。
         savedInstanceState?.let {
@@ -73,6 +78,20 @@ class ReportActivity : ThemedActivity() {
             bodyInput.setText(it.getString(KEY_BODY, ""))
             contactInput.setText(it.getString(KEY_CONTACT, ""))
         }
+    }
+
+    /**
+     * 每次回到前台都重新对齐方向（v1.7.32）。
+     *
+     * 本页走 [OrientationPrefs.applyToSettingsPage]：大屏跟随偏好、手机锁竖屏，
+     * 而且这个开关能被外观页改。只在 onCreate 应用是不够的 —— 从外观页返回时
+     * 本页实例还在，requestedOrientation 仍是旧值，会把刚改好的屏幕扳回去。
+     * 与其它设置类页面保持同一约定（探针 every settings page re-applies
+     * orientation on resume 守的就是这条）。
+     */
+    override fun onResume() {
+        super.onResume()
+        OrientationPrefs.applyToSettingsPage(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

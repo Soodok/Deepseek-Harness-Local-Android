@@ -125,4 +125,59 @@ class InstallErrorSummaryTest {
         val raw = "file:///a/b/c.js:12"
         assertEquals(raw, InstallErrorSummary.stripLocationLines(raw))
     }
+
+    // ---------------------------------------------------- v1.7.32：只剩位置行
+
+    /**
+     * 真机截图形态：整份 msg 就是一段被上游截断的 file:// 路径。
+     *
+     * 截图原文（PLZ110 · Android 16，插件中心失败卡片）：
+     *     失败: file:///data/user/0/app.dsh.mobile/files/engine/lib/node_mod
+     * 恰 60 字符、末尾断在 node_mod —— 正是旧实现 `body.take(60)` 的输出。
+     * 这行字对用户和我们都**无法行动**：既不是错误码，也没有原因。
+     */
+    @Test
+    fun truncatedLocationOnlyOutputNeverBecomesSummary() {
+        val raw = "file:///data/user/0/app.dsh.mobile/files/engine/lib/node_mod"
+        assertEquals(InstallErrorSummary.UNKNOWN, InstallErrorSummary.summarize(raw))
+    }
+
+    /**
+     * 带行号的位置行：可以只留「文件名:行号」。
+     *
+     * 这不是「猜原因」，而是把**唯一确定的事实**（哪个文件崩溃）留下，
+     * 同时不把整串 /data/... 摆到按钮上。
+     */
+    @Test
+    fun locationWithLineNumberKeepsOnlyFileName() {
+        val raw = "file:///data/data/app.dsh.mobile/files/engine/lib/node_modules/corepack/dist/pnpm.js:4127"
+        assertEquals("pnpm.js:4127", InstallErrorSummary.summarize(raw))
+    }
+
+    /**
+     * CJS 栈头没有 `file://` 前缀，也要被识别成位置行。
+     *
+     * 摘要走「带行号 → 只留文件名:行号」那条路：`b.cjs:1` 说明「哪个文件第几行
+     * 崩了」，是唯一确定的事实；而整串 `/data/data/.../b.cjs:1` 不该进按钮。
+     */
+    @Test
+    fun cjsStackHeadWithoutSchemeTreatedAsLocation() {
+        assertTrue(InstallErrorSummary.isLocationOnly("/data/data/app.dsh.mobile/files/tmp/b.cjs:1"))
+        assertEquals(
+            "b.cjs:1",
+            InstallErrorSummary.summarize("/data/data/app.dsh.mobile/files/tmp/b.cjs:1"),
+        )
+    }
+
+    /** 位置行判据必须仍然放过真正的错误行（防止把线索删掉）。 */
+    @Test
+    fun errorLineWithFileUrlIsNotALocationLine() {
+        assertFalse(
+            InstallErrorSummary.isLocationOnly(
+                "Cannot find module 'file:///data/user/0/app.dsh.mobile/files/x/index.js'",
+            ),
+        )
+        assertFalse(InstallErrorSummary.isLocationOnly("Error [ERR_MODULE_NOT_FOUND]: x"))
+        assertTrue(InstallErrorSummary.isLocationOnly("file:///a/b/c.js:12:3"))
+    }
 }

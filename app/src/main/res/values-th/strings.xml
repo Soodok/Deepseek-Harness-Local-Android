@@ -1080,7 +1080,7 @@
     <string name="setting_voice_plugins_sub">จัดการปลั๊กอิน TTS และ STT</string>
     <string name="settings_row_plugins">ปลั๊กอินชุมชน</string>
     <string name="settings_row_plugins_sub">ติดตั้งและจัดการปลั๊กอินชุมชน dsh</string>
-    <string name="plugin_install_timeout">ติดตั้งปลั๊กอินนานเกินไป</string>
+    <string name="plugin_install_timeout">กำลังติดตั้งอยู่ — ปลั๊กอินขนาดใหญ่อาจใช้เวลาหลายนาที ตรวจสอบสถานะจริงได้ที่แท็บ "ติดตั้งแล้ว"</string>
     <string name="plugin_net_error">ข้อผิดพลาดเครือข่าย</string>
     <string name="setting_official_ui">UI อย่างเป็นทางการ</string>
     <string name="setting_official_ui_sub">ใช้เลย์เอาต์มือถือจากคอมมูนิตี้ (ดรอว์เวอร์ แถบการทำงานล่าง หน้าตั้งค่าเต็มจอ) เมื่อปิดจะใช้เลย์เอาต์หน้าจอแคบของเอนจินตามเดิม</string>

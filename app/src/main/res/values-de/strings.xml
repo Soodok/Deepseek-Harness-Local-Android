@@ -1135,7 +1135,7 @@
     <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
     <string name="settings_row_plugins">Community-Plugins</string>
     <string name="settings_row_plugins_sub">Dsh-Community-Plugins installieren und verwalten</string>
-    <string name="plugin_install_timeout">Die Installation dauert unerwartet lange. Prüfe den Tab "Installiert" für den echten Status oder versuche es erneut.</string>
+    <string name="plugin_install_timeout">Installation läuft noch — große Plugins können einige Minuten dauern. Prüfe den Tab "Installiert" für den echten Status.</string>
     <string name="plugin_net_error">Netzwerk nicht erreichbar: Die Plugin-Registry konnte nicht aufgeloest werden. Prüfe WLAN oder mobile Daten und versuche es erneut.</string>
     <string name="setting_official_ui">Offizielle Mobil-UI</string>
     <string name="setting_official_ui_sub">Das Community-Mobil-Layout verwenden (Drawer, untere Aktionsleiste, Vollbild-Einstellungen). Wenn aus, bleibt das native Schmalbildschirm-Layout der Engine unverändert. Wirkt nach einem Engine-Neustart.</string>

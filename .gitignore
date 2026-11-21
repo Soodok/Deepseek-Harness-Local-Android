@@ -92,6 +92,9 @@ scripts/probes/*.bin
 !/scripts/probes/_test_linux_chroot_sandbox.py
 !/scripts/probes/_test_linux_workbench.py
 !/scripts/probes/_test_linux_jobs.py
+# 插件安装自愈探针（v1.7.32）：守住 spec 来源不被 @latest 改写、丢失的暂存 tgz 能从 APK 重建、
+# 双阈值超时（无输出 60s / 绝对 30min）与错误摘要不再把 file:// 路径当正文
+!/scripts/probes/_test_plugin_install_selfheal.py
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # Android API 下限探针：禁止 skipNBytes/readNBytes 这类 minSdk 之上才有的 API（issue #98）

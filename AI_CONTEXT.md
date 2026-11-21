@@ -16091,3 +16091,107 @@ head=tail=2 → inputd 已消费 2 条事件（一次 tap 产生 2 条），**�
    时间线：上述文件 mtime 09:55:58–10:20:00，晚于本轮两个提交（09:38:47 / 10:16:05），
    确认与 Lead 无关。
 3. 未跟踪 `docs/ui-preview/probe-opacity.mjs`（2026-11-13 的 Chrome CDP 取色探针，非本轮产物，仍挂着）。
+
+---
+
+## 第一百五十三章（v1.6.0-beta.27 · 2026-11-21）插件「装什么都失败」：报错不命中任何自愈分支，与摘要把路径当原因
+
+### 一、用户反馈与三个独立故障的分离
+
+宝宝转来两张反馈截图（插件中心 + 官方原生插件各一）。逐张读完后先做**分离**，因为三件事被混在同一个「装不上」的印象里：
+
+| 现象 | 出处 | 归属 |
+| --- | --- | --- |
+| 按钮摘要显示 `失败: file:///data/user/0/.../engine/lib/node_mod`（60 字符截断） | err_zoom.png / b_zoom.png | **本次主修 ①** 摘要把路径当原因 |
+| Linux 容器页红条 `FileNotFoundException: .../distros/alpine323/usr/lib/lib…` | k4.png | 独立故障（alpine 发行版 .so 缺失），**不在本次范围** |
+| 缺依赖态红条 `E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)` | w1.png | 独立故障（Ubuntu apt 目录权限），**不在本次范围** |
+
+真正让「装什么都失败」的是 ①，以及下面查出的 ②。
+
+### 二、设备端决定性实验：目标缺失的报错不命中任何既有分支
+
+在此之前，`PluginCenter.install()` 已有五个自愈分支：isPnpmStoreLock / isUnexpectedStore / isModulesDir / isBrokenLockfile / isIgnoredBuilds。
+
+**实验**：在 emulator-5554（vC402，pnpm 12.21.0）上删掉 `files/plugin-staging/xiaopb-dsh-mobile-layout-0.4.12-staged.tgz`（内置插件首装后 profile 的 `package.json` 里留着 `file:<该路径>` spec），再跑：
+
+```
+dsh plugin --profile web add is-odd
+```
+
+**实测原文（ADD_RC=1）**：
+
+```
+Error:   × adding a new package
+  ├─▶ Failed to resolve dependency tree: Failed to resolve dependency: Could
+  │   not install from "/data/user/0/.../xiaopb-dsh-mobile-layout-0.4.12-
+  │   staged.tgz" as it does not exist.
+  ╰─▶ Failed to resolve @xiaopb/dsh-mobile-layout@file:/data/user/0/...tgz
+Command failed with exit code 1: pnpm add is-odd
+```
+
+`grep -c "ERR_PNPM_LOCKFILE_MISSING_DEPENDENC|Broken lockfile"` = **0**。
+
+→ **五个分支全不命中**，错误原样抛给用户。这就是「装什么都失败」的机制：坏的不是用户要装的那个包，是 APK 自带的一个 tgz 文件没了，而没有任何一条路径去补它。
+
+补充实验：`pnpm install --fix-lockfile` 在目标不存在时 **exit 1 且一个字节都不改**（已实测），所以「先让它修 lockfile」这条路在资产缺失时是死路。
+
+### 三、修复
+
+**`engine/PluginCenter.kt`**
+- 新增 `internal fun isMissingLocalTargetError(msg)`：认 `as it does not exist` + `Could not install from`，或 `ENOENT` + `.tgz`。与 `isBrokenLockfileError` **互斥**（设备实测那条报错不含 Broken lockfile）。
+- `isBrokenLockfileError` 由 `private` 改 `internal`，供单测直接调用，避免测试里重复实现一份判据。
+- `install()` 在 broken-lockfile 分支**之前**插入独立分支：判到位 → `ProfilePluginProvisioner.restoreMissingStaged(ctx)` → restored>0 就 `runDshPluginCli(ctx, "add", spec)` 重试**同一个 spec**（绝不用 `@latest`，否则内置插件会永久脱离 APK 资产）→ 仍失败则摘要追加 `[rebuilt N bundled tarball(s), still failing]`。
+
+**`engine/ProfilePluginProvisioner.kt`**
+- 新增 `fun restoreMissingStaged(ctx): Int`：只对**已缺失**的文件重建（`staged.isFile && length>0` 就跳过），内容来自 APK 资产，**过 sha256 校验**，校验不过就删掉不留半个文件。
+- `ensureAll` 开头（KillSwitch 检查后、循环前）调用一次，打 `boot: restored N missing staged tgz`。放在开机而不是等第一次失败，是因为这个故障是**持久**的：不补就每次都要先失败一次，用户看到的就是「永远装不上」。
+
+**`engine/InstallErrorSummary.kt`**（修 ①）
+- `stripLocationLines` 的判据从「整行 `^file://\S+$`」放宽到同时认无 scheme 的裸绝对路径，且 ③/④ 步都加 `!isLocationOnly(it)` 过滤。
+- 新增 ⑤ 兜底：到这一步说明整份 msg 只剩路径 → 有 `:行号` 就留 `文件名:行号`（对排查有用且不会把 /data/... 塞进按钮），没有行号就返回 `UNKNOWN`。**永不返回裸路径**。
+- 新增 `const val UNKNOWN = "unknown"`，⑤ 用它。
+
+**`PluginStoreActivity.kt`**（看门狗）
+- 旧实现 150 秒到点就放开按钮并提示「安装耗时超出预期」。实测装 `@yolk_vat-y/dsh-project-memory`（leanvec 83MB + pdfjs-dist）要 133 秒，弱网更久 → 旧看门狗会在 pnpm **正常下载**时放开按钮，用户点第二次就排在单线程池后面、还得再下一遍，看起来像「怎么装都装不上」。
+- 改为 `armWatchdog(round)` 递归续挂：每 150 秒报道一次真实状态并续挂，按钮保持禁用；第 12 轮（30 分钟，与 `CLI_HARD_TIMEOUT_MS` 对齐）才真正放手。
+- **踩到的坑**：第一版写成 `if (round + 1 < WATCHDOG_MAX_ROUNDS) armWatchdog(round + 1)`，最后一轮不再续挂、也就不再进来判「放手」分支 —— 按钮永久锁死，用户想重试都没有入口。改成 `round` 从 1 数到 MAX、每轮先算 `val last = round >= MAX`、续挂条件 `if (!last)`。
+
+### 四、顺手修掉两处既有缺陷（探针此前在 main 上就是红的）
+
+两个探针失败**不是本轮引入**（`git log -1 -- ReportActivity.kt` = b7dfe9cd，本轮未碰该文件），但都指向真实缺陷，一并修：
+
+1. `_test_view_types.py`：`ReportActivity.kt` 用 `findViewById<Button>` 接 `reportCopy/reportMail/reportGithub`，而布局里这三个是 `MaterialButton`。泛型只是编译期断言，运行期 `findViewById` 按 id 查到的实例是 MaterialButton —— 编译能过、可能抛 ClassCastException。改成 `findViewById<MaterialButton>` 并补 import。
+2. `_test_responsive_native_ui.py`：`ReportActivity` 只在 `onCreate` 调 `OrientationPrefs.applyToSettingsPage(this)`，缺 `onResume` 重应用。从外观页返回时旧实例的 `requestedOrientation` 仍是旧值，会把刚改好的屏幕扳回去。补 `onResume` 覆写。
+
+修完 **162 个探针 162 通过 / 0 失败**（此前 160/2）。
+
+### 五、验证证据
+
+| 项 | 命令 / 操作 | 结果 |
+| --- | --- | --- |
+| 单测 | `testDebugUnitTest --rerun-tasks`（x86_64 / noruntime / offline） | **10 类 101 例 0 失败**（PluginSpecSourceTest 7 例全绿） |
+| 探针 | 全量 `scripts/probes/_test_*.py` | **162 / 162 通过** |
+| i18n | `scripts/check-i18n.py` | All i18n checks passed |
+| 构建 | `assembleDebug`（x86_64 / full / rt-x86_64-ci.zip） | BUILD SUCCESSFUL，APK 179,288,216 B |
+| 开机自愈 | 删 tgz → 重启 App | `boot: restored 1 missing staged tgz`，staging 目录文件回位，`health-poll 6335ms` |
+| 安装时自愈 | 运行期删 tgz → 插件中心点安装 | `local dependency target missing; restored=1; retrying once` → `ok=true` |
+| 反馈页 | 装包后开 ReportActivity、点 Copy | 无 FATAL / 无 ClassCastException，页面文案齐全 |
+
+**新增单测 `PluginSpecSourceTest` 的 4 例失败归类**（原有 3 例保留）：
+- `realMissingTargetErrorIsClassifiedAsMissingTarget`：用设备实测原文，同时断言它**不**被判成 broken lockfile。
+- `enoentOnTarballAlsoCounts`
+- `brokenLockfileIsNotClassifiedAsMissingTarget`
+- `unrelatedErrorsAreNeitherClass`：网络 404 / EACCES 都不触发任何自动重建。
+
+### 六、假绿教训（本轮第三次同类）
+
+探针最初只断言 `"isMissingLocalTargetError(msg)" in install`。把条件改成 `if (false && isMissingLocalTargetError(msg))` 后，函数名照样在源码里，**探针仍全绿 57/0** —— 判据比被测对象宽，改坏也不报红。
+
+已改成正则 `if \((!ok && )?isMissingLocalTargetError\(msg\)\)` 并要求 `!ok &&` 组存在。复验：该变异使探针变红（54 通过 1 失败），还原后 `RESTORED_OK` 57/0。
+
+同轮另修一条探针判据：`_test_plugin_install_errors.py` 用 `private fun isBrokenLockfileError` 精确匹配取函数体，改成 internal 后取不到 → 断红。正则改为 `(?:private|internal)`。
+
+### 七、设备状态与遗留
+
+- emulator-5554 装 **vC403 / 1.6.0-beta.27**，profile 已还原为干净依赖（mobile-layout file: + dsh-project-memory ^0.7.1），测试插件 `dsh-status-rotator` 与 `.plugin-manager` 残留已清，重启验证正常（`health-poll 6293ms`）。
+- 未处理（需单独开题）：**alpine323 的 `usr/lib/lib*.so` 缺失**（k4.png）、**Ubuntu apt lists/partial 权限被拒**（w1.png）。两者都是 Linux 发行版层的独立故障，与插件安装无关。

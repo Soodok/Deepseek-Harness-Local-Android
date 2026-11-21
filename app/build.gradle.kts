@@ -334,13 +334,25 @@ android {
         // 注意：本次 dsh_alpine.c 的改动只碰兜底调用实参，aarch64 产物字节不变
         // （md5 仍 5da598e3…，已实测两次重编同 md5）；x86_64 产物随源码重出
         // 58888 B / md5 91cb5f95…。
-        versionCode = 402
+        // v1.6.0-beta.27（2026-11-21）：插件「装什么都失败」的两个真因。
+        // 1) 内置插件暂存 tgz 被删后，pnpm 报的是
+        //    Could not install from ".../xxx-staged.tgz" as it does not exist，
+        //    既不含 ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY 也不含 Broken lockfile
+        //    （真机 grep 计数为 0），旧实现五个自愈分支全不命中，错误原样甩给用户。
+        //    现在有独立判据 isMissingLocalTargetError + 独立分支：从 APK 资产重建
+        //    （过 sha256）后重试同一 spec；ensureAll 开机也先补一遍，不必等失败。
+        // 2) 安装按钮摘要把 file:// 路径当原因（真机截图 60 字符断在 node_mod）：
+        //    summarize 的兜底改为「有行号留文件名:行号，否则 unknown」，永不返回裸路径。
+        // 同版顺手修两处既有缺陷：ReportActivity 的 MaterialButton 用 Button 接
+        // （view_types 探针红）与缺 onResume 重应用方向（responsive 探针红）。
+        // 两个探针此前在 main 上就是红的，现 162/162 全绿。
+        versionCode = 403
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.26"
+        versionName = "1.6.0-beta.27"
 
         ndk {
             abiFilters += listOf(targetAbi)
