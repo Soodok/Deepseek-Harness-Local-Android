@@ -17007,3 +17007,17 @@ versions.json）与 `@emnapi/runtime` **全都在** ⇒ 本地/CI 产物是完�
   `metadata` + `jpeg` 两步就能证明整条 wasm 链路是通的。
 - JS 源码的缩进不一定是 tab：`sharp.cjs/sharp.mjs` 是 prettier 风格的 **6 空格**，
   锚点写 tab 会永远匹配不上（本轮第一版脚本就栽在这，报「switch 里没有 linux-arm64 case」）。
+
+### v1.6.0-beta.33（versionCode 409）出包记录
+
+- 命令：`gradle.bat -p . -Ppackage=full -PruntimeZip="E:/tmp/rt-arm64-patched.zip" assembleRelease`
+  （日志确认 `runtime: embedded rt-arm64-patched.zip (130 MB)`、`BUILD SUCCESSFUL in 4m 30s`）。
+- 产物：`app/build/outputs/apk/release/app-release.apk`，**176175071 B**，
+  sha256 `056166eb3138e48978e64475f6ae876a0508c2489dd6e8a0d487fdd1b4df4c35`，
+  `versionCode=409 / versionName=1.6.0-beta.33`。
+- 归档副本：`G:/dsh-mobile-1.6.0-beta.33-vc409-arm64-v8a-full.apk`。
+- **从 APK 内部取 `assets/runtime.zip`（137338804 B）回读验证**：`sharp.mjs` 含
+  `DSH_SHARP_ANDROID` 标记、含 `case "android-arm64":`、help 已改写、
+  `Manually install libvips` 已消失 ⇒ 补丁确实进了包，不是只在工作树里。
+- 提交：`bbf947d6`（补丁+探针+接线）、`249f2f35`（本文档一百五十六）、
+  `a585080c`（版本号）；已推 `7f9d559f..a585080c main -> main`（直连成功）。
