@@ -16195,3 +16195,109 @@ Command failed with exit code 1: pnpm add is-odd
 
 - emulator-5554 装 **vC403 / 1.6.0-beta.27**，profile 已还原为干净依赖（mobile-layout file: + dsh-project-memory ^0.7.1），测试插件 `dsh-status-rotator` 与 `.plugin-manager` 残留已清，重启验证正常（`health-poll 6293ms`）。
 - 未处理（需单独开题）：**alpine323 的 `usr/lib/lib*.so` 缺失**（k4.png）、**Ubuntu apt lists/partial 权限被拒**（w1.png）。两者都是 Linux 发行版层的独立故障，与插件安装无关。
+
+## 第一百五十一章 容器终端联网全废 —— DNS 桥接端口第三次漏接线
+
+**时间**：2026-11-21 12:00-12:45 · **提交**：642023b7 · **版本**：vC403 → **vC404 / 1.6.0-beta.28**
+
+### 一、现象
+
+宝宝反馈容器终端「用不了」。逐项实测后，真正坏的是**联网**，其余基本正常。
+
+真机/模拟器上容器终端里装包：
+
+```
+localhost:/ws$ apk add tree
+ERROR: tree-2.2.1-r0: temporary error (try again later)
+2 errors; 81 MiB in 40 packages
+```
+
+看起来像镜像站故障或网络不通，实际与网络无关。
+
+### 二、根因
+
+musl 的 `getaddrinfo` 把 DNS 端口**硬编码成 53**。App uid 绑不上 53（特权端口），所以走 loader 双向改写：出程 `sendto 127.0.0.1:53 → 127.0.0.1:<DSH_DNS_PORT>`，回程 `<port> → 53`（见 `app/src/main/cpp/CMakeLists.txt:196-206`、`dsh_alpine.c:988-1001`）。
+
+端口号从环境变量 `DSH_DNS_PORT` 读。终端会话的 env 长期只有五项：
+
+```
+PATH / HOME / TMPDIR / TERM / DSH_HOME
+```
+
+而 `buildEngineArgv()`（同文件 359-456 行）给十九项，其中就有 `DSH_DNS_PORT`。于是**引擎进程内联网正常、终端里全废**。
+
+这是同一个机制第三次漏接线：`LinuxContainerRunner.kt:248` 早就有了，`LinuxPackageManager.kt:96/526` 也有注释记录。
+
+### 三、单变量对照（真机取证）
+
+| 操作 | 结果 |
+| --- | --- |
+| 终端内直接 `apk add tree` | `temporary error (try again later)`，exit 非 0 |
+| 终端内 `export DSH_DNS_PORT=<port>` 后同一条命令 | **`OK: 91 MiB in 42 packages`**（模拟器）/ `OK: 81 MiB in 40 packages`（真机） |
+| `unset DSH_DNS_PORT` 再试 | 退回 `temporary error` |
+
+### 四、修复
+
+`LinuxEngineLauncher.buildTerminalArgv()` 的 env 枚举末尾追加（+28 行，含大段注释）：
+
+```kotlin
+val dnsPort = LinuxDnsProxy.currentPort().takeIf { it > 1023 }
+    ?: runCatching { LinuxDnsProxy.start(ctx) }
+        .getOrDefault(0)
+        .takeIf { it > 1023 }
+dnsPort?.let { add("DSH_DNS_PORT=$it") }
+```
+
+**为什么要复绑**：代理被看门狗判定失效时会 `stop()`，此后 `currentPort()` 返回 0（它的实现是 `if (running && socketsAlive && loopAlive) port else 0`）。只读不复绑 = 静默哑掉。
+
+**为什么判 > 1023**：`LinuxDnsProxy` 正常绑高位端口；返回 <=1023 说明代理没起来，此时注入无意义。
+
+### 五、探针与假绿教训（第三次同类）
+
+旧探针 `_test_linux_dns_bypass.py` 第 [4] 项在**整份** `LinuxEngineLauncher.kt` 里找 `DSH_DNS_PORT=` / `currentPort()` / `it > 1023` —— 三样在 `buildEngineArgv` 里全都有，所以终端漏传它照样全绿。
+
+新探针 `_test_linux_terminal_in_container.py` 新增：
+
+1. helper `slice_terminal_argv(src)`：从 `fun buildTerminalArgv(` 切到**第一条恰为 4 空格的 `}`** 的行（体内两个 `buildList` 都是 8 空格缩进，所以第一条 4 空格 `}` 必是函数尾）。
+2. K1-K5 五条断言：函数体可切出 / 注入 `DSH_DNS_PORT=` / 取 `currentPort()` / 有 `start(` 复绑 / `takeIf { it > 1023 }`。
+
+**变异反验**（两条都让对应断言变红）：
+
+| 变异 | 结果 |
+| --- | --- |
+| `dnsPort?.let { add(...) }` → `dnsPort?.let { /* MUTATED */ }` | [K2] FAIL，38 checks 1 failed，RESTORED_OK |
+| 删掉 `?: runCatching { LinuxDnsProxy.start(ctx) }...` 只留 `currentPort().takeIf{...}` | [K4] FAIL，RESTORED_OK |
+
+### 六、验证证据
+
+| 项 | 命令 / 操作 | 结果 |
+| --- | --- | --- |
+| 探针 | 全量 `scripts/probes/_test_*.py`（`PYTHONIOENCODING=utf-8`） | **163 / 163 通过，0 红** |
+| 单测 | `testDebugUnitTest`（x86_64 / noruntime / offline） | **10 类 101 例 0 失败** |
+| i18n | `scripts/check-i18n.py` | All i18n checks passed |
+| 编译 | `compileDebugKotlin` | BUILD SUCCESSFUL in 2m54s |
+| 构建 | `assembleDebug`（x86_64 / full / rt-x86_64-ci.zip） | BUILD SUCCESSFUL，APK **179,316,645 B** |
+| 安装 | `adb -s emulator-5554 install -r` | Success，`versionCode=404 / versionName=1.6.0-beta.28` |
+| **设备端** | 终端内 `printenv DSH_DNS_PORT` | **15353** |
+| **设备端** | 终端内 `apk add tree` | **OK: 91 MiB in 42 packages**（修复前同命令 temporary error） |
+
+### 七、顺带查清的「不是缺陷」
+
+| 观察 | 结论 |
+| --- | --- |
+| `/ws` 里 `ls -a` 只有 `.` `..` | 宿主 `files/dsh-home/workspaces` 本来就是空目录（`storages/workspace.json` 的 `workspaces: {}`），用户没建过工作区。不是缺陷。 |
+| `top` 报 `can't open 'stat'` | App uid 读不到 `/proc/stat` 与 `/proc/loadavg`（`adb shell run-as app.dsh.mobile cat /proc/stat` 同样 Permission denied，shell uid 正常）。**Android 平台限制**，busybox top 因此启动失败，不是容器 bug。`/proc/meminfo` 可读。 |
+| `infocmp` 不存在、无 `/usr/share/terminfo` | 未装 ncurses-bin。但 `vi` 全屏渲染正常，说明 vi 自带或不依赖 terminfo。 |
+| `dev` 命令 not found | 门脚本（assets/gates/）shebang 指向 bionic bash + LD_LIBRARY_PATH，容器是 musl，本就不通用。 |
+| `less` / `vi` / `tar` / `grep` / `sed` / `curl` / `wget` 都在 | `/usr/bin/less`、`/usr/bin/vi`、`/bin/tar`、`/bin/grep`、`/bin/sed`、`/usr/bin/curl`、`/usr/bin/wget`。`nano`/`htop`/`python3`/`git` 未装（可按需 apk add，现在能装了）。 |
+| `ps a` 正常 | 输出 `app.dsh.mobile` + 两条 `dsh-alpine`。 |
+| `stty size` → `18 39` | PTY 尺寸正确传入。`stty` 全量输出正常（speed 38400、intr=^C 等）。 |
+| 中文与 emoji 渲染 | **正常**。`cat` 一个含「你好世界 / 中文测试ABC / emoji: ✅🎉」的文件，终端完整显示。此前「中文显示为空」是 `adb shell input text` 传 CJK 的测量问题，不是终端缺陷。 |
+| `seq 1 200` | 正常滚动到底部。 |
+
+### 八、教训
+
+1. **同一机制会反复漏接线**：`DSH_DNS_PORT` 已在 `LinuxContainerRunner`、`buildEngineArgv` 接好，终端是第三个入口。新增任何「进容器」的入口时，必须核对 env 表与 `buildEngineArgv` 的差异。
+2. **判据范围宽于被测对象 = 假绿**。这是本项目第三次同类事故（前两次：TouchDelegate 存在性断言、isMissingLocalTargetError 函数名断言）。凡「整份文件里 grep 某个 token」的探针，都要先切片到目标函数体。
+3. **adb 测量陷阱**：`%20` 不是空格（只有 `%s` 是）；`$VAR` 会在 adb shell 侧被宿主先展开，要看真实值用 `printenv`；`input text` 传 CJK 不可靠，改用「写文件 + cat」验证渲染。
+
