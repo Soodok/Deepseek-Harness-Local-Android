@@ -17021,3 +17021,87 @@ versions.json）与 `@emnapi/runtime` **全都在** ⇒ 本地/CI 产物是完�
   `Manually install libvips` 已消失 ⇒ 补丁确实进了包，不是只在工作树里。
 - 提交：`bbf947d6`（补丁+探针+接线）、`249f2f35`（本文档一百五十六）、
   `a585080c`（版本号）；已推 `7f9d559f..a585080c main -> main`（直连成功）。
+
+---
+
+## 第一百五十八章 灵动岛侧面板「全透明僵死」根因与修复（v1.7.22 / vC410）
+
+### 用户报的现象
+
+「灵动岛完全全透明、看不见，但点屏幕空白处就能唤出来」。真机与模拟器均无法直接复现，
+只有少数用户反馈；1.4.0 及更早版本无此问题。
+
+### 根因（已由对照组实机复现确认）
+
+侧面板把 **视图可见性当成了逻辑状态**：
+
+```kotlin
+val panelOpen = sideHost?.visibility == View.VISIBLE   // 旧实现
+```
+
+而打开路径是三步：
+
+```
+visibility = VISIBLE  →  alpha = 0f  →  120ms 淡入到 1
+```
+
+淡入一旦被打断（切后台 / 锁屏 / 来电 / 旋屏 / 系统动画被禁用导致帧回调停摆），
+动画冻结在当前 alpha，host 永久停在「VISIBLE + 全透明」：
+
+- `renderIslandVisibility()` 里 `panelOpen` 恒为 true → `showHandle = false` → **把手 GONE，屏幕上什么都看不见**；
+- 那层 `MATCH_PARENT` + `isClickable=true` 的透明 scrim 仍在最上层吃点击 → **点任意空白命中它 → 走关闭分支 → 把手回来**。
+
+这正好解释「看不见但点空白能唤出」，也解释了为何只在少数设备上出现（取决于该机的
+动画策略与生命周期时序）。旋屏路径 `onConfigurationChanged` 完全不碰 sideHost，是敞开的。
+
+### 修复要点（`MainActivity.kt`，+80 −19）
+
+1. 新增显式逻辑状态 `private var sidePanelOpen = false`；`renderIslandVisibility()` 的
+   `panelOpen` 改读它。
+2. 新增 `resetSidePanel(animate: Boolean)`：先清状态，再 `h.animate().cancel()`，
+   立即路径与 `withEndAction` 路径**都把 `h.alpha` 复位成 1f**（漏这一步，下次打开又从 0 起）。
+3. `toggleSidePanel()` 关闭分支与 `closeSidePanelNow()` 统一走 `resetSidePanel`。
+4. 打开分支在 `host.alpha = 0f` 之后落定 `sidePanelOpen = true`，并 `host.animate().cancel()` 清残留。
+5. 四处强制关（onResume 的 dock 变化 / bottomToolbar 的 onHome / applyDock 的 TOP·BOTTOM /
+   snapHandleToEdge）全改 `resetSidePanel(animate = false)`，不再各自直写 `View.GONE`。
+6. `render(state)` 与 `onBackPressed` 的判据改 `sidePanelOpen`。
+7. onResume 末尾补 alpha 自愈：`if (sidePanelOpen) sideHost?.let { if (it.alpha < 1f) it.alpha = 1f }`。
+
+### 新增探针
+
+`scripts/probes/_test_island_side_panel_state.py`，18 条检查，锁三件事：状态与视图分离、
+归零一处收口（含两处 alpha 复位与 animate().cancel()）、没有旁路直写 visibility。
+
+**注意**：判据必须跑在**去注释后的代码**上。第一版假红命中的是 KDoc 里反引号引用的旧写法，
+加了 `strip_comments()` 后才真绿 —— 解释性注释会被当成违规。
+
+### 验证证据
+
+- 变异负对照 5/5 全红（`E:/tmp/island/mutate.py`）：state-field-not-cleared /
+  panelOpen-reads-visibility / alpha-not-restored-in-callback / stray-direct-visibility-write /
+  open-path-state-after-fade → 全部 exit=1 且命中对应断言；`RESTORED_OK`
+  （sha256 `097ecb4da62f041a…` 前后一致），恢复后 exit=0。
+- `compileDebugKotlin`（x86_64/noruntime/--offline）BUILD SUCCESSFUL；`testDebugUnitTest` BUILD SUCCESSFUL。
+- 探针全量 **166 / 166** 通过。**踩坑**：Windows 控制台 GBK 无法输出 `✓`，21 个探针报
+  `UnicodeEncodeError` 假失败；加 `export PYTHONIOENCODING=utf-8` 后全绿。
+- 装机（emulator-5554，vC410 / beta.34）：正常开合循环通过（右侧收起态
+  `handleBar [1008,1112][1080,1233]` → 点把手展开完整面板 → 点空白收起）。
+- **A/B 竞态实测**：把淡入从 120ms 拉长到 3000ms 制造可命中窗口，点把手后 0.35s 按 HOME，
+  1.5s 后回前台立即截图：
+  - 对照组（`panelOpen` 读 visibility + 去掉 onResume 自愈）：面板停在近全透明，
+    采样点 `(176,178,182)` 是 Preview Notice 白底透出的混色，面板内文字只剩重影 —— **复现用户故障**。
+  - 修复版（同条件）：采样点 `(40,42,47)` 纯填充，与自然展开 `(40,42,47)` 完全一致。
+
+### 提交
+
+`aa4477ce` fix(island): 侧面板改用显式状态，修复淡入被打断后的全透明僵死（2 文件 +241 −19）。
+
+### 遗留
+
+- 真机（192.168.101.21:9000）当前装的是 release 包、`package not debuggable`，本轮无真机证据，
+  需宝宝装 debug 包或升到含此修复的版本后再验。
+- 工作区另有 5 个他人改动未提交：`app/build.gradle.kts`、`app/src/main/cpp/dsh_alpine.c`、
+  `app/src/main/jniLibs/{arm64-v8a,x86_64}/libdsh_alpine.so`、`scripts/gen_bpf_tree.py`、
+  `scripts/probes/_test_dsh_alpine_source_sync.py`；未跟踪 `docs/ui-preview/probe-opacity.mjs`。
+- `scripts/probes/*` 被 `.gitignore` 第 79 行忽略，新探针须 `git add -f`。
+
