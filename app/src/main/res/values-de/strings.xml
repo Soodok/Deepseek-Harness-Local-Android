@@ -2023,4 +2023,6 @@ Nur der Entwickler kann ihn lesen. Nicht öffentlich, nicht indexiert, nach 30 T
     <string name="report_consent_expired">Zeit abgelaufen — als Ablehnung gewertet</string>
     <string name="report_consent_approve">Zustimmen und senden</string>
     <string name="report_consent_deny">Ablehnen</string>
+    <string name="about_report_off_title">Fehlerberichte dauerhaft abschalten</string>
+    <string name="about_report_off_sub">Wenn aus, wird der report-Befehl der KI sofort abgelehnt und es erscheint kein Zustimmungsdialog.</string>
 </resources>

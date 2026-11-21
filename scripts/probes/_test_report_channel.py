@@ -113,4 +113,18 @@ for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"
     ok("F1 %s strings" % loc, not miss, "missing=%s" % miss)
 
 print("\n%d checks, %d failed" % (checks, failed))
+# ── G 关于页的「永久关闭」开关
+about = read("app/src/main/res/layout/activity_about.xml")
+aboutkt = read("app/src/main/java/app/dsh/mobile/AboutActivity.kt")
+ok("G1 layout has the switch row", 'android:id="@+id/swReportOff"' in about)
+ok("G2 activity wires the switch", "R.id.swReportOff" in aboutkt)
+ok("G3 initial value read before listener",
+   aboutkt.find("isChecked = ReportConsentGate.permanentlyDisabled") <
+   aboutkt.find("setOnCheckedChangeListener"), "顺序反了会立刻回调一次写回默认值")
+ok("G4 writes through the same pref", "setPermanentlyDisabled(this, checked)" in aboutkt)
+for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th", "values-ru"):
+    txt = read("app/src/main/res/%s/strings.xml" % loc)
+    ok("G5 %s about switch strings" % loc,
+       'name="about_report_off_title"' in txt and 'name="about_report_off_sub"' in txt)
+
 sys.exit(1 if failed else 0)

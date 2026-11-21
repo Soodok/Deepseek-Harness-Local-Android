@@ -2017,4 +2017,6 @@
     <string name="report_consent_expired">Время истекло — считается отказом</string>
     <string name="report_consent_approve">Согласиться и отправить</string>
     <string name="report_consent_deny">Отклонить</string>
+    <string name="about_report_off_title">Навсегда отключить отчёты об ошибках</string>
+    <string name="about_report_off_sub">Если выключено, команда report у ИИ отклоняется сразу и окно согласия не появляется.</string>
 </resources>

@@ -2017,4 +2017,6 @@ Only the developer can read it. Not public, not indexed, deleted after 30 days.<
     <string name="report_consent_expired">Timed out — treated as declined</string>
     <string name="report_consent_approve">Agree and send</string>
     <string name="report_consent_deny">Decline</string>
+    <string name="about_report_off_title">Turn off bug reporting</string>
+    <string name="about_report_off_sub">Once off, the AI report command is refused outright and no consent dialog appears.</string>
 </resources>

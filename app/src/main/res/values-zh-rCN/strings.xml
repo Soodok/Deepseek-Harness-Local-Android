@@ -2020,4 +2020,6 @@
     <string name="report_consent_expired">已超时，按拒绝处理</string>
     <string name="report_consent_approve">同意并发送</string>
     <string name="report_consent_deny">拒绝</string>
+    <string name="about_report_off_title">永久关闭问题反馈</string>
+    <string name="about_report_off_sub">关掉之后 AI 的 report 命令会被直接拒绝，也不会再弹同意窗口。</string>
 </resources>

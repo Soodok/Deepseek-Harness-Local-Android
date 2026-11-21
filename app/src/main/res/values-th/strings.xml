@@ -1967,4 +1967,6 @@
     <string name="report_consent_expired">หมดเวลา — ถือว่าปฏิเสธ</string>
     <string name="report_consent_approve">ยินยอมและส่ง</string>
     <string name="report_consent_deny">ปฏิเสธ</string>
+    <string name="about_report_off_title">ปิดการส่งรายงานปัญหาถาวร</string>
+    <string name="about_report_off_sub">เมื่อปิดแล้ว คำสั่ง report ของ AI จะถูกปฏิเสธทันที และจะไม่มีหน้าต่างขอความยินยอมอีก</string>
 </resources>

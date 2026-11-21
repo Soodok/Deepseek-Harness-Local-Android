@@ -1977,4 +1977,6 @@ Somente o desenvolvedor lê. Não é público, não é indexado, é apagado apó
     <string name="report_consent_expired">Tempo esgotado — tratado como recusa</string>
     <string name="report_consent_approve">Concordar e enviar</string>
     <string name="report_consent_deny">Recusar</string>
+    <string name="about_report_off_title">Desativar relatórios de problemas</string>
+    <string name="about_report_off_sub">Quando desativado, o comando report da IA é recusado e nenhum diálogo de consentimento aparece.</string>
 </resources>

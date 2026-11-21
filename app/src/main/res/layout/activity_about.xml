@@ -64,6 +64,15 @@
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="@string/about_repos" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:textStyle="bold" />
             <LinearLayout android:id="@+id/reposBox" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:orientation="vertical" />
 
+            <!-- 永久关闭问题反馈（v1.6.x）：只提供「关」，不提供更细的分级 ——
+                 分级开关会让人以为「关了一半」还安全，实际不是。 -->
+            <LinearLayout android:id="@+id/rowReportOff" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:gravity="center_vertical" android:orientation="horizontal" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_report_off_title" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" android:text="@string/about_report_off_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
+                </LinearLayout>
+                <Switch android:id="@+id/swReportOff" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:contentDescription="@string/about_report_off_title" />
+            </LinearLayout>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:padding="16dp" android:text="@string/about_privacy_note" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="3dp" />
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>

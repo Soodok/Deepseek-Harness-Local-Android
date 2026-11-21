@@ -43,6 +43,14 @@ class AboutActivity : ThemedActivity() {
         findViewById<TextView>(R.id.txtVersion).text =
             getString(R.string.about_version, versionName())
 
+        // 永久关闭问题反馈：只给「关」这一个粒度。
+        // 先设初值再挂监听，否则 setChecked 会立刻回调一次、把刚读到的值又写回去。
+        val swReportOff = findViewById<android.widget.Switch>(R.id.swReportOff)
+        swReportOff.isChecked = ReportConsentGate.permanentlyDisabled(this)
+        swReportOff.setOnCheckedChangeListener { _, checked ->
+            ReportConsentGate.setPermanentlyDisabled(this, checked)
+        }
+
         var versionTapCount = 0
         var firstVersionTapAt = 0L
         findViewById<TextView>(R.id.txtVersion).setOnClickListener {
