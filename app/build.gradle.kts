@@ -399,13 +399,13 @@ android {
         // apk update → OK: 26337 distinct packages available（零 WARNING 零 error）；
         // apk add --no-cache curl → OK: 91 MiB in 42 packages、容器内 curl 拉 APKINDEX → 200；
         // apk add --no-cache jq → OK: 92 MiB in 44 packages（含 oniguruma），jq --version → jq-1.8.2。
-        versionCode = 408
+        versionCode = 409
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.32"
+        versionName = "1.6.0-beta.33"
 
         ndk {
             abiFilters += listOf(targetAbi)
