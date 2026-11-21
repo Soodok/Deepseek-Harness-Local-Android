@@ -469,9 +469,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             val storedDock = CustomVisualPref.islandDock(this)
             if (storedDock != islandDock) {
                 islandDock = storedDock
-                sideHost?.visibility = View.GONE
+                resetSidePanel(animate = false)
             }
             applyDock()
+            // ★ v1.7.22：面板逻辑上开着、但 alpha 停在中间值时补到 1。
+            // 淡入动画在后台会被冻结（帧回调停摆），回到前台时补一次自愈，
+            // 否则面板会以半透明甚至全透明的样子继续吃掉全屏点击。
+            if (sidePanelOpen) sideHost?.let { if (it.alpha < 1f) it.alpha = 1f }
         }
         val currentTheme = ThemePref.get(this)
         val currentAccent = Accent.current(this).argb
@@ -1303,6 +1307,27 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private var sidePanelDock: IslandDock? = null
     private var sideHost: android.widget.FrameLayout? = null
 
+    /**
+     * 侧面板是否处于「用户已打开」的逻辑状态（v1.7.22）。
+     *
+     * ## 为什么不能再用 sideHost.visibility 当状态
+     *
+     * 旧实现把 `sideHost.visibility == VISIBLE` 直接当作「面板打开」：
+     * 打开流程是 `visibility = VISIBLE` → `alpha = 0f` → 120ms 淡入动画升到 1。
+     * 只要淡入在跑到一半时被打断（切后台 / 锁屏 / 来电 / 旋屏，Choreographer
+     * 帧回调停止，动画冻结在当前值），host 就永久停在「VISIBLE + 完全透明」。
+     * 后果是一整条链：
+     *   ① renderIslandVisibility 里 panelOpen 恒为 true → showHandle = false
+     *      → 把手被设成 GONE，屏幕上**什么都看不见**；
+     *   ② 那层 MATCH_PARENT、isClickable=true 的透明 scrim 还在最上层吃点击
+     *      → 点屏幕任意空白都会命中它 → toggleSidePanel 走关闭分支 → 把手回来
+     *      —— 用户看到的就是「完全透明，但点空白能唤出来」；
+     *   ③ applyDock 只在 TOP/BOTTOM 清 sideHost，LEFT/RIGHT 永不清 → 无法自愈。
+     *
+     * 现在把状态与视图分开：这里记逻辑状态，alpha 只负责观感。
+     */
+    private var sidePanelOpen = false
+
     private fun setupIslandDock() {
         islandDock = CustomVisualPref.islandDock(this)
         setupBottomToolbar()
@@ -1333,7 +1358,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             layoutInflater, parent,
             object : DshBottomToolbarController.Callbacks {
                 override fun onHome() {
-                    sideHost?.visibility = View.GONE
+                    resetSidePanel(animate = false)
                     hideRunModeOverlay()
                     val url = (application as DshApp).supervisor.webUrl()
                     if (url.isNotEmpty()) loadLocalUrl(url)
@@ -1418,7 +1443,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val ratio = CustomVisualPref.islandAlongRatio(this)
 
         if (islandDock == IslandDock.TOP || islandDock == IslandDock.BOTTOM) {
-            sideHost?.visibility = View.GONE
+            // ★ v1.7.22：换到贴顶/贴底时面板必须一起归位（状态 + 视图 + alpha）。
+            resetSidePanel(animate = false)
         } else {
             // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
             // 一条边拖到另一条边之后，缓存里的旧面板仍按旧 dock 绘制 —— 表现就是
@@ -1465,8 +1491,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val hit = findViewById<View>(R.id.handleHit)
         val side = islandDock == IslandDock.LEFT || islandDock == IslandDock.RIGHT
         val bottom = islandDock == IslandDock.BOTTOM
-        // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）
-        val panelOpen = sideHost?.visibility == View.VISIBLE
+        // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）。
+        // ★ v1.7.22：读**逻辑状态**而不是 sideHost.visibility —— 后者会在淡入
+        // 动画被打断时永久停在 VISIBLE（alpha 冻在 0），把手就被一直藏起来，
+        // 屏幕上看不见任何东西，而透明的 scrim 仍在吃点击。详见 [sidePanelOpen]。
+        val panelOpen = sidePanelOpen
         val showOverlay = !side && !bottom && !islandCollapsed
         val showHandle = !bottom && !panelOpen && (side || islandCollapsed)
         overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE
@@ -1633,27 +1662,54 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         (h.parent as? ViewGroup)?.removeView(h)
     }
 
-    /** 收起侧面板但不触发"展开"分支（拖动/开浮层时需要强制关）。 */
-    private fun closeSidePanelNow() {
-        val h = sideHost ?: return
-        if (h.visibility != View.VISIBLE) return
+    /**
+     * 把侧面板状态与视图**一起**归位（v1.7.22）。
+     *
+     * 所有「需要面板消失」的路径都必须走这里，不许再各自写
+     * `sideHost?.visibility = View.GONE` —— 那样只改视图、不改 [sidePanelOpen]，
+     * 逻辑状态会残留成「开着」，把手照样被藏起来。反过来，只改状态不改视图，
+     * 透明 scrim 会继续吃点击。两者必须同时归零，所以收敛成一个函数。
+     *
+     * @param animate 需要淡出观感时传 true（用户主动收起）；立即消失传 false
+     *   （换停靠边、回首页、旋屏重排 —— 这些场景下淡出反而闪）。
+     */
+    private fun resetSidePanel(animate: Boolean) {
+        sidePanelOpen = false
+        val h = sideHost ?: run {
+            renderIslandVisibility()
+            return
+        }
+        h.animate().cancel()
+        if (!animate || h.visibility != View.VISIBLE) {
+            h.visibility = View.GONE
+            h.alpha = 1f
+            renderIslandVisibility()
+            return
+        }
         h.animate().alpha(0f).setDuration(120L).withEndAction {
             h.visibility = View.GONE
-            // v1.7.13：可见性统一走唯一入口（不再这里单独点亮把手）
+            // ★ 收尾时把 alpha 复位成 1：下次打开是「VISIBLE + 从 0 淡入」，
+            // 若这里留 0，任何一次打断都会让面板停在不可见状态。
+            h.alpha = 1f
             renderIslandVisibility()
         }.start()
+    }
+
+    /** 收起侧面板但不触发"展开"分支（拖动/开浮层时需要强制关）。 */
+    private fun closeSidePanelNow() {
+        if (!sidePanelOpen) return
+        resetSidePanel(animate = true)
     }
 
     private fun dpV(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toggleSidePanel() {
         val existing = sideHost
-        if (existing != null && existing.visibility == View.VISIBLE) {
-            existing.animate().alpha(0f).setDuration(120L).withEndAction {
-                existing.visibility = View.GONE
-                // v1.7.13：同上，统一走唯一入口
-                renderIslandVisibility()
-            }.start()
+        // ★ v1.7.22：判据改成逻辑状态。用 visibility 判会漏掉「VISIBLE 但
+        // alpha 停在 0」的僵死态 —— 那时点把手会走「打开」分支重复铺一遍，
+        // 而屏幕上看不出任何变化，用户只能靠点空白处侥幸关掉。
+        if (sidePanelOpen) {
+            resetSidePanel(animate = true)
             return
         }
         val menuDock = if (islandDock == IslandDock.BOTTOM) IslandDock.RIGHT else islandDock
@@ -1773,6 +1829,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         host.visibility = View.VISIBLE
         host.alpha = 0f
+        // ★ v1.7.22：状态先落定，再做淡入。淡入只是观感 —— 即便它被打断
+        // （切后台冻结帧回调）导致 alpha 停在中间值，逻辑状态已是「打开」，
+        // 关掉时 resetSidePanel 会把 alpha 复位成 1，不会累积成永久透明。
+        sidePanelOpen = true
+        host.animate().cancel()
         host.animate().alpha(1f).setDuration(120L).start()
         val headText = findViewById<android.widget.TextView>(R.id.statusBar)?.text?.toString()
         panel.update(
@@ -2013,7 +2074,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 先把拖拽位移收回，再由 applyDock 按新停靠边重新摆位
         v.translationX = 0f
         v.translationY = 0f
-        sideHost?.visibility = View.GONE
+        resetSidePanel(animate = false)
         // 下面这行按新停靠边重摆把手（含 TOP 的 44x26 长方形）。
         // 不再有「恢复圆点外观」这一步 —— 圆点外观随 v1.7.6 的配置项一起没了。
         applyDock()
@@ -3342,7 +3403,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         applyIslandActivity(state)
         bottomMenu?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
-        if (sideHost?.visibility == View.VISIBLE) {
+        if (sidePanelOpen) {
             sidePanel?.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
         }
     }
@@ -3410,7 +3471,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     override fun onBackPressed() {
         if (bottomMenu?.isShowing == true) { bottomMenu?.dismiss(); return }
         if (runModeHost != null) { hideRunModeOverlay(); return }
-        if (sideHost?.visibility == View.VISIBLE) { closeSidePanelNow(); return }
+        if (sidePanelOpen) { closeSidePanelNow(); return }
         // v1.6.15：先问页面「有没有东西可关」，再考虑历史，最后才退出。
         //
         // 顺序为什么是这样：WebUI 是单页应用，切页面不写浏览器历史（实测
