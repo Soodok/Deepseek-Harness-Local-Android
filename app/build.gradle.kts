@@ -399,13 +399,83 @@ android {
         // apk update → OK: 26337 distinct packages available（零 WARNING 零 error）；
         // apk add --no-cache curl → OK: 91 MiB in 42 packages、容器内 curl 拉 APKINDEX → 200；
         // apk add --no-cache jq → OK: 92 MiB in 44 packages（含 oniguruma），jq --version → jq-1.8.2。
-        versionCode = 409
+        // v1.6.0-beta.34（2026-11-22）：App 域「管道全废」的真因 —— Android 外层
+        // seccomp 拦 pipe(22)、放行 pipe2(293)，只看号不看 IP（与 poll/select/
+        // fork/dup2 同族，第五个）。实测（模拟器 x86_64 / Android 34，App 域容器内
+        // python3 走 musl libc 裸 syscall 交替各 3 次）：
+        //     syscall(22)  pipe  -> rc=-1 errno=1 EPERM            3/3（fds 保持 0,0）
+        //     syscall(293) pipe2 -> rc=0  fds=(17,18)(19,20)(21,22)  3/3
+        // 负对照同时成立：adb shell / su 0 / run-as 三个域里 `echo hi | cat` 全正常。
+        // 用户侧表现：busybox ash 任何管道都 `can not create pipe: Bad file
+        // descriptor`(rc=2)，于是 a|b、strace -o（open_dummy_desc 先要 pipe）、
+        // Xvfb（用 pipe/socketpair 起子进程）全部废掉 —— 这也解释了此前一直误判
+        // 为「XKB 编译失败」的「点开始画面无反应 / /tmp/.X11-unix 没 socket」。
+        // 修法：LEGACY_X86_64 加 pipe（只拦 x86_64 —— aarch64 通用 ABI 无 __NR_pipe，
+        // musl 在那里本来就走 pipe2），handler 加 pipe → pipe2(fds, 0) 翻译，
+        // 语义完全等价（flags=0 即无 O_CLOEXEC/O_NONBLOCK）。
+        // 探针 76 → 89 checks：新增 [8] 段 13 条，覆盖「树 + 翻译 + 顺序 + 生成器」
+        // 四件事（含内联树与生成器逐行一致、aarch64 树不得泄漏 SYS_pipe）。
+        // 两组变异各打红自己的那几条：删 GEN 里的 pipe → 4 红；改掉源码分支 → 6 红。
+        // 产物：arm64-v8a 43,224 B / md5 652aeaee9fe4e8ef3f5b48d14a6ed66f（未变，
+        // aarch64 树一字未动）；x86_64 59,496 → 59,560 B / md5
+        // 129912edb0bc58ceae4ebb07569f1e52 → 7c970f78950081ee8ae09b2902219be1。
+        // v1.6.0-beta.35（2026-11-22）：「装完 xvfb 却起不来」的真因 —— Xorg 起子进程
+        // 前先做 setgid(getgid())/setuid(getuid())，App 域 seccomp 把这两个号拦成
+        // EPERM，于是 System()/Popen 的 fork 子进程 exit(127)、**从未 execve**。
+        // strace 实证（模拟器 x86_64 / Android 34 / App 域 / 经 loader，xv3.log）：
+        //   9357  getgid() = 10197 → setgid(10197) → SIGSYS __NR_setgid
+        //   → rt_sigreturn = -1 EPERM → exit_group(127)，零次 execve
+        // 被拦的号（各 3 次实测）：setuid(105)/setgid(106)/setreuid(113)/setregid(114)/
+        // setresgid(119)/setfsuid(122)/setfsgid(123)；**只有 setresuid(117) 放行**。
+        // setresgid 也被拦 → "gid 版等价翻译"这条路是死的，只能语义短路。
+        // 用户侧症状：Xvfb 报 XKB: Failed to compile keymap / Failed to activate
+        // virtual core keyboard: 2，/tmp/.X11-unix 永远没有 socket —— 长期被误判成
+        // xkeyboard-config 装坏或 xkbcomp 找不到；实际问题在子进程没起来。
+        // 修法：identity syscall 语义短路 —— 参数为 -1 或等于当前 uid/gid 时返回 0
+        // （与内核逐位等价，容器内 uid==euid==gid==egid 恒成立），其余老实 -EPERM；
+        // setfsuid/setfsgid 按内核契约返回旧值；setgroups 故意不放行（它天然 EPERM）。
+        // 探针 89 → 106 checks（[9] 段 17 条），两组变异各打红自己那几条。
+        // 产物：arm64-v8a 43,016 B / md5 2348ea8cbdf25d74a76688f1f3f313e6；
+        // x86_64 60,696 B / md5 2445a467279a7bb493791ab359edab79。
+        // v1.6.0-beta.36（2026-11-22）：Xvfb「进程活着、socket 在、画面永远不出现」
+        // 的第二层真因 —— accept(43) 被 App 域 seccomp 拦成 EPERM，Xorg 的 Xtrans
+        // 收不到任何客户端连接。beta.35 修的 setgid 短路解决的是「子进程起不来」，
+        // 这一版解决的是「客户端连不上」，两个坑先后都得修。
+        // 端到端实证（模拟器 x86_64 / Android 34 / App 域 / 经 loader）：
+        //   Xvfb :71 起得来、bind 成功、python 客户端 connect OK 0.00s，
+        //   但 recv 8 字节超时（服务端永不 accept）；x71.log 每秒刷
+        //     _XSERVTransSocketUNIXAccept: accept() failed
+        //   裸 syscall 对照（每组都带真实可用参数，各 3 次）：
+        //     accept(43)=EPERM / accept4(288)=fd 16（先让客户端连上仍 EPERM）
+        //     epoll_create(213)=EPERM / epoll_create1(291)=fd
+        //     eventfd(284)=EPERM / eventfd2(290)=fd 13
+        //     inotify_init(253)=EPERM / inotify_init1(294)=fd 14
+        //     signalfd(282)=EPERM / signalfd4(289)=fd（signalfd4 用 8 字节 sigset）
+        // 修法：五条老号 → 现代等价号的语义翻译（全部内核层面等价，非近似）：
+        //   accept(fd,a,l) == accept4(fd,a,l,0)；epoll_create(size) == create1(0)
+        //   且 size<=0 自己返回 -EINVAL（内核虽忽略 size 但仍校验 >0）；
+        //   eventfd(v) == eventfd2(v,0)；inotify_init() == inotify_init1(0)；
+        //   signalfd(fd,m,f) == signalfd4(fd,m,8,f)。
+        // 树：x86_64 237 → 257 条（拦截 syscall 52 → 57，x86_64 独有 19 → 24）；
+        // aarch64 树 153 条一字未动（通用 ABI 没有这五条老号）。
+        // 探针 106 → 148 checks（[10] 段 42 条）：源码分支 / 译到正确现代号 /
+        // 被 #if x86_64 包住（按「最近的 #if 才是它」判，不用固定窗口）/
+        // 排在 a0 截断前 / 生成器 LEGACY 与 must 双登记 / 两 arch 树泄漏反向。
+        // 变异：删 accept→accept4 的 flags=0 → 1 红；删 epoll size 校验 → 1 红；
+        // 改 create1 传常量 → 1 红；去掉 #if → 5 红；生成器删 accept → 4 红。
+        // ★踩坑记录：探针原先用 strip_c_comments 预处理生成器，而生成器注释里有
+        //   走 *4/*1 版本 这种文字（含 /* 无 */），剥离器把后面整个文件当块注释吞掉，
+        //   于是「明明改了却报没改」。现改为截 LEGACY_X86_64 与 must 两个块分别查。
+        // 产物：arm64-v8a 43,016 B / md5 2348ea8cbdf25d74a76688f1f3f313e6（未变）；
+        // x86_64 60,696 → 61,096 B / md5 2445a467279a7bb493791ab359edab79 →
+        // 22fd47d66c99d23c4fadfd37780d9502。
+        versionCode = 412
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.33"
+        versionName = "1.6.0-beta.36"
 
         ndk {
             abiFilters += listOf(targetAbi)

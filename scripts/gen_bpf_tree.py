@@ -91,6 +91,44 @@ LEGACY_X86_64 = [
     "lchown",
     "utimes",
     "mknod",
+    # ★2026-11-22 补：pipe。
+    #
+    #   Android 给 App 装的那层 seccomp 放行 pipe2(293)、**拦 pipe(22)**，
+    #   同样只看 syscall 号、不看 IP（与 poll/select/fork/dup2 同族）。
+    #   实测（模拟器 x86_64、App 域容器内 python3 裸 syscall 交替 3 次）：
+    #       syscall(22)  pipe  -> rc=-1 errno=1 EPERM          3/3
+    #       syscall(293) pipe2 -> rc=0  fds=(17,18)(19,20)(21,22)  3/3
+    #   漏拦的后果（用户侧）：busybox ash 里任何管道都失败 ——
+    #       /bin/sh: can not create pipe: Bad file descriptor   (rc=2)
+    #   于是 a | b、strace -o（open_dummy_desc 要先 pipe）、Xvfb（用
+    #   pipe/socketpair 起子进程）全部废掉：容器能起、命令能跑，一带管道就坏。
+    #
+    #   为什么只有 x86_64 需要：aarch64 的通用 ABI 没有 __NR_pipe，musl 的
+    #   pipe() 在那里直接走 pipe2。所以真机 arm64 一直正常，只有 x86_64
+    #   模拟器踩这个坑 —— 它藏得久、直到「模拟器上装 Xvfb」才暴露。
+    "pipe",
+    # ★2026-11-22 补：accept / epoll_create / eventfd / inotify_init / signalfd。
+    #
+    #   与 pipe 同一晚的同一类坑：Android 那层 seccomp 只认 syscall 号，
+    #   x86_64 上的「老式」号被拦，对应的「新式」号放行。实测（模拟器
+    #   x86_64 / Android 34 / App 域容器内 python3 裸 syscall，各带真实参数）：
+    #       accept(43)        -> EPERM      accept4(288)        -> fd
+    #       epoll_create(213) -> EPERM      epoll_create1(291)  -> fd
+    #       eventfd(284)      -> EPERM      eventfd2(290)       -> fd
+    #       inotify_init(253) -> EPERM      inotify_init1(294)  -> fd
+    #       signalfd(282)     -> EPERM      signalfd4(289)      -> 仅 EINVAL(参数错)
+    #
+    #   漏拦的后果（Xvfb 端到端实测）：Xvfb 能起、能 bind、socket 能连上，
+    #   但**永远不 accept** —— 日志每秒刷
+    #       _XSERVTransSocketUNIXAccept: accept() failed
+    #   客户端连上后一个字节都收不到（connect OK 0.00s / NO REPLY）。
+    #   此前把「Xvfb 起不来」记成 XKB 编译失败，真因是 accept 被拒：
+    #   Xorg 的 Xtrans 用 accept()，读失败就丢弃该连接，界面永远黑屏。
+    #
+    #   为什么只有 x86_64 需要：aarch64 的通用 ABI 没有 accept/epoll_create/
+    #   eventfd/inotify_init/signalfd 这些老号，musl 在那里直接走 *4/*1 版本。
+    #   所以真机 arm64 一直是好的，只有 x86_64 模拟器踩。
+    "accept", "epoll_create", "eventfd", "inotify_init", "signalfd",
 ]
 
 # ⚠️ 这个集合**不参与生成**，也不是 TRAP 的依据。
@@ -291,7 +329,8 @@ def main():
     #   生成器静默输出 213 条、一条没多，看起来「成功」。所以这里必须验。
     must = ['openat', 'execve', 'symlinkat', 'fchownat', 'chdir', 'getcwd']
     if arch == 'x86_64':
-        must += ['symlink', 'lchown', 'utimes', 'mknod', 'open', 'stat']
+        must += ['symlink', 'lchown', 'utimes', 'mknod', 'open', 'stat', 'pipe',
+                 'accept', 'epoll_create', 'eventfd', 'inotify_init', 'signalfd']
     missing = [m for m in must if ('SYS_' + m) not in text]
     if missing:
         raise SystemExit('%s tree is missing key NR: %s' % (arch, missing))
@@ -299,7 +338,8 @@ def main():
     # 反向：x86_64 专属的老式 syscall 不得出现在 aarch64 树里
     # （aarch64 的通用 ABI 没有这些宏，编不过）
     if arch != 'x86_64':
-        leaked = [m for m in ('lchown', 'utimes', 'mknod', 'symlink', 'chown')
+        leaked = [m for m in ('lchown', 'utimes', 'mknod', 'symlink', 'chown', 'pipe',
+                              'epoll_create', 'eventfd', 'inotify_init', 'signalfd')
                   if ('SYS_' + m + ',') in text]
         if leaked:
             raise SystemExit('%s tree has x86_64-only NR: %s' % (arch, leaked))

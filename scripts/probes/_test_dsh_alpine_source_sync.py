@@ -414,6 +414,234 @@ if os.path.isfile(SO_X86):
           time.strftime("%m-%d %H:%M:%S", time.localtime(x86_mtime)))
     )
 
+print("[8] x86_64 的 pipe → pipe2 翻译（2026-11-22 补：App 域里管道全废的真因）")
+#
+# 为什么必须单列一组：Android 给 App 装的那层 seccomp 放行 pipe2(293)、拦
+# pipe(22)，只看号不看 IP（与 poll/select/fork/dup2 同族）。实测（模拟器
+# x86_64、App 域容器内 python3 裸 syscall 交替各 3 次）：
+#     syscall(22)  pipe  -> rc=-1 errno=1 EPERM            3/3
+#     syscall(293) pipe2 -> rc=0  fds=(17,18)(19,20)(21,22)  3/3
+# 用户侧表现是 busybox ash 里任何管道都 `can not create pipe: Bad file
+# descriptor`(rc=2)，于是 a|b、strace -o、Xvfb 全部废掉。
+#
+# 一处漏改就静默复发，而且症状离根因极远（先被误判成 XKB 编译失败、DNS、
+# 镜像 404，白烧了三轮），所以这组判据要求「树 + 翻译 + 顺序 + 生成器」四件
+# 事同时成立 —— 任何一件改回去都要红。
+_s8 = strip_c_comments(src)
+i8 = _s8.find("if (nr == SYS_pipe) {")
+ok(i8 >= 0, "源码里有 pipe 翻译分支（if (nr == SYS_pipe)）")
+if i8 >= 0:
+    seg8 = _s8[max(0, i8 - 200):i8 + 400]
+    ok("DSH_ARCH_X86_64" in seg8,
+       "pipe 分支被 #if defined(DSH_ARCH_X86_64) 包住（aarch64 无 __NR_pipe，漏了编不过）")
+    ok("raw6(SYS_pipe2, (long)r[0], 0," in seg8,
+       "翻译成 pipe2(fds, 0)：flags=0 → 与 pipe() 语义等价（无 O_CLOEXEC/O_NONBLOCK）")
+    # 顺序判据：必须在 a0 截断**之前**。插到后面的话 r[0] 已被截成 32 位，
+    # 写回的 fds 地址就成了野指针 —— 表现为段错误而不是明确的 EPERM。
+    i_trunc = _s8.find("long a0 = (long)(int)(unsigned int)r[0];")
+    ok(i_trunc > i8,
+       "pipe 分支在 a0 指针截断之前（截断后 r[0] 变 32 位，再翻译就是野指针）")
+
+# 生成器侧三处必须同步，否则「源码能编、树里没拦」= 照样 EPERM。
+_gen = read_text(os.path.join(ROOT, "scripts/gen_bpf_tree.py"))
+_gen_code = strip_c_comments(_gen)
+ok('"pipe",' in _gen_code, "gen_bpf_tree.py 的 LEGACY_X86_64 含 pipe")
+ok("'pipe'" in _gen_code or '"pipe"' in _gen_code,
+   "生成器的 must 断言里登记了 pipe（漏了就是「加了不生效、生成器照样退出 0」）")
+
+# 实跑生成器验双向：x86_64 必须拦 pipe，aarch64 必须**没有** SYS_pipe。
+def _gen_tree(arch):
+    r = subprocess.run([sys.executable,
+                        os.path.join(ROOT, "scripts/gen_bpf_tree.py"), arch],
+                       capture_output=True, text=True)
+    return r.returncode, r.stdout, r.stderr
+
+_rc_x, _out_x, _err_x = _gen_tree("x86_64")
+ok(_rc_x == 0, "生成器 x86_64 退出 0（stderr: %s）" % _err_x.strip()[:80])
+ok("SYS_pipe," in _out_x, "x86_64 树里含 SYS_pipe（真拦得到）")
+_rc_a, _out_a, _err_a = _gen_tree("aarch64")
+ok(_rc_a == 0, "生成器 aarch64 退出 0（stderr: %s）" % _err_a.strip()[:80])
+ok("SYS_pipe," not in _out_a,
+   "aarch64 树里没有 SYS_pipe（通用 ABI 无该宏，泄漏进去会编不过）")
+
+# 内联树与生成器必须逐行一致 —— 这条是「改了生成器忘了重插内联」的守门人。
+def _inline_x86(text):
+    L = text.split("\n")
+    i_else = None
+    for i, l in enumerate(L):
+        if l.strip() == "#else" and i + 2 < len(L) and "AUDIT_ARCH_X86_64" in L[i + 2]:
+            i_else = i
+            break
+    if i_else is None:
+        return None
+    i_end = None
+    for j in range(i_else + 1, len(L)):
+        if L[j].strip() == "#endif":
+            i_end = j
+            break
+    if i_end is None:
+        return None
+    return "\n".join(L[i_else + 1:i_end]).strip()
+
+_inl = _inline_x86(src)
+ok(_inl is not None, "能在 dsh_alpine.c 里定位 x86_64 内联树（#else … #endif）")
+if _inl is not None:
+    _genx = "\n".join(l for l in _out_x.replace("\r\n", "\n").split("\n")).strip()
+    ok(_inl == _genx,
+       "内联 x86_64 树与 gen_bpf_tree.py 输出逐行一致（%d 行 vs %d 行）"
+       % (len(_inl.split("\n")), len(_genx.split("\n"))))
+    ok("SYS_pipe," in _inl, "内联 x86_64 树里真的含 SYS_pipe（不是只改了生成器）")
+
+print("[9] 身份类 syscall 的语义短路（2026-11-22 补：Xvfb 起不来的真因）")
+#
+# 为什么值得单列一组：Xorg 的 System()/Popen 在 fork 后、execve **之前**先做
+#     getgid() -> setgid(getgid()) -> setuid(getuid())
+# 失败就 exit(127)、绝不 exec。App 域的 zygote seccomp 把 setuid(105)/
+# setgid(106)/setreuid(113)/setregid(114)/setresgid(119)/setfsuid(122)/
+# setfsgid(123) 全拦成 EPERM（只有 setresuid(117) 放行，实测各 3 次），
+# 于是 xkbcomp 一次都没被拉起来，Xvfb 报
+#     XKB: Failed to compile keymap / Failed to activate virtual core keyboard: 2
+# 看起来像 xkeyboard-config 坏了，实际是子进程压根没起来 —— 这个误判烧了很久。
+#
+# 判据钉三件事，任何一件改回去都要红：
+#   1. 源码里有这条短路分支，且覆盖 8 个号（少一个号就漏一种失败路径）
+#   2. 只在「-1 或等于当前 uid/gid」时返回 0，其余必须 -EPERM（不能伪造成功）
+#   3. setgroups 绝不能出现在放行名单里（非特权进程调它内核总是 EPERM）
+#
+# 反向变异已手工验证（见 app/build.gradle.kts 的 beta.35 版本注释）：
+# 把 ok 判定改成恒 1 → 断言 2 红；把 setgroups 塞进分支 → 断言 3 红。
+_i9 = _s8.find("if (nr == SYS_setuid || nr == SYS_setgid || nr == SYS_setreuid ||")
+ok(_i9 >= 0, "源码里有身份类 syscall 短路分支（SYS_setuid 开头那条 if）")
+if _i9 >= 0:
+    _seg9 = _s8[_i9:_i9 + 3000]
+    for _n in ("SYS_setuid", "SYS_setgid", "SYS_setreuid", "SYS_setregid",
+               "SYS_setresuid", "SYS_setresgid", "SYS_setfsuid", "SYS_setfsgid"):
+        ok(_n in _seg9.split(") {")[0], "短路分支覆盖 %s" % _n)
+    ok("cur_uid" in _seg9 and "SYS_getuid" in _seg9,
+       "用 SYS_getuid 取当前身份（不能写死常量：模拟器/真机 uid 不同）")
+    ok("cur_gid" in _seg9 and "SYS_getgid" in _seg9,
+       "用 SYS_getgid 取当前身份")
+    # 诚实性：必须仍然可能返回 -EPERM
+    ok("-EPERM" in _seg9,
+       "仍保留 -EPERM 出口（真实降权/提权必须诚实失败，不能一律返回 0）")
+    ok("i0 == -1 || i0 == cur_uid" in _seg9.replace("  ", " ").replace("  ", " "),
+       "setuid 只在 (-1 或 == cur_uid) 时放行")
+    # setgroups 不许出现在放行名单（它天然 EPERM，短路成 0 就是伪造）
+    _head9 = _seg9.split(") {")[0]
+    ok("SYS_setgroups" not in _head9,
+       "setgroups 不在放行名单里（非特权调它内核总是 EPERM，短路成 0 是伪造成功）")
+    # 顺序：必须在 a0 截断之前、且在 pipe 分支之后（pipe 是 x86_64 专属，#if 包着）
+    _i_trunc9 = _s8.find("long a0 = (long)(int)(unsigned int)r[0];")
+    ok(_i_trunc9 > _i9,
+       "短路分支在 a0 截断之前（截断后 r[0] 只剩低位，uid 会被读错）")
+    ok(_i9 > i8 if i8 >= 0 else True,
+       "短路分支排在 pipe 分支之后（pipe 段在 #if DSH_ARCH_X86_64 内，不能被跨过）")
+    # 不允许被 #if 限定成 x86_64 专属：真机 aarch64 很可能同样被拦
+    _pre9 = _s8[max(0, _i9 - 400):_i9].split("\n")[-3:]
+    ok("#if defined(DSH_ARCH_X86_64)" not in "".join(_pre9),
+       "短路分支没有被 #if DSH_ARCH_X86_64 独占（aarch64 也要能用）")
+
+print("[10] x86_64 的 accept/epoll_create/eventfd/inotify_init/signalfd 翻译（2026-11-22）")
+#
+# 与 [8] 的 pipe 是同一类坑的后续：Android 那层 seccomp 只按号判，x86_64 上的
+# 「老式」号一律 EPERM，对应的「新式」号放行。Xvfb 端到端实测把 accept 这条钉死了：
+#   Xvfb 进程活着、socket 存在、客户端 connect OK 0.00s，但服务端**永不 accept** ——
+#   x71.log 每秒刷 `_XSERVTransSocketUNIXAccept: accept() failed`，客户端一个字节
+#   都收不到。此前一直判成「XKB 编译失败」，真因只是这一条。
+# 裸 syscall 对照（带真实可用参数，不是空传）：
+#   accept(43)=EPERM / accept4(288)=fd       epoll_create(213)=EPERM / create1(291)=fd
+#   eventfd(284)=EPERM / eventfd2(290)=fd    inotify_init(253)=EPERM / init1(294)=fd
+#   signalfd(282)=EPERM / signalfd4(289)=fd
+# 判据钉四件事：源码有分支、译到正确的现代号、被 #if x86_64 包住、生成器与两 arch
+# 的树都不泄漏 —— 任何一件改回去都要红。
+_NEW5 = [
+    # (老号, 现代号, 源码里应出现的翻译调用, 一句话语义)
+    ("SYS_accept", "SYS_accept4",
+     "raw6(SYS_accept4, (long)r[0], (long)r[1]",
+     "accept(fd,addr,len) == accept4(fd,addr,len,0)（flags=0 无 CLOEXEC/NONBLOCK）"),
+    ("SYS_epoll_create", "SYS_epoll_create1",
+     "raw6(SYS_epoll_create1, 0,",
+     "epoll_create(size) == epoll_create1(0)（size 自 2.6.8 起忽略）"),
+    ("SYS_eventfd", "SYS_eventfd2",
+     "raw6(SYS_eventfd2, (long)r[0], 0,",
+     "eventfd(initval) == eventfd2(initval, 0)"),
+    ("SYS_inotify_init", "SYS_inotify_init1",
+     "raw6(SYS_inotify_init1, 0,",
+     "inotify_init() == inotify_init1(0)"),
+    ("SYS_signalfd", "SYS_signalfd4",
+     "raw6(SYS_signalfd4, (long)r[0], (long)r[1],",
+     "signalfd(fd,mask,flags) == signalfd4(fd,mask,8,flags)（内核隐含 sigsetsize=8）"),
+]
+_i_trunc10 = _s8.find("long a0 = (long)(int)(unsigned int)r[0];")
+for _old, _new, _call, _why in _NEW5:
+    _i = _s8.find("if (nr == %s) {" % _old)
+    ok(_i >= 0, "源码里有 %s 翻译分支（%s）" % (_old, _why))
+    if _i < 0:
+        continue
+    _seg = _s8[_i:_i + 500]
+    ok(_call in _seg, "%s 翻译成 %s" % (_old, _new))
+    # 必须被 #if defined(DSH_ARCH_X86_64) 包住：aarch64 连这些宏都没有。
+    # 判法：从本分支往前找**最近的** #if / #endif，最近的那个必须是 #if
+    # （不能只看固定窗口 —— 后两条分支离 #if 有 20 多行注释，窗口会漏）。
+    _last_if = _s8.rfind("#if", 0, _i)
+    _last_endif = _s8.rfind("#endif", 0, _i)
+    ok(_last_if > _last_endif and "DSH_ARCH_X86_64" in _s8[_last_if:_last_if + 60],
+       "%s 分支被 #if defined(DSH_ARCH_X86_64) 包住（aarch64 无该宏，漏了编不过）"
+       % _old)
+    # 顺序：参数里有 64 位指针（accept 的 sockaddr、signalfd 的 mask），
+    # 必须在 a0 截断之前，否则高位被吃掉，重发时是野指针。
+    ok(_i_trunc10 > _i,
+       "%s 分支在 a0 指针截断之前（这些调用带 64 位指针参数，截断后是野指针）" % _old)
+
+# accept 的第四个参数必须是 0：传了 SOCK_CLOEXEC(0x80000) 就与 pipe/dup2 的
+# 「flags=0 才等价」判据自相矛盾，而且会让 guest 的 fd 意外带 CLOEXEC ——
+# 变异实测（把 0 改成 0x80000）在上一版判据下**不报红**，所以单独钉一条。
+_i_ac = _s8.find("if (nr == SYS_accept) {")
+if _i_ac >= 0:
+    _acseg = _s8[_i_ac:_i_ac + 300]
+    ok("(long)r[2], 0, 0, 0)" in _acseg,
+       "accept→accept4 的 flags 参数是 0（传 CLOEXEC 会让 guest fd 意外带上标志，与 pipe/dup2 判据不一致）")
+
+# epoll_create 的 size<=0 必须自己判 —— 内核即使放行也返回 EINVAL，
+# 翻译时若直接转给 create1 会变成「创建成功」，行为不一致。
+_i_ep = _s8.find("if (nr == SYS_epoll_create) {")
+ok(_i_ep >= 0 and "EINVAL" in _s8[_i_ep:_i_ep + 400],
+   "epoll_create 对 size<=0 自己返回 -EINVAL（内核语义：size 被忽略但仍校验 >0）")
+
+# 生成器三处同步：LEGACY_X86_64 / must 断言 / 实跑两 arch 的树。
+#
+# ★这里**不能**用 strip_c_comments 预处理生成器：它是 Python 源码，路径注释里
+#   有「走 *4/*1 版本」这种文字（星号斜杠），C 注释剥离器会把后面整个文件
+#   当块注释吞掉，于是「生成器里明明写了却报没写」（2026-11-22 实测踩到：
+#   pipe 之前能查到、之后五条全查不到，害我以为生成器没改）。
+#   改为：截出 LEGACY_X86_64 列表块与 must 断言块，各自在原始文本里查 token。
+_GEN_RAW = _gen
+def _block(start_marker, end_marker):
+    i = _GEN_RAW.find(start_marker)
+    if i < 0:
+        return ""
+    j = _GEN_RAW.find(end_marker, i)
+    return _GEN_RAW[i:j] if j > 0 else _GEN_RAW[i:]
+_legacy_block = _block("LEGACY_X86_64 = [", "\n]")
+_must_block = _block("must = [", "\n    missing")
+ok(bool(_legacy_block) and bool(_must_block),
+   "能在 gen_bpf_tree.py 里定位 LEGACY_X86_64 与 must 两个块（%d / %d 字符）"
+   % (len(_legacy_block), len(_must_block)))
+for _old, _new, _call, _why in _NEW5:
+    _plain = _old[4:]
+    ok('"%s"' % _plain in _legacy_block,
+       "gen_bpf_tree.py 的 LEGACY_X86_64 含 %s" % _plain)
+    ok(("'%s'" % _plain) in _must_block or ('"%s"' % _plain) in _must_block,
+       "生成器 must 断言里登记了 %s（漏了就是「加了不生效、生成器照样退出 0」）" % _plain)
+    ok(("SYS_%s," % _plain) in _out_x,
+       "x86_64 生成的树里含 SYS_%s（真拦得到）" % _plain)
+
+# 反向：aarch64 通用 ABI 没有这四条宏（accept 除外 —— aarch64 确实有 accept=202，
+# 但 musl 不用它，加进树只会多拦一条无害的老号；见生成器注释）。
+for _plain in ("epoll_create", "eventfd", "inotify_init", "signalfd"):
+    ok(("SYS_%s," % _plain) not in _out_a,
+       "aarch64 树里没有 SYS_%s（通用 ABI 无该宏，泄漏进去会编不过）" % _plain)
+
 print("")
 print("checks=%d failed=%d" % (checks, failed))
 sys.exit(0 if failed == 0 else 1)
