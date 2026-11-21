@@ -16914,12 +16914,17 @@ vC408 / 1.6.0-beta.32 / `native-code: 'x86_64'`。
    emulator-5554。所有运行证据都来自模拟器。arm64 侧只验了「产物字节未变 + 探针 76 条全绿」。
 2. 探针 x86_64 段**只查形状与新鲜度，不查行为** —— 若源码改了而产物用错参数（比如漏 `-mcmodel=large`），
    体积与形状仍可能通过。
-3. 主仓没有 `build/build.sh`（只有镜像仓 `dsh-linux-runtime/build/build.sh` 有），本轮重编靠手抄命令行；
-   下次仍会踩 `E:/` 路径与 `MSYS2_ARG_CONV_EXCL` 两个坑。
+3. ~~主仓没有重编入口~~ —— 本轮补了 `scripts/build-loader.sh`（见 §9.2），手抄命令行与
+   `E:/` 路径两个坑一并消掉；但**镜像仓** `dsh-linux-runtime/build/build.sh` 与本仓脚本
+   仍是两份独立实现，将来改编译参数要同时改两处。
 4. 模拟器上没验 X11 画面链路（本轮只验容器网络/包管理；那条链路在真机 beta.25/26 已闭环）。
 
 ### 9. 下一步
 
 1. 真机恢复后装 beta.32 复验 arm64 侧（loader 字节应与当前一致，行为同 beta.30/31）。
-2. 把 `build.sh` 同步进主仓（或写进 CMakeLists 注释），消除手抄命令行。
+2. ~~把 `build.sh` 同步进主仓~~ —— 已做：`scripts/build-loader.sh`（`<ndk根目录> [arm64-v8a|x86_64]`），
+   两个 ABI 都实测重跑：arm64-v8a → 43,224 B / md5 `652aeaee…`、x86_64 → 59,496 B /
+   md5 `129912ed…`，均与入库产物字节一致。脚本自动按 ABI 选 triple 与输出路径
+   （arm64-v8a → `jniLibs/arm64-v8a/`，x86_64 → `jniLibs/x86_64/`），x86_64 自动加
+   `-mcmodel=large`，末尾提示跑探针。
 3. `docs/ui-preview/probe-opacity.mjs` 仍是未跟踪文件（11-13 的 CDP 探针），要么入库要么删。
