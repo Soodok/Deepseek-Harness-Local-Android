@@ -16004,6 +16004,16 @@ SELinux 拒绝 link 时的复制兜底仍传 `ob` / `nb` —— 透传命中的�
 `dshinput.bin` 在 `/data/user/0/app.dsh.mobile/files/`（**不在** `files/linux/` 下）。
 取证时先 `ls` 定位，别按 `files/linux/tmp` 猜。
 
+**触摸链路同一轮复验（10:18–10:19，与上条同时段重跑）**：清 `dshinput.bin` 与
+rootfs `tmp/inputd.log`，在「容器画面」卡片点「开启触摸」，5 秒内落盘
+`files/dshinput.bin` **4,128 B**，`inputd.log` 两行
+`INPUTD_KV xtest=2.2 display=:101` / `path=/data/data/app.dsh.mobile/files/dshinput.bin cap=256`
+（display 与 dsh-display 的 101 一致）。环头在 4 字节 magic `49 4e 50 54`（"INPT"）之后，
+**初值 head=tail=0**；在画面上点一下后读到 `02 00 00 00 02 00 00 00`，
+head=tail=2 → inputd 已消费 2 条事件（一次 tap 产生 2 条），**与 target 的
+「6 条事件 / head=tail=12」同比例，链路无回归**。
+注意：这一轮卡片滚动位置不同（「开启触摸」在 y≈1888），**每次都要重新 dump 取 bounds**。
+
 ### 四、jniLibs 与 APK 内的 loader 不是同一份字节（新发现，勿再误判）
 
 同一版 loader 在两个位置 md5 不同：
