@@ -299,13 +299,28 @@ android {
         // 而 CI 的 npm 原料走的是「上游还没有第一层」那条，打完第一层就 return，
         // 第二层永远补不上。beta.18 的 Release 因此只修了一半。
         // 同时给探针补了「第一层分支也必须转第二层」的结构判据（能打红）。
-        versionCode = 397
+        // v1.6.0-beta.22（2026-11-21）：Linux 容器「装包装上了但状态写不进去」——
+        // loader 的 linkat 不对 /proc /dev /sys 透传，apk 用 O_TMPFILE 落名的整条
+        // 路径全 ENOENT：索引写不进（apk update 报带索引 URL 的 No such file）、
+        // 数据库写不进（apk add 末尾 System state may be inconsistent）。
+        // 同版顺手修掉工作台标记自愈的假绿：删掉 .dsh-bootstrap.gui 后重开页面，
+        // 标记被按 8 个包名写回、flavorPackagesReady() 恒真，页面显示已就绪而
+        // 点「开始画面」得到 Xvfb: not found。
+        // v1.6.0-beta.24（2026-11-21）：Linux 工作台「点开始画面无反应」的第六处静默失败 ——
+        // setuid shim 补 accept→accept4 兜底。替身 .so 在 App 域直发裸 syscall 取证：
+        // accept(202) 被 zygote 那层 seccomp 判成 -EPERM（恒 -1），accept4(242) 在
+        // 同条件同 fd 上直接成功。Xvfb 的监听套接字走 os/access.c 的 accept()，于是
+        // 死循环刷 _XSERVTransSocketUNIXAccept: accept() failed：一个客户端都接不进来、
+        // x11frsrv 连不上、dshframe.bin 永不落盘、UI 侧只剩 DSHFRAME_FAIL no-frame。
+        // run-as / adb shell 域的 Seccomp 是 0/1 层、accept 不被拦，所以「同脚本同 uid
+        // 手跑成功、App 跑失败」在本地永远复现不出来。
+        versionCode = 400
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.21"
+        versionName = "1.6.0-beta.24"
 
         ndk {
             abiFilters += listOf(targetAbi)

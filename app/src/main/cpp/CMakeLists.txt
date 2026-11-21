@@ -42,6 +42,52 @@ target_link_libraries(dshpty
     log)
 
 # ---------------------------------------------------------------------------
+# dsh_setuid_shim —— 让 xorg 的 Popen() 在 Android App 域里跑得通（v1.6.0-beta.23）
+#
+# Xvfb 初始化键盘时调 xkbcomp，走 xserver 自己封装的 "safer popen"
+# （os/utils.c: Popen），其子进程分支是：
+#
+#     if (setgid(getgid()) == -1) _exit(127);
+#     if (setuid(getuid()) == -1) _exit(127);
+#     execl("/bin/sh", "sh", "-c", command, NULL);
+#
+# 即「先放弃所有特权再执行命令」。而 Android App 域
+# （u:r:untrusted_app_27，CapEff=0）内核一律拒绝 setuid/setgid —— 即使传的
+# 就是进程自己当前的 uid/gid —— 子进程按源码 _exit(127)，父进程 Pclose()
+# 拿到 127，Xvfb 依次打出：
+#
+#     Error compiling keymap / XKB: Failed to compile keymap
+#     Keyboard initialization failed... / Failed to activate virtual core keyboard: 2
+#
+# 当场退出、一个 listening socket 都不建 —— 用户侧只是「点开始画面无反应」。
+#
+# 这个 .so 通过 LD_PRELOAD 只对 Xvfb 生效，把「放弃自己本来就已经是的那个
+# 身份」按恒等变换处理（返回成功）；任何别的 uid/gid 请求照常透传给内核，
+# 失败就如实失败，绝不伪造提权成功。
+#
+# ⚠️ 构建约束：
+#   - -ffreestanding -fno-builtin：不引入任何 libc 符号
+#   - -nostdlib：产物无 NEEDED、无 UND 符号 —— 它会被同时灌进 musl(Alpine)
+#     与 glibc 两个 rootfs，任何 libc 依赖都会在其中一边解析失败
+#   - 全程裸 syscall（aarch64: svc #0 / x86_64: syscall）：xorg 在 fork 出来的
+#     子进程里调 setuid，此时 dlsym 可能撞上 dl 锁
+#   - 16KB 页对齐：Android 15+ 的 16KB 页内核要求 LOAD 段 p_align >= 页大小
+# ---------------------------------------------------------------------------
+add_library(dsh_setuid_shim SHARED dsh_setuid_shim.c)
+# ⚠️ OUTPUT_NAME 只写裸名字，**不要**自己加 lib 前缀和 .so 后缀。
+#   AGP 会把 SHARED 库按 OUTPUT_NAME 再套一层：实测写 "libdsh_setuid_shim.so"
+#   得到 APK 条目 lib/arm64-v8a/liblibdsh_setuid_shim.so.so（大小正确但没人认得），
+#   而 App 侧按 /libdsh_setuid_shim.so 找，于是永远找不到 → 永远 warn、永远没装上。
+set_target_properties(dsh_setuid_shim PROPERTIES OUTPUT_NAME "dsh_setuid_shim")
+target_compile_options(dsh_setuid_shim PRIVATE
+    -ffreestanding
+    -fno-builtin
+    -fno-stack-protector)
+target_link_options(dsh_setuid_shim PRIVATE
+    "-nostdlib"
+    "-Wl,-z,max-page-size=16384")
+
+# ---------------------------------------------------------------------------
 # dsh_alpine —— Linux 用户态运行器（免 root 的 seccomp 容器）
 #
 # 用 seccomp BPF + SIGSYS handler 拦截系统调用并把绝对路径翻译到 rootfs 内，

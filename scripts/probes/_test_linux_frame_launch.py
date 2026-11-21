@@ -224,6 +224,144 @@ ck("J4 部署期也建一次（已 READY 的 rootfs 不会重走运行期）",
    and "ensureXkbOutputDir(root)" in code_envm,
    "只在运行期 mkdir 会漏掉「rootfs 已部署」这条路径")
 
+# ---------------------------------------------------------------- K. Xvfb / xterm 的 setuid 兼容层
+# 2026-11-21 真机定位的第五个静默失败，与前面四条同一症状（点了没反应）：
+# Xvfb 初始化键盘时调 xkbcomp，走 xserver 自己封装的 safer popen（os/utils.c: Popen），
+# 子进程头两行是 setgid(getgid()) 与 setuid(getuid())，任一失败就 _exit(127)。
+# Android App 域（untrusted_app_27，CapEff=0）内核一律拒绝 setuid/setgid —— 即使
+# 传的就是进程自己的 uid —— 于是子进程 127 秒退，父进程 Pclose 拿 127，Xvfb 打
+# "Failed to compile keymap" 并当场退出，一个 listening socket 都不建。
+#
+# 装 shim 后真机复验：xvfb.log 里变成正常的 xkbcomp keysym 警告 + "Errors from
+# xkbcomp are not fatal"，/tmp/.X11-unix/X99 socket 建立 -> 假设成立。
+#
+# 同一轮又暴露出 xterm 用同一套写法：无 shim 时只打一行
+#   xterm: setegid(10501): Operation not permitted
+# 随即退出，屏幕区空白。所以两个程序都要挂，而且**不再全局 export**。
+ck("K1 Xvfb 启动行挂 LD_PRELOAD（只给 Xvfb，不做全局 export）",
+   "LD_PRELOAD=$KBSHIM nohup Xvfb" in code_start
+   and "export LD_PRELOAD" not in code_start,
+   "缺它 Xvfb 必挂在 Failed to activate virtual core keyboard")
+
+ck("K1b xterm 启动行同样挂 shim",
+   "LD_PRELOAD=$KBSHIM nohup xterm" in code_start,
+   "无 shim 时 xterm 报 setegid(...): Operation not permitted 直接退出，屏幕区空白")
+
+# ★本轮「no-frame」的真因，2026-11-21 真机实测：脚本里把 Kotlin 插值写成了转义形态，
+#   于是 shell 里那个变量根本没定义、展开成空串 —— x11frsrv 实际收到 "1280 720 30"
+#   （sharepath=1280，而 usage 是 x11frsrv <sharepath> [w] [h] [fps]），于是一直等
+#   一个不存在的共享文件，永不产帧；od / stat 也全在查空路径。
+# 判据必须在**未还原**的原文里查（unwrap_shell_escape 之后两种写法都长成 $shared，
+# 就区分不出来了），所以这一条直接读 start_fs 的原始文本。
+ESCAPED_DOLLAR = chr(36) + "{" + chr(39) + chr(36) + chr(39) + "}"
+ck("K1c 共享文件路径用 Kotlin 插值，而不是转义成字面量",
+   (chr(36) + "{shared}") in start_fs
+   and (ESCAPED_DOLLAR + "shared") not in start_fs,
+   "转义形态下 shell 变量为空，x11frsrv 会一直等不存在的文件")
+
+ck("K2 shim 路径是 /usr/lib/libdsh-setuid-shim.so，且先判可读再用",
+   "/usr/lib/libdsh-setuid-shim.so" in code_start and '[ -r "$KBSHIM" ]' in code_start,
+   "不判可读就会出现 LD_PRELOAD 指向不存在的库，动态链接器只打警告")
+
+ck("K3 失败回显带 shim 状态，不只堆三份日志",
+   "xkb setuid shim:" in code_start,
+   "")
+
+# 判据必须锁**调用点**，不能靠「函数定义里有这些字符串」—— 定义还在但没人调用，
+# 真机上照样没有那个库，断言却是绿的（本组第一版就犯了这个错，变异验证抓出来的）。
+shims_body = strip_comments(unwrap_shell_escape(func_body(envm, "installLinuxCompatShims")))
+ck("K4 部署期真的调用 installSetuidShim（不只是定义了函数）",
+   "installSetuidShim(root)" in shims_body,
+   "定义在而调用点丢了，真机 rootfs 里永远没有这个库")
+
+ck("K4b shim 真的落到 rootfs 的 usr/lib（写盘语句与文件名都在）",
+   'File(root, "usr/lib")' in code_envm and "SETUID_SHIM_FILE" in code_envm,
+   "")
+
+# 同理：CMakeLists 里那段注释本身写着 -nostdlib，直接搜全文会让这条永远绿。
+# 只看「去注释后的可执行行」。
+cm_lines = []
+for line in read(os.path.join(ROOT, "app/src/main/cpp/CMakeLists.txt")).split("\n"):
+    if line.strip().startswith("#"):
+        continue
+    cm_lines.append(line)
+cm_code = "\n".join(cm_lines)
+ck("K5 CMake 有 dsh_setuid_shim 目标",
+   "add_library(dsh_setuid_shim SHARED dsh_setuid_shim.c)" in cm_code,
+   "没有这个 target，APK 里就不会有 libdsh_setuid_shim.so")
+
+ck("K5b 该目标的 link 选项里有 -nostdlib（否则产物 NEEDED libc）",
+   "\"-nostdlib\"" in cm_code,
+   "musl 与 glibc 两边都可能解析失败，宁可当场构建失败也别发出坏库")
+
+# OUTPUT_NAME 只写裸名字：AGP 会给 SHARED 库再套一层 lib 前缀与 .so 后缀，写全称
+# 会得到 liblibdsh_setuid_shim.so.so —— 大小对、名字没人认得，App 永远 warn。
+# 这条上一轮真机踩过：装机后 App 打 warn 找不到库，进 APK 一看条目名多套一层。
+ck("K5c CMake 的 OUTPUT_NAME 是裸名（AGP 会自己套 lib 前缀与 .so 后缀）",
+   "OUTPUT_NAME \"dsh_setuid_shim\"" in cm_code
+   and "OUTPUT_NAME \"libdsh_setuid_shim" not in cm_code,
+   "写全称会被 AGP 套成 liblib...so.so，装机后 App 找不到")
+
+# ---------------------------------------------------------------- L. accept -> accept4 兜底（shim 第二阶段）
+# 2026-11-21 真机第二轮定位：Xvfb 起来之后死循环打
+#   _XSERVTransSocketUNIXAccept: accept() failed
+# 一个客户端都接不进来 —— x11frsrv 连不上、dshframe.bin 永不落盘、UI 侧
+# DSHFRAME_FAIL no-frame。替身 .so 在 App 域直发裸 syscall 拿到决定性对照：
+#   [A] accept(202) = -1 (EPERM)      ← 被 zygote 那层 seccomp 拒
+#   [A] accept4(242) = 16             ← 同条件同 fd，成功
+# run-as 域 Seccomp 是 0/1 层，accept 不被拦 —— 所以手跑永远复现不出来。
+#
+# 判据全部在**剥掉注释后的 C 源码**上看：本文件的注释里就写着 202/242 与
+# accept4，搜原文会「因为注释在所以永远绿」。
+SHIM_C = os.path.join(ROOT, "app/src/main/cpp/dsh_setuid_shim.c")
+shim_src = read(SHIM_C)
+
+
+def strip_c_comments(src):
+    """去掉 C 注释（/* */ 与 //），只留可执行代码。"""
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"//[^\n]*", "", src)
+    return src
+
+
+shim_code = strip_c_comments(shim_src)
+
+ck("L1 aarch64 编号表里有 accept=202 与 accept4=242",
+   "#  define NR_accept    202" in shim_code
+   and "#  define NR_accept4   242" in shim_code,
+   "aarch64 通用 ABI 没有 poll/select，accept 是 202、accept4 是 242")
+
+ck("L1b x86_64 编号表里有 accept=43 与 accept4=288",
+   "#  define NR_accept    43" in shim_code
+   and "#  define NR_accept4   288" in shim_code,
+   "x86_64 的 accept 是 43、accept4 是 288（与 aarch64 完全不同）")
+
+# 判据锁**调用顺序**：202 先发、只在失败时才走 242。若把两次调用顺序写反，
+# 或者把 accept 直接改成只发 242，这一条要能红。
+i_202 = shim_code.find("raw3(NR_accept, (long)fd")
+i_242 = shim_code.find("raw4(NR_accept4, (long)fd")
+ck("L2 accept() 先发 202、失败才退 242（顺序不能反）",
+   i_202 >= 0 and i_242 >= 0 and i_202 < i_242,
+   "直接只发 242 会丢掉 accept 的原语义，反过来则等于没兜底")
+
+ck("L2b accept() 先判成功早退，失败才落 242",
+   "if (r >= 0) return (int)r;" in shim_code,
+   "没有早退就会把成功的 fd 也再 accept 一遍，等于吞掉一条连接")
+
+ck("L2c 两条都失败时按 POSIX 返回 -1，而不是裸 -errno",
+   "return r >= 0 ? (int)r : -1;" in shim_code,
+   "裸 syscall 的 -errno 直接返回会让调用方把 EPERM 当「有效 fd」用")
+
+ck("L3 导出 accept 与 accept4 两个符号（定义形态可查）",
+   "int accept(int fd, void *addr, unsigned int *alen)" in shim_code
+   and "int accept4(int fd, void *addr, unsigned int *alen, int flags)" in shim_code,
+   "LD_PRELOAD 只对导出符号生效，少一个 Xvfb 就还会走被拦的那条")
+
+ck("L4 两个架构都有 raw4（aarch64 x3 寄存器 / x86_64 第 4 参走 r10）",
+   shim_code.count("static long raw4(") >= 2
+   and 'register long r10 __asm__("r10") = d;' in shim_code,
+   "x86_64 的第 4 个参数必须显式绑 r10，走 d 会传错 flags")
+
 # ---------------------------------------------------------------- 输出
 failed = 0
 for name, ok, detail in checks:

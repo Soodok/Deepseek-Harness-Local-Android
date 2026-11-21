@@ -442,7 +442,7 @@ class LinuxActivity : ThemedActivity() {
             D=${'$'}(cat $frameDisplayFile 2>/dev/null)
             if [ -z "${'$'}D" ]; then echo INPUTD_FAIL no-display; exit 0; fi
             if [ ! -e /tmp/.X11-unix/X${'$'}D ]; then echo "INPUTD_FAIL no-x-socket display=:${'$'}D"; exit 0; fi
-            nohup env DISPLAY=:${'$'}D /inputd ${'$'}shared 1 >/tmp/inputd.log 2>&1 &
+            nohup env DISPLAY=:${'$'}D /inputd ${shared} 1 >/tmp/inputd.log 2>&1 &
             echo ${'$'}! > $frameStateDir/dsh-inputd.pid
             sleep 0.5
             if ! kill -0 "${'$'}(cat $frameStateDir/dsh-inputd.pid 2>/dev/null)" 2>/dev/null; then
@@ -570,21 +570,36 @@ class LinuxActivity : ThemedActivity() {
             # chmod is best-effort (it fails harmlessly when we do not own it).
             [ -w /var/lib/xkb ] || chmod 777 /var/lib/xkb 2>/dev/null
             if [ -w /var/lib/xkb ]; then XKBDIR=writable; else XKBDIR=not-writable; fi
+            # LD_PRELOAD is scoped to Xvfb and xterm only. Both drop privileges
+            # at init (setgid(getgid()) / setuid(getuid())) before doing real work,
+            # and the Android app domain (untrusted_app_27, CapEff=0) rejects
+            # setuid/setgid even when the target id equals the current one.
+            # Measured on 2026-11-21 (PLZ110 / Android 16):
+            #   - Xvfb without the shim: no listening socket, "Failed to compile keymap"
+            #   - Xvfb with the shim: socket established (0 -> 1)
+            #   - xterm without it: "setegid(10501): Operation not permitted" then exit
+            # Scoped on purpose: only these two need the privilege-drop patch, and a
+            # blanket export would just make every process load one more library.
+            KBSHIM=/usr/lib/libdsh-setuid-shim.so
+            if [ -r "${'$'}KBSHIM" ]; then XKBSHIM=on; else XKBSHIM=off; fi
             export DISPLAY=:${'$'}DISP
             echo "${'$'}DISP" > $displayFile
-            BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${'$'}shared 2>/dev/null | tr -d ' ')
-            nohup Xvfb :${'$'}DISP -screen 0 1280x720x24 >/tmp/xvfb.log 2>&1 &
+            BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+            LD_PRELOAD=${'$'}KBSHIM nohup Xvfb :${'$'}DISP -screen 0 1280x720x24 >/tmp/xvfb.log 2>&1 &
             echo ${'$'}! > $stateDir/dsh-xvfb.pid
             sleep 2
-            nohup xterm -T 'DSH Container' -geometry 100x30 -e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' >/tmp/xterm.log 2>&1 &
+            # xterm hits the same wall: without the shim it prints
+            # "setegid(...): Operation not permitted" and exits, leaving the frame
+            # area blank -- which the user still sees as "start screen does nothing".
+            LD_PRELOAD=${'$'}KBSHIM nohup xterm -T 'DSH Container' -geometry 100x30 -e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' >/tmp/xterm.log 2>&1 &
             echo ${'$'}! > $stateDir/dsh-xterm.pid
             sleep 2
-            nohup /x11frsrv ${'$'}shared 1280 720 30 >/tmp/x11frsrv.log 2>&1 &
+            nohup /x11frsrv ${shared} 1280 720 30 >/tmp/x11frsrv.log 2>&1 &
             echo ${'$'}! > $stateDir/dsh-x11frsrv.pid
             i=0
             while [ ${'$'}i -lt 120 ]; do
-              NOW=${'$'}(od -A n -t u4 -j 4 -N 4 ${'$'}shared 2>/dev/null | tr -d ' ')
-              SZ=${'$'}(stat -c %s ${'$'}shared 2>/dev/null || echo 0)
+              NOW=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+              SZ=${'$'}(stat -c %s ${shared} 2>/dev/null || echo 0)
               if [ -n "${'$'}NOW" ] && [ "${'$'}NOW" != "${'$'}BASE" ] && [ "${'$'}SZ" -ge 3000000 ]; then
                 echo "DSHFRAME_OK display=:${'$'}DISP seq=${'$'}NOW size=${'$'}SZ"
                 exit 0
@@ -594,6 +609,7 @@ class LinuxActivity : ThemedActivity() {
             done
             echo DSHFRAME_FAIL no-frame
             echo "--- xkbdirectory: ${'$'}XKBDIR (${'$'}(ls -ld /var/lib/xkb 2>&1))"
+            echo "--- xkb setuid shim: ${'$'}XKBSHIM (${'$'}KBSHIM)"
             echo "--- xvfb:"; head -6 /tmp/xvfb.log 2>/dev/null
             echo "--- x11frsrv:"; head -6 /tmp/x11frsrv.log 2>/dev/null
             echo "--- xterm:"; head -4 /tmp/xterm.log 2>/dev/null
@@ -622,13 +638,13 @@ class LinuxActivity : ThemedActivity() {
             done
             pkill -f '^/framesrv' 2>/dev/null
             sleep 0.2
-            BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${'$'}shared 2>/dev/null | tr -d ' ')
-            nohup /framesrv 1280 720 0 16 ${'$'}shared clear auto >/tmp/framesrv.log 2>&1 &
+            BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+            nohup /framesrv 1280 720 0 16 ${shared} clear auto >/tmp/framesrv.log 2>&1 &
             echo ${'$'}! > $stateDir/dsh-framesrv.pid
             i=0
             while [ ${'$'}i -lt 120 ]; do
-              NOW=${'$'}(od -A n -t u4 -j 4 -N 4 ${'$'}shared 2>/dev/null | tr -d ' ')
-              SZ=${'$'}(stat -c %s ${'$'}shared 2>/dev/null || echo 0)
+              NOW=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+              SZ=${'$'}(stat -c %s ${shared} 2>/dev/null || echo 0)
               if [ -n "${'$'}NOW" ] && [ "${'$'}NOW" != "${'$'}BASE" ] && [ "${'$'}SZ" -ge 3000000 ]; then
                 echo "DSHFRAME_OK seq=${'$'}NOW size=${'$'}SZ"
                 exit 0
@@ -2597,21 +2613,51 @@ class LinuxActivity : ThemedActivity() {
      * 文件在就是事实，标记只是它的加速副本 —— 缓存丢了重建即可。
      */
     private fun healBootstrapMarker(option: LinuxRootfsCatalog.Option) {
+        // 只在标记**整份不见**时自愈。标记存在（含 attempted:）说明环境层已经
+        // 落过账，重试归 ensureBootstrapPackages 管 —— 这里再插手会变成每次
+        // 刷新都起一次容器核对，得不偿失。
+        if (runCatching { bootstrapMarker(option).isFile }.getOrDefault(false)) return
         if (!bootstrapFilesPresent(option)) return
         if (option.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE && !nodePresent(option)) return
-        if (runCatching { env.flavorPackagesReady(option) }.getOrDefault(false)) return
         if (!runCatching { env.isDeployed(option) }.getOrDefault(false)) return
-        runCatching {
-            // 内容与环境层写的一致（BOOTSTRAP_PACKAGES + 形态额外包），否则
-            // 环境层下次读到这份标记会以为「形态的额外包也装过了」。
-            val pkgs = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + option.flavor.extraPackages
-            bootstrapMarker(option).writeText(pkgs.joinToString(","))
-        }.onSuccess {
-            android.util.Log.i("LinuxActivity", "bootstrap marker healed from on-disk files")
+        // ★必须逐个问包管理器，**不能**把「bash/curl 文件在」外推成「形态额外包
+        //   也装过」（v1.7.17，真机 2026-11-20）。
+        //
+        //   旧实现只要 bootstrapFilesPresent + nodePresent 成立，就把
+        //   BOOTSTRAP_PACKAGES + flavor.extraPackages 全量写进标记。而 GUI 形态的
+        //   六个额外包（xvfb / xterm / xdotool / libx11 / libxtst / font-misc-misc）
+        //   与 bash / curl 毫无关系 —— 删掉 .dsh-bootstrap.gui 后重开页面，标记
+        //   立刻被按 8 个包名写回，flavorPackagesReady() 从此恒真：页面显示
+        //   「已就绪 / 已装工具 30 / 磁盘 85.5 MB」，点「开始画面」得到一句
+        //   Xvfb: not found。标记从「记录事实」变成了「伪造事实」。
+        val pkgs = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + option.flavor.extraPackages
+        val probe = runCatching { env.missingPackages(option, pkgs) }
+        if (probe.isFailure) {
+            // 容器起不来时不写任何标记：既不敢断言「装过」，也不该落 attempted
+            // 把重试堵死。页面继续按「缺依赖」显示，这是诚实的。
+            android.util.Log.w(
+                "LinuxActivity",
+                "bootstrap marker heal skipped, package probe failed: " +
+                    (probe.exceptionOrNull()?.message ?: ""),
+            )
+            return
         }
-    }
-
-    /** IO 快照：只读事实，不起容器、不写状态 */
+        val stillMissing = probe.getOrDefault(pkgs)
+        runCatching {
+            if (stillMissing.isEmpty()) {
+                bootstrapMarker(option).writeText(pkgs.joinToString(","))
+            } else {
+                // 只记「尝试过」，让环境层下一轮照常再装一次；绝不写成成功。
+                bootstrapMarker(option).writeText("attempted:" + pkgs.joinToString(","))
+            }
+        }.onSuccess {
+            android.util.Log.i(
+                "LinuxActivity",
+                "bootstrap marker healed from package probe: missing=" +
+                    stillMissing.joinToString(","),
+            )
+        }
+    }    /** IO 快照：只读事实，不起容器、不写状态 */
     private fun loadWorkbenchFacts(option: LinuxRootfsCatalog.Option): WorkbenchFacts {
         // ★先自愈标记，再读事实（v1.7.13）。
         // 顺序就是语义：`flavorReady` 只看标记，而标记可能丢 / 停在 attempted。

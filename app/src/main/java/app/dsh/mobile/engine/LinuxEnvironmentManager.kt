@@ -726,6 +726,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
     private fun installLinuxCompatShims(root: File) {
         ensureXkbOutputDir(root)
+        installSetuidShim(root)
         runCatching {
             val shDir = File(root, "system/bin").apply { mkdirs() }
             listOf("sh", "bash").forEach { name ->
@@ -787,6 +788,65 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         // 设备上留的还是旧二进制。这个坑在 framesrv 上实测踩过。
         installLinuxTool(ctx, root, X11FRSRV_ASSET, "x11frsrv")
         installLinuxTool(ctx, root, INPUTD_ASSET, "inputd")
+    }
+
+    /**
+     * 把 setuid 兼容层装到 rootfs 的 `/usr/lib/libdsh-setuid-shim.so`。
+     *
+     * ## 为什么需要
+     *
+     * Xvfb 初始化键盘时调 xkbcomp，走 xserver 自己封装的 "safer popen"
+     * （os/utils.c: Popen）。它的子进程分支是
+     * `if (setgid(getgid()) == -1) _exit(127);` 加 `if (setuid(getuid()) == -1)
+     * _exit(127);` —— 即「先放弃所有特权再执行命令」。而 Android App 域
+     * （u:r:untrusted_app_27，CapEff=0）内核一律拒绝 setuid/setgid，**即使传的
+     * 就是进程自己当前的 uid/gid**。于是子进程 127 秒退，父进程 Pclose() 拿到
+     * 127，Xvfb 依次打 "Error compiling keymap" / "XKB: Failed to compile
+     * keymap" / "Failed to activate virtual core keyboard: 2" 并当场退出 ——
+     * 一个 listening socket 都不建。用户侧只看到「点开始画面没反应」。
+     *
+     * 真机取证（2026-11-21，PLZ110 / Android 16 / uid 10501）：LD_PRELOAD 追踪
+     * 到 `[getgid] 10501 -> [setgid] 10501 -1 -> [_exit] 127`；把 setuid/setgid
+     * 改成恒等返回 0 后同一个 Xvfb 立刻起来（/tmp/.X11-unix/X310 出现）。
+     *
+     * ## 怎么落
+     *
+     * 从 APK 的 native 库条目里读出 `libdsh_setuid_shim.so`（与
+     * `deployPtyHelper` 同一套理由：保证与本次运行代码同版本，且不受
+     * nativeLibraryDir 滞后影响），落到 rootfs 的 usr/lib 下，由 LinuxActivity
+     * 的 X11 分支用 `LD_PRELOAD` **只给 Xvfb** 挂上。
+     *
+     * 幂等:按「APK 里的字节数 + 落地文件可读」判断，命中即跳过。
+     * 失败只 warn 不抛 —— 没有它最多是「画面起不来」，不该让整个部署失败。
+     */
+    private fun installSetuidShim(root: File) {
+        runCatching {
+            val apk = ctx.applicationInfo.sourceDir ?: return@runCatching
+            val want = runCatching {
+                java.util.zip.ZipFile(apk).use { zf ->
+                    zf.entries().asSequence()
+                        .firstOrNull { it.name.endsWith("/lib$SETUID_SHIM_NAME.so") }?.size ?: -1L
+                }
+            }.getOrDefault(-1L)
+            if (want <= 0L) {
+                Log.w(TAG, "setuid shim missing in APK - X11 screen will fail to start")
+                return@runCatching
+            }
+            val dir = File(root, "usr/lib").apply { mkdirs() }
+            val dst = File(dir, SETUID_SHIM_FILE)
+            if (dst.isFile && dst.length() == want && dst.canRead()) return@runCatching
+            runCatching { dst.delete() }
+            java.util.zip.ZipFile(apk).use { zf ->
+                val e = zf.entries().asSequence()
+                    .firstOrNull { it.name.endsWith("/lib$SETUID_SHIM_NAME.so") } ?: return@runCatching
+                zf.getInputStream(e).use { ins ->
+                    dst.outputStream().use { ins.copyTo(it) }
+                }
+            }
+            // LD_PRELOAD 只要求可读；执行位不必给（它不被 exec，只被 dlopen）。
+            dst.setReadable(true, false)
+            Log.i(TAG, "setuid shim deployed: ${dst.absolutePath} (${dst.length()} bytes)")
+        }.onFailure { Log.w(TAG, "setuid shim install failed: ${it.message}") }
     }
 
     /**
@@ -1709,6 +1769,22 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     }
 
     /**
+     * 这批包是不是真的都装上了。空列表 = 全在，否则是仍缺的包名。
+     *
+     * 供 UI 层自愈 bootstrap 标记时核对用（LinuxActivity.healBootstrapMarker）。
+     * 为什么必须由这里出面：标记的语义是「这些包我装过」，UI 层能看到的
+     * 只有 bash / curl / node 三个探针文件，**看不到形态额外包装没装** ——
+     * 把「文件在」外推成「额外包也装了」写进标记，就是把缓存写成事实
+     * （实测后果：GUI 形态显示「已就绪」，点「开始画面」报 Xvfb: not found）。
+     */
+    fun missingPackages(option: LinuxRootfsCatalog.Option, packages: List<String>): List<String> =
+        when (option.pkgManager) {
+            LinuxRootfsCatalog.PackageManager.APK -> verifyApkInstalled(packages)
+
+            LinuxRootfsCatalog.PackageManager.APT -> verifyAptInstalled(packages)
+        }
+
+    /**
      * 核对一批包是否真的 `install ok installed`。返回仍然缺的那些。
      *
      * 判据取自 dpkg 自己的状态字段而不是退出码：dpkg 的退出码语义是「有没有出错」，
@@ -2119,6 +2195,12 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 "x86_64", "x86", "i686" -> false
                 else -> true
             }
+
+        /** APK 里的 setuid 兼容层（CMake target dsh_setuid_shim，见 src/main/cpp）。 */
+        private const val SETUID_SHIM_NAME = "dsh_setuid_shim"
+
+        /** 落地到 rootfs 后的名字：容器里通过 LD_PRELOAD=/usr/lib/<这个> 加载。 */
+        private const val SETUID_SHIM_FILE = "libdsh-setuid-shim.so"
 
         private val LINUX_RG_ASSET: String? =
             if (RUNNER_ABI_ARM64) "linux/rg-static-arm64" else null

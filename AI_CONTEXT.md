@@ -15849,3 +15849,96 @@ LEFT 停靠：把手视觉 `[0,1112][72,1233]`（26x44dp）。逐点结果：
   那处 TouchDelegate 坐标系是对的、没坏，只是注释过时。
 - 顺带记录：该轮冷启 `profile-plugins 34s` + `health-poll 11.8s` 偏大，但那是 uiautomator
   高频 dump + 磁盘只剩 3.3G 的环境，不能当基线。
+
+## 第一百五十一章（v1.6.0-beta.24 · 2026-11-21）容器画面起不来的第六个真因：App 域 accept(202) 被 seccomp 拒，accept4(242) 才通
+
+### 一、症状与前面五个真因的区别
+
+点「开始画面」后 UI 只回 `DSHFRAME_FAIL no-frame`。此前修过的五处（pkill 自杀、
+Xvfb 写死 :99/-nolock、fire-and-forget、XKB 输出目录、setuid shim）都到位之后，
+**Xvfb 已经稳定起来**：`/tmp/.X11-unix/X99` 建立、`xvfb.log` 只有 1847 B 的
+xkbcomp keysym 警告，但 `xvfb.log` 里开始满屏刷：
+
+    _XSERVTransSocketUNIXAccept: accept() failed
+
+x11frsrv 进程在跑（`X11FRSRV_KV display=:100 ...`）却一帧都不产出，
+`dshframe.bin` 永不落盘，App 侧 `LinuxFrameSurface` 一直是 `size=0x0`。
+
+### 二、根因（真机取证，PLZ110 / Android 16 / 2026-11-21）
+
+用替身共享库（`LD_PRELOAD` 进 Xvfb）在 App 域直发**裸 syscall**，拿到决定性对照：
+
+| syscall | App 域（untrusted_app_27） | run-as 域（runas_app） |
+|---|---|---|
+| `accept` (202) | **-1（-EPERM，被拒）** | 正常 |
+| `accept4` (242) | **成功** | 正常 |
+
+进程状态差异：App 域 `Seccomp 2` / `Seccomp_filters 2` / `CapEff=0`；
+run-as 域 `Seccomp_filters 1`。**zygote 那层 seccomp 拦 accept 只放行 accept4**
+（与 x86_64 上拦 poll(7)/select(23) 只放行 ppoll/pselect6 同一类规则）。
+
+Xvfb 的监听套接字走 xorg 的 `os/access.c` → `_XSERVTransSocketUNIXAccept`，
+底层就是 **accept(2)**，于是一直失败、一个客户端都接不进来。
+`dmesg` 里没有对应 avc（`audit: rate limit exceeded` 把审计行吞了），
+logcat 也没有 1326 —— 只能靠替身库自身取证。
+
+**这解释了「同一脚本、同一 uid，手跑成功、App 跑失败」**：手跑落在 run-as / su 域，
+accept 不被拦，本地永远复现不出来。
+
+### 三、修法（`app/src/main/cpp/dsh_setuid_shim.c`）
+
+复用已有的 setuid shim（已 `LD_PRELOAD` 给 Xvfb 与 xterm），加一层同源兜底：
+
+1. 编号表补 `NR_accept 202` / `NR_accept4 242`（aarch64）、`NR_accept 43` / `NR_accept4 288`（x86_64）；
+2. 新增 `raw4`：aarch64 走 x0..x3 + `svc #0`；x86_64 第 4 参显式绑 `register long r10 __asm__("r10")`；
+3. 导出 `int accept(int, void*, unsigned int*)`：先 `raw3(NR_accept,...)`，
+   `r >= 0` 立刻返回（成功路径零额外 syscall），失败才 `raw4(NR_accept4, ..., 0)`；
+4. 导出 `accept4`：直接 `raw4(NR_accept4,...)`；
+5. 两条都失败时归一成 POSIX `-1`——**不裸传 -errno**（否则调用方会把 EPERM 当有效 fd）。
+
+仍然全程裸 syscall：这层库可能被灌进 musl / glibc 两个 rootfs，也可能在 fork
+子进程里被调用（dlsym 撞 dl 锁），任何 libc 依赖都是隐患。
+
+### 四、验证（全部实跑）
+
+- **探针**：`scripts/probes/_test_linux_frame_launch.py` 新增 L 组 7 条，
+  **39 checks / 0 failed**。判据都在**剥掉 C 注释后**的源码上（`strip_c_comments`
+  去掉 `/* */` 与 `//`），因为这个文件的注释里就写着 202/242。
+  覆盖：两架构编号、`accept` 内 202 必须早于 242（用 `find` 下标比较）、
+  成功早退、归一成 -1、两个导出符号、两架构各有 raw4 且 x86_64 绑 r10。
+- **变异反验（5 次全红，按字节还原 `restored equal: True`）**：
+  accept 里 202 换成 242 / 删早退 / r10 绑 0 / x86_64 accept 43→44 / aarch64 accept4 242→241。
+- **门禁**：check-i18n 通过（shell 注释必须 ASCII，中文注释会被 CJK 检查拦下）、
+  `_test_linux_workbench.py` 86/0、`_test_dsh_alpine_source_sync.py` 55/0、
+  `_test_security_audit.py` 48/0、`_test_engine_spawn_env.py` 30/0。
+- **构建**：`gradle -Pabi=arm64-v8a -Ppackage=full -PruntimeZip=E:/tmp/runtime-rc3-arm64.zip
+  -PdebuggableRelease=true :app:testDebugUnitTest :app:assembleRelease` → BUILD SUCCESSFUL；
+  release APK **190,953,548 B**，md5 `269baa093f4ea73db18fa3c3b13f6b0d`。
+  APK 内 `lib/arm64-v8a/libdsh_setuid_shim.so` = **3264 B**，
+  `llvm-nm -D` 十个导出符号（accept / accept4 / setuid / seteuid / setgid / setegid /
+  setreuid / setregid / setresuid / setresgid）。
+- **真机复验（08:10，versionCode 400 / 1.6.0-beta.24）**：装机后 shim 自动落地 3264 B；
+  `xvfb.log` 1847 B、`grep -c 'accept() failed'` = **0**；
+  `dshframe.bin` 3,686,416 B；x11frsrv 打 `X11FRSRV_KV display=:99 size=1280x720 fps=30`；
+  logcat `LinuxFrameSurface: display fps=29.9 shown=142 lastSeq=142 size=1280x720 pull=0.6ms`；
+  截图可见容器画面（左上 xterm 白窗）。
+- 探针残留已清：rootfs/usr/lib 下 accprobe / shim_probe* / pa / pb / pr、
+  `usr/bin/accbin`、`/data/local/tmp` 同名文件、rootfs/tmp 的 pNN.sh/pNN.out、
+  旧 shim、dshframe.bin、X99/X100 socket 与 lock。
+
+### 五、踩坑记录（下次别再踩）
+
+1. **探针会被 App 自动覆盖回滚**：`installSetuidShim` 的幂等判据是
+   「APK 内 zip 条目 size + 落地文件可读」。取证当时 APK 里那个条目是 **3056 B**
+   （加 accept 兜底后变成 3264 B），探针字节数不符就每次「开始画面」被重新解压覆盖。
+   → 探针必须补零到**与该版本条目字节数完全一致**（ELF 尾部多余字节不被 program
+   header 映射，不影响加载）。
+2. **`LD_PRELOAD` 只能给 guest 程序**：`LD_PRELOAD=/usr/lib/x.so nohup Xvfb`
+   会报 `CANNOT LINK EXECUTABLE "nohup": library not found` —— nohup 是宿主 busybox，
+   由宿主 linker 解析。要验证时走 `su 0 <runner> --guest /bin/sh /bin/sh /tmp/pNN.sh`。
+3. **静态 ET_EXEC 探针在 loader 下必崩**（`Segmentation fault rc=139`）：
+   loader 不认裸 `_start` + 自己按段 mmap。共享库 + LD_PRELOAD 才可靠。
+4. 事故教训（本轮又踩）：`fs.writeFile` + JS 模板串会把 Kotlin 的 `${'$'}` 提前吃掉，
+   一次就把 `LinuxActivity.kt` 写成 5.3 MB 的怪物。**带 `${'$'}` 的 Kotlin 一律只用 edit 工具。**
+5. gradle 用 `gradle-9.2.1`（项目无 gradlew）；裸 `assembleDebug` 会因
+   `rt-arm64-zodded.zip lacks the PTC patch` 失败，必须带 `-Ppackage=full -PruntimeZip=...`。
