@@ -2007,4 +2007,14 @@ You can copy the report and post it in the group instead.</string>
     <string name="report_mail_subject">dsh-android problem report</string>
     <string name="setting_report">Report a problem</string>
     <string name="setting_report_sub">Send logs to the developer without a GitHub account</string>
+    <string name="report_consent_title">AI wants to send a bug report</string>
+    <string name="report_consent_target">Recipient: soodok.online (developer-run, no third party)
+Only the developer can read it. Not public, not indexed, deleted after 30 days.</string>
+    <string name="report_consent_title_line">Title: %1$s</string>
+    <string name="report_consent_files">Attachments: %1$s  (total %2$s KiB)</string>
+    <string name="report_consent_files_none">Attachments: none (text only)</string>
+    <string name="report_consent_countdown">%1$d s left — it will be declined on timeout</string>
+    <string name="report_consent_expired">Timed out — treated as declined</string>
+    <string name="report_consent_approve">Agree and send</string>
+    <string name="report_consent_deny">Decline</string>
 </resources>

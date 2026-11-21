@@ -2007,4 +2007,14 @@
     <string name="report_mail_subject">Отчёт о проблеме dsh-android</string>
     <string name="setting_report">Сообщить о проблеме</string>
     <string name="setting_report_sub">Отправить журналы разработчику без аккаунта GitHub</string>
+    <string name="report_consent_title">ИИ хочет отправить отчёт об ошибке</string>
+    <string name="report_consent_target">Получатель: soodok.online (сервер разработчика, без третьих лиц)
+Читает только разработчик. Не публикуется, не индексируется, удаляется через 30 дней.</string>
+    <string name="report_consent_title_line">Заголовок: %1$s</string>
+    <string name="report_consent_files">Вложения: %1$s  (всего %2$s КиБ)</string>
+    <string name="report_consent_files_none">Вложения: нет (только текст)</string>
+    <string name="report_consent_countdown">Осталось %1$d с — по истечении будет отказ</string>
+    <string name="report_consent_expired">Время истекло — считается отказом</string>
+    <string name="report_consent_approve">Согласиться и отправить</string>
+    <string name="report_consent_deny">Отклонить</string>
 </resources>

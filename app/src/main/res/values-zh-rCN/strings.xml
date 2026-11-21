@@ -2010,4 +2010,14 @@
     <string name="report_mail_subject">dsh-android 问题反馈</string>
     <string name="setting_report">反馈问题</string>
     <string name="setting_report_sub">不用 GitHub 账号也能把日志发给开发者</string>
+    <string name="report_consent_title">AI 想要发送一份问题反馈</string>
+    <string name="report_consent_target">收件：soodok.online（开发者自建，无第三方）
+只给开发者看，不公开、不进搜索引擎、30 天后自动删除。</string>
+    <string name="report_consent_title_line">标题：%1$s</string>
+    <string name="report_consent_files">附件：%1$s  共 %2$s KiB</string>
+    <string name="report_consent_files_none">附件：（无，仅文字）</string>
+    <string name="report_consent_countdown">还剩 %1$d 秒，超时即拒绝</string>
+    <string name="report_consent_expired">已超时，按拒绝处理</string>
+    <string name="report_consent_approve">同意并发送</string>
+    <string name="report_consent_deny">拒绝</string>
 </resources>

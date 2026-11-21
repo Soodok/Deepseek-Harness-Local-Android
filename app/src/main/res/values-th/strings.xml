@@ -1957,4 +1957,14 @@
     <string name="report_mail_subject">รายงานปัญหาของ dsh-android</string>
     <string name="setting_report">แจ้งปัญหา</string>
     <string name="setting_report_sub">ส่งบันทึกให้นักพัฒนาได้โดยไม่ต้องมีบัญชี GitHub</string>
+    <string name="report_consent_title">AI ต้องการส่งรายงานปัญหา</string>
+    <string name="report_consent_target">ผู้รับ: soodok.online (ผู้พัฒนาดูแลเอง ไม่มีบุคคลที่สาม)
+มีเพียงผู้พัฒนาเท่านั้นที่อ่านได้ ไม่เป็นสาธารณะ ไม่ถูกดัชนี และลบภายใน 30 วัน</string>
+    <string name="report_consent_title_line">หัวข้อ: %1$s</string>
+    <string name="report_consent_files">ไฟล์แนบ: %1$s  (รวม %2$s KiB)</string>
+    <string name="report_consent_files_none">ไฟล์แนบ: ไม่มี (ข้อความเท่านั้น)</string>
+    <string name="report_consent_countdown">เหลือ %1$d วินาที — หมดเวลาถือว่าปฏิเสธ</string>
+    <string name="report_consent_expired">หมดเวลา — ถือว่าปฏิเสธ</string>
+    <string name="report_consent_approve">ยินยอมและส่ง</string>
+    <string name="report_consent_deny">ปฏิเสธ</string>
 </resources>

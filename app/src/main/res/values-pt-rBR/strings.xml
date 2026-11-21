@@ -1967,4 +1967,14 @@ Você pode copiar o relato e publicar no grupo.</string>
     <string name="report_mail_subject">Relato de problema do dsh-android</string>
     <string name="setting_report">Relatar um problema</string>
     <string name="setting_report_sub">Envie registros ao desenvolvedor sem conta no GitHub</string>
+    <string name="report_consent_title">A IA quer enviar um relatório de problema</string>
+    <string name="report_consent_target">Destino: soodok.online (mantido pelo desenvolvedor, sem terceiros)
+Somente o desenvolvedor lê. Não é público, não é indexado, é apagado após 30 dias.</string>
+    <string name="report_consent_title_line">Título: %1$s</string>
+    <string name="report_consent_files">Anexos: %1$s  (total %2$s KiB)</string>
+    <string name="report_consent_files_none">Anexos: nenhum (apenas texto)</string>
+    <string name="report_consent_countdown">Faltam %1$d s — será recusado ao expirar</string>
+    <string name="report_consent_expired">Tempo esgotado — tratado como recusa</string>
+    <string name="report_consent_approve">Concordar e enviar</string>
+    <string name="report_consent_deny">Recusar</string>
 </resources>

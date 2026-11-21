@@ -2013,4 +2013,14 @@ Du kannst die Meldung kopieren und in der Gruppe posten.</string>
     <string name="report_mail_subject">dsh-android Problembericht</string>
     <string name="setting_report">Problem melden</string>
     <string name="setting_report_sub">Protokolle ohne GitHub-Konto an den Entwickler senden</string>
+    <string name="report_consent_title">Die KI möchte einen Fehlerbericht senden</string>
+    <string name="report_consent_target">Empfänger: soodok.online (vom Entwickler betrieben, keine Dritten)
+Nur der Entwickler kann ihn lesen. Nicht öffentlich, nicht indexiert, nach 30 Tagen gelöscht.</string>
+    <string name="report_consent_title_line">Titel: %1$s</string>
+    <string name="report_consent_files">Anhänge: %1$s  (insgesamt %2$s KiB)</string>
+    <string name="report_consent_files_none">Anhänge: keine (nur Text)</string>
+    <string name="report_consent_countdown">Noch %1$d s — bei Zeitablauf wird abgelehnt</string>
+    <string name="report_consent_expired">Zeit abgelaufen — als Ablehnung gewertet</string>
+    <string name="report_consent_approve">Zustimmen und senden</string>
+    <string name="report_consent_deny">Ablehnen</string>
 </resources>

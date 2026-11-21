@@ -793,6 +793,24 @@ object EndpointCatalog {
                         "frame_seq 是累计帧计数 —— 它一直不涨说明那块屏上没有任何东西在重绘。",
                 ),
                 e(
+                    "report", "GET", "/dev/report", "问题反馈通道状态：能不能发 / 服务端通不通 / 无障碍就绪没",
+                    examples = listOf("report status", "dev api GET /dev/report"),
+                    limits = "disabled=true 表示用户在「关于」页永久关闭了问题反馈，此时任何上报都会被拒。\n" +
+                        "server_reachable=false 不代表永远发不了，可能只是此刻没网。\n" +
+                        "accessibility_ready=false 时无法弹同意窗口 —— 按失败关闭处理，不许降级成「不弹窗直接发」。",
+                ),
+                e(
+                    "report/send", "POST", "/dev/report",
+                    "AI 主动上报问题（会弹 30 秒同意窗口，用户点了同意才真的发出去）",
+                    params = "action=preview|send, title=标题, body=正文, files=[路径]",
+                    body = "{\"action\":\"send\",\"title\":\"修了 X\",\"files\":[\"/data/.../fix.patch\"]}",
+                    examples = listOf("report preview -t 标题 -a a.patch", "report fixed -a fix.patch -t 修了 X"),
+                    limits = "① action=preview 只算不发，先看再决定。\n" +
+                        "② 顺序固定：体积检查 → 无障碍 → 用户同意 → 换一次性 token → 上传；任何一步拿不到就失败关闭。\n" +
+                        "③ 附件仅 txt/log/md/json/jsonl/patch/diff/zip，单次 ≤2 MiB；服务端二次审查，命中密钥/身份证/银行卡会 422 并给行号。\n" +
+                        "④ 用户拒绝或 30 秒超时 → 403 CONSENT_DENIED，什么都没发出去，也不占配额。",
+                ),
+                e(
                     "vscreen", "POST", "/dev/vscreen",
                     "虚拟屏：给 AI 开一块**不显示在物理屏上**的第二块屏，把 App 启过去操作",
                     cap = "vscreen", perm = "root（createVirtualDisplay 的 TRUSTED flag 要签名级 ADD_TRUSTED_DISPLAY）",

@@ -1,0 +1,119 @@
+#!/system/bin/sh
+# report — 把发现的问题或修好的文件，报给开发者（App 里唯一往外发数据的通道）。
+#
+# ⚠️ 这条命令**给 AI 用**，不是给人用的快捷键：
+#   · 它每次都会在屏幕上弹一个 30 秒倒计时窗口，**用户必须点「同意并发送」**；
+#   · 30 秒内没点 = 拒绝，命令以非 0 退出；
+#   · 用户在「关于」页永久关掉之后，这里直接 403，不会再弹窗。
+# 换句话说：命令只负责准备内容，发不发得出去由用户当场决定。
+#
+# 用法：
+#   report status
+#       看能不能发：是否被用户永久关闭、服务端是否可达、无障碍是否就绪、额度上限。
+#
+#   report preview -t "标题" [-m "正文"] [-a 文件]...
+#       只打印将发送的内容与字节数，**不联网、不弹窗**。先看再发。
+#
+#   report send -t "标题" [-m "正文"] [-a 文件]...
+#       弹窗征得同意后上传。附件支持 .txt/.log/.md/.json/.jsonl/.patch/.diff/.zip，
+#       单次总计 ≤2 MiB；服务端会二次审查，发现密钥/身份证/银行卡等会拒收并
+#       告诉你「第几行、哪一类」，剥掉再发。
+#
+#   report fixed -a 修改.patch -t "修了什么"
+#       `send` 的语义化别名：AI 汇报自己修好的 bug 时用它。
+#
+# 退出码：0 已受理；2 用户拒绝或超时；3 服务端拒收（看输出里的 findings）；4 桥不可达。
+
+# [dsh-android] 自举到引擎 bash（/dev/tcp、数组、printf 等是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+set -u
+DIR=$(dirname "$0")
+if [ -f "$DIR/_dsh_http.sh" ]; then . "$DIR/_dsh_http.sh"; fi
+
+usage() {
+  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+esc() { _dsh_json_escape "$1" 2>/dev/null || printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+CMD="${1:-}"
+[ -z "$CMD" ] && { usage; exit 1; }
+shift || true
+
+case "$CMD" in
+  -h|--help|help) usage; exit 0 ;;
+  status)
+    out=$(dsh_http GET "/dev/report" "") || exit 4
+    printf '%s\n' "$out"
+    case "$out" in
+      *'"disabled":true'*) echo "report: 用户已在「关于」页永久关闭问题反馈" >&2; exit 2 ;;
+    esac
+    exit 0
+    ;;
+  preview|send|fixed) ;;
+  *) echo "report: 不认识的子命令 $CMD" >&2; usage; exit 1 ;;
+esac
+
+ACTION=send
+[ "$CMD" = "preview" ] && ACTION=preview
+[ "$CMD" = "fixed" ] && ACTION=send
+
+TITLE=""
+BODY=""
+FILES=""   # 换行分隔，避免路径里的空格被拆开
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t|--title) TITLE="${2:-}"; shift 2 || break ;;
+    -m|--message|--body) BODY="${2:-}"; shift 2 || break ;;
+    -a|--attach|--file) FILES="$FILES
+${2:-}"; shift 2 || break ;;
+    *) echo "report: 不认识的参数 $1" >&2; exit 1 ;;
+  esac
+done
+
+[ -z "$TITLE" ] && [ -z "$FILES" ] && {
+  echo "report: 至少给一个 -t 标题或 -a 附件" >&2; exit 1
+}
+
+# 拼 files 数组；顺手剔掉空行
+JS_FILES=""
+OLD_IFS=$IFS; IFS='
+'
+for f in $FILES; do
+  [ -z "$f" ] && continue
+  if [ ! -f "$f" ]; then
+    echo "report: 附件不存在：$f" >&2
+    exit 1
+  fi
+  if [ -n "$JS_FILES" ]; then JS_FILES="$JS_FILES,"; fi
+  JS_FILES="$JS_FILES\"$(esc "$f")\""
+done
+IFS=$OLD_IFS
+
+payload="{\"action\":\"$ACTION\",\"title\":\"$(esc "$TITLE")\",\"body\":\"$(esc "$BODY")\",\"files\":[${JS_FILES}]}"
+
+out=$(dsh_http POST "/dev/report" "$payload") || exit 4
+printf '%s\n' "$out"
+
+case "$out" in
+  *'"code":"CONSENT_DENIED"'*)
+    echo "report: 用户没有在 30 秒内点同意 —— 按拒绝处理，什么都没发出去" >&2
+    exit 2 ;;
+  *'"code":"REPORT_DISABLED"'*)
+    echo "report: 用户在「关于」页永久关闭了问题反馈" >&2
+    exit 2 ;;
+  *'"code":"REVIEW_REJECTED"'*)
+    echo "report: 服务端审查未通过 —— 按 findings 里的行号剥掉那些内容再发" >&2
+    exit 3 ;;
+  *'"ok":true'*) exit 0 ;;
+esac
+
+case "$out" in
+  *'"ok":false'*) exit 3 ;;
+esac
+exit 0
