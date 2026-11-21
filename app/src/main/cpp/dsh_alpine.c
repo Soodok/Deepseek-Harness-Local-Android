@@ -2460,8 +2460,12 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         }
         char ob[PATH_MAX], nb[PATH_MAX];
         long ofd = -100, nfd = -100;
-        if (!bind_map(op, ob)) { make_rel(ob, op); ofd = g_rootfs_fd; }
-        if (!bind_map(np, nb)) { make_rel(nb, np); nfd = g_rootfs_fd; }
+        // ★伪文件系统透传（v1.7.17，真机 2026-11-20）。详见 SYS_linkat 处的完整说明。
+        //   漏掉时 /proc 下的路径会被翻成 rootfs 相对路径 -> ENOENT。
+        if (dev_passthrough(op)) { /* 原样交给内核 */ }
+        else if (!bind_map(op, ob)) { make_rel(ob, op); ofd = g_rootfs_fd; }
+        if (dev_passthrough(np)) { /* 原样交给内核 */ }
+        else if (!bind_map(np, nb)) { make_rel(nb, np); nfd = g_rootfs_fd; }
         if (nr == SYS_rename) {
             r[0] = (unsigned long long)raw6(SYS_renameat, ofd, (long)ob,
                                             nfd, (long)nb, 0, 0);
@@ -3114,6 +3118,11 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         char b[PATH_MAX], hb[PATH_MAX];   // 单路径，独立缓冲无冲突
         if ((long)(int)(unsigned int)a1 == -100 && newp && newp[0] == '/') {
             // 同样必须先查 bind（否则往 /dsh 等映射目录建链会落到 rootfs 里）
+            // 伪文件系统（/proc /dev /sys）原样透传，见 SYS_linkat 处说明。
+            if (dev_passthrough(newp)) {
+                r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)r[0], -100, (long)newp, 0, 0, 0);
+                return;
+            }
             if (bind_map(newp, hb)) {
                 r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)r[0], -100, (long)hb, 0, 0, 0);
                 return;
@@ -3136,12 +3145,35 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         char ob[PATH_MAX], nbuf[PATH_MAX], oh[PATH_MAX], nh[PATH_MAX];
         long ofd = a0, nfd = nf;
         int o_rel = 0, n_rel = 0;
+        // ★/proc /dev /sys 必须像 openat 那样**原样透传**（v1.7.17，真机 2026-11-20）。
+        //
+        //   漏掉这条时，任何「链接目标在伪文件系统里」的 linkat 都会被翻成 rootfs
+        //   相对路径，然后 ENOENT —— 父目录存在、权限全对，报错只有一句
+        //   No such file or directory，完全没有线索。
+        //
+        //   实测两个受害者：
+        //   1) apk（alpine 包管理器）下载 APKINDEX / 落名时走 io.c 的 O_TMPFILE 路线：
+        //      openat(cache_fd,".",O_TMPFILE) 拿到匿名 inode，落名靠
+        //      linkat(AT_FDCWD,"/proc/self/fd/<fd>",cache_fd,"APKINDEX.<hash>.tar.gz.tmp.<pid>")
+        //      -> 这里把 /proc/self/fd/N 翻成 rootfs 内相对路径 -> ENOENT
+        //      -> apk_ostream_to_file_safe 返回 -ENOENT
+        //      -> WARNING: ... APKINDEX.tar.gz: No such file or directory + 2 unavailable。
+        //      该报错文案里带的是**索引 URL**，极易被误判成网络/镜像问题；
+        //      而 apk update --no-cache 完全正常（它绕开 cache 目录，不走这条）。
+        //      同一路径也害得 apk 写数据库失败：apk_db_write_layers 用
+        //      apk_ostream_to_file 重写 installed / triggers / scripts.tar.gz，
+        //      全走 O_TMPFILE + linkat 落名 —— 于是包装进去了、索引写不进，
+        //      末尾只剩一句 "System state may be inconsistent: failed to write
+        //      database: No such file or directory"，且报错字符串里没有路径。
+        //   2) 容器内 ln /proc/self/fd/1 /tmp/x、ln /dev/null /tmp/y 同样 ENOENT。
         if (a0 == -100 && op && op[0] == '/') {
-            if (bind_map(op, oh)) { ofd = -100; op = oh; }
+            if (dev_passthrough(op)) { /* 原样交给内核 */ }
+            else if (bind_map(op, oh)) { ofd = -100; op = oh; }
             else { make_rel(ob, op); ofd = g_rootfs_fd; o_rel = 1; }
         }
         if (nf == -100 && np && np[0] == '/') {
-            if (bind_map(np, nh)) { nfd = -100; np = nh; }
+            if (dev_passthrough(np)) { /* 原样交给内核 */ }
+            else if (bind_map(np, nh)) { nfd = -100; np = nh; }
             else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
         }
         const char *use_op = o_rel ? ob : op;
