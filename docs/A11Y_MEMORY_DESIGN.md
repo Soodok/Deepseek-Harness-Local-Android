@@ -240,7 +240,8 @@ memory/v2/shots/<memoryId>/strip.webp    ← 拼接总览图
 ```
 
 - **入库时拷贝**而不是引用轨迹图：轨迹 7 天就没，记忆是长期资产。
-- 删记忆 → 删图目录；重建（fork / 重新学习）→ 先清再写，避免残留孤儿图。
+- 删记忆 → 删图目录；**重建不先清**：重新学习走 `bundle` 收尾的 `pruneUnlisted`（先打包成功再清残留，打包失败时旧图还在），fork 走 `forkMemory` 按位置拷父图并**重拼**子拼图，最后同样 `pruneUnlisted`。先清再写会在失败时把旧图删光。
+- 孤儿图三种清理口径：`pruneOrphanTraces`（轨迹主文件没了就连带清侧车+图目录）、`sweepOrphanMemoryDirs`（按存活记忆 id 白名单扫，四条写入路径 learnQuiet/memLearn/memUpsert/memLabel 都调）、`/trace/clear`（合并 `TaskRecorder.listIds` 与 `StepShots.listTraceIdsWithShots` 两个来源，避免漏掉「主文件已被 TTL 剪掉但图目录还在」的孤儿）。
 - 轨迹 TTL 清理时连带清侧车与图目录（`pruneOrphanTraces`，按主文件是否还在判断）。
 
 ### 12.5 模型怎么用
@@ -298,3 +299,10 @@ memory/v2/shots/<memoryId>/strip.webp    ← 拼接总览图
   `onTaskBegin` 会清掉那条 tombstone，此时旧轨迹残留在队列里的**起手帧**（index=-1、
   不受 stale 判据约束）会被写进新轨迹的 `start.webp`。代价是一张错图，堵它要额外记录
   「帧入队时刻 vs 该 trace 最近一次 onTaskBegin 时刻」，性价比不足，故只记录不修。
+- **fork 的图是拷贝 + 重拼，不是共享**。子记忆落地时把父记忆前 `fromStep` 步的图**复制**进
+  自己的 id 目录，再用这些图重拼它自己的拼图。两个理由：① 子记忆是独立资产，父记忆
+  被删/被重学/被容量淘汰时，引用会让子记忆同时失去界面证据 —— 而刚被改主意的这条子记忆
+  恰恰最需要「看得见」；② 父拼图里含着子记忆没有的后续步骤，直接拷过去就是「图里有第 5 步、
+  记忆只有 3 步」，重放时模型会照着不存在的界面判断（与 `memShot` 双索引错位同款）。
+  `MemoryEdits.fork` 本身只带 `vector`/`sceneFp`，图由路由层的 `forkShots` 回填后
+  再 `upsert` 一次，落盘失败则把刚落盘的图删掉（不留无人认领的孤图）。

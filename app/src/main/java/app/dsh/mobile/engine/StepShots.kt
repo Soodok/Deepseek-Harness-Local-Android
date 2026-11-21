@@ -300,7 +300,7 @@ object StepShots {
         if (!dir.exists() && !dir.mkdirs()) {
             drop(traceId, "mkdir-failed"); return
         }
-        val name = if (index == StepShotLayout.START_INDEX) "start.webp" else index.toString() + ".webp"
+        val name = if (index == StepShotLayout.START_INDEX) START_FILE else index.toString() + ".webp"
         val f = File(dir, name)
 
         var bmp: Bitmap? = null
@@ -489,18 +489,18 @@ object StepShots {
         val stripRel = buildStrip(ctx, memoryId, picked, srcDir)
         // 收尾：目录里不属于这一版的文件清掉。
         //
-        // 为什么放在这里而不是调用方 resetMemory：先删再打包时，若打包失败
+        // 为什么放在这里而不是在调用方先清：先删再打包时，若打包失败
         // （节流/保护页/没图），旧图已经被删光，调用方还在指望着「保留旧图」——
         // 结果是旧图必丢 + 元数据指向不存在的文件。现在的顺序是
         // 「先打包成功，再清残留」，失败就什么都没动。
-        pruneUnlisted(ctx, dstDir, relMap.values.mapNotNull { File(ctx.filesDir, it).name },
+        pruneUnlisted(dstDir, relMap.values.mapNotNull { File(ctx.filesDir, it).name },
             keepStripName = stripRel.isNotBlank())
         val startRel = relMap[StepShotLayout.START_INDEX].orEmpty()
         return Bundle(startRel, stripRel, relMap, copied.size, bytes)
     }
 
     /** 删掉目录里「这一版不该有」的文件（重学后上一步的图、半截的 .part 残片等）。 */
-    private fun pruneUnlisted(ctx: Context, dir: File, keepNames: List<String>, keepStripName: Boolean) {
+    private fun pruneUnlisted(dir: File, keepNames: List<String>, keepStripName: Boolean) {
         runCatching {
             val keep = HashSet<String>(keepNames.size + 2)
             for (n in keepNames) keep.add(n)
@@ -563,11 +563,11 @@ object StepShots {
                     // fitInto 返回 (w, h, dx, dy)：等比缩放后居中留边，绝不拉伸
                     val fit = StepShotLayout.fitInto(src.width, src.height, cell.w, cell.h)
                     val l = cell.x + fit[2]
-                    val t = cell.y + fit[3]
-                    val dst = android.graphics.Rect(l, t, l + fit[0], t + fit[1])
+                    val dy = cell.y + fit[3]
+                    val dst = android.graphics.Rect(l, dy, l + fit[0], dy + fit[1])
                     c.drawBitmap(src, null, dst, imgPaint)
-                    c.drawRect(l.toFloat(), t.toFloat(),
-                        (l + fit[0]).toFloat(), (t + fit[1]).toFloat(), border)
+                    c.drawRect(l.toFloat(), dy.toFloat(),
+                        (l + fit[0]).toFloat(), (dy + fit[1]).toFloat(), border)
                 } finally {
                     src.recycle()
                 }
@@ -642,8 +642,96 @@ object StepShots {
 
     // ==================== 生命周期 ====================
 
-    /** 记忆重建（fork / 重新学习）时先清旧图，避免残留指不到任何一步的图。 */
-    fun resetMemory(ctx: Context, memoryId: String) = deleteMemory(ctx, memoryId)
+    /**
+     * 分叉时把父记忆的图**拷**给子记忆（不是引用）。
+     *
+     * 为什么必须是拷贝：子记忆是独立资产，父记忆被删/被重学/被容量淘汰时，
+     * 引用会让孩子同时失去界面证据 —— 而分叉出来的子记忆恰恰是最需要「看得见」
+     * 的一条（用户刚在这里改了主意）。
+     *
+     * 为什么拼图要**重拼**而不是直接拷父记忆的 `strip.webp`：父拼图里含着子记忆
+     * 没有的后续步骤，拿过去就是「图里有第 5 步、记忆只有 3 步」，重放时模型会
+     * 照着不存在的界面判断 —— 这正是 `memShot` 双索引那类错位问题的同款。
+     *
+     * @param childIndices 子记忆各步的 `sourceIndex`（= `steps.take(fromStep)` 的 i），
+     *                     决定拷进来的图落在哪个角标下
+     * @param parentShotRels 父记忆的 `shots`（与父 `steps` **同位**对齐的相对路径）
+     */
+    fun forkMemory(
+        ctx: Context,
+        childId: String,
+        childIndices: List<Int>,
+        parentStart: String,
+        parentShotRels: List<String>,
+    ): Bundle? {
+        if (childIndices.isEmpty()) return null
+        val dstDir = memoryDirOf(ctx, childId) ?: return null
+        if (!dstDir.exists() && !dstDir.mkdirs()) return null
+
+        val picked = ArrayList<StepShotLayout.Thumb>(childIndices.size + 1)
+        val relMap = HashMap<Int, String>(childIndices.size + 1)
+        var bytes = 0L
+
+        // ① 起手屏：父记忆有就带过来（它是「这条记忆从哪个界面开始」的唯一证据）
+        runCatching {
+            val src = resolve(ctx, parentStart)
+            if (src != null && src.isFile) {
+                val dst = File(dstDir, START_FILE)
+                src.copyTo(dst, overwrite = true)
+                bytes += dst.length()
+                val t = thumbOf(dst, StepShotLayout.START_INDEX)
+                if (t != null) {
+                    picked.add(t)
+                    relMap[StepShotLayout.START_INDEX] = relOf(ctx, dst)
+                }
+            }
+        }.onFailure { Log.w(TAG, "forkMemory start copy failed: " + it.message) }
+
+        // ② 每个还在的步骤：按位置对齐拷图（父 shots 与父 steps 同位）
+        for (k in childIndices.indices) {
+            val rel = parentShotRels.getOrNull(k).orEmpty()
+            if (rel.isBlank()) continue
+            runCatching {
+                val src = resolve(ctx, rel)
+                if (src == null || !src.isFile) return@runCatching
+                val name = src.name
+                if (!isSafeId(name.removeSuffix(".webp"))) {
+                    Log.w(TAG, "forkMemory skip unsafe name: " + name)
+                    return@runCatching
+                }
+                val dst = File(dstDir, name)
+                src.copyTo(dst, overwrite = true)
+                bytes += dst.length()
+                val t = thumbOf(dst, childIndices[k]) ?: return@runCatching
+                picked.add(t)
+                relMap[childIndices[k]] = relOf(ctx, dst)
+            }.onFailure { Log.w(TAG, "forkMemory step copy failed: " + it.message) }
+        }
+
+        if (picked.isEmpty()) {
+            // 一张都没拷到 → 不建半残目录，也不给调用方指一条不存在的图。
+            runCatching { dstDir.deleteRecursively() }
+            return null
+        }
+
+        val stripRel = buildStrip(ctx, childId, picked, dstDir)
+        pruneUnlisted(dstDir, relMap.values.mapNotNull { File(ctx.filesDir, it).name },
+            keepStripName = stripRel.isNotBlank())
+        return Bundle(
+            relMap[StepShotLayout.START_INDEX].orEmpty(), stripRel, relMap,
+            picked.size, bytes,
+        )
+    }
+
+    /** 从磁盘上的图读出尺寸，拼成一张侧车记录（分叉重拼拼图要用）。 */
+    private fun thumbOf(f: File, stepIndex: Int): StepShotLayout.Thumb? = runCatching {
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
+        val w = opts.outWidth
+        val h = opts.outHeight
+        if (w <= 0 || h <= 0) return@runCatching null
+        StepShotLayout.Thumb(stepIndex, w, h, f.name, f.length())
+    }.getOrNull()
 
     /**
      * 记忆 id 是否**可以安全地当作一个目录名**。
@@ -837,6 +925,9 @@ object StepShots {
     private const val MEM_DIR = "shots"
 
     private const val STRIP_NAME = "strip.webp"
+
+    /** 起手屏的文件名（`START_INDEX` 那张）。分叉拷图时按这个名字找落点。 */
+    private const val START_FILE = "start.webp"
 
     private fun shotsRoot(ctx: Context): File =
         File(File(ctx.filesDir, TraceContract.DIR), SHOT_SUBDIR)

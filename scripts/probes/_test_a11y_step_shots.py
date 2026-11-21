@@ -275,6 +275,52 @@ chk('"shotIndex"' in routes or "shotIndex" in routes,
 chk(re.search(r'not both', routes) is not None,
     "G12 step 与 pos 同传时报错（隐式回落会返回错一步的图）")
 
+print("[G2] 分叉带图与孤儿清扫（fork 出的子记忆不许退回纯文本）")
+# ---- 分叉：子记忆必须拿到父记忆前 fromStep 步的界面证据 ----
+_fk = fn_body(shots, "forkMemory")
+chk(bool(_fk), "G13 StepShots.forkMemory 存在（否则 fork 出的子记忆 hasImages 恒 false）")
+# 必须是**拷贝**：引用会让父记忆被删/被重学时孩子同时失去证据，
+# 而分叉出来的子记忆恰恰是最需要「看得见」的那条。
+chk("copyTo(" in _fk,
+    "G13b 分叉走拷贝而不是引用（父记忆被删时孩子仍要留着图）")
+# 拼图必须**重拼**：父拼图里有孩子没有的后续步骤，直接拷会「图里有第 5 步、记忆只有 3 步」。
+chk("buildStrip(" in _fk,
+    "G13c 子记忆的拼图重拼（不许直接拷父拼图，否则图与步骤错位）")
+chk("pruneUnlisted(" in _fk,
+    "G13d 分叉收尾也清残留（半残目录会留下指不到任何一步的图）")
+chk(re.search(r"picked\.isEmpty\(\)", _fk) is not None and "deleteRecursively(" in _fk,
+    "G13e 一张都没拷到时不建半残目录（返回 null 让调用方当无图处理）")
+# 按**位置**对齐：子 steps = 父 steps.take(fromStep)，所以 shots 只能取前段，
+# 不能按 sourceIndex 查表（父 shots 与父 steps 同位是 normalizeShots 保证的契约）。
+chk("getOrNull(k)" in _fk,
+    "G13f 按位置取父图（按 sourceIndex 查表会在剪枝记忆上错位）")
+# ---- 路由侧真的接线了 ----
+_mf = fn_body(routes, "memFork")
+chk("forkShots(" in _mf,
+    "G13g memFork 真的搬图了（只定义 forkMemory 不调用等于没有）")
+_fs = fn_body(routes, "forkShots")
+chk("StepShots.forkMemory" in _fs,
+    "G13j forkShots 真的调到 StepShots.forkMemory（中间层空转等于没接线）")
+chk("bundle.shotRels" in _fs,
+    "G13k 图字段从 Bundle 回填到 entry（只搬文件不填字段 = hasImages 仍 false）")
+chk("MemoryStore.upsert" in _mf,
+    "G13h 带图后要再 upsert 一次把图字段落盘（MemoryEdits.fork 不带图）")
+chk("StepShots.deleteMemory" in _mf,
+    "G13i 子记忆落盘失败时清掉刚落盘的图（否则成了没人认领的孤图）")
+
+print("[G3] upsert 路径也要收敛孤图")
+# 容量淘汰（MemoryRetention.toEvict）删掉**别人**的记忆时，那些条目的图目录没人收。
+# 只靠两条 learn 路径清扫会漏掉这里，孤儿图会攒到下一次自动学习才被扫。
+_ups = fn_body(routes, "memUpsert")
+chk("sweepOrphanMemoryDirs" in _ups,
+    "G14 memUpsert 收敛孤儿图目录（它也会因容量淘汰删别人的记忆）")
+_lab = fn_body(routes, "memLabel")
+chk("sweepOrphanMemoryDirs" in _lab,
+    "G14b memLabel 同样收敛（标注也走 upsert，rev+1 会触发淘汰）")
+# 死代码：原「先清再写」已被 bundle 的 pruneUnlisted 取代，留着会误导后来人。
+chk("fun resetMemory(" not in shots,
+    "G15 resetMemory 已删除（先清再写会丢旧图，已由 pruneUnlisted 取代）")
+
 print("[F] 六语文案齐备")
 for loc, d in (("values", ""), ("values-zh-rCN", "-zh-rCN"), ("values-de", "-de"),
                ("values-pt-rBR", "-pt-rBR"), ("values-th", "-th"), ("values-ru", "-ru")):

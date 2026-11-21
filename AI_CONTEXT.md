@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-21 16:40 · `main` 代码提交 `ab65ab20`（已推）· tag `v1.6.0-beta.30` 已发布 prerelease（CI 全绿，包内 loader 43,224 B 与本地逐字节一致）· 本轮 loader linkat 不认 `/proc/self/fd/N` 修复（容器 `apk update`/`apk add` 数据库写全通）+ v1.6.0-beta.30 装机复验与现场清理，详见第一百五十三章。此前基线 `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
+**最后更新**：2026-11-21 21:30 · `main` 代码提交 `bac79f1d`（已推）· tag `v1.6.0-beta.31` 对应 vC407 全包 · 本轮**记忆带图的三处生命周期缺口**（fork 丢图 / upsert·label 不扫孤儿 / `resetMemory` 死代码）已修并模拟器复验，详见第一百五十四章。此前：`ab65ab20`（v1.6.0-beta.30，loader linkat 不认 `/proc/self/fd/N` 修复，容器 `apk update`/`apk add` 数据库写全通，见第一百五十三章）· `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· 记忆带图主干（第一百四十七章，`1c286a74`）· WebUI 首屏 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -16624,3 +16624,157 @@ untrusted_app_27 下是否同样放行 **尚未确认**。
 会返回 `501 Unsupported client`（468 B 的 HTML 错误页）；要核对包内容只能整体下载。
 另外 `python -c` 里写带引号的 f-string 很容易被 shell 吃掉引号，落成 `SyntaxError: '(' was never closed`
 —— 改写成独立 `.py` 文件再 `python file.py` 最稳。
+
+## 第一百五十四章（v1.6.0-beta.31 之后 · 2026-11-21）记忆带图的三处生命周期缺口：fork 丢图、upsert 不扫孤儿、resetMemory 死代码
+
+### 1. 本轮的结论（可直接引用）
+
+上一轮（第一百四十七章）把「每步留图 + 拼总览图」做出来并提交了 `1c286a74`，但图的生命周期
+只覆盖了「学会 → 打包 → 删除」主干，三条旁路是断的。本轮用探针口径逐条取证后修完：
+
+| # | 缺口 | 现象 | 状态 |
+|---|---|---|---|
+| A | `memFork` 不搬图 | 分叉出的子记忆 `hasImages=false`，一条界面都看不到 | **已修并真机复验** |
+| B | `memUpsert`/`memLabel` 不扫孤儿 | 容量淘汰删掉别人的记忆后，图目录没人收，攒到下次自动学习才被扫 | **已修并负对照** |
+| C | `StepShots.resetMemory` 死代码 | 全仓 0 调用点，注释还写着「重建时先清旧图」——与实际行为相反 | **已删** |
+
+三处都不是「代码写错」，是**接线漏了调用方**。取证手法：`fn_body()` 按函数边界切函数体
+再看体内有没有那个调用（不按字符窗口，窗口开大就能把下一个函数的调用算进来 → 假绿）。
+
+### 2. 缺口 A：fork 丢图的根因与修法
+
+根因在 `MemoryStore.kt` 的 `MemoryEdits.fork`：构造子记忆时只带 `vector`/`sceneFp`，
+`startShot`/`shots`/`strip` 三个字段一个都没带（`steps = entry.steps.take(fromStep)`）。
+`memFork` 路由也没调任何 `StepShots` 函数 —— 两处都不搬，图自然丢。
+
+修法是**拷贝 + 重拼**，不是共享引用：
+
+- `StepShots.forkMemory(ctx, childId, childIndices, parentStart, parentShotRels): Bundle?`
+  - 起手屏：父 `parentStart` 解析成文件后 `copyTo(dst, overwrite=true)` 成 `START_FILE`
+  - 逐步图：按**位置**取 `parentShotRels.getOrNull(k)`（父 `shots` 与父 `steps` 同位是
+    `normalizeShots` 的契约，按 `sourceIndex` 查表会在剪枝记忆上错位），文件名过
+    `isSafeId(name.removeSuffix(".webp"))`
+  - 一张都没拷到 → `deleteRecursively()` 后返回 `null`（不建半残目录，也不指一条不存在的图）
+  - 有图 → `buildStrip()` 用这些图**重拼**子拼图，最后 `pruneUnlisted()` 清残留
+- `MemoryRoutes.memFork`：`bundled == null` 时 `ok = true`（父记忆本来就没图，不是错误）；
+  有图则再 `MemoryStore.upsert(ctx, bundled)` 把三个字段落盘；落盘失败
+  `StepShots.deleteMemory(ctx, child.id)`（图没有归属就连磁盘一起清）
+- 新增 `private fun forkShots(ctx, parent, child)`：调 `forkMemory` 后回填
+  `startShot` / `shots = child.steps.map { bundle.shotRels[it.sourceIndex].orEmpty() }` / `strip`
+- 新增常量 `START_FILE = "start.webp"`（`captureInner` 原来写的是字面量）
+
+**为什么必须拷贝而不是引用**：子记忆是独立资产。父记忆被删/被重学/被容量淘汰时，引用会让
+子记忆同时失去界面证据 —— 而「用户刚在这个界面改了主意」分叉出来的那条，恰恰最需要看得见。
+**为什么拼图必须重拼**：父拼图里含着子记忆没有的后续步骤，直接拷过去就是「图里有第 5 步、
+记忆只有 3 步」，重放时模型会照着不存在的界面判断（与 `memShot` 双索引错位同款）。
+
+### 3. 缺口 B：upsert 路径的孤儿图
+
+`sweepOrphanMemoryDirs` 原来只有 `learnQuiet` 与 `memLearn` 两个调用点。但 `memUpsert`
+也会因**容量淘汰**（`MemoryStore.upsertLocked` 里的 `MemoryRetention.toEvict`）删掉**别人**的
+记忆 —— 那些条目的图目录没人认领，会一直攒到下一次自动学习。`memLabel` 同理（rev+1 会走
+同一条 upsert 路径）。
+
+修法：两处各补 `if (ok) StepShots.sweepOrphanMemoryDirs(ctx, MemoryStore.list(ctx).map { it.id })`。
+
+### 4. 缺口 C：删掉 `resetMemory`
+
+原设计是「重建时先清旧图」，后来改成 `bundle` 收尾的 `pruneUnlisted`（**先打包成功再清残留**，
+打包失败时旧图还在）。`resetMemory` 的调用点全没了却忘了删定义，注释还留着误导后来人。
+
+顺带把 `MemoryRoutes.kt:319` 与 `bundle` 里 `pruneUnlisted` 的注释中「resetMemory」字样改成
+「先删旧图」，`docs/A11Y_MEMORY_DESIGN.md` §12.4 的口径也一并改（原来写的是「重建 → 先清再写」，
+与实际行为相反）。
+
+### 5. 探针（`scripts/probes/_test_a11y_step_shots.py`，72 → 86 checks）
+
+新增 `[G2]` 16 条 + `[G3]` 3 条：
+
+- G13 `forkMemory` 存在；G13b 体内有 `copyTo(`（不许改引用）；G13c 体内有 `buildStrip(`
+  （不许直接拷父拼图）；G13d `pruneUnlisted(`；G13e `picked.isEmpty()` + `deleteRecursively(`
+  （不建半残目录）；G13f `getOrNull(k)`（按位置不按 sourceIndex）
+- G13g `memFork` 体内含 `forkShots(`；G13j `forkShots` 体内含 `StepShots.forkMemory`
+  （中间层空转不算接线）；G13k `bundle.shotRels`（只搬文件不填字段 → `hasImages` 仍 false）
+- G13h `MemoryStore.upsert`；G13i `StepShots.deleteMemory`（落盘失败要清图）
+- G14 `memUpsert` 含 `sweepOrphanMemoryDirs`；G14b `memLabel` 含；G15 `fun resetMemory(` 不存在
+
+**变异五组，各只打红自己那一条，恢复后 `cmp` 字节一致**：
+
+| 变异 | 打红 |
+|---|---|
+| `forkMemory` 里删 `buildStrip(` | G13c |
+| `copyTo` 改成写空文件 | G13b |
+| `memFork` 不调 `forkShots`（`bundled = null`） | G13g |
+| `memUpsert` 去掉 sweep | G14 |
+| `forkShots` 直接 `return child`（不回填字段） | G13k |
+
+踩坑两处：① 判据写成 `items.isEmpty()` 会红（实际变量名是 `picked`）——**按代码里真实的
+变量名断言，不要按脑内的设计名**；② `memFork` 体内并不直接出现 `StepShots.forkMemory`（中间
+隔了一层 `forkShots`），只查字符串会假红，必须分别钉两层。
+
+### 6. 门禁（全部实测末行）
+
+隔离树 `/e/tmp/wt-fork`（`git worktree add --detach` 在 HEAD `bac79f1d`
+「chore(release): 1.6.0-beta.31 (407) —— 出完全包」）：
+
+| 项 | 结果 |
+|---|---|
+| `:app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` | **BUILD SUCCESSFUL** 2m46s（改警告后增量 5s） |
+| `:app:testDebugUnitTest` | BUILD SUCCESSFUL 32s |
+| `bash scripts/run-a11y-jvm-test.sh` | **passed=2476 failed=0** |
+| 全量探针（已跟踪 163 条） | **PASS=163 FAIL=0** |
+| `check-i18n.py` | All i18n checks passed |
+| `:app:assembleDebug` | 出 **46,473,765 B** APK |
+
+工作区另跑一遍全量探针 **PASS=164 FAIL=0**（比隔离树多一条，是并发会话未入库的
+`_test_webview_polyfill_injection.py`）。`check-ui-tokens.py` / `check-no-bulk-perms.py` 均 OK，
+`git diff --check` exit 0。
+
+顺手清掉两条编译警告（都是本轮新增代码带进来的）：`pruneUnlisted` 的 `ctx` 参数从未使用
+（去掉参数 + 同步两处调用）；`buildStrip` 里 `val t = cell.y + fit[3]` 与 `Thumb` 循环变量
+`t` 同名遮蔽（改名 `dy`）。剩下两条 `WEBP is deprecated` 是既有代码。
+
+### 7. 真机（本轮实际是模拟器）验收
+
+真机 PLZ110 本轮**又掉线**（`adb devices` 空、`connect 192.168.101.21:9000` 报 10060、
+`kill-server`/`start-server` 无效、无 emulator 进程），改用模拟器：
+`/e/Android/Sdk/emulator/emulator.exe -avd dsh34 -no-snapshot-load -no-boot-anim`
+（45s 后 `emulator-5554 device`）。装 `app-debug.apk` 前必须 `adb root`，否则
+`rearm_emu.sh` 里 `cp .../shared_prefs/capabilities.xml` 报 `Permission denied`。
+
+**证据 A（fork 搬图，真机生效）**：造两步轨迹（Settings → Network & internet → Internet，
+`/loop/run` 两步 `tap`，`totalMs 3940`，两步 `status:ok`/`via:exact`/`score:0.95`）→
+`POST /memory/v2/learn` 得 `m_1795267090509_5050`（`{"images":3,"steps":2}`）→
+`POST /memory/v2/fork {"fromStep":1}` 得 `m_1795267134847_3482`：
+
+| 项 | 母记忆 | 子记忆 |
+|---|---|---|
+| `hasImages` | true | **true** |
+| `steps_i` | `[0,1]` | `[0]` |
+| `shotIndex` | pos0→i0、pos1→i1 | pos0→i0 |
+| 磁盘 | `0/1/start/strip` 四文件 | `0.webp 9508 / start.webp 9418 / strip.webp 11952` |
+
+子 `0.webp` 与 `start.webp` 字节数与父完全相同（9508 / 9418）＝真拷贝；`strip.webp` 是
+**11952**（父是 17254）＝重拼过。目视核对：子拼图 424×459 两格 `S`/`0`（Settings 列表 +
+Network & internet 高亮），父拼图 632×459 三格 `S`/`0`/`1`（多一格 Internet 页）——
+子记忆确实不含父的第 1 步。
+
+**证据 B（孤儿清扫，负对照）**：手工造 `memory/v2/shots/m_FAKEORPHAN/9.webp` →
+`POST /memory/v2/label` → `shots` 根下三个目录变两个，`m_FAKEORPHAN` 被清掉。
+修复前 `memLabel` 零调用 sweep，这个目录会一直留着。
+
+### 8. 仍未验证（如实记）
+
+1. **真机 PLZ110 未验本轮改动**，全部运行证据来自模拟器（x86_64 / Android 14）。arm64 上
+   `Bitmap` 回压与 WebP 编码路径未单独复验。
+2. **容量淘汰触发 fork 后的孤儿清扫**未构造（`MemoryRetention.toEvict` 要真删到上限才动，
+   本轮只验了 `label` 这条最便宜的路径）。
+3. **父记忆图已被预算淘汰 / upsert 失败**两条分支只走了代码路径，没在真机上构造
+   （`forkMemory` 返回 `null` 与 `deleteMemory` 的调用点各一处）。
+4. 上一轮（第一百四十七章 §未验证）列的**起手帧丢弃率 30–60%** 仍只有推演，无实测统计。
+
+### 9. 下一步
+
+1. 真机恢复后装本轮 APK 复验 A/B 两条证据（arm64 侧）。
+2. `MemoryRetention` 淘汰后立刻验证孤儿清扫（把上限临时压到 2 条即可构造）。
+3. 与本轮无关但一直挂着：OPPO Hans 冻结整 uid cgroup（第一百五十三章故障 B）仍需宝宝决策。

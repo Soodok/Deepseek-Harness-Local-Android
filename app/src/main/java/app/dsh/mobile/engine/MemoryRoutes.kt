@@ -316,7 +316,7 @@ object MemoryRoutes {
             // learn 返回了 id，但 memory/v2/shots 目录压根不存在）。
             val memId = existing?.id ?: ("m_" + now + "_" + (1000..9999).random())
             StepShots.awaitIdle(traceId)
-            // ⚠️ 这里**不能**在 bundle 之前 resetMemory：bundle 会把新图写进同一个目录，
+            // ⚠️ 这里**不能**在 bundle 之前先删旧图：bundle 会把新图写进同一个目录，
             // 先删掉再打包，一旦 bundle 返回 null（节流/保护页/没图），旧图已经被删光，
             // 而下面还指望着「保留旧图」—— 结果是旧图必丢、元数据指向不存在的文件。
             // 正确做法是让 bundle 自己收尾：拷完新图后把目录里不属于这一版的残留文件清掉。
@@ -449,6 +449,8 @@ object MemoryRoutes {
             vector = MemoryIndex.embed(intent) ?: e.vector,
         )
         val ok = MemoryStore.upsert(ctx, updated)
+        // 标注也会触发容量淘汰（rev+1 让它变成「最新」但条数没变时 evict 仍可能发生）
+        if (ok) StepShots.sweepOrphanMemoryDirs(ctx, MemoryStore.list(ctx).map { it.id })
         200 to JSONObject().put("ok", ok).put("id", updated.id).put("intent", intent).toString()
     }.getOrElse { ex -> Log.w(TAG, "memLabel failed: ${ex.message}"); 400 to err("bad body") }
 
@@ -919,6 +921,10 @@ object MemoryRoutes {
             StepShots.deleteMemory(ctx, id)
         }
         val ok = MemoryStore.upsert(ctx, entry)
+        // upsert 也会因**容量淘汰**删掉别人的记忆（MemoryRetention.toEvict），
+        // 而那些被淘汰条目的图目录没人认领 —— 只靠两条 learn 路径的清扫会漏掉这里，
+        // 孤儿图会一直攒到下一次自动学习才被扫。所以每次 upsert 成功都收敛一次。
+        if (ok) StepShots.sweepOrphanMemoryDirs(ctx, MemoryStore.list(ctx).map { it.id })
         200 to JSONObject().put("ok", ok).put("id", id).put("pkg", pkg)
             .put("vectorDim", entry.vector.size)
             .put("keptImages", keepShots).toString()
@@ -1165,10 +1171,42 @@ object MemoryRoutes {
         val id = o.optString("id")
         val intent = o.optString("intent")
         if (id.isBlank() || intent.isBlank()) return 400 to err("missing id or intent")
+        val parent = MemoryStore.get(ctx, id) ?: return 404 to err("fork failed (bad id or fromStep)")
         val child = MemoryStore.fork(ctx, id, o.optInt("fromStep", -1), intent, o.optString("title"))
             ?: return 404 to err("fork failed (bad id or fromStep)")
-        200 to entryJson(child).toString()
+        // 分叉出来的子记忆要能看见「前 fromStep 步当时长什么样」——否则用户刚在这个
+        // 界面改主意，孩子却退回成一条纯文本记忆，等于把改主意的现场弄丢了。
+        // 图是**拷贝**不是引用：父记忆之后被删/被重学时孩子仍要留着自己的证据。
+        val bundled = forkShots(ctx, parent, child)
+        val ok = if (bundled == null) {
+            true // 父记忆本来就没图 / 图已被预算淘汰 —— 不是错误，孩子就是条无图记忆
+        } else {
+            MemoryStore.upsert(ctx, bundled)
+        }
+        if (!ok) {
+            // 子记忆没落盘（配额淘汰等）→ 刚落盘的图没人认领，连磁盘一起清掉。
+            StepShots.deleteMemory(ctx, child.id)
+        }
+        200 to entryJson(bundled ?: child).toString()
     }.getOrElse { e -> Log.w(TAG, "memFork failed: ${e.message}"); 400 to err("bad body") }
+
+    /**
+     * 给分叉出的子记忆搬图。父记忆无图则返回 null（不建半残目录）。
+     *
+     * 子记忆的 `steps` 是父的 `take(fromStep)`，所以按**位置**从父 `shots` 前段拷 ——
+     * `shots` 与 `steps` 同位对齐是 `normalizeShots` 保证的契约。
+     */
+    private fun forkShots(ctx: Context, parent: MemoryEntry, child: MemoryEntry): MemoryEntry? {
+        val bundle = StepShots.forkMemory(
+            ctx, child.id, child.steps.map { it.sourceIndex },
+            parent.startShot, parent.shots,
+        ) ?: return null
+        return child.copy(
+            startShot = bundle.startShot,
+            shots = child.steps.map { bundle.shotRels[it.sourceIndex].orEmpty() },
+            strip = bundle.strip,
+        )
+    }
 
     /** POST /memory/v2/rollback {"id","rev"} */
     fun memRollback(ctx: Context, body: String): Pair<Int, String> = runCatching {
