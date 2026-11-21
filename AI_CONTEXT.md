@@ -17105,3 +17105,113 @@ visibility = VISIBLE  →  alpha = 0f  →  120ms 淡入到 1
   `scripts/probes/_test_dsh_alpine_source_sync.py`；未跟踪 `docs/ui-preview/probe-opacity.mjs`。
 - `scripts/probes/*` 被 `.gitignore` 第 79 行忽略，新探针须 `git add -f`。
 
+## 第一百五十九章（v1.6.0-beta.36 · vC412 · 2026-11-22）Xvfb 客户端连不上的第二层真因：accept 被 seccomp 拦成 EPERM
+
+### 1. 本轮结论
+
+Linux 工作台「点开始画面无反应」是**三层独立故障叠加**，前两层已修，本轮修第三层：
+
+| 层 | 症状 | 真因 | 修复版本 |
+|---|---|---|---|
+| 一 | 容器内任何管道都废（`a\|b`、`strace -o`） | seccomp 拦 `pipe(22)`、放行 `pipe2(293)` | beta.34 / vC410 |
+| 二 | Xvfb 起来就死，报 `XKB: Failed to compile keymap` | Xorg 起子进程前先 `setgid(getgid())`，App 域 EPERM → `exit(127)`，从未 execve | beta.35 / vC411 |
+| 三 | Xvfb 活着、socket 在、客户端连不上 | seccomp 拦 `accept(43)`、放行 `accept4(288)` | **beta.36 / vC412（本轮）** |
+
+### 2. 第三层的决定性证据
+
+模拟器（x86_64 / Android 34 / App 域 / 经 loader / 容器内 python3 走 musl libc 裸 syscall）：
+
+```
+accept(43)        = -1 errno=1 EPERM   3/3   ← 先让客户端真连上再调，排除 EAGAIN
+accept4(288)      = fd 16              3/3
+epoll_create(213) = -1 EPERM           3/3（size=0 与 size=1 都 EPERM）
+epoll_create1(291)= fd                 3/3
+eventfd(284)      = -1 EPERM           3/3
+eventfd2(290)     = fd 13              3/3
+inotify_init(253) = -1 EPERM           3/3
+inotify_init1(294)= fd 14              3/3
+signalfd(282)     = -1 EPERM           3/3
+signalfd4(289)    = fd                 3/3（需 8 字节 sigset）
+```
+
+用户侧表现完全对得上：`Xvfb :71` 进程活着、`/tmp/.X11-unix/X71` 是 `srwxrwxrwx`、
+python AF_UNIX 客户端 `connect OK 0.00s`，但发完 X11 setup 请求后 `recv(8)` **一个字节都不回**，
+同时 `x71.log` 每秒刷 `_XSERVTransSocketUNIXAccept: accept() failed`。
+
+### 3. 修法：语义等价翻译，不是绕过
+
+`scripts/gen_bpf_tree.py` 的 `LEGACY_X86_64` 加一行五个号；`dsh_alpine.c` 的 handler 加五条翻译
+（包在 `#if defined(DSH_ARCH_X86_64)`，位置在 pipe 分支之后、identity 短路之前）：
+
+| 老号 | 翻译 | 语义依据 |
+|---|---|---|
+| `accept` | `accept4(fd, addr, len, 0)` | flags=0 时二者内核路径相同 |
+| `epoll_create(size)` | `size<=0` 返回 `-EINVAL`，否则 `epoll_create1(0)` | size 仅为兼容而保留，内核只要 >0 |
+| `eventfd(v)` | `eventfd2(v, 0)` | flags=0 等价 |
+| `inotify_init()` | `inotify_init1(0)` | 同上 |
+| `signalfd(fd,mask,flags)` | `signalfd4(fd, mask, 8, flags)` | signalfd 的 sigset 恒为 8 字节 |
+
+aarch64 通用 ABI **没有**这五个老号（musl 那里直接走现代号），所以只登记在 x86_64 分支。
+生成器实跑：x86_64 `INSTR=237 → 257`，aarch64 `161` 不变；两 arch 独有名字统计 57 / 33。
+
+### 4. 探针 [10] 段（106 → 148 checks）
+
+五条各覆盖四件事：源码有该分支 / 译到正确的现代号（不能译错到隔壁）/ 被 `#if` 包住 /
+排在 `a0` 截断之前。另有 epoll size 校验、accept flags=0、生成器双登记、两 arch 树泄漏反向。
+
+两处判据坑，值得记住：
+
+- **「被 #if 包住」不能用固定窗口**：后两条离 `#if` 有 20 多行，窗口法漏判 → 改成
+  「从分支位置往前找最近的 `#if` 与 `#endif`，最近那个必须是 `#if`」。
+- **C 注释剥离器会吞掉生成器**：`gen_bpf_tree.py` 注释里有「走 `*4/*1` 版本」这种文字，
+  含 `/*` 却没有对应 `*/`，`strip_c_comments` 把后面整个文件当块注释删光 →
+  「明明改了却报没改」的假红。改为截 `LEGACY_X86_64` 与 must 两个块分别查 token。
+
+七组变异各只打红对应断言：生成器删 accept → 4 红；删 pipe → 5 红；accept 改 `if(0)` → 1 红；
+删 epoll size 校验 → 1 红；accept 传 `0x80000`（凭空加 CLOEXEC）→ 1 红；
+去 `#if` → 5 红；create1 传常量 → 1 红。复原后源码与两产物字节一致，148/0。
+（变异前要先把两个 `.so` 的 mtime 推到未来，否则「产物早于源码」那条会混进来。）
+
+### 5. 产物与端到端验证
+
+- arm64-v8a 43,016 B / md5 `2348ea8cbdf25d74a76688f1f3f313e6`（未变，aarch64 树一字未动）
+- x86_64 43,016→ **61,096 B / md5 `22fd47d66c99d23c4fadfd37780d9502`**
+- 构建必须 `env -u MSYS2_ARG_CONV_EXCL bash scripts/build-loader.sh <ndk> <abi>`
+- APK 179,316,645 B / md5 `02f8d6f1de251b28ce7d3390969be77e`（比 beta.35 小，因 runtime zip 换成 130MB 的 ci 版）
+- 装机（emulator-5554，vC412）点 **Start screen** 后画面真出：白底终端区显示
+  `CONTAINER READY` / `x86_64` / `3.23.8`；`dshframe.bin` seq `996 → 1441 → 1544` 持续增长；
+  `Xvfb` / `xterm` / `x11frsrv` 三个进程都在；`xdpyinfo -display :81` 输出
+  `X.Org version: 21.1.23`、`maximum request size: 16777212`。
+
+### 6. 本轮踩的坑（下次别再踩）
+
+- **容器内 daemon 的日志必须限大小**。把 Xvfb 的 stderr 重定向到 `/tmp/x96.log` 后，
+  `accept() failed` 每秒刷 → x96 6.9 GB / x97 5.7 GB / x98 0.94 GB / x71 246 MB，16 GB 的
+  `/data` 直接 100% 满，装机都装不进去。
+- **删了文件空间不回来 = 还有进程持 deleted fd**。查 `/proc/*/fd` 里带 `(deleted)` 的，
+  `kill -9` 那几个 `dsh-alpine` 后 `df` 从 100% 回到 14%（2.0 G used / 13 G avail）。
+- **PTC 补丁校验的 runtime zip 只剩两份可用**：`_runtime_bak/rt-arm64-20261112.zip` 与
+  `E:/tmp/rt-x86_64-ci.zip`；`rt-x86_64-current.zip` 缺 4 条断言（OPENSSL_CONF / SSL_CERT_FILE /
+  MAGICK_CONFIGURE_PATH / bootstrap path fallback），旧的 `rt-x86_64-ptcwork.zip` 已不在树内。
+- **`-PruntimeZip` 相对路径按 `app/` 解析**，会误报缺 PTC 补丁，必须传绝对路径。
+
+### 7. 提交
+
+`02f69807` fix(loader): 五条老式 syscall 语义翻译，修 Xvfb 客户端连不上的第二层真因（beta.36 / vC412）
+（6 文件 +690 −148）。
+
+### 遗留
+
+- **推送未成功，4 个提交待补推**（`git rev-list --count origin/main..main` = 4）。取证结论：
+  `nslookup github.com` 正常（57.155.223.240 / 140.82.116.3），`ping github.com` 0% 丢包 210ms，
+  但 `curl -v` 到 443 **连接超时**、到 22 也失败；全局 `http.proxy`/`https.proxy` 已不存在
+  （原来那条 127.0.0.1:7892 无人监听），逐个试 4001/8443/8888/8787/9210/14013/7890/47890 全部 000。
+  → 是**本机出网被拦**，不是仓库或凭据问题。网络恢复后直接
+  `git -c http.proxy= -c https.proxy= push origin main`。
+- 真机（192.168.101.21:9000）掉线未复测，本轮全部证据来自 emulator-5554（x86_64 / Android 34）。
+  **arm64 真机上这五条老号是否同样被拦尚未验证** —— arm64 的 musl 一般走现代号，理论上不受影响，
+  但「理论上」不算证据。
+- 工作区仍有他人改动未提交：`docs/promo/{design.md,manifest.json,render_banner.py}`、
+  未跟踪 `docs/promo/assets/` 与 `docs/ui-preview/probe-opacity.mjs`。
+- `scripts/probes/*` 被 `.gitignore` 第 79 行忽略，新探针须 `git add -f`（本轮探针是既有文件，未触发）。
+
