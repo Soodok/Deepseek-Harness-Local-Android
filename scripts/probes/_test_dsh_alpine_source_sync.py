@@ -316,6 +316,52 @@ if i5e >= 0:
        "未命中必须回 -2，让 execve 收到 ENOENT 继续 PATH 搜索")
     ok("g_resolve_missing = (_r == -2);" in _s5e,
        "rootfs 分支仍按 resolve_in_rootfs 的 -2 约定同步标志")
+print("[5f] linkat 的 /proc/self/fd/N 必须改写成 fd + AT_EMPTY_PATH（v1.6.0-beta.27）")
+# 根因（2026-11-21 真机，PLZ110 / Android 16 / aarch64）：
+#   同一个进程、同一个 fd，三种系统调用三种结果 ——
+#     open("/proc/self/fd/7")  -> 成功
+#     stat(同上)               -> 成功
+#     readlink(同上)           -> "/tmp/ltd6/reg"
+#     linkat(AT_FDCWD, 同上, dfd, "X1", AT_SYMLINK_FOLLOW) -> ENOENT
+#     linkat(7, "", dfd, "X1", AT_EMPTY_PATH)              -> 成功
+#   而且**完全不翻译、原样透传**（dev_passthrough 走的就是那条）同样是 ENOENT
+#   —— 不是「翻译错了」，是本机内核在 linkat 里不对 /proc 路径做符号链解析。
+#
+#   受害者：apk 的 io.c 落名（O_TMPFILE + linkat）、apk 写数据库（installed /
+#   triggers / scripts.tar.gz 同一路线）、dpkg 的 status-old 备份、任何
+#   mktemp+link 的写法。用户可见症状是
+#     WARNING: updating and opening …/APKINDEX.tar.gz: No such file or directory
+#     ERROR: System state may be inconsistent: failed to write database: …
+#   两条报错都不带真实路径，极易误判成网络或镜像故障（本次就误判了两轮）。
+#
+# 下面这组判据全部是「改回旧形态就一定红」的形状判据，配合 [2b] 的 mtime 判据
+# 覆盖「产物没重编」这一侧（该修复不产生字符串常量，产物侧只能靠 mtime）。
+_s5f = strip_c_comments(src)
+i5f = _s5f.find("case SYS_linkat: {")
+ok(i5f >= 0, "源码里有 case SYS_linkat 分支")
+if i5f >= 0:
+    seg5f = _s5f[i5f:i5f + 5200]
+    ok("is_proc_self_fd(op)" in seg5f,
+       "闸门用既有的 is_proc_self_fd(op)（不要另写一份正则解析）")
+    ok("src_fd" in seg5f, "解析结果落到 src_fd 变量，而不是就地拼字符串")
+    # 源必须是 fd 本身 + 空串路径：写 (long)"" 是把 "" 的指针交给内核，
+    # 改回 (long)op 就是退回「用路径做源」的旧形态（照样 ENOENT）。
+    ok('raw6(SYS_linkat, src_fd, (long)"",' in seg5f,
+       '改用 linkat(src_fd, "", …)：源是 fd 本身，不是路径')
+    ok("0x1000" in seg5f,
+       "flags 必须是 AT_EMPTY_PATH(0x1000)：少了它内核不认空路径源")
+    ok("if (lfd_r == 0) { r[0] = 0; return; }" in seg5f,
+       "成功即返回；失败**不许**直接 return（要落回原翻译路径，不放大新拒绝）")
+    # 兜底仍在：旧形态的 raw6(SYS_linkat, ofd, (long)use_op, …) 必须还在下面。
+    ok("long lr = raw6(SYS_linkat, ofd," in seg5f,
+       "失败分支之后原翻译路径仍存在（兜底没被这段覆盖掉）")
+    ok("ldr_link_denied(lr)" in seg5f,
+       "app 域无 link 权限的复制兜底（ldr_copy_link）也还在")
+    # 目标侧仍要按 dev_passthrough/bind_map/make_rel 三选一翻译，
+    # 否则 cache 目录在 rootfs 内时目标会被当成宿主路径。
+    ok(seg5f.count("make_rel(nbuf, np)") >= 2,
+       "目标侧在 fd 分支里也做了一次完整翻译（make_rel/bind_map）")
+
 print("[6] 无调试残留")
 ok(b"[HIT]" not in so_raw, "产物无 [HIT] 打印")
 ok(b"[DIAG" not in so_raw, "产物无 [DIAG 打印")

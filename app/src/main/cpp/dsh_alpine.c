@@ -3179,6 +3179,51 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         //      末尾只剩一句 "System state may be inconsistent: failed to write
         //      database: No such file or directory"，且报错字符串里没有路径。
         //   2) 容器内 ln /proc/self/fd/1 /tmp/x、ln /dev/null /tmp/y 同样 ENOENT。
+        // ★/proc/self/fd/N 当**源**时必须换成 fd + AT_EMPTY_PATH（v1.6.0-beta.27）。
+        //
+        //   实测（PLZ110 / Android 16 / aarch64，同一进程同一 fd）：
+        //     open("/proc/self/fd/7")   -> 成功
+        //     stat("/proc/self/fd/7")   -> 成功
+        //     readlink(同上)            -> "/tmp/ltd6/reg"
+        //     linkat(AT_FDCWD, 同上, dfd, "X1", AT_SYMLINK_FOLLOW) -> ENOENT
+        //     linkat(fd, "", dfd, "X1", AT_EMPTY_PATH)             -> 成功
+        //   即使**完全不翻译**、把 /proc/self/fd/N 原样交给内核（dev_passthrough
+        //   走的就是这条）也还是 ENOENT —— 宿主内核在这里不对 /proc 路径做符号
+        //   链解析。所以这不是"翻译错了"，而是"这条路在本机内核上不成立"。
+        //
+        //   受害者不是个别程序：apk 的 io.c 落名（O_TMPFILE + linkat）走它，
+        //   dpkg 的备份、任何 mktemp+link 的写法都走它。所以必须在这一层统一
+        //   改写，不能指望每个 guest 程序自己换成 fd 版 API。
+        //
+        //   失败就退回原来的翻译路径（保证不把新拒绝放大到旧行为上）。
+        long src_fd = -1;
+        if (a0 == -100 && op && op[0] == '/' && is_proc_self_fd(op)) {
+            const char *q = op + 6;              /* 跳过 "/proc/" */
+            int pid_ok = 1;
+            if (q[0] == 's' && q[1] == 'e' && q[2] == 'l' && q[3] == 'f') q += 4;
+            else {
+                if (*q < '0' || *q > '9') pid_ok = 0;
+                while (pid_ok && *q >= '0' && *q <= '9') q++;
+            }
+            if (pid_ok && q[0] == '/' && q[1] == 'f' && q[2] == 'd' && q[3] == '/') {
+                q += 4;
+                long v = 0; int got = 0;
+                while (*q >= '0' && *q <= '9') { v = v * 10 + (*q - '0'); q++; got = 1; }
+                if (got && *q == 0) src_fd = v;
+            }
+        }
+        if (src_fd >= 0) {
+            if (nf == -100 && np && np[0] == '/') {
+                if (dev_passthrough(np)) { /* 原样交给内核 */ }
+                else if (bind_map(np, nh)) { nfd = -100; np = nh; }
+                else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
+            }
+            const char *tnp = n_rel ? nbuf : np;
+            long lfd_r = raw6(SYS_linkat, src_fd, (long)"", nfd, (long)tnp,
+                              0x1000 /*AT_EMPTY_PATH*/, 0);
+            if (lfd_r == 0) { r[0] = 0; return; }
+            /* 失败则落回下面的常规路径，报出真实的第二个错误 */
+        }
         if (a0 == -100 && op && op[0] == '/') {
             if (dev_passthrough(op)) { /* 原样交给内核 */ }
             else if (bind_map(op, oh)) { ofd = -100; op = oh; }

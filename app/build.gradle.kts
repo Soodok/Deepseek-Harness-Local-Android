@@ -369,13 +369,27 @@ android {
         // 正面证据而不是猜：活 DSH（cmdline 命中 engine 路径）不删、记录解析不出 pid
         // 直接删、mtime 超过 20 秒直接删；剩下含糊的保留并留日志。
         // 同版 _test_stale_lock_heal.py 守 22 条断言 + 13 个单测，四组变异全部能打红。
-        versionCode = 405
+        // v1.6.0-beta.30（2026-11-21）：容器网络"通不了"的第一性成因——loader 的
+        // linkat 不认 /proc/self/fd/N。真机实测（PLZ110 / Android 16 / aarch64，同一
+        // 进程同一 fd）：open/stat/readlink 该路径全成功，linkat 用它做源却一律 ENOENT，
+        // 连"完全不翻译、原样透传内核"也 ENOENT —— 不是翻译错了，是本机内核在 linkat
+        // 里不对 /proc 路径做符号链解析。受害者是所有走 O_TMPFILE + linkat 落名的程序：
+        // apk 的索引落盘（报 WARNING …APKINDEX.tar.gz: No such file or directory，
+        // 文案带 URL、极易误判成镜像故障）与 apk 写数据库（报 System state may be
+        // inconsistent: failed to write database）、dpkg 的 status-old 备份。
+        // 修法：源路径命中 is_proc_self_fd 时解析出 fd 号，改走 linkat(fd, "", …,
+        // AT_EMPTY_PATH)；失败仍落回原翻译路径，不把新拒绝放大到旧行为。
+        // 同版 _test_dsh_alpine_source_sync.py 补 10 条形状断言（55 → 64），四组变异全红。
+        // 真机 A/B：旧 loader（38,832 B）apk update 无 OK 行 + add 报数据库错；
+        // 新 loader（43,224 B）apk update → OK: 27443 distinct packages available、
+        // apk add --no-cache jq → OK: 336.1 MiB in 108 packages，零 WARNING 零 error。
+        versionCode = 406
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.29"
+        versionName = "1.6.0-beta.30"
 
         ndk {
             abiFilters += listOf(targetAbi)
