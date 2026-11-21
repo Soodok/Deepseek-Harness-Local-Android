@@ -393,3 +393,8 @@ docs/ui-preview/.preview-server.json
 # 0 字节锁，上游 atomic-write 把它当「活着」永久等待 —— 真机实测 40.5 秒后整引擎
 # 失败。探针守三条：坏记录无论多新都删、活 DSH 写者不删、session.lock 永不触碰。
 !/scripts/probes/_test_stale_lock_heal.py
+# sharp 在 Android 上的 wasm32 回退补丁（v1.6.0-beta.33，真机 TRANSPORT 事故）：
+# `runtimePlatform` 是 "android-arm64"，上游 switch 没有这个 case，一旦 wasm32
+# 缺件就抛「Manually install libvips >= 8.18.7 / npm i @img/sharp-wasm32」——
+# 离线包两件都做不到，报错还挂在模型请求上，整轮判 TRANSPORT 失败。
+!/scripts/probes/_test_sharp_android.py

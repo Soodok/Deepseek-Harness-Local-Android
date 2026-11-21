@@ -292,6 +292,21 @@ python3 "$SCRIPTS_DIR/patch-attachment-local.py" "$ROOT" || {
   exit 1
 }
 
+# [sharp] Android 的 `runtimePlatform` 拼成 "android-arm64"，上游 switch 里
+# **没有这个 case**，只能靠 switch 之后的 `@img/sharp-wasm32` 回退兜底。这一步
+# 失败时 sharp 抛出的帮助文本会建议用户 `npm install libvips` /
+# `npm i @img/sharp-wasm32` —— 而 App 的离线包两件事都做不到，用户照着做只会
+# 继续失败，还会误以为是网络或 API key 问题（报错挂在模型请求上，整轮直接判
+# TRANSPORT 失败）。补丁做两件事：① 显式加 `android-arm64`/`android-arm` case，
+# 命中即 break 走 wasm32 回退（注意**不能**指向 @img/sharp-linux-arm64，那是
+# glibc ELF，Android dlopen 必失败）；② 把 help 换成可操作的说明。
+# 真机意义上 wasm32 回退是**能用的**：本机伪造 platform/arch 实测 metadata、
+# jpeg(85)、webp、raw 全部通过；所以缺的是「Android 没被当成一等情形」。
+python3 "$SCRIPTS_DIR/patch-sharp-android.py" "$ROOT" || {
+  echo "错误：sharp Android 回退补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [dsh-fs-local] Android 共享存储的权限语义（issue #25 后续：安卓14 LOS
 # 「文件资源服务不可用」/ 目录反复刷新）：
 #   · probeStats 只容忍 ENOENT/ENOTDIR，其余 errno 直接上抛 —— 而 Android 的
