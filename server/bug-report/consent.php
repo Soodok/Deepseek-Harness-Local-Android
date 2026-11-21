@@ -49,6 +49,23 @@ try {
     $token = bin2hex(random_bytes(16));
     $db->prepare('INSERT INTO consent_tokens (token, ts, used) VALUES (?,?,0)')
        ->execute([$token, time()]);
+    // 顺手做一次保留期清理（30 天）：没人跑 cron 的时候，靠「有请求进来」驱动。
+    // 只删过期的附件与上报，墓碑留 90 天——「删过什么」比「内容」更值得留。
+    $cut = time() - 30 * 86400;
+    $old = $db->prepare('SELECT id, file_name FROM uploads WHERE ts < ?');
+    $old->execute([$cut]);
+    foreach ($old->fetchAll(PDO::FETCH_ASSOC) as $o) {
+        $name = preg_replace('/[^A-Za-z0-9._-]/', '_', basename((string)$o['file_name']));
+        $f = $DATA . '/up/' . $o['id'] . '_' . $name;
+        if (is_file($f)) {
+            @unlink($f);
+        }
+    }
+    $db->prepare('DELETE FROM uploads WHERE ts < ?')->execute([$cut]);
+    $db->exec('CREATE TABLE IF NOT EXISTS tombstones (id TEXT PRIMARY KEY, ts INTEGER, size INTEGER, files INTEGER)');
+    $db->prepare('DELETE FROM tombstones WHERE ts < ?')->execute([time() - 90 * 86400]);
+    $db->prepare('DELETE FROM attempts WHERE ts < ?')->execute([time() - 2 * 86400]);
+
     jout(200, ['ok' => true, 'token' => $token, 'expires_in' => CONSENT_TTL]);
 } catch (Throwable $e) {
     error_log('[consent] ' . $e->getMessage());

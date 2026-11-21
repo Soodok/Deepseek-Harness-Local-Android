@@ -13,6 +13,8 @@
 | `consent.php` | `/bug/consent.php` | 签发一次性同意 token（120 秒有效） |
 | `upload.php` | `/bug/upload.php` | 附件上传：白名单 + 内容审查 + 2 MiB/小时额度 |
 | `admin.php` | `/bug/admin.php` | 后台（HTTP Basic auth），列表 / 详情 / 导出 Markdown / 删除 |
+| `uploads.php` | `/bug/uploads.php` | 附件后台：列表 / 下载（强制 attachment）/ 删除（带墓碑） |
+| `verify.php` | `/bug/verify.php` | **公开**：返回每个已部署文件的 sha256 + 部署提交，供任何人核对 |
 | `.user.ini` | `/bug/.user.ini` | 只调 PHP 的 `post_max_size` / `upload_max_filesize` |
 
 数据与密钥在 `/var/www/html/.bugdata/`（`config.php` chmod 600、`reports.db` SQLite、
@@ -28,14 +30,14 @@ scp server/bug-report/*.php <host>:/var/www/html/bug/
 ## 怎么自己核验线上跑的是不是这份代码
 
 ```sh
-# 1. 拉一份仓库
 git clone https://github.com/Soodok/Deepseek-Harness-Local-Android
-# 2. 比对线上文件的哈希（脚本待补，先手工：）
-curl -s https://soodok.online/bug/verify.php     # 返回每个已部署文件的 sha256
-sha256sum server/bug-report/*.php
+curl -s https://soodok.online/bug/verify.php                    # 线上每个文件的 sha256
+sha256sum server/bug-report/*.php .user.ini                      # 仓库里的
+# 两边逐行比对；verify.php 同时回报 commit（部署时写 .bugdata/deployed.txt）
 ```
 
-（`verify.php` 与自动比对脚本是本轮的 TODO —— 见仓库 issue。）
+2026-11-21 实测六份文件哈希**逐个一致**（`report/consent/upload/admin/uploads.php`
+与 `.user.ini`）。
 
 ## 记账顺序（这条顺序是有意的）
 
@@ -68,6 +70,8 @@ JWT、18 位身份证号、16–19 位银行卡号（**过 Luhn 才判**，避�
    2 MiB 是**每小时累计**额度（实测 2×900 KB 通过、第三次 429）。
    要放开单文件 2 MiB，需要 root 在 `soodok.conf` 里加一行
    `client_max_body_size 6m;` —— 这台机器上 `www-data` 没有 sudo。
-2. `admin.php` 目前只列纯文本上报，**附件列表 / 下载 / 删除还没做**
-   （数据已入库，能查；只是没有界面）。
-3. 没有定时清理任务：附件与上报记录不会自动过期删除。
+2. 没有 cron：保留期清理挂在 `consent.php` 上「有请求就顺手跑一次」
+   （附件与上报 30 天、墓碑 90 天、失败尝试 2 天）。服务器一旦长期无请求，
+   清理就不会发生 —— 这是明确接受的取舍，不是遗漏。
+3. `uploads.php` 的下载会**强制改名为 `.txt`** 并用 `application/octet-stream`
+   下发：上传内容是不可信数据，不能给浏览器任何按内容渲染的机会。
