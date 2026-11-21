@@ -42,6 +42,24 @@ def check(name, ok, detail=''):
     checks.append((name, bool(ok), detail))
 
 
+def slice_terminal_argv(src):
+    """切出 buildTerminalArgv 的函数体。
+
+    Kotlin 里这个函数以 4 空格缩进的 `}` 收尾，而体内唯一的括号块
+    （两个 buildList）都是 8 空格缩进，所以「第一条恰好 4 空格的 }」就是函数尾。
+    """
+    i = src.find('fun buildTerminalArgv(')
+    if i < 0:
+        return ''
+    lines = src[i:].split('\n')
+    out = [lines[0]]
+    for ln in lines[1:]:
+        out.append(ln)
+        if ln == '    }':
+            break
+    return '\n'.join(out)
+
+
 def read(p):
     if not os.path.isfile(p):
         return None
@@ -97,6 +115,40 @@ def main():
     # runner 不可执行时也要回退，否则终端直接起不来
     check('[E2] non-executable runner falls back instead of wrapping',
           'accessSync(runner, fs.constants.X_OK)' in patch)
+
+    # ---- [K] 终端会话必须拿到 DNS 桥接端口（v1.9.x） ----
+    #
+    # 真机实测：容器终端里 `apk add tree` 报
+    #     ERROR: tree-2.2.1-r0: temporary error (try again later)
+    # 而同一个 rootfs 在引擎进程内联网正常。单变量对照 ——进度内
+    # `export DSH_DNS_PORT=<port>` 后同一条命令立即成功（OK: 81 MiB in
+    # 40 packages），`unset` 后立刻退回 temporary error。
+    #
+    # 根因：musl 的 getaddrinfo 把 DNS 端口硬编码成 53，53 是特权端口（App uid
+    # 绑不上），所以靠 loader 按 DSH_DNS_PORT 双向改写 53<-><port>。终端会话
+    # 的 env 长期只有五项（PATH/HOME/TMPDIR/TERM/DSH_HOME），漏了这个变量，
+    # 于是查询永远发往无人监听的 53。
+    #
+    # ⚠️ 判据必须**切到 buildTerminalArgv 函数体内**再断言。旧探针
+    #    （_test_linux_dns_bypass.py 的 [4]）拿整份 LinuxEngineLauncher.kt 找
+    #    `DSH_DNS_PORT=`，而 buildEngineArgv 里本来就有 —— 终端漏传它也全绿。
+    #    这里正是「判据范围宽于被测对象」的第二次踩坑，所以显式切片。
+    term_fn = slice_terminal_argv(launcher)
+    check('[K1] buildTerminalArgv located', term_fn != '',
+          '找不到 fun buildTerminalArgv() 的函数体，后续 K 段无从断言')
+    if term_fn:
+        check('[K2] terminal env injects DSH_DNS_PORT',
+              re.search(r'add\("DSH_DNS_PORT=', term_fn) is not None,
+              '终端枚举少这一个变量 = 容器内 apk/wget/pip 全部临时性解析失败')
+        check('[K3] terminal DNS port comes from LinuxDnsProxy.currentPort()',
+              'LinuxDnsProxy.currentPort()' in term_fn,
+              '端口必须实测取当前监听端口，不能写死')
+        check('[K4] terminal rebinds when no port is live',
+              re.search(r'LinuxDnsProxy\.start\(', term_fn) is not None,
+              '看门狗 stop() 后 currentPort()=0，只读不复绑等于静默哑掉')
+        check('[K5] terminal only injects a non-privileged port',
+              re.search(r'takeIf\s*\{\s*it\s*>\s*1023\s*\}', term_fn) is not None,
+              '端口 <=1023 说明代理没起来，此时注入无意义')
 
     # ---- [F] 构建流水线会应用这份补丁 ----
     collect_src = read(COLLECT) or ''

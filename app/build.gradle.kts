@@ -346,13 +346,25 @@ android {
         // 同版顺手修两处既有缺陷：ReportActivity 的 MaterialButton 用 Button 接
         // （view_types 探针红）与缺 onResume 重应用方向（responsive 探针红）。
         // 两个探针此前在 main 上就是红的，现 162/162 全绿。
-        versionCode = 403
+        // v1.6.0-beta.28（2026-11-21）：容器终端「能开但联网全废」——DNS 桥接端口
+        // 第三次漏接线。musl 的 getaddrinfo 把端口写死成 53，容器 resolv.conf 只写
+        // 不带端口的 nameserver 127.0.0.1，真实端口靠 loader 按 DSH_DNS_PORT 双向
+        // 改写；而终端会话的 env 长期只有五项（PATH/HOME/TMPDIR/TERM/DSH_HOME），
+        // buildEngineArgv 的十九项一个没进去。后果不是变慢而是彻底失效：53 是特权
+        // 端口、App uid 绑不上，查询永远没人应答，现场表现为
+        //     ERROR: tree-2.2.1-r0: temporary error (try again later)
+        // 看起来像镜像站故障。真机单变量对照：终端内 export DSH_DNS_PORT=<port>
+        // 后同一条 apk add 立即 OK: 81 MiB in 40 packages，unset 立刻退回原错误。
+        // 同版给 _test_linux_terminal_in_container.py 补 K1-K5 五条断言，并先把源码
+        // 切成 buildTerminalArgv 函数体再断言 —— 旧探针在整份文件里找
+        // `DSH_DNS_PORT=`，而 buildEngineArgv 里本来就有，终端漏传它也全绿。
+        versionCode = 404
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.27"
+        versionName = "1.6.0-beta.28"
 
         ndk {
             abiFilters += listOf(targetAbi)
