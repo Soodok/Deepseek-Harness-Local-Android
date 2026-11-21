@@ -85,6 +85,23 @@ target_compile_options(dsh_setuid_shim PRIVATE
     -fno-stack-protector)
 target_link_options(dsh_setuid_shim PRIVATE
     "-nostdlib"
+    # ⚠️ --as-needed 不是可选项，是这条构建约束的一部分。
+    #
+    #   "-nostdlib" 只管「不要默认启动文件与默认库」，它管不住 NDK toolchain 通过
+    #   CMAKE_C_STANDARD_LIBRARIES 追加进来的 "-latomic -lm"：CMake 在生成阶段把
+    #   它们直接拼进 Ninja 的 LINK_LIBRARIES 变量，那是生成器级变量，
+    #   set_target_properties(... LINK_LIBRARIES "") 也覆盖不掉（两种写法都试过，
+    #   build.ninja 里始终是 "-latomic -lm"）。
+    #
+    #   后果：产物 dynamic 段里会多一条 NEEDED libm.so（实测 APK 条目 3264 B）。
+    #   而 Alpine musl rootfs 里根本没有 libm.so（musl 把 libm 并进 libc，只有
+    #   lib/ld-musl-aarch64.so.1）—— musl ldso 会静默忽略这条 NEEDED 而不报错，
+    #   功能上没坏，但和上面「产物无 NEEDED」的承诺不符；换到真 glibc rootfs 上
+    #   还会凭空多拉一个库。
+    #
+    #   加上 --as-needed 后，链接器发现 libm / atomic 一个符号都没被引用，就不再
+    #   写 DT_NEEDED：实测产物从 3264 B 降到 3240 B，dynamic 段只剩 SONAME。
+    "-Wl,--as-needed"
     "-Wl,-z,max-page-size=16384")
 
 # ---------------------------------------------------------------------------

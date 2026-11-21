@@ -314,13 +314,33 @@ android {
         // x11frsrv 连不上、dshframe.bin 永不落盘、UI 侧只剩 DSHFRAME_FAIL no-frame。
         // run-as / adb shell 域的 Seccomp 是 0/1 层、accept 不被拦，所以「同脚本同 uid
         // 手跑成功、App 跑失败」在本地永远复现不出来。
-        versionCode = 400
+        // v1.6.0-beta.25（2026-11-21）：复核阶段收掉三处 ——
+        // 1) loader 的 legacy rename/link 透传分支传未初始化栈缓冲（透传命中时
+        //    交给内核的是随机内存，实测 /proc/self/fd/1 变成空串）；改为开关变量，
+        //    透传命中时直接传原指针。gcc -O2 -Wall -Wextra 不报这个问题。
+        // 2) renameat/renameat2 缺 /proc /dev /sys 透传守卫（与 symlinkat/linkat
+        //    不对称）；aarch64 的 BPF 树同样 trap 这两条，属 arm64 活跃缺口。
+        // 3) shim 的 NEEDED 里带 libm.so（AGP 的 CMAKE_C_STANDARD_LIBRARIES 追加
+        //    -latomic -lm，-nostdlib 拦不住）；加 -Wl,--as-needed 后消掉，
+        //    产物 3264 → 3240 B，dynamic 段只剩 SONAME。
+        // 同时修两条假绿断言：探针 L2 对全文 find 首次命中（删掉 accept() 里的 242
+        // 兜底后仍假绿），改为先切函数体再断言；E2 缺「stillMissing 右值必须来自
+        // probe」的锚点（换成 emptyList() 时全绿，正是上次事故的原样）。
+        // v1.6.0-beta.26（2026-11-21）：自身复核又抓到第三处同源坑 —— legacy
+        // rename/link 的 SELinux 复制兜底 ldr_copy_link(ofd, ob, nfd, nb) 仍用
+        // 未初始化缓冲，只有「link 被拒 + 透传命中」时才会走到，比前两处更难复现。
+        // 改成 use_op/use_np，并给 _test_linux_apt_nonroot.py 补 B4/B4b/B4c/B5/B5b
+        // 五条契约断言（含"守卫必须在 bind_map 之前"），对源码逐条做单变量变异反验。
+        // 注意：本次 dsh_alpine.c 的改动只碰兜底调用实参，aarch64 产物字节不变
+        // （md5 仍 5da598e3…，已实测两次重编同 md5）；x86_64 产物随源码重出
+        // 58888 B / md5 91cb5f95…。
+        versionCode = 402
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.24"
+        versionName = "1.6.0-beta.26"
 
         ndk {
             abiFilters += listOf(targetAbi)

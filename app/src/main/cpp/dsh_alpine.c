@@ -2462,17 +2462,30 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         long ofd = -100, nfd = -100;
         // ★伪文件系统透传（v1.7.17，真机 2026-11-20）。详见 SYS_linkat 处的完整说明。
         //   漏掉时 /proc 下的路径会被翻成 rootfs 相对路径 -> ENOENT。
-        if (dev_passthrough(op)) { /* 原样交给内核 */ }
-        else if (!bind_map(op, ob)) { make_rel(ob, op); ofd = g_rootfs_fd; }
-        if (dev_passthrough(np)) { /* 原样交给内核 */ }
-        else if (!bind_map(np, nb)) { make_rel(nb, np); nfd = g_rootfs_fd; }
+        //
+        // ⚠️ 必须用开关变量决定「传给内核的到底是原指针还是翻译后的缓冲」，不能
+        //   写成「if (dev_passthrough(p)) { 什么都不做 }」然后照样传缓冲 —— 那样
+        //   透传命中的一侧缓冲从未被写过，是未初始化的栈内存，却被当成路径交给
+        //   内核（实测 /proc/self/fd/1 变成空串 / 随机内容，透传等于没做）。
+        //   gcc -O2 -Wall -Wextra 对此不报 warning（未初始化指针只被传递、未被
+        //   解引用，不在「可能未初始化」的检出范围），光看编译输出发现不了。
+        //   同样的开关写法见 SYS_linkat（:3170 附近）。
+        int o_pass = dev_passthrough(op);
+        int n_pass = dev_passthrough(np);
+        if (!o_pass && !bind_map(op, ob)) { make_rel(ob, op); ofd = g_rootfs_fd; }
+        if (!n_pass && !bind_map(np, nb)) { make_rel(nb, np); nfd = g_rootfs_fd; }
+        const char *use_op = o_pass ? op : ob;
+        const char *use_np = n_pass ? np : nb;
         if (nr == SYS_rename) {
-            r[0] = (unsigned long long)raw6(SYS_renameat, ofd, (long)ob,
-                                            nfd, (long)nb, 0, 0);
+            r[0] = (unsigned long long)raw6(SYS_renameat, ofd, (long)use_op,
+                                            nfd, (long)use_np, 0, 0);
         } else {
-            long lr = raw6(SYS_linkat, ofd, (long)ob, nfd, (long)nb, 0, 0);
+            long lr = raw6(SYS_linkat, ofd, (long)use_op, nfd, (long)use_np, 0, 0);
             // app 域被 SELinux 禁掉 link → 复制兜底（见 ldr_copy_link 注释）
-            if (lr < 0 && ldr_link_denied(lr)) lr = ldr_copy_link(ofd, ob, nfd, nb);
+            //   同样必须用 use_op/use_np：透传命中的一侧 ob/nb 是未初始化栈缓冲，
+            //   传给 ldr_copy_link 会拿垃圾路径去 openat（这条漏了就是同一个坑的
+            //   第三处，走上兜底路径时才会触发，更难复现）。
+            if (lr < 0 && ldr_link_denied(lr)) lr = ldr_copy_link(ofd, use_op, nfd, use_np);
             r[0] = (unsigned long long)lr;
         }
         return;
@@ -3205,12 +3218,20 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         //   marker write failed: ENOENT: rename '/dsh/.android-plugin-health.json.tmp-15381'
         //   -> '/dsh/.android-plugin-health.json'
         // （临时文件被 openat 正确写到宿主 dsh-home，rename 却去 rootfs 里找）
+        // ★/proc /dev /sys 同样要**原样透传**（与 linkat / symlinkat 对齐）。
+        //   漏掉这条时，容器内 rename 一个伪文件系统路径会被翻成 rootfs 相对路径
+        //   -> ENOENT（父目录存在、权限全对，报错只有一句 No such file or
+        //   directory，没有任何线索）。aarch64 的 BPF 树同样 trap 了 renameat
+        //   （见 case SYS_renameat 的分发表），所以这条在 arm64 上也是活的，
+        //   不是 x86_64 专属缺口。
         if (a0 == -100 && op && op[0] == '/') {
-            if (bind_map(op, oh)) { ofd = -100; op = oh; }
+            if (dev_passthrough(op)) { /* 原样交给内核 */ }
+            else if (bind_map(op, oh)) { ofd = -100; op = oh; }
             else { make_rel(ob, op); ofd = g_rootfs_fd; o_rel = 1; }
         }
         if (nf == -100 && np && np[0] == '/') {
-            if (bind_map(np, nh)) { nfd = -100; np = nh; }
+            if (dev_passthrough(np)) { /* 原样交给内核 */ }
+            else if (bind_map(np, nh)) { nfd = -100; np = nh; }
             else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
         }
         long rrr = raw6(nr, ofd,

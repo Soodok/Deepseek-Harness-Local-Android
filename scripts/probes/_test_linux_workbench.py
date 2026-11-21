@@ -281,6 +281,16 @@ ok("E2c 成功标记必须由 stillMissing.isEmpty() 守卫",
    re.search(r"stillMissing\.isEmpty\(\)[\s\S]{0,120}?writeText\(pkgs\.joinToString", _HB_C) is not None,
    "无条件 writeText(pkgs) 就是本次真机假绿的原样")
 
+# ⚠️ E2c 只锁「有 isEmpty 守卫」这个**形态**，锁不住守卫背后的值从哪来。
+#   实测变异：把 stillMissing 的右值换成 emptyList<String>()，E2a~E2g 全绿 ——
+#   而这恰好就是本次事故的原样（stillMissing 恒空 → 永远写成功标记）。
+#   所以必须单独钉住「stillMissing 必须真的来自 probe 的探测结果」。
+ok("E2c2 stillMissing 的右值必须来自 probe 的探测结果，不能是常量",
+   re.search(r"val\s+stillMissing\s*=\s*probe\.[A-Za-z_]", _HB_C) is not None
+   # 常量写法（emptyList() / listOf() / emptySet() 等）一律判红，不给绕过的余地
+   and re.search(r"val\s+stillMissing\s*=\s*(?:emptyList|listOf|listOfNotNull|mutableListOf|emptySet)", _HB_C) is None,
+   "stillMissing 恒空会让自愈永远写成功标记，等于把缓存又写成事实")
+
 ok("E2d 有缺包时写 attempted: 前缀（交给环境层重试）",
    re.search(r'writeText\("attempted:" \+ pkgs\.joinToString', _HB_C) is not None,
    "写成成功标记会让缺包永远不再重试")

@@ -318,10 +318,59 @@ shim_src = read(SHIM_C)
 
 
 def strip_c_comments(src):
-    """去掉 C 注释（/* */ 与 //），只留可执行代码。"""
-    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
-    src = re.sub(r"//[^\n]*", "", src)
-    return src
+    """去掉 C 注释（/* */ 与 //），只留可执行代码。
+
+    ⚠️ 必须用状态机，不能用两条 re.sub。
+      正则版会把**字符串字面量里的** // 和 /* */ 当成注释剥掉，而且从那里
+      一直吃到后文：实测 "char *u = \"http://x/y\"; int a = 1;" 会被剥成
+      "char *u = \"http:"，后面的 int a = 1; 整段消失 —— 之后所有断言都在
+      残缺文本上跑，等于静默失明（假绿）。
+      状态机版跳过双引号与单引号字面量（含反斜杠转义），注释体只删不留。
+      与 scripts/probes/_test_dsh_alpine_source_sync.py 的同名函数同一实现。
+    """
+    out = []
+    i = 0
+    n = len(src)
+    while i < n:
+        c = src[i]
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            while i < n and src[i] != chr(10):
+                i += 1
+        elif c == "/" and i + 1 < n and src[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                i += 1
+            i += 2
+        elif c == '"':
+            out.append(c)
+            i += 1
+            while i < n and src[i] != '"':
+                if src[i] == chr(92):
+                    out.append(src[i])
+                    i += 1
+                if i < n:
+                    out.append(src[i])
+                    i += 1
+            if i < n:
+                out.append(src[i])
+                i += 1
+        elif c == "'":
+            out.append(c)
+            i += 1
+            while i < n and src[i] != "'":
+                if src[i] == chr(92):
+                    out.append(src[i])
+                    i += 1
+                if i < n:
+                    out.append(src[i])
+                    i += 1
+            if i < n:
+                out.append(src[i])
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 shim_code = strip_c_comments(shim_src)
@@ -338,19 +387,42 @@ ck("L1b x86_64 编号表里有 accept=43 与 accept4=288",
 
 # 判据锁**调用顺序**：202 先发、只在失败时才走 242。若把两次调用顺序写反，
 # 或者把 accept 直接改成只发 242，这一条要能红。
-i_202 = shim_code.find("raw3(NR_accept, (long)fd")
-i_242 = shim_code.find("raw4(NR_accept4, (long)fd")
+#
+# ⚠️ 必须先把 accept() 的函数体切出来再断言，不能对全文用 find 取首次命中。
+#   "raw4(NR_accept4, (long)fd" 与 "return r >= 0 ? (int)r : -1;" 在源码里各有
+#   **两份**（accept() 一份、accept4() 一份）。对全文 find 时，把 accept() 里那段
+#   242 兜底整个删掉、只留 accept4() 的那一份，首次命中会落到 accept4() 里，
+#   下标仍大于 202 → 假绿（实测：这种变异下 39 checks 全 PASS）。
+def _c_func_body(code, sig):
+    """切出以 sig 开头的函数体（从签名到其后第一个行首 '}'）。找不到返回 ""。"""
+    i = code.find(sig)
+    if i < 0:
+        return ""
+    j = code.find("\n}", i)
+    return code[i:(j + 2)] if j >= 0 else ""
+
+
+accept_body = _c_func_body(shim_code, "int accept(int fd, void *addr, unsigned int *alen)")
+accept4_body = _c_func_body(shim_code, "int accept4(int fd, void *addr, unsigned int *alen, int flags)")
+
+i_202 = accept_body.find("raw3(NR_accept, (long)fd")
+i_242 = accept_body.find("raw4(NR_accept4, (long)fd")
 ck("L2 accept() 先发 202、失败才退 242（顺序不能反）",
-   i_202 >= 0 and i_242 >= 0 and i_202 < i_242,
+   len(accept_body) > 0 and i_202 >= 0 and i_242 >= 0 and i_202 < i_242,
    "直接只发 242 会丢掉 accept 的原语义，反过来则等于没兜底")
 
 ck("L2b accept() 先判成功早退，失败才落 242",
-   "if (r >= 0) return (int)r;" in shim_code,
+   "if (r >= 0) return (int)r;" in accept_body,
    "没有早退就会把成功的 fd 也再 accept 一遍，等于吞掉一条连接")
 
 ck("L2c 两条都失败时按 POSIX 返回 -1，而不是裸 -errno",
-   "return r >= 0 ? (int)r : -1;" in shim_code,
+   "return r >= 0 ? (int)r : -1;" in accept_body,
    "裸 syscall 的 -errno 直接返回会让调用方把 EPERM 当「有效 fd」用")
+
+ck("L2d accept4() 自己也归一到 -1（它是独立入口，不经过 accept）",
+   "raw4(NR_accept4, (long)fd" in accept4_body
+   and "return r >= 0 ? (int)r : -1;" in accept4_body,
+   "只改 accept 而不改 accept4，直接调 accept4 的调用方仍会拿到裸 -errno")
 
 ck("L3 导出 accept 与 accept4 两个符号（定义形态可查）",
    "int accept(int fd, void *addr, unsigned int *alen)" in shim_code
