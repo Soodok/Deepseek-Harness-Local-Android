@@ -17206,12 +17206,124 @@ aarch64 通用 ABI **没有**这五个老号（musl 那里直接走现代号）�
   `nslookup github.com` 正常（57.155.223.240 / 140.82.116.3），`ping github.com` 0% 丢包 210ms，
   但 `curl -v` 到 443 **连接超时**、到 22 也失败；全局 `http.proxy`/`https.proxy` 已不存在
   （原来那条 127.0.0.1:7892 无人监听），逐个试 4001/8443/8888/8787/9210/14013/7890/47890 全部 000。
-  → 是**本机出网被拦**，不是仓库或凭据问题。网络恢复后直接
-  `git -c http.proxy= -c https.proxy= push origin main`。
+  → 是**本机出网被拦**，不是仓库或凭据问题。
+  **后续（2026-11-22 已解决，见第一百六十章）**：逐个扫监听端口后发现本机可用 HTTP 代理是
+  `http://127.0.0.1:18794`（curl 经它访问 github.com 返 200），用它已把 5 个提交全部推送成功。
 - 真机（192.168.101.21:9000）掉线未复测，本轮全部证据来自 emulator-5554（x86_64 / Android 34）。
   **arm64 真机上这五条老号是否同样被拦尚未验证** —— arm64 的 musl 一般走现代号，理论上不受影响，
   但「理论上」不算证据。
-- 工作区仍有他人改动未提交：`docs/promo/{design.md,manifest.json,render_banner.py}`、
+- 工作区当时仍有他人改动未提交：`docs/promo/{design.md,manifest.json,render_banner.py}`、
   未跟踪 `docs/promo/assets/` 与 `docs/ui-preview/probe-opacity.mjs`。
+  **后续（2026-11-22）**：`docs/promo/*` 三文件 + `docs/promo/assets/`（31 文件）已作为
+  `ee8d621c` 提交入库，工作区只剩 `docs/ui-preview/probe-opacity.mjs` 一项（属并发会话，未碰）。
 - `scripts/probes/*` 被 `.gitignore` 第 79 行忽略，新探针须 `git add -f`（本轮探针是既有文件，未触发）。
+
+## 第一百六十章（2026-11-22）E 盘瘦身：232G 用满 → 剩 103G，附可复用的清理判据
+
+### 1. 起点与终点
+
+宝宝的原话是「清一些不必要的代码和临时文件，E盘有点满了」。
+
+| | 已用 | 剩余 | 占用率 |
+|---|---|---|---|
+| 起点 | 232G | **1.6G** | 100% |
+| 终点 | 131G | **103G** | 57% |
+
+共回收约 **101G**。全部删除均为「可重建产物 / 历史中间物 / 陈旧拷贝」，没有动任何一份独有提交。
+
+### 2. 删除清单（按类别）
+
+**git worktree —— 18 个删除、7 个保留**
+- 删：`wt-aimode wt-bun wt-bun2 wt-ci wt-ci2 wt-island2 wt-lan wt-m3 wt-m3b wt-m3c wt-nav wt-pr102raw wt-pr102test wt-restore wt-runmode wt-side wt-ssh wt-tw`。
+  判据：`git merge-base --is-ancestor <HEAD> main` 为真且 `git log HEAD --not main` 为空（零独有提交），只是夹带未提交改动。
+- 保留：主树；`wt-btn`(81055f09 独有 1 提交)、`wt-gate`(4838afe5 独有 1)；`wt-flutter-native-chat`/`wt-pi-fast-mode`（同 `7d9b26df`，独有 32 提交，并发会话在跑）；`wt-rep`、`wt-shots`（HEAD 在 main 但夹带未提交改动）。
+- **删前已备份**：`/e/tmp/_wt_patches/`（766K）存了 18 条 `MANIFEST.txt`（name/sha/branch）+ 每树 `git diff HEAD` + 未跟踪文件清单 + <1MB 文本实拷（20 个）。复活方式 = `git worktree add` + `git apply`。
+
+**构建产物与缓存**
+- `dsh-android/build`(4067MB)、`app/build`(591MB)、`_bench`(1491MB)、`_debcheck`(360MB)、`.scratch`(643MB)、`tmp`(209MB)。
+- `dist` 4.6G→7.7M：**保留** `hardssh/`（`scripts/verify-hardssh-bundle.py` 与 README 的 `-PhardsshDir` 引用）、`mobile-layout/`、`solution-explorer/`、`hardssh.json`；删 8 个版本目录（`asr`、`v1.3.0~v1.3.3`、`v1.4.0`、`v1.4.0-beta.1`、`v1.4.30`）与散落 `*.apk`/`*.idsig`。
+- `_runtime_bak` 3.3G→350M：19 个 zip **只留** `rt-arm64-20261112.zip`（137,338,024B）+ `rt-x86_64-current.zip`（229,301,751B）。
+  副作用已实测：`_test_runtime_dedupe.py` 从「通过 20/失败 0/跳过 1」变「通过 14/失败 0/跳过 3」。**是降级 SKIP 不是失败** —— 该探针三候选源是 `_rel/x86_64-dedup.zip` → `assets/runtime.zip` → `_runtime_bak/rt-x86_64-zodded.zip`，缺产物即整体 SKIP；删 zodded 后 PTC 校验项本就不可比（`_PTC_VERIFIABLE` 判 `_runtime_bak` 路径）。`docs/CI_RUNTIME_PIPELINE.md:220` 明记它是「本机构建中间产物，不入库」。
+- `_build_v128` 7.6G→50M：**删前先抢救**了 `docs/promo` 依赖，见下节。
+
+**`/e/tmp` 顶层散落文件**
+- 按 mtime 分桶统计：`0_2d` 1.7G、`2_7d` 2.1G、`7_30d` 8.3G、`30d+` 0.2G（7778 个文件）；按扩展名 `.apk` 7127MB 占绝对多数。
+- 删 124 个七天前 `*.apk`/`*.idsig`（6.99G）+ 129 个三天前 `*.apk`/`*.apk.zip`（7713MB）。**判据：`.apk` 一律视为可重建**（都是历史装机包）。
+- 删历史发布暂存目录 12 个（rel390/rel394/apk40/ci_apk/ci_b18/ci19/b19/certchk/apk_bak/extprobe/rc1_asar/sukisu）。
+- 删 runtime 解包调试 5 个（`rt`/`rtfull`/`rtpatch`/`rtall`/`sim`）+ 19 个中等调试目录（`sim2 ci-fixture rc2_x rc2_app rc2_asar rc2engine zigprobe cprof cprof2 cprof3 cp7 _dep_probe chk456 apkrt x86in x86parts rt40 rt32 rt32b`）+ 8 个（`cprof-rh chk_d9b065c9 chk_c1f33fdc chk_7322ab33 chk_04bdedbd mixamo-profile rtparts sol-flutter-review-20261118`）。
+  **判据：目录里是浏览器 crashpad 配置拷贝（`ActorSafetyLists`/`BrowserMetrics-spare.pma`）、runtime zip 分片（`p00/p01`）、或 `chk_<sha>` 形式的旧检查树 —— 都能按 sha 重建。**
+
+**flutter AVD —— 只删用户数据，不删目录**
+`dsh-flutter-avd-20261116` 8.4G。`config.ini` 里 `avd.id=<build>`、`disk.dataPartition.path=<temp>`，**建时就是丢弃型**；ini 指向 `E:\tmp\dsh-flutter-avd-20261116`；`hardware-qemu.ini.lock/pid` 里的 pid 18364 已不存在，`adb devices` 只有 `emulator-5554`（dsh34）。删 `userdata-qemu.img.qcow2`(5790MB) + `snapshots/default_boot` + 两个 stale lock → 8.4G→37M。**emulator 下次启动会自动重建 userdata。**
+
+**孤儿全拷贝 `wt-sync`（326MB）**
+无 `.git`、未注册进 `git worktree list`、11-13 建、五天无改动，含 4 个 `app-release-383~387.apk`。只把 `keystore/release.properties` 备份到 `/e/tmp/_wt_patches/wt-sync-orphan/` 后整删。
+
+**工作根 `_` 前缀临时目录（共 46 个）**
+删 `_relcheck`(131MB)/`_cptest3`(88MB)/`_pr4full`(13MB)/`_pr4`(172MB)/`_dataset`(572MB)/`_container_src_backup`(62MB)/`_tmp_deb`(35MB)/`_tmp_api`(36MB)/`_debcheck`(333MB)，以及 37 个 <10MB 的（`_llamadeb _cp3 _build_v128 _site7z _site7z.bak-20261118 _tmp_mat _vision_test _v7zneg _v7zhover2 _v7zc2 _uitmp _tmp_npm _preview_glass _preview_ext_test _absig _wt_sheet_014 _websrv _webapp _utf8test _tmp_prefs _tmp_dshhome _tmp_comp _t5 _startup2 _startup _proxytest _preview_caps _idx _full _dshgo_a11y _cptest4 _cptest2 _cptest _compiletest _aw _alljs _seccomp_poc`）。
+- **`_seccomp_poc` 删得合法**：真源已进 `app/src/main/cpp/dsh_alpine.c`（261656B）；探针 `_test_linux_dns_bypass.py:71` 有 `if os.path.isfile(BPF_PY)` 守卫，走 else 打「skip gen_bpf_tree.py 不在仓库（源己下架，属预期）」，`checks=13 failed=0`。
+- **保留 `_shots`（70MB）**：307 张 `bp-*.png` 与 xml 截图，供 `_test_a11y_step_shots.py` / `ONBOARDING_REDESIGN.md` 语境参考。
+- **保留 `_tmp_shots`（35MB）**：`onb_01_start.png` 被 `docs/ONBOARDING_REDESIGN.md:13` 实引用；`hotzone.sh` 也往这里写。
+
+### 3. 抢救出来的 promo 素材（已提交 `ee8d621c`）
+
+`_build_v128` 目录本身不入库，但 `docs/promo` 的 `design.md`/`manifest.json`/`render_banner.py` 三处都硬指它 —— 删了目录宣传图就再也生不出来。做法：
+
+1. 复制 `emu35-toolbar.png`(89,270B)、`emu44-tools.png`(306,294B)、`banner_refs/`(3 张) 到 `docs/promo/assets/`；
+2. 另 24 张 emu 截图与 `issue3-reply.md`/`mate40-reply.md`/`pr4-review.md`/`pr4-settings.png` 归到 `docs/promo/assets/legacy-shots/`（共 31 文件）；
+3. 三处引用改仓库内相对路径：`render_banner.py:257-258` 的 `WORKSPACE / "_build_v128/*"` → `REPOSITORY / "docs/promo/assets/*"`（`REPOSITORY = ROOT.parents[1]` 即 `dsh-android`）；`manifest.json` 的 `sources.origin` 两条；`design.md` 的路径说明。
+
+验证：`ast.parse` 与 `json.loads` 通过；两主图 `is_file()` 为真；`check-i18n.py` All passed；`:app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` EXIT=0。
+
+### 4. 网络真因（推翻上一章结论）
+
+上一章写的是「本机出网被拦」。**实际是代理端口换了**：
+
+| 检查 | 结果 |
+|---|---|
+| `curl https://api.github.com` 直连 | **200** |
+| `curl https://github.com` 直连 | 000（20s 超时） |
+| `curl -x 127.0.0.1:7892` | **000**（无人监听，旧代理已停） |
+| 逐端口扫监听列表 | 4001/8443/8888/8787/9210/14013/7890/47890 全 000，**`18794` → 200** |
+| `ssh -p 443 git@ssh.github.com` | `Permission denied (publickey)` —— 本机无 SSH key |
+| `wandacloudCore`(pid 1053)/`wandacloud`(60729) 的 14888 | HTTP 与 SOCKS5 试都 000，**不作代理** |
+
+**可用通路 = `http://127.0.0.1:18794`**（桌面端自带的内嵌 bili 代理）。用它推成功：`9226c8e4..ee8d621c main -> main`，推后 `origin/main..HEAD`=0、`HEAD..origin/main`=0。
+
+下次推之前先跑：
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -m 8 -x http://127.0.0.1:18794 https://github.com
+git -c http.proxy=http://127.0.0.1:18794 -c https.proxy=http://127.0.0.1:18794 push origin main
+```
+`.git/config` 里那条项目级 `http.proxy=127.0.0.1:7892` **仍是旧值，未改**（临时 `-c` 覆盖即可，别去动它 —— 并发会话也在用这份配置。）
+
+### 5. 我删过头的地方（已修）
+
+删 `system-images/android-26` 与 `android-30/google_apis/x86_64` 时判「无 AVD 引用」，**判错了**：
+
+- `dsh26.ini`/`dsh30.ini` 的 `path=` 指向 **`G:\AndroidAVD\dsh26.avd` / `dsh30.avd`**（不是 E 盘），其 `config.ini` 的 `image.sysdir.1` 正是这两个包。
+- 教训：**只扫 `/e/Android/.android/avd/*.ini` 不够** ——`.avd` 目录可以在任意盘，必须顺着 ini 的 `path=` 逐个读 `config.ini` 里的 `image.sysdir.1`。
+
+已修：`sdkmanager --install` 重下两个包（3.2G + 3.3G）。**注意坑**：
+1. `sdkmanager.bat` 的 stdin 是管道时会卡在 license 交互提示（java 进程活着但不下载）→ 必须 `yes | ./sdkmanager.bat --install ...`；
+2. **它把包装到了 `E:\Android\system-images\`（不是 `E:\Android\Sdk\system-images\`）** —— 因为它认为 SDK root 是 `E:\Android`（`--list` 会打一堆 `inconsistent location` 警告）。装完需手工 `mv` 到 `Sdk/system-images/` 下，`image.sysdir.1` 相对路径才对得上。
+3. 校验对齐：`dsh26` → android-26/x86_64 `12 files`，`dsh30` → android-30/x86_64 `13 files`，都有 `package.xml`/`source.properties`/`system.img`/`userdata.img`。
+
+### 6. 清理后的门禁复核
+
+| 项 | 结果 |
+|---|---|
+| 全量探针（CI 口径，跳过 `corepack_hardlink`） | **PASS=165 FAIL=0** |
+| `check-i18n.py` | All i18n checks passed |
+| `git-hygiene.py` | `通过（4 条提醒）`：✓无 rebase 中间态、✓1 改动文件无 CRLF、✓probes 未误加、✓无超标本地产物 |
+| `:app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` | EXIT=0 |
+| 本地 vs 远端 | 双向 0 |
+
+`git-hygiene.py` 的 4 条提醒：工作区 1 个未提交（并发会话的 `probe-opacity.mjs`）、fetch 前一次失败、worktree 6 个额外、3 个已合入分支 —— 后两条**已处理**（`git branch -d backup/pre-merge-102 pr102-r2 pr102-review`；`wt-sync` 已删）。
+
+### 7. 剩余大头（109G，都不是「垃圾」）
+
+`Android` 30.7G（`Sdk` 24.6G；`.android/dsh34.avd` 5.9G —— 唯一在用的模拟器，`emulator-5554` 就是它）、`vela Project` 14.7G、`tmp` 14.2G（其中 `wt-flutter-native-chat` 2.2G / `wt-pi-fast-mode` 1.2G 是并发会话活跃树，**不能删**）、`C迁移` 10.7G、`Deepeek harness` 7.6G（`docs` 1.5G、`app` 726M、`_runtime_bak` 350M、`_tmp_shots` 21M）。
+
+再想省空间的话下一个目标是 `vela Project` 与 `C迁移`，但两者都不是本仓的产物，需宝宝确认。
 
