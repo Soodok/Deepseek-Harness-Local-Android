@@ -16928,3 +16928,82 @@ vC408 / 1.6.0-beta.32 / `native-code: 'x86_64'`。
    （arm64-v8a → `jniLibs/arm64-v8a/`，x86_64 → `jniLibs/x86_64/`），x86_64 自动加
    `-mcmodel=large`，末尾提示跑探针。
 3. `docs/ui-preview/probe-opacity.mjs` 仍是未跟踪文件（11-13 的 CDP 探针），要么入库要么删。
+
+## 一百五十六 · 2026-11-22 真机发消息整轮 TRANSPORT：Android 上 sharp 加载没被当成一等情形（`bbf947d6`）
+
+用户发来截图：界面「已重试模型请求 (5/5) · 9s」「重试延迟：8524 毫秒」，失败原因是
+`DeepSeek Messages transport failed: Could not load the "sharp" module using the
+android-arm64 runtime` + 一段 `Possible solutions: Manually install libvips >= 8.18.7 /
+npm install sharp @img/sharp-wasm32`，最终「本局运行失败 DeepSeek TRANSPORT」。
+
+### 根因（不是网络，也不是 API key）
+
+`@deepseek-ai/dsh-attachment-local` 每次消息都要 `require("sharp")` 过图片链路
+（`sourcePipeline` / `probeImage` / `normalizeImage`）。上游 sharp 的加载顺序是
+① 自编译 `sharp-<platform>-<arch>-<ver>.node` → ② 打包的 `sharp-wasm32-<ver>.node`
+→ ③ `switch (runtimePlatform)` → ④ `require("@img/sharp-wasm32/sharp.node")`。
+
+Android 的 `process.platform === "android"` + `arch === "arm64"` ⇒
+`runtimePlatform === "android-arm64"`，而**第 ③ 步 switch 里没有任何 android case**
+（13 个 case：darwin / linux / linuxmusl / win32 / freebsd / linux-wasm32，缩进 6 空格）。
+于是只能靠第 ④ 步兜底；它一失败就落到 `if (!sharp)`，把整段 help 拼进错误消息。
+
+那两个建议在 App 的离线包里**都做不到**（没有 npm、没有包管理器），用户照做只会继续
+失败；而且这条错误最终包在模型请求上，看起来像网络或 key 问题 —— 这是最贵的一层误导。
+
+### 修前先证明 wasm32 回退真的可用（本机伪造 platform/arch）
+
+`Object.defineProperty(process,'platform',{value:'android'})` + `arch:'arm64'`，在完整
+解包的 runtime 上实测：
+
+| 场景 | 结果 |
+| --- | --- |
+| 只留 `@img/sharp-wasm32`（删光所有原生变体与 `sharp/src`） | `require` → function；`metadata()` → `png 4 4 uchar srgb`；`jpeg({quality:85})` → **311 B**；`webp` / `raw()` 均通 |
+| 把 `@emnapi/runtime` 打成 MODULE_NOT_FOUND | 报 `sharp.libvipsVersion is not a function` + `Cannot find module '@emnapi/runtime'`，**不会**被包装成 "Could not load …" |
+
+⇒ 设备那条报错只能来自「1~4 步全失败」的兜底。核对 `_runtime_bak/` 下 **17 个 zip**：
+`@img/sharp-wasm32`（wasm 9150351 B + js 160198 B + index.cjs + package.json +
+versions.json）与 `@emnapi/runtime` **全都在** ⇒ 本地/CI 产物是完好的。
+（设备实装 `versionCode=467 / 1.6.0-beta.92`，而 467 只有 `E:/tmp/wt-flutter-native-chat`
+这一个工作树在用 ⇒ 设备那只包的 runtime 不是从本仓 main 的链路出来的；来源未取证。）
+
+### 修法
+
+新增 `scripts/patch-sharp-android.py`（沿用 `patch-attachment-local.py` 的「目录/zip 双
+形态 + 幂等 + 形态不识别即 fail-fast」约定）：
+
+1. switch 里显式加 `case "android-arm64":` / `case "android-arm":` 后 `break`，让 Android
+   明确走 wasm32。**绝不能指向 `@img/sharp-linux-arm64`**（glibc ELF，Android dlopen 必失败）。
+2. 把从 `const messages = …` 到 `if (isLinux && /symbol not found|CXXABI_/)` 之前那一整段
+   「Possible solutions」换成「打包产物缺件，不是网络/API key 问题 → 更新 runtime，报 bug
+   附 engine.log」。**用下标切段而不是正则**：这段里既有模板反引号又有嵌套括号。
+
+接线：`scripts/collect-termux-runtime.sh` 紧跟 `patch-attachment-local.py` 之后调用，
+`|| { … exit 1; }`。
+
+### 验证
+
+- 探针 `scripts/probes/_test_sharp_android.py`：**18 checks / 0 failed**，含行为组
+  C1–C4（副本打补丁 → 伪造 android-arm64 → wasm 解码出 `png 4x4 jpeg=311B` →
+  藏起 `@img/sharp-wasm32` → 断言文案已改写、上游 npm/libvips 建议消失）。
+- **反向验证四处均变红**：case 名改 `android-zorp` → A2/A4；往 case 块塞
+  `require("@img/sharp-linux-arm64/sharp.node")` → A4/A5；删掉 collect 的调用 → B1/B2/B3。
+  还原后 18/18。
+- 已用打好两个补丁的 `rt-arm64-patched.zip` 出包（vC409 / 1.6.0-beta.33）。
+- `check-i18n.py`、`check-ui-tokens.py` 全过。
+
+### 未做（如实标注）
+
+- **真机端到端没做**：排查期间真机掉线（`adb connect 192.168.101.21:9000` 反复 `10060`），
+  `/data/user/0/app.dsh.mobile/files/` 用 root 读两次都空。所以「换新 runtime 后发带图
+  消息不再 TRANSPORT」只有本机伪造环境的证据。
+- 设备那只包的 runtime 是哪条链路产出的，未取证。
+
+### 复用经验
+
+- 报错里出现 `npm install …` / `Manually install …` 这类**包管理器建议**时，先确认这个
+  环境有没有包管理器。没有 ⇒ 那条建议本身就是误导，应改写而不是照做。
+- 判断「回退路径到底能不能用」不要看代码推导，伪造 `process.platform/arch` 实跑一遍：
+  `metadata` + `jpeg` 两步就能证明整条 wasm 链路是通的。
+- JS 源码的缩进不一定是 tab：`sharp.cjs/sharp.mjs` 是 prettier 风格的 **6 空格**，
+  锚点写 tab 会永远匹配不上（本轮第一版脚本就栽在这，报「switch 里没有 linux-arm64 case」）。
