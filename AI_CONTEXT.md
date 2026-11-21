@@ -16014,6 +16014,40 @@ head=tail=2 → inputd 已消费 2 条事件（一次 tap 产生 2 条），**�
 「6 条事件 / head=tail=12」同比例，链路无回归**。
 注意：这一轮卡片滚动位置不同（「开启触摸」在 y≈1888），**每次都要重新 dump 取 bounds**。
 
+**踩坑记录（别照抄这条当作已验证）**：10:21 那次点击坐标 (573,1371) 是在
+**屏幕预览图（737x1600 降采样）上目测得来的**，换算回 1216x2640 后落点并不精确 ——
+事后同一位置的 `uiautomator dump` 给出的「开始画面」中心是 **(573,1440)**，两者差 69 px。
+所以那一次到底点到了「开始画面」还是「重启引擎」卡片，**无法判定**，不能写成「验证过停止画面」。
+**本轮唯一可确认的事实**：10:21 之后 `dshframe.bin` mtime 冻结在 10:21、后续 3 分半不再增长，
+`logcat -s LinuxFrameSurface` 最后一条停在 `10:21:24.650 fps=27.8 shown=22928`；
+同时 `WindowManager` 在 `10:21:24.123` 把焦点从 LinuxActivity 交给了 Launcher ——
+**帧停更与「App 退到后台」同一秒发生**，所以更可能只是 Activity 失焦停止上屏，
+而不是「停止画面」按钮生效。
+**规矩**：`input tap` 的坐标必须取自同一次 `uiautomator dump` 的 bounds 中心，
+不得从截图目测换算（两者差 60~70 px 足以点到隔壁卡片）。
+
+**「停止画面」→ 再「开始画面」的完整往返（10:34 / 10:38，设备同时被他人刷抖音）**
+
+- 10:34:49 用**当次 dump 的正确答案**点「停止画面」(573,1664)：
+  - 10:34:49.887 `LinuxFrameSurface` 还在 `fps=24.0 shown=25757 lastSeq=3993`；
+  - 10:34:51.888 变成 **`fps=0.0 shown=25757 lastSeq=3993`**（seq 不再前进）；
+  - `dshframe.bin` mtime 冻结在 **10:34:43**；`ps` 里 dsh-alpine 归零、三个 `dsh-*.pid` 全部消失。
+  - **归因存疑**：点击后 3 秒查 `topResumedActivity` 已是抖音 `com.ss.android.ugc.aweme/.splash`，
+    无法证明点击瞬间前台仍是 LinuxActivity。帧停更与 seq 冻结、进程清空三者同时发生，
+    **更像按钮真的生效**；但严格说证据链缺"点击时刻前台"这一环，记为**疑似生效，未闭环**。
+- 10:38:49 在同一位置点「开始画面」(573,1440，点击前与 sleep 5 后两次确认
+  `topResumedActivity=app.dsh.mobile/.LinuxActivity`）：
+  - 10:39:04 `dshframe.bin` mtime 刷新、大小仍 **3,686,416 B**；
+  - `ps` 里 dsh-alpine 回到 **4** 个，`dsh-xvfb.pid` / `dsh-xterm.pid` / `dsh-x11frsrv.pid`
+    三份 pid 文件重建（mtime 10:38）；
+  - logcat 连续 `fps=29.9 shown=26097 lastSeq=339` → `fps=29.9 shown=26276 lastSeq=518`，
+    **seq 从 0 重新计数**（与停了之前的 lastSeq=3993 不连续，符合"帧服务重启"）；
+  - rootfs `tmp/x11frsrv.log` 重新出现 `X11FRSRV_KV display=:101 size=1280x720 fps=30` / `shm=0`。
+  → **「停止 → 重启」这条路走通了，帧链路可完全恢复**。
+- **未闭环的部分**：这一次的 `uiautomator dump` 在 10:40 报 `could not get idle state`（手机前台
+  已被抖音接管、画面持续变化导致等不到 idle），所以停/启的 UI 回显文案没能抓到截图。
+  之后手机一直被人占用，**本轮到此为止不再做真机 UI 操作**，避免点到别人正在用的界面。
+
 ### 四、jniLibs 与 APK 内的 loader 不是同一份字节（新发现，勿再误判）
 
 同一版 loader 在两个位置 md5 不同：
