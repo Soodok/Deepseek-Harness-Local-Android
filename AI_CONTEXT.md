@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-21 21:30 · `main` 代码提交 `bac79f1d`（已推）· tag `v1.6.0-beta.31` 对应 vC407 全包 · 本轮**记忆带图的三处生命周期缺口**（fork 丢图 / upsert·label 不扫孤儿 / `resetMemory` 死代码）已修并模拟器复验，详见第一百五十四章。此前：`ab65ab20`（v1.6.0-beta.30，loader linkat 不认 `/proc/self/fd/N` 修复，容器 `apk update`/`apk add` 数据库写全通，见第一百五十三章）· `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· 记忆带图主干（第一百四十七章，`1c286a74`）· WebUI 首屏 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
+**最后更新**：2026-11-21 22:30 · `main` 代码提交 `dcdafcd9`（未推）· 工作副本 vC408 / 1.6.0-beta.32（未打 tag）· 本轮**x86_64 loader 产物漂移**：`jniLibs/x86_64/libdsh_alpine.so` 一直不在任何断言里，改了 `dsh_alpine.c` 只编 arm64 也全绿。用当前源码重编 x86_64（59,496 B / md5 `129912ed…`，同命令可复现同 md5），探针补 `[7]` 段 12 条（64 → 76 checks），模拟器 App 域端到端复验 `apk update` OK 26337 / `apk add jq` OK 92 MiB / `jq --version` 1.8.2，详见第一百五十五章。上一轮**记忆带图的三处生命周期缺口**（fork 丢图 / upsert·label 不扫孤儿 / `resetMemory` 死代码）详见第一百五十四章。此前：`ab65ab20`（v1.6.0-beta.30，loader linkat 不认 `/proc/self/fd/N` 修复，容器 `apk update`/`apk add` 数据库写全通，见第一百五十三章）· `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· 记忆带图主干（第一百四十七章，`1c286a74`）· WebUI 首屏 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -16778,3 +16778,148 @@ Network & internet 高亮），父拼图 632×459 三格 `S`/`0`/`1`（多一格
 1. 真机恢复后装本轮 APK 复验 A/B 两条证据（arm64 侧）。
 2. `MemoryRetention` 淘汰后立刻验证孤儿清扫（把上限临时压到 2 条即可构造）。
 3. 与本轮无关但一直挂着：OPPO Hans 冻结整 uid cgroup（第一百五十三章故障 B）仍需宝宝决策。
+
+---
+
+## 第一百五十五章（v1.6.0-beta.32 · 2026-11-21）x86_64 loader 产物漂移：源码修了、只编 arm64，探针照旧全绿
+
+### 1. 本轮结论（可直接引用）
+
+`app/src/main/jniLibs/x86_64/libdsh_alpine.so` 一直**不在任何断言里**。`_test_dsh_alpine_source_sync.py`
+只有一个常量 `SO` 指向 arm64-v8a，于是「改了 `dsh_alpine.c`、只重编 arm64」这种漂移永远看不见 ——
+源码在、产物旧，装上模拟器又回到「源码对了、行为不对」。这正是 11-05 那次老坑换了条腿
+（当时反过来：源码新、arm64 产物旧）。本轮补三件事：
+
+| # | 动作 | 证据 |
+|---|---|---|
+| A | x86_64 产物用当前源码重编（含 `4b63f09e` 的 linkat 修复） | 59,496 B / md5 `129912edb0bc58ceae4ebb07569f1e52` |
+| B | 探针补 `[7]` 段 12 条 x86_64 断言 | 64 → **76 checks / 0 failed** |
+| C | 模拟器（App 域）端到端复验 | `apk update` OK 26337、`apk add jq` OK 92 MiB |
+
+### 2. 为什么必须重编：旧产物缺 linkat 修复
+
+HEAD 里那份 x86_64 是 **58,888 B / md5 `91cb5f95ff9e78716315b67e65cdccf3`**，mtime 11-21 09:13，
+而 `4b63f09e`（linkat 不认 `/proc/self/fd/N`）提交于 15:27 —— 时间上就不可能含该修复。
+
+**判据坑（重要）**：`is_proc_self_fd` 是纯逻辑函数，源码里 `"/proc/"` 与 `"/fd/"` 被拼成常量，
+**没有可 strings 的特征字符串**。所以「`strings | grep -c proc/self/fd` = 0」不能当判据 ——
+只能靠行为验证。本轮的行为验证就是在模拟器上跑通了 `apk update`（那条链路走 O_TMPFILE + linkat）。
+
+### 3. 重编命令与可复现性
+
+```
+x86_64-linux-android28-clang -O1 -ffreestanding -fno-builtin -fno-pie -fno-PIE \
+  -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -fno-stack-protector -DPATH_MAX=4096 \
+  -mcmodel=large -static -nostdlib -nostartfiles -nodefaultlibs -no-pie \
+  -Wl,-e,_start -Wl,--image-base=0x2000000000 -Wl,-z,max-page-size=0x20000 -Wl,-s \
+  -o libdsh_alpine.so dsh_alpine.c
+```
+
+- NDK 28.2.13676358；**必须 `-mcmodel=large`**（小/中代码模型在 `--image-base=0x2000000000` 下报
+  `relocation R_X86_64_32 out of range`）。
+- Windows 下必须 `export MSYS2_ARG_CONV_EXCL=*`。
+- ⚠️ 传 `E:/...` 形式的 MSYS 路径给 clang 会报 `no such file or directory`，必须传
+  `E:/...` 原生盘符路径。
+- `-no-pie` 会报 unused warning（`-fno-pie -fno-PIE` 已生效），不影响产物。
+- **可复现**：重跑同命令得 59,496 B / 同 md5 `129912ed…`，与入库产物字节一致 → 该产物确由当前源码产出。
+- 产物形状：`Type: EXEC`、Entry `0x2000029100`、3 个 LOAD 段 Align 均 `0x20000`。
+
+### 4. 探针新增 `[7]` 段（12 条）
+
+`scripts/probes/_test_dsh_alpine_source_sync.py` 里 +47 行，判据刻意比 arm64 少（不重复源码侧
+那堆与架构无关的形状检查），只留「这份产物是不是同一份源码重新编出来的 x86_64 ELF」：
+
+ELFCLASS64 · `e_machine=62`（183=AArch64 说明拷错了架构）· `e_type=ET_EXEC` · 无
+`/system/bin/linker64`（x86_64 的 NDK 默认也塞 interp，必须显式关掉）· 不引 `libc.so` ·
+含 `PATH=/eng/bin:…` 字符串（缺了就是没重编）· 体积 > 20000 · 无 `[HIT]`/`[DIAG`/`[SENDTO]`
+调试残留 · **与 arm64 那份不是同一份字节流**（防「cp arm64 到 x86_64 目录」这种看似补齐、实则装错
+架构的假修复）· 产物不早于源码（+2s 容差）。
+
+**两组变异，各只打红自己那几条，还原后 md5 与字节一致**：
+
+| 变异 | 打红 |
+|---|---|
+| 把 arm64 产物拷进 x86_64 目录 | `e_machine = x86-64(62)` +「不是同一份字节流」（2 条） |
+| 把源码 mtime 推到 23:59（晚于产物） | x86_64 那条 + arm64 三条既有的「产物必须晚于源码」（4 条） |
+
+### 5. 模拟器端到端复验（x86_64 lane，App 域）
+
+设备 `emulator-5554` = AVD dsh34（Android 34 / x86_64 / qemu=1），装 vC408 / 1.6.0-beta.32 debug 包
+（`su 0 pm install -r -d --user 0` → Success；同 debug 签名直接覆盖，数据未丢）。
+
+**装完不会自动换 loader**（两次踩坑，记下来）：
+
+1. `files/linux/runner/dsh_alpine` 仍是旧的 —— `EngineConfig.deployLinuxRunner` 只在 Linux 相关
+   路径**被真正调用**时才跑。
+2. `monkey -p app.dsh.mobile -c LAUNCHER` 只起 MainActivity，不触发部署。必须
+   `su 0 am start -n app.dsh.mobile/.LinuxActivity`。部署后 runner = 59,496 B /
+   md5 `82a0a3f6713fec1f5a47ad1f52fe9f0a` / mtime 14:16。
+
+**APK 内 loader md5 与本地不同属正常**：APK 内 `82a0a3f6…`，本地 `129912ed…`，差异仅 65 处、
+集中在 offset 58,858–59,433（`.shstrtab` 尾 + 节头表，AGP 打包期 rewrite）。用
+`llvm-objcopy --only-section=.text` 抽出比对 **md5 完全相同 `c788fac40a68336dbca9e1994db5020b`、
+`cmp` 通过（TEXT_IDENTICAL）** —— 所以不能用整包 md5 相等当「装对了」的判据。
+
+**容器 shell（真实 App 域，非 run-as）**：`dsh-alpine` pid 6732，`/proc/6732/attr/current` =
+`u:r:untrusted_app_27:s0:c197,c256,c512,c768`（与 App 主 pid 6127 同域），PPid 6127，
+`Seccomp: 2 / Seccomp_filters: 2`。
+
+| 命令 | 结果 |
+|---|---|
+| `apk update` | `OK: 26337 distinct packages available`，零 WARNING 零 error（跑两次） |
+| `apk add --no-cache curl` | `OK: 91 MiB in 42 packages` |
+| 容器内 curl 拉 `…/v3.22/main/x86_64/APKINDEX.tar.gz` | HTTP **200** |
+| `apk add --no-cache jq` | `OK: 92 MiB in 44 packages`（含 oniguruma 6.9.10-r0） |
+| `jq --version` | `jq-1.8.2` |
+
+→ beta.16 的「容器网络不通」第一性成因（linkat 不认 `/proc/self/fd/N`）在 x86_64 lane 完成闭环：
+索引落盘通、数据库写通、包能装、装完能跑。
+
+### 6. 模拟器 UI 操作要点（可复用，都是踩过的）
+
+- 首次进 LinuxActivity 弹通知权限框（`GrantPermissionsActivity`），「Allow」bounds
+  `[137,1137][943,1291]` → tap **(540,1214)** 才进主页面。
+- ScrollView 滚动用 `input swipe 600 1500 600 700 400` 三次到功能区；
+  **起点写 2200 会滑出 App 到桌面**（触发了系统手势）。
+- 功能区节点 bounds（滚动到位后）：`Terminal, Container shell` `[385,328][694,570]` → tap (540,449)。
+- TerminalActivity 输入：先 tap (540,1200) 聚焦 → `input text`（**空格写 `%s`**）→ `input keyevent 66`。
+- 命令里含 `$(` 会被 adb shell **先展开**，落进终端就变成 `/bin/sh: syntax error`；管道 | 也会被
+  外层吃掉（实测 `echo s5 | jq .` 变成 `/system/bin/sh: %sjq%s.: inaccessible`）。要验管道请在
+  终端里手写，别用 `input text` 传整串。
+- 设备上 `grep`/`sed` 一律 **Segmentation fault**（toybox 自崩）→ UI dump 必须 adb pull 到本地，
+  用 `E:/tmp/uidump.py` 解析（输出 `text | bounds` 与 `content-desc | bounds` 两段）。
+- 容器内 `id` 显示 `uid=197609(soodok)` 是模拟器宿主 uid 映射的怪值，真实 App uid 是 `u0_a197`。
+
+### 7. 门禁（全部实测末行）
+
+| 探针 | 结果 |
+|---|---|
+| `_test_dsh_alpine_source_sync.py` | `checks=76 failed=0` |
+| `_test_linux_frame_launch.py` | `40 checks / 0 failed` |
+| `_test_linux_apt_nonroot.py` | `47 checks, 0 failed` |
+| `_test_linux_terminal_in_container.py` | `38 checks, 0 failed` |
+| `_test_linux_workbench.py` | `87 checks, 0 failed` |
+| `_test_engine_spawn_env.py` | `通过 30 / 失败 0` |
+| `_test_security_audit.py` | `通过 48 / 失败 0` |
+| `check-i18n.py` | `All i18n checks passed` |
+| `git-hygiene.py` | `通过（4 条提醒）` |
+
+构建：`:app:testDebugUnitTest :app:assembleDebug`（x86_64 / full / `_runtime_bak/rt-x86_64-ptcwork.zip`）
+→ **BUILD SUCCESSFUL in 41s**；APK 217,019,813 B / md5 `1c3d58799a9debc3dfca5eda75c8e960` /
+vC408 / 1.6.0-beta.32 / `native-code: 'x86_64'`。
+
+### 8. 仍未验证（如实记）
+
+1. **arm64 真机（PLZ110）本轮完全没碰** —— `192.168.101.21` ping 100% 丢包，`adb devices` 只剩
+   emulator-5554。所有运行证据都来自模拟器。arm64 侧只验了「产物字节未变 + 探针 76 条全绿」。
+2. 探针 x86_64 段**只查形状与新鲜度，不查行为** —— 若源码改了而产物用错参数（比如漏 `-mcmodel=large`），
+   体积与形状仍可能通过。
+3. 主仓没有 `build/build.sh`（只有镜像仓 `dsh-linux-runtime/build/build.sh` 有），本轮重编靠手抄命令行；
+   下次仍会踩 `E:/` 路径与 `MSYS2_ARG_CONV_EXCL` 两个坑。
+4. 模拟器上没验 X11 画面链路（本轮只验容器网络/包管理；那条链路在真机 beta.25/26 已闭环）。
+
+### 9. 下一步
+
+1. 真机恢复后装 beta.32 复验 arm64 侧（loader 字节应与当前一致，行为同 beta.30/31）。
+2. 把 `build.sh` 同步进主仓（或写进 CMakeLists 注释），消除手抄命令行。
+3. `docs/ui-preview/probe-opacity.mjs` 仍是未跟踪文件（11-13 的 CDP 探针），要么入库要么删。

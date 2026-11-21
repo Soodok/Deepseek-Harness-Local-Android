@@ -383,13 +383,29 @@ android {
         // 真机 A/B：旧 loader（38,832 B）apk update 无 OK 行 + add 报数据库错；
         // 新 loader（43,224 B）apk update → OK: 27443 distinct packages available、
         // apk add --no-cache jq → OK: 336.1 MiB in 108 packages，零 WARNING 零 error。
-        versionCode = 407
+        // v1.6.0-beta.32（2026-11-21）：x86_64 lane 的 loader 产物漂移补上守门。
+        // 真机 PLZ110 反复掉线期间，模拟器（AVD dsh34 / x86_64 / Android 14 / qemu）
+        // 成了容器修复的主验收环境 —— 而 jniLibs/x86_64/libdsh_alpine.so 一直不在
+        // 任何断言里：改了 dsh_alpine.c 只重编 arm64，那份 x86_64 静静躺着旧逻辑，
+        // 探针照旧全绿，装到模拟器上又是「源码对了、行为不对」（11-05 的老坑换条腿）。
+        // 本轮把 x86_64 产物重编（+4b63f09e 的 linkat 修复）并给
+        // _test_dsh_alpine_source_sync.py 补 [7] 段 12 条：ELFCLASS64 / e_machine=62 /
+        // ET_EXEC / 无 PT_INTERP / 不引 libc.so / 含 DSH_DEFAULT_PATH / 无调试残留 /
+        // 与 arm64 不是同一份字节流（防「cp arm64 到 x86_64 目录」的假补齐）/
+        // 产物不早于源码。64 → 76 checks。两组变异各打红自己的那几条。
+        // 本地重建复现：同源码同参数编出 59,496 B / md5 129912edb0bc58ceae4ebb07569f1e52，
+        // 与入库产物字节一致 → 证明该产物确由当前源码产出（不是凭空拷来的）。
+        // 模拟器实测（App 域 u:r:untrusted_app_27，Seccomp 2，dsh-alpine 与 App 主进程同域）：
+        // apk update → OK: 26337 distinct packages available（零 WARNING 零 error）；
+        // apk add --no-cache curl → OK: 91 MiB in 42 packages、容器内 curl 拉 APKINDEX → 200；
+        // apk add --no-cache jq → OK: 92 MiB in 44 packages（含 oniguruma），jq --version → jq-1.8.2。
+        versionCode = 408
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.31"
+        versionName = "1.6.0-beta.32"
 
         ndk {
             abiFilters += listOf(targetAbi)

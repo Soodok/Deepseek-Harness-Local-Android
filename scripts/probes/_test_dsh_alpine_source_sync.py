@@ -367,6 +367,53 @@ ok(b"[HIT]" not in so_raw, "产物无 [HIT] 打印")
 ok(b"[DIAG" not in so_raw, "产物无 [DIAG 打印")
 ok(b"[SENDTO]" not in so_raw, "产物无 [SENDTO] 打印")
 
+print("[7] x86_64 lane 的产物漂移（2026-11-21 补：模拟器是这条 lane）")
+#
+# 为什么必须单列：本探针此前只有一个常量 SO，指向 arm64-v8a。可 2026-11-21 起
+# 模拟器（AVD dsh34 / x86_64 / Android 34）成了容器网络修复的主验收环境 ——
+# 真机上 apk 那次「App 域全通」就是在 x86_64 lane 上跑出来的。而
+#   app/src/main/jniLibs/x86_64/libdsh_alpine.so
+# 一直不在任何断言里：改了 dsh_alpine.c、只重编 arm64，x86_64 那份静静躺着旧
+# 逻辑，探针照旧全绿，装到模拟器上又回到「源码对了、行为不对」的老坑。
+#
+# 判据比 arm64 少（不重复源码侧那堆形状检查，那些与架构无关，上面已跑过），
+# 只留「这份产物是不是同一份源码重新编出来的 x86_64 ELF」这一组硬约束。
+import hashlib
+
+SO_X86 = os.path.join(ROOT, "app/src/main/jniLibs/x86_64/libdsh_alpine.so")
+ok(os.path.isfile(SO_X86), "app/src/main/jniLibs/x86_64/libdsh_alpine.so 存在")
+if os.path.isfile(SO_X86):
+    x86_raw = open(SO_X86, "rb").read()
+    x86_txt = x86_raw.decode("latin-1")
+    x86_mtime = os.path.getmtime(SO_X86)
+
+    ok(x86_raw[:4] == b"\x7fELF", "x86_64 产物：ELF 魔数正确")
+    ok(x86_raw[4] == 2, "x86_64 产物：ELFCLASS64")
+    ok(int.from_bytes(x86_raw[18:20], "little") == 62,
+       "x86_64 产物：e_machine = x86-64(62)（183=AArch64 说明拷错了架构）")
+    ok(int.from_bytes(x86_raw[16:18], "little") == 2,
+       "x86_64 产物：e_type = ET_EXEC(2)，不是 PIE")
+    ok(b"/system/bin/linker64" not in x86_raw,
+       "x86_64 产物：无 PT_INTERP（x86_64 的 ndk 默认也会塞 interp，必须显式关掉）")
+    ok(b"libc.so" not in x86_raw, "x86_64 产物：不引用 libc.so（freestanding）")
+    ok(b"/eng/bin:/usr/local/sbin" in x86_raw,
+       "x86_64 产物：含 PATH=/eng/bin:… 字符串（缺了就是没重编）")
+    ok(len(x86_raw) > 20000, "x86_64 产物体积合理（%d 字节）" % len(x86_raw))
+    ok(b"[HIT]" not in x86_raw and b"[DIAG" not in x86_raw and b"[SENDTO]" not in x86_raw,
+       "x86_64 产物：无 [HIT]/[DIAG]/[SENDTO] 调试残留")
+
+    # 与 arm64 那份不能是同一个字节流 —— 防止「cp arm64 到 x86_64 目录」这种
+    # 看似补齐、实则装错架构的假修复。
+    ok(hashlib.md5(x86_raw).hexdigest() != hashlib.md5(so_raw).hexdigest(),
+       "x86_64 产物与 arm64 产物不是同一份字节流")
+
+    x86_fresh = x86_mtime + 2 >= src_mtime
+    ok(x86_fresh,
+       "x86_64 产物不早于源码（src=%s so=%s）"
+       % (time.strftime("%m-%d %H:%M:%S", time.localtime(src_mtime)),
+          time.strftime("%m-%d %H:%M:%S", time.localtime(x86_mtime)))
+    )
+
 print("")
 print("checks=%d failed=%d" % (checks, failed))
 sys.exit(0 if failed == 0 else 1)
