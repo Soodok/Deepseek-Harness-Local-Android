@@ -85,10 +85,24 @@ print("\n=== 2. Bounded independent fan-out ===")
 start = src.find('mark("parallel-preflight")')
 end = src.find('step("parallel-preflight")', start)
 block = src[start:end] if start >= 0 and end > start else ""
-check("parallel work has an explicit bounded task set", block.count("async {") == 3, f"async count={block.count('async {')}")
+check("parallel work has an explicit bounded task set", block.count("async {") == 4, f"async count={block.count('async {')}")
 check("seed task is awaited", 'runParallelInit("agent-seed")' in block)
 check("log sweep task is awaited", 'runParallelInit("log-sweep")' in block)
+check("stale lock heal task is awaited", 'runParallelInit("stale-locks")' in block)
 check("bridge task is awaited", 'runParallelInit("bridge")' in block)
+
+# stale-locks 的安全前提：必须带「引擎还在跑就跳过」的探测参数。
+# 少了它，退避重试期间上一轮引擎没死透时会删掉真活的锁 → 双写 package.json。
+# 怎么打红：把 StaleLockHealer.heal(ctx) { portInUse(120) } 改成 StaleLockHealer.heal(ctx)。
+check(
+    "stale lock heal probes for a live engine",
+    "StaleLockHealer.heal(ctx) { portInUse(" in block,
+    "heal must skip when the engine is still running",
+)
+check(
+    "stale lock heal runs before spawnEngine",
+    pos('runParallelInit("stale-locks")') < pos("spawnEngine(bootId)"),
+)
 check("all tasks join at awaitAll", ").awaitAll()" in block)
 check("task failures are collected before continuing", "initResults.firstOrNull { it.isFailure }?.getOrThrow()" in block)
 check("no runtime mutation is inside the parallel block", "RuntimeInstaller" not in block and "HardsshInstaller" not in block)

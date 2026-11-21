@@ -358,13 +358,24 @@ android {
         // 同版给 _test_linux_terminal_in_container.py 补 K1-K5 五条断言，并先把源码
         // 切成 buildTerminalArgv 函数体再断言 —— 旧探针在整份文件里找
         // `DSH_DNS_PORT=`，而 buildEngineArgv 里本来就有，终端漏传它也全绿。
-        versionCode = 404
+        // v1.6.0-beta.29（2026-11-21）：引擎被系统杀掉时写一半留下的原子写锁会把
+        // 下一次启动拖死。dsh-atomic-write 在目标文件旁建 `<文件>.lock`（内容 pid）
+        // 再 rm，进程死在中间就留下残锁；上游 takeOverExitedLock 只认「死 pid」
+        // 一种，其余四种（活着的无关 pid 复用 / 空文件 / 坏内容 / 残留 takeover 凭据）
+        // 一律等到超时 —— 实测把 1 写进 .credentials.yaml.lock 后冷启，40.5 秒后
+        // `startup failed: 1 required plugin did not activate (connection)` 整引擎失败。
+        // 新增 StaleLockHealer，挂在 parallel-preflight（spawnEngine 之前），白名单
+        // 目录逐层枚举、session.lock 永不触碰、有引擎在跑就整体跳过。判定用三类
+        // 正面证据而不是猜：活 DSH（cmdline 命中 engine 路径）不删、记录解析不出 pid
+        // 直接删、mtime 超过 20 秒直接删；剩下含糊的保留并留日志。
+        // 同版 _test_stale_lock_heal.py 守 22 条断言 + 13 个单测，四组变异全部能打红。
+        versionCode = 405
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.28"
+        versionName = "1.6.0-beta.29"
 
         ndk {
             abiFilters += listOf(targetAbi)

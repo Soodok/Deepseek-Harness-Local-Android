@@ -388,3 +388,8 @@ docs/ui-preview/.preview-server.json
 !/scripts/probes/fixtures/
 !/scripts/probes/fixtures/**
 !/scripts/probes/_test_report_bundle.py
+
+# 启动前清理残留锁（.credentials.yaml.lock 等）：引擎被系统杀掉时会在写一半留下
+# 0 字节锁，上游 atomic-write 把它当「活着」永久等待 —— 真机实测 40.5 秒后整引擎
+# 失败。探针守三条：坏记录无论多新都删、活 DSH 写者不删、session.lock 永不触碰。
+!/scripts/probes/_test_stale_lock_heal.py

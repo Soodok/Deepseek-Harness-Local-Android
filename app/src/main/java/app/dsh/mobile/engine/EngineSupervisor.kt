@@ -820,6 +820,40 @@ class EngineSupervisor(private val ctx: Context) {
                     listOf(
                         async { runParallelInit("agent-seed") { AgentContextSeed.ensure(ctx) } },
                         async { runParallelInit("log-sweep") { LogJanitor.sweep(ctx); Unit } },
+                        // 残留锁清理（v1.7.x）：插件写配置文件时进程被杀（OOM / 后台清理 /
+                        // 用户强停）会在目标文件旁留下 <文件>.lock，内容可能是死 pid、
+                        // 空文件、坏内容，或带上一个残留的 .takeover- 凭据 —— 后三种上游
+                        // 永不接管，引擎会一直等到超时。
+                        //
+                        // 实测（emulator-5554，2026-11-21）：往 .credentials.yaml.lock
+                        // 写一个活着的无关 pid 后冷启，40.5 秒后整个引擎启动失败：
+                        //   dsh: startup failed: 1 required plugin did not activate
+                        //     connection (required)
+                        //     Error: atomic-write: timed out waiting for the writer lock
+                        // 删锁后同一操作 13.5 秒正常就绪。
+                        //
+                        // 为什么放在这里安全：
+                        //  · spawnEngine 在其后（:920），此刻引擎按构造必未运行；
+                        //  · 再叠一道 portInUse() 探测，引擎还活着就整个跳过；
+                        //  · 它只写「删锁」这一件事，与 agent-seed（写 AGENTS.md）、
+                        //    log-sweep（裁日志）、bridge（bind 端口）目录/资源互不重叠。
+                        // 为什么必须在这里而不是更早：log-sweep 会在 .plugin-manager/logs
+                        // 下动目录，锁清理要看到的是它跑完之后的稳定状态无所谓，但两者
+                        // 都不碰对方的路径，并行最快且互不影响顺序约束。
+                        async {
+                            runParallelInit("stale-locks") {
+                                val lockHeal = StaleLockHealer.heal(ctx) { portInUse(120) }
+                                // 三种结果都要落日志：skip 是「引擎还活着所以不动手」，
+                                // 事后排查「为什么没清」时它是唯一的证据；安静跳过等于没有。
+                                Log.i(
+                                    TAG,
+                                    "stale-lock heal: removed=" + lockHeal.removed +
+                                        " kept=" + lockHeal.kept +
+                                        " failed=" + lockHeal.failed.size +
+                                        " skipped=" + lockHeal.skippedEngineRunning,
+                                )
+                            }
+                        },
                         async {
                             runParallelInit("bridge") {
                                 AgentBridge.start(ctx)
