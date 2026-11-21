@@ -383,13 +383,13 @@ android {
         // 真机 A/B：旧 loader（38,832 B）apk update 无 OK 行 + add 报数据库错；
         // 新 loader（43,224 B）apk update → OK: 27443 distinct packages available、
         // apk add --no-cache jq → OK: 336.1 MiB in 108 packages，零 WARNING 零 error。
-        versionCode = 406
+        versionCode = 407
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.30"
+        versionName = "1.6.0-beta.31"
 
         ndk {
             abiFilters += listOf(targetAbi)
