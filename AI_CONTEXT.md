@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-21 15:30 · `main` 代码提交 `4b63f09e`（已推）· 本轮 loader linkat 不认 `/proc/self/fd/N` 修复（容器 `apk update`/`apk add` 数据库写全通）+ v1.6.0-beta.30 装机复验与现场清理，详见第一百五十三章。此前基线 `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
+**最后更新**：2026-11-21 16:40 · `main` 代码提交 `ab65ab20`（已推）· tag `v1.6.0-beta.30` 已发布 prerelease（CI 全绿，包内 loader 43,224 B 与本地逐字节一致）· 本轮 loader linkat 不认 `/proc/self/fd/N` 修复（容器 `apk update`/`apk add` 数据库写全通）+ v1.6.0-beta.30 装机复验与现场清理，详见第一百五十三章。此前基线 `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· WebUI 首屏那段 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -16564,11 +16564,12 @@ mtime 压到源码之后。
 1. **故障 B 需要决策**：改 `/data/oplus/os/bpm/bpm.xml` 白名单（root 改系统分区、可能被
    OTA 覆盖、需重启）或另设计应用侧规避（例如把 DNS 代理挪到不受本 uid 冻结影响的进程，
    或用 `JobScheduler`/`前台服务 + 常驻唤醒` 思路）。两条都需宝宝确认取舍。
-2. 用户反馈的「Beta 16 通不了」已定位：beta.16 = `07c5263c`（vC392，2026-11-17 09:47），
-   **至少缺三个关键修复** —— `642023b7`（vC404，终端 `DSH_DNS_PORT` 第三次漏接线）、
-   `624c9074`（vC402，legacy rename/link 复制兜底不用未初始化栈缓冲）、
-   `39ff51cc`（vC397，linkat/symlinkat 对 /proc /dev /sys 原样透传）。要让用户拿到修好的版本，
-   需要发一个 versionCode ≥ 406、versionName 明确的新 prerelease（未做）。
+2. 用户反馈的「Beta 16 通不了」已定位并**已给出可用版本**：beta.16 = `07c5263c`（vC392，
+   2026-11-17 09:47），**至少缺四个关键修复** —— `39ff51cc`（vC397，linkat/symlinkat 对 /proc
+   /dev /sys 原样透传）、`624c9074`（vC402，legacy rename/link 复制兜底不用未初始化栈缓冲）、
+   `642023b7`（vC404，终端 `DSH_DNS_PORT` 第三次漏接线）、`4b63f09e`（vC406，linkat 不认
+   `/proc/self/fd/N`）。`v1.6.0-beta.30`（vC406）已打 tag 并发布 prerelease（见 §13），
+   包内 loader 实测 43,224 B，与本地产物逐字节一致。
 3. 并行会话在 `/e/tmp/wt-flutter-native-chat` 推进到 vC466/beta.91，版本号比本轮高
    —— 下次构建前先对时，避免又出现降级挡住 `adb install`。
 
@@ -16595,3 +16596,31 @@ untrusted_app_27 下是否同样放行 **尚未确认**。
 覆盖掉 —— 手工改 `resolv.conf` **不持久**，要做兜底必须改代码。
 
 **已还原现场**：`rootfs/etc/resolv.conf` 现为单行 `nameserver 127.0.0.1`（与代码契约一致）。
+
+### 13. 发版：v1.6.0-beta.30 已打 tag 并发布 prerelease（2026-11-21 16:33 CST）
+
+用户反馈的「Beta 16 通不了」需要给出可直接安装的修好版本，于是本轮把 beta.30 发出去。
+
+- **tag**：`v1.6.0-beta.30` 指向 `ab65ab20`（versionCode 406 / versionName 1.6.0-beta.30），
+  与 `publish-release` 的 `test "$GITHUB_REF_NAME" = "v$V"` 判据一致（带 `-` → `prerelease: true`）。
+- **CI**：`android-build | v1.6.0-beta.30 | completed success`（2026-11-21T08:33:33Z，
+  触发时间 08:23:32Z，耗时约 10 分钟）。`publish-release` 全绿。
+- **Release**：`v1.6.0-beta.30` published 2026-11-21T08:33:07Z，`prerelease=true`，12 个资产：
+  arm64-v8a / x86_64 各 debug / debug-noruntime / release / release-noruntime 四个 APK，
+  另 `runtime-arm64-v8a.zip` 150,671,264 B、`runtime-x86_64.zip` 150,180,238 B、
+  `runtime-index.json`(1250 B)+sig、`update-index.json`(3585 B)+sig。
+  arm64 release APK = **194,051,011 B**，arm64 release-noruntime = 48,099,273 B。
+- **产物核对（不看源码看包）**：下载 CI 的 `arm64-v8a-release-noruntime.apk`（48,099,273 B），
+  里面 `lib/arm64-v8a/libdsh_alpine.so` = **43,224 B / md5 `ebf91a114036fe572aade5a626a3fd20`**，
+  与本地 `assembleRelease` 产物 `app-release.apk` 内同条目**逐字节相等（0 处差异）**；
+  与仓库 `jniLibs` 里那份 `652aeaee…` 的差异仍只是 AGP 打包期重写节头表（见 §6），
+  可加载内容一致。`libdsh_setuid_shim.so` 3,264 B、`libdshpty.so` 9,032 B、`libdsh_pty_exec.so` 443,880 B。
+  → **CI 发出去的包确实带 linkat 修复的 loader**，不是旧版本。
+- **与既有 preview 的差异**：滚动 `preview` release 里的 `v1.6.0-beta.21` 源自 `ab94da90`
+  （loader **42,232 B**，不含 `4b63f09e`）→ preview 用户拿到的仍是旧 loader，
+  beta.30 是本轮唯一带修复的发布产物。
+
+**发版踩坑（写下来省下一次）**：`curl` 抓 GitHub Release 资产**不能用 `-r` 范围请求**，
+会返回 `501 Unsupported client`（468 B 的 HTML 错误页）；要核对包内容只能整体下载。
+另外 `python -c` 里写带引号的 f-string 很容易被 shell 吃掉引号，落成 `SyntaxError: '(' was never closed`
+—— 改写成独立 `.py` 文件再 `python file.py` 最稳。
