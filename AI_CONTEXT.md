@@ -17327,3 +17327,83 @@ git -c http.proxy=http://127.0.0.1:18794 -c https.proxy=http://127.0.0.1:18794 p
 
 再想省空间的话下一个目标是 `vela Project` 与 `C迁移`，但两者都不是本仓的产物，需宝宝确认。
 
+
+## 第一百六十一章（v1.6.0 · 2026-11-22）23 条 open issue 盘点：#111 行内展开落地，9 条确认已修并关闭
+
+### 1. 本轮做了什么
+
+按 `16ba14f5` 落地 issue #111（语言与运行时代理从弹窗改成行内展开），并逐一核对 23 条 open issue 的修复状态、回复关闭其中 9 条。
+
+**新增 `app/src/main/java/app/dsh/mobile/InlinePanels.kt`**（object，纯代码建视图，不新增 XML）：
+- `attach(host, row, fill)`：按 `row.id` 缓存 tag `inline-panel-%d`，`findViewWithTag` 命中即复用；插在 `indexOfChild(row) + 1`（**紧邻之后，不是组尾**——追加到组尾会让内容离所属行隔着几行）；默认 `GONE`；顶部 1dp `@color/stroke` 分隔线。
+- `toggle(panel)`：只切 `visibility`（幂等，重复点不会越插越多）。
+- `radioRow(ctx, title, checked, accent, onClick)`：当前项**三条线索**——`Typeface.BOLD` + `R.drawable.ic_check` + `dshAccent`。只靠颜色对灰度屏/色弱用户不可读。
+- `actionButton(ctx, title, primary, onClick)`。
+- 两个 `internal` 扩展：`Context.dp(v)`、`Context.selectableItemBackground()`。
+
+**`SettingsActivity.kt`**：
+- 语言行 → `InlinePanels.attach(langHost, rowLanguage)` 铺 6 个 `radioRow`；选中仍 `LocaleHelper.set` + `recreate()`（语义未变）。
+- `showRuntimeProxyDialog()` **保留函数名**（调用点不动）但体内不再建对话框：EditText 预填当前值 + hint + 行内 `errorText`（替代 `input.error =`）+ 重置/保存两个 `actionButton`；保存仍走 `RuntimeDownloadConfig.isValid` → `setProxy` → `refreshRuntimeProxyRow()` → toast。
+- **同意类刻意保留弹窗**（`remote_access_consent` / `lan_web_consent`）：安全确认不该做成静默内联开关。
+
+### 2. 两个编译错误的真因（可复用）
+
+| 报错 | 真因 | 修法 |
+|---|---|---|
+| `InlinePanels.kt:53 Val cannot be reassigned` | `View.tag` 是 **val**（Kotlin 属性），不是可写字段 | `setTag(tag)` |
+| `SettingsActivity.kt:763 Unresolved reference: panel` | 闭包里引用的是正在被 `attach` 赋值的 `val panel`，此刻尚未定义 | 改用 closure 参数 `p` |
+
+### 3. 探针与假绿
+
+`scripts/probes/_test_settings_inline_panels.py`（A/B/C/D/E/F/G 七组，**29 checks 0 failed**）：
+
+- **必须 `strip_kotlin_comments()`**：本项目注释里大量保留「旧写法长什么样」的原文（如 `MaterialAlertDialogBuilder.setSingleChoiceItems(...)`）。不剥注释 → 「不许出现 X」永远红、「必须出现 Y」被注释喂饱，两个方向都是假结果。
+- **A2 判据必须限定在 `showRuntimeProxyDialog()` 函数体内**：全文件搜 `MaterialAlertDialogBuilder` 会命中同意类对话框，那本来就必须保留。首版就是这么假红的（29 checks 1 failed）。
+- 五处反向验证全红后还原：去缓存复用 → B2；插到组尾 → B3；`toggle` 改回只展开 → C1；去 `isValid` 校验 → E1；把 `setSingleChoiceItems` 写回语言行 → A1。
+- `.gitignore:403` 追加放行。
+
+门禁：`check-i18n.py` 通过（1437 引用 / 1866 定义 / 429 未使用，58 扩展）；`check-ui-tokens.py` 通过（155 `android:tint` / 0 `app:tint`）；**全量 py 探针 167/167**。
+
+### 4. 已核实「HEAD 已有修复」并关闭的 9 条
+
+| issue | 修复 | 判据 |
+|---|---|---|
+| #126 `.trash-*` 拖死 workspace 栈 | `a66af8a4`（v1.7.7） | `SessionTrash.kt` 回收站移到 `$DSH_HOME/.trash-sessions`；`migrateLegacy()` 在 `EngineConfig.ensureUserDataExternal` 尾部调用 |
+| #118 fast_mode `agent/request` | `a9e7d961` | `HARD_CONTRACT_MARKERS` 读硬契约文案 + `hasAgentModel()`；`usePreStep` 成立挂 `agent/pre-step` |
+| #107 `URL.canParse` | `aabdef9f` + `fe1bc876` | polyfill **v5**；`WebViewPolyfill.kt` 负责真正注入 |
+| #119 用量浮层点不动 | `1b0dba25` | 根因是 0.2.2-rc.3 改用 CSS anchor positioning（Chrome 125+），老 WebView 丢 `anchor()` 后浮层被钉到 `(100,12)`、距 trigger 678px；`chat-anchor-fallback` 插件在 `CSS.supports("position-anchor: --x") === false` 时接管 |
+| #123 隐藏导航栏 | 已实现 | `AppearanceActivity` 的 `swImmersiveNav`；`applyStatusBarImmersive()` API30+ `setDecorFitsSystemWindows(false)` + `hide(statusBars or navigationBars)`，API<30 补 `SYSTEM_UI_FLAG_HIDE_NAVIGATION` |
+| #94 签名不一致 | 已实现 | `ApkInstaller.sameSignature()` + `AppUpdateDownloadService:151` 装前拦截、`:157` 带 `installed=… archive=…` 前 8 位 |
+| #98 `skipNBytes` | `d3535531` | Android 自己的 `java.io` 无此 API（JDK 12 才有），与 PATH 里 JDK 17/21 无关 |
+| #76 `directoryPickerController` 不可用 | `14d38dd` + `a66af8a4` | 报告人推测 B 对：网关先 `resolveReceiverContext` 再取，旧探针只查根 ctx ⇒ **判据窄于被测对象**；已加 `probeDirectoryPickerController` |
+| #91 WebUI 底部菜单版本溯源 | — | **本仓库查不到**：61 个 `@deepseek-ai/dsh-client-ui-*` 全为 `0.2.2-rc.1`，源码与历史在上游；不猜版本号，按 `not_planned` 关 |
+
+### 5. 保持 open 的 14 条（各自缺什么）
+
+| issue | 缺的证据 / 我的判断 |
+|---|---|
+| #127 第三方插件带走三个组件 | 要「三个组件是哪三个」+「卸载插件后是否恢复」；怀疑与 #126 同链（`workspaceRegistry`/`workspaceController`/`directoryPickerController`） |
+| #125 dsh_alpine SIGSEGV | 要 `DSH_ALPINE_DEBUG=1` 下 `LOADER: stage` 最后一行 + `fatal signal` 两行；`624c9074`（未初始化栈缓冲）最像 |
+| #119 / #108 / #76 | 已修待报告人复验（#76 已关） |
+| #124 zh-TW PR | 已回，等 PR；三条硬要求（只加 `values-zh-rTW`、语言名保留 endonym、术语统一） |
+| #122 插件设置页错位 | 图取不到，要「错位的是页面本身还是弹层」三分类文字 |
+| #108 大会话 TRANSPORT | 已加 cause 链 + `request body 40.2 MB`；要升级后的完整 TRANSPORT 文案。**分叉/压缩明确做不到**（引擎无该原语，拒绝假实现） |
+| #106 宣传与改名 | 素材三件我接（README 演示区 / `docs/DEMO.md` / 中性对照表）；改名主张「对外名对齐 `DSH Mobile`、仓库名不动」 |
+| #96 俄语 | 已上线；反问真实诉求（漏翻 / 排版 / ASR / 只是要语言） |
+| #83 小米13 装不上 | 正文空；要报错原文 + APK 文件名（含 ABI）+ 文件大小与 SHA-256 对比 |
+| #60 后台跑满上下文 | 要 `compact` 日志行 + `stop_reason: max_tokens` 计数 + 省电策略设置 |
+| #59 Python 原生扩展 | **边界**：manylinux aarch64 轮子在 bionic/musl 上不可用；改「依赖声明 + 探测」；外部服务自启要随引擎起停 + 宿主分配端口；**拒绝宿主代装 pip**（会抹掉插件沙箱边界） |
+| #41 多 profile | 接受；六步计划已写（先停后写切换 / 会话是否隔离需先验证 / 删除进 `.trash-profiles` / App 注入优先）；**不做**多 profile 并存与独立会话目录 |
+| #26 长消息卡顿 | 拒绝拿「轮次多」当结论；要 `dumpsys gfxinfo` janky frames %、会话文件大小、挂机期后台占用、版本 + 是否装 UI 插件 |
+| #2 语音唤醒 | 正文空（已有 6 条历史回复）；给了 A/B/C/D 四个方向，默认按 A（设为默认数字助理，不常驻麦克风） |
+
+### 6. 本轮踩到的三个坑（都可复用）
+
+1. **`github.com` 可达性 ≠ `api.github.com` 可达性**。本轮 `api.github.com` 直连 200 可写评论，但 `github.com` 直连与四个代理口全超时 ⇒ **issue 附件截图（`user-attachments`）一律取不到**；`ghfast`/`gh-proxy` 镜像 404，`r.jina.ai` 也连不上。所以 #122/#127 这类「正文只有图」的 issue 只能靠文字描述。
+2. **bash heredoc 写含 `$'`/反引号/大括号的中文 JSON 会被 shell 吃掉**（#108 首次 `http=400` + `message: command not found`）⇒ 评论正文一律用 Python `json.dumps` 写文件再 `curl -d @file`。
+3. **`git push` 会自动沿用 `http.proxy=127.0.0.1:7892`**，而该代理当时不通；按铁则先 `-c http.proxy= -c https.proxy=` 试直连（也失败）→ 实测 `curl -x 127.0.0.1:7892 https://github.com` 返回 200，随即**显式带上代理**推送成功（`040948bc..16ba14f5 main -> main`）。结论：不要凭「代理是负资产」的旧印象跳过实测。
+
+### 7. 状态
+
+- 本地 = 远端（`git rev-list --left-right --count origin/main...HEAD` → `0 0`），HEAD `16ba14f5`。
+- 剩余 open 14 条，其中 #127/#124/#122/#83/#96/#60/#59/#41/#26/#2 等 10 条**在等报告人补证据**，无人可强推；#125/#108/#119 已给修法待复验；#106 待我做文档素材。
