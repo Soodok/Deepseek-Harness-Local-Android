@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 背景：深海蓝渐变 + 淡网格线（蓝图感）。108dp 画布，安全区外圈会被系统裁掉 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 深蓝渐变底（对角：左上深 → 右下亮些） -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="108" android:endY="108">
+                <item android:offset="0.0" android:color="#FF0B1B3A" />
+                <item android:offset="1.0" android:color="#FF123B70" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 蓝图网格：竖线 -->
+    <path
+        android:fillColor="#141E5A96"
+        android:pathData="M18,0v108M36,0v108M54,0v108M72,0v108M90,0v108" />
+    <!-- 蓝图网格：横线 -->
+    <path
+        android:fillColor="#141E5A96"
+        android:pathData="M0,18h108M0,36h108M0,54h108M0,72h108M0,90h108" />
+    <!-- 中线稍亮，强化蓝图图纸感 -->
+    <path
+        android:fillColor="#241E5A96"
+        android:pathData="M54,0v108M0,54h108" />
+</vector>
