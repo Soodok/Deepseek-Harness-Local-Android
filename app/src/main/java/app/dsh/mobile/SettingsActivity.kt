@@ -358,33 +358,35 @@ class SettingsActivity : ThemedActivity() {
                 langLabel(LocaleHelper.get(this)),
             )
         }
-        refreshLangSub()
-        findViewById<LinearLayout>(R.id.rowLanguage).setOnClickListener {
-            val choices = arrayOf(
-                getString(R.string.lang_en),
-                getString(R.string.lang_de),
-                getString(R.string.lang_zh),
-                getString(R.string.lang_pt),
-                getString(R.string.lang_th),
-                getString(R.string.lang_ru),
-            )
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle(getString(R.string.app_language))
-                .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
-                    val code = langCodes[which]
-                    if (code == LocaleHelper.get(this)) { dlg.dismiss(); return@setSingleChoiceItems }
-                    LocaleHelper.set(this, code)
-                    dlg.dismiss()
-                    // 立即生效：本页原地重建（recreate 会重走 attachBaseContext →
-                    // 按新语言重新 inflate 布局），用户马上看到文案变化。
-                    //
-                    // 旧实现是「清任务栈 + 重新拉起 Launcher」——那是跨进程重建，
-                    // 用户实测「切换后 UI 不能及时响应」（要等整个应用重开）。
-                    // 现在只重建当前页；MainActivity 在 onResume 会检测到语言变化
-                    // 并自行重建，返回主界面时也是新语言。
-                    recreate()
+        // 语言：行内展开（issue #111）。点行就在下面铺开 6 个语言项，
+        // 当前项加粗 + 打勾 —— 弹窗的形式看不到「现在用的是哪个」，这是它被换掉的原因。
+        val rowLanguage = findViewById<LinearLayout>(R.id.rowLanguage)
+        val langHost = rowLanguage.parent as LinearLayout
+        rowLanguage.setOnClickListener {
+            val panel = InlinePanels.attach(langHost, rowLanguage) { p ->
+                for (code in langCodes) {
+                    p.addView(
+                        InlinePanels.radioRow(
+                            this,
+                            title = langLabel(code),
+                            checked = code == LocaleHelper.get(this),
+                            accent = code == LocaleHelper.get(this),
+                        ) {
+                            if (code == LocaleHelper.get(this)) return@radioRow
+                            LocaleHelper.set(this, code)
+                            // 立即生效：本页原地重建（recreate 会重走 attachBaseContext →
+                            // 按新语言重新 inflate 布局），用户马上看到文案变化。
+                            //
+                            // 旧实现是「清任务栈 + 重新拉起 Launcher」——那是跨进程重建，
+                            // 用户实测「切换后 UI 不能及时响应」（要等整个应用重开）。
+                            // 现在只重建当前页；MainActivity 在 onResume 会检测到语言变化
+                            // 并自行重建，返回主界面时也是新语言。
+                            recreate()
+                        },
+                    )
                 }
-                .show()
+            }
+            InlinePanels.toggle(panel)
         }
 
         // —— 其他：关于 ——
@@ -700,63 +702,80 @@ class SettingsActivity : ThemedActivity() {
      * 国内网络不用先等一轮直连超时。用户可换自建镜像，或留空直连。
      */
     private fun showRuntimeProxyDialog() {
-        val current = RuntimeDownloadConfig.proxy(this)
-        val input = EditText(this).apply {
-            setText(current)
-            hint = RuntimeDownloadConfig.DEFAULT_PROXY
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine()
-            setSelection(text.length)
-        }
-        val tip = TextView(this).apply {
-            text = getString(
-                R.string.setting_runtime_proxy_dialog_hint,
-                RuntimeDownloadConfig.DEFAULT_PROXY,
+        // 代理：改成行内展开（issue #111）。语义与原对话框**完全一致** ——
+        // 同样的 isValid 校验、同样的 RuntimeDownloadConfig.setProxy、同样的 toast。
+        // 换掉只因原对话框把「当前值」藏起来了：输入框里的值要等对话框盖上来才看见，
+        // 而这个值恰恰是用户要先确认的东西。
+        val row = findViewById<LinearLayout>(R.id.rowRuntimeProxy) ?: return
+        val host = row.parent as? LinearLayout ?: return
+        val panel = InlinePanels.attach(host, row) { p ->
+            val input = EditText(p.context).apply {
+                setText(RuntimeDownloadConfig.proxy(p.context))
+                hint = RuntimeDownloadConfig.DEFAULT_PROXY
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                setSingleLine()
+                setSelection(text.length)
+            }
+            val tip = TextView(p.context).apply {
+                text = p.context.getString(
+                    R.string.setting_runtime_proxy_dialog_hint,
+                    RuntimeDownloadConfig.DEFAULT_PROXY,
+                )
+                textSize = 12f
+                setTextColor(p.context.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                setLineSpacing(p.context.dp(2).toFloat(), 1f)
+            }
+            val errorText = TextView(p.context).apply {
+                visibility = View.GONE
+                textSize = 12f
+                setTextColor(p.context.dshColor(R.attr.dshDanger, R.color.danger))
+            }
+            val buttons = LinearLayout(p.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+                setPadding(0, p.context.dp(4), 0, p.context.dp(4))
+            }
+            buttons.addView(
+                InlinePanels.actionButton(p.context, getString(R.string.setting_runtime_proxy_reset), primary = false) {
+                    RuntimeDownloadConfig.setProxy(this, null)
+                    refreshRuntimeProxyRow()
+                    input.setText("")
+                    errorText.visibility = View.GONE
+                    Toast.makeText(
+                        this, getString(R.string.setting_runtime_proxy_reset_done), Toast.LENGTH_SHORT,
+                    ).show()
+                },
             )
-            textSize = 12f
-            setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
-            setPadding(0, dp(8), 0, 0)
-            setLineSpacing(dp(2).toFloat(), 1f)
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(12), dp(24), dp(4))
-            addView(input)
-            addView(tip)
-        }
-
-        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.setting_runtime_proxy)
-            .setView(box)
-            .setPositiveButton(android.R.string.ok, null)
-            .setNeutralButton(R.string.setting_runtime_proxy_reset, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                val raw = input.text.toString()
-                if (!RuntimeDownloadConfig.isValid(raw)) {
-                    input.error = getString(R.string.setting_runtime_proxy_invalid)
-                    return@setOnClickListener
-                }
-                RuntimeDownloadConfig.setProxy(this, raw)
-                refreshRuntimeProxyRow()
-                Toast.makeText(
-                    this, getString(R.string.setting_runtime_proxy_saved), Toast.LENGTH_SHORT,
-                ).show()
-                dialog.dismiss()
+            buttons.addView(
+                InlinePanels.actionButton(p.context, getString(R.string.user_prompt_save), primary = true) {
+                    val raw = input.text.toString()
+                    if (!RuntimeDownloadConfig.isValid(raw)) {
+                        errorText.text = getString(R.string.setting_runtime_proxy_invalid)
+                        errorText.visibility = View.VISIBLE
+                        return@actionButton
+                    }
+                    errorText.visibility = View.GONE
+                    RuntimeDownloadConfig.setProxy(this, raw)
+                    refreshRuntimeProxyRow()
+                    Toast.makeText(
+                        this, getString(R.string.setting_runtime_proxy_saved), Toast.LENGTH_SHORT,
+                    ).show()
+                    // 保存后收起面板：`p` 就是面板本体（fill 回调的参数），
+                    // 这里不能写 panel —— 那个 val 正在被 attach 赋值，闭包里还是未定义。
+                    p.visibility = View.GONE
+                },
+            )
+            val body = LinearLayout(p.context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(p.context.dp(16), p.context.dp(8), p.context.dp(16), p.context.dp(6))
+                addView(input)
+                addView(tip)
+                addView(errorText)
+                addView(buttons)
             }
-            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
-                RuntimeDownloadConfig.setProxy(this, null)
-                refreshRuntimeProxyRow()
-                Toast.makeText(
-                    this, getString(R.string.setting_runtime_proxy_reset_done), Toast.LENGTH_SHORT,
-                ).show()
-                dialog.dismiss()
-            }
+            p.addView(body)
         }
-        dialog.show()
+        InlinePanels.toggle(panel)
     }
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

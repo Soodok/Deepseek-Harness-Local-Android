@@ -398,3 +398,6 @@ docs/ui-preview/.preview-server.json
 # 缺件就抛「Manually install libvips >= 8.18.7 / npm i @img/sharp-wasm32」——
 # 离线包两件都做不到，报错还挂在模型请求上，整轮判 TRANSPORT 失败。
 !/scripts/probes/_test_sharp_android.py
+# 设置页「行内展开」探针（issue #111）：语言与运行时代理改在行下方就地铺开，
+# 同意类（远程访问/局域网 WebUI）仍保留弹窗 —— 断言要能分辨这两类，不能一刀切。
+!/scripts/probes/_test_settings_inline_panels.py
