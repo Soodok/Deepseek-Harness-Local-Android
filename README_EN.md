@@ -22,6 +22,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/Soodok/Deepseek-Harness-Local-Android?color=64748b)](https://github.com/Soodok/Deepseek-Harness-Local-Android/commits/main)
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
 [![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
+[![Afdian](https://img.shields.io/badge/Afdian-Sponsor-946ce6?style=for-the-badge&logo=heart&logoColor=white)](https://afdian.com/a/114514soodok)
 
 [中文](README.md) · [English](#introduction)
 
@@ -33,7 +34,7 @@ DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.c
 
 ## 🎯 What This Is · What This Is Not
 
-**This is**: the **complete Android port of DeepSeek Harness** (`@deepseek-ai/dsh`). The engine is the official upstream code (pinned to `0.2.2-rc.1`) — plugin system, WebUI, and tool-calling chain all come from upstream. What this project supplies is the Android-side runtime: a self-built bionic Node.js runtime with a verified dependency closure, foreground-service keep-alive, privilege tiers, and the Extension Center. **Anything desktop dsh can do, this can do** — just inside the phone's sandbox.
+**This is**: the **complete Android port of DeepSeek Harness** (`@deepseek-ai/dsh`). The engine is the official upstream code (pinned to `0.2.2-rc.3`) — plugin system, WebUI, and tool-calling chain all come from upstream. What this project supplies is the Android-side runtime: a self-built bionic Node.js runtime with a verified dependency closure, foreground-service keep-alive, privilege tiers, and the Extension Center. **Anything desktop dsh can do, this can do** — just inside the phone's sandbox.
 
 **This is not**:
 
@@ -236,7 +237,7 @@ a filesystem; having your background process killed by an OEM is normal on Andro
 so without it runtime updates are a gamble. See [docs/RUNTIME_SWAP.md](docs/RUNTIME_SWAP.md).
 
 **Run the full Agent engine on your phone**
-The official dsh engine (pinned to `0.2.2-rc.1`) runs in the Android app sandbox with its bionic Node.js runtime and toolchain bundled in the APK. No Root, Termux, PC, or proot/Ubuntu container is required. The Agent can work with files, run shell commands, search text, and manage projects; its engine endpoint listens on `127.0.0.1`.
+The official dsh engine (pinned to `0.2.2-rc.3`) runs in the Android app sandbox with its bionic Node.js runtime and toolchain bundled in the APK. No Root, Termux, PC, or proot/Ubuntu container is required. The Agent can work with files, run shell commands, search text, and manage projects; its engine endpoint listens on `127.0.0.1`.
 
 **Preview results where they run**
 The Agent can start a local HTTP service and return a `http://127.0.0.1:port` link. Tap it to preview a page or service on the phone, without moving the project to a computer first.
@@ -301,6 +302,7 @@ Every capability has its own document (design trade-offs, measured numbers, trou
 ## ⛔ Limits (please be aware)
 
 - **WebView must be Chrome 85+ (2020-06 or later)**: the app itself supports Android 8.0 → 16, but the UI renders in the system WebView, and the engine frontend uses modern syntax (`??=`, class fields) — a **parse-time** feature that polyfills cannot patch. Devices whose system WebView is older than Chrome 85 show a blank page (export the log from Settings to confirm: it records the `SyntaxError` and the WebView version). **On Android 8.0+ the WebView is an independently updatable system component** (Google Play / OEM stores), so updating it to 85+ is all it takes; the few Chinese ROMs that can never update their WebView are a known limitation.
+- **The CSS floor is higher than the JS floor**: the 85 gate covers JavaScript only (syntax transpile + API polyfills). Upstream CSS also uses `:has()` (105), `color-mix()` (111) and CSS anchor positioning (125), which no polyfill can supply; on Chrome 85-124 kernels these degrade **silently** — no error, no blank page, but some selectors stop matching, `color-mix()` declarations are dropped whole, and anchored popovers lose their placement relative to the trigger (measured: with `anchor()` dropped, the usage panel lands at the top edge of the viewport, 678 px away from its button). The known popover case is patched by a client plugin; the rest is cosmetic. Raising `MIN_CHROME` would cut off a large share of current devices, so it is a product decision we have not taken.
 - **No desktop environment**: Linux GUI desktop apps can't run; visual outputs are previewed via local HTTP + the built-in WebView
 - **Bundled toolchain is node/bash only**: Clang/Python/Go and 16 more environments come through the built-in **Extension Center** (one tap), or the Agent can install them itself (verified in Root mode with the Android SDK)
 - **Screen reading is "half-blind"**: `scr dump` reads the accessibility node tree (text + coordinates + clickability), which is useless for pure-graphics or game canvases; complex UI automation stays limited
@@ -313,7 +315,7 @@ Every capability has its own document (design trade-offs, measured numbers, trou
 Same dsh, different delivery — and every one of the following is engineering this project had to build itself. This is also why it is called a **port** rather than a repack:
 
 **Cross-version compatibility, already paid for**
-The app itself supports Android 8.0 → 16; rendering depends on the system WebView and **requires Chrome 85+ (2020-06)** — the engine frontend uses `??=` and friends, a parse-time feature polyfills cannot patch (see Limits). Since many Chinese ROMs can never update their WebView, the build injects a polyfill into the frontend (13 modern APIs including `AbortSignal.any` / `Promise.withResolvers` / `URL.parse`), pulling the API-level floor down from Chrome 126 to 85; every `.so` is **16 KB page-aligned** for modern kernels. On the Termux routes, these are per-device adventures.
+The app itself supports Android 8.0 → 16; rendering depends on the system WebView and **requires Chrome 85+ (2020-06)** — the engine frontend uses `??=` and friends, a parse-time feature polyfills cannot patch (see Limits). Since many Chinese ROMs can never update their WebView, the build injects a polyfill into the frontend (20 modern APIs / 22 installations, including `AbortSignal.any` / `Promise.withResolvers` / `URL.parse` / `URL.canParse` / `Object.groupBy`), pulling the **API-level** floor down from Chrome 126 to 85. That floor is JavaScript only: the upstream CSS also needs `:has()` (105), `color-mix()` (111) and CSS anchor positioning (125), which degrade **silently** (no error, no blank page, but some popovers lose their anchor-relative placement) on 85-124 kernels - see Limits; every `.so` is **16 KB page-aligned** for modern kernels. On the Termux routes, these are per-device adventures.
 
 **Plugin system works out of the box — no compiler engineering required**
 dsh's "everything is a plugin" architecture is preserved as-is: hot plugin loading and JSONL session persistence work exactly as upstream. Missing language environments (Python / Go / Rust / Clang / OpenJDK…) come from **19 one-tap extensions**, with dependency closures pre-resolved in CI and ELF-verified. On the Termux routes, native modules like `sharp` / `koffi` / `node-pty` failing to build is the norm — the community even maintains separate prebuilt-module projects just for this.
@@ -455,6 +457,18 @@ Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok
 **[Telegram group](https://t.me/+4VN3pYyH6i8yNDA1)** — same purpose, better for users outside mainland China.
 
 Bugs are still best filed as Issues so they don't get lost.
+
+## 💜 Support This Project
+
+This project is open source under MIT. Every feature is free — no paywall, no subscription, no license key. **Sponsoring unlocks nothing**; it simply keeps the work going.
+
+If it saved you time, you can buy the author a coffee here:
+
+**[afdian.com/a/114514soodok](https://afdian.com/a/114514soodok)**
+
+Sponsorship goes toward: test devices and accessories, build and signing infrastructure, domain and server costs, and the maintenance time needed to keep tracking upstream releases.
+
+Not sponsoring is completely fine — a reproducible Issue report, honest usage feedback, or telling someone who needs it helps just as much.
 
 ## 🙏 Contributors
 

@@ -130,6 +130,10 @@ class RuntimeInstaller(private val ctx: Context) {
         val manifest = readManifest()
         val complete = EngineConfig.nodeBin(ctx).exists() && isRootComplete()
         if (complete) {
+            // noruntime 版本可长期复用旧磁盘；先修复/确认前端 polyfill，再启动引擎。
+            WebViewPolyfill.healInstalled(ctx)
+            // 前端语法高亮的启动预热挪到空闲时段（见 FrontendWarmup 的实测说明）。
+            FrontendWarmup.healInstalled(ctx)
             val installed = readInstalled()
             val reuse = when {
                 // 简单包：只要运行时完整就复用；运行时更新只能显式触发。
@@ -999,6 +1003,9 @@ class RuntimeInstaller(private val ctx: Context) {
                 metaBackupFile().delete()
                 stampBackupFile().delete()
             }
+            // Also cover first install and explicit runtime updates before the new index is served.
+            WebViewPolyfill.healInstalled(ctx)
+            FrontendWarmup.healInstalled(ctx)
             assetZip.delete()
             Log.i(TAG, "runtime installed at $root (${entries.size} top-level entries)")
         } finally {

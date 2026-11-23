@@ -67,8 +67,8 @@ check("浮层构造入口是 build(onPicked) 而不是 show()", "fun build(" in 
 # 选择窗口必须是浮层；只有"选完问是否立刻重启"那一步用系统弹窗（用户原话如此）。
 check(
     "选择窗口不是弹窗：AlertDialog 只用于重启确认，且只出现一次",
-    ov_code.count("AlertDialog.Builder") == 1 and "fun build(" in ov_code,
-    f"AlertDialog.Builder 出现 {ov_code.count('AlertDialog.Builder')} 次",
+    ov_code.count("MaterialAlertDialogBuilder") == 1 and "fun build(" in ov_code,
+    f"MaterialAlertDialogBuilder 出现 {ov_code.count('MaterialAlertDialogBuilder')} 次",
 )
 # v1.7.7（2026-11-12 真机反馈）：必须按 flavor 判，不能只看 isDeployed。
 # isDeployed 按 family 算（三个 flavor 共享同一 rootfs 目录），只下基础包时

@@ -77,6 +77,37 @@ object EngineModeSelector {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_LINUX_MODE, DEFAULT_ENABLED)
 
+    /**
+     * 尽早给出**能立刻确定**的结论，供启动遮罩在第一时间显示模式。
+     *
+     * ## 为什么需要
+     *
+     * [resolve] 排在 `spawnEngine` 里 —— 实测冷启时它要到 1.2~2.4 秒才被调用
+     * （前面还有孤儿回收、preflight、runtime-install、hardssh、profile-plugins）。
+     * 在那之前 [resolved] 是 false，遮罩只能显示「检测运行环境」占位。用户看到
+     * 的就是「启动 1.4 秒之后运行环境才检测出来」。
+     *
+     * 但这里**根本不需要等**：Linux 模式默认关闭，关闭时判定只是读一个布尔值，
+     * 不碰任何文件。「检测」本身从来没慢过（实测 0~6ms），慢的是它排队的位置。
+     *
+     * ## 只做能确定的那一半
+     *
+     * 这里**只处理 Linux 关闭的快路径**。Linux 开启时要跑 readiness() —— 它会
+     * 做 SELinux 哨兵检查（实测 14~93ms）、写 distro 配置、装兼容 shim，并且
+     * 可能与 owner-check 的 chown 抢同一棵树。那部分必须留在 [resolve] 里串行执行，
+     * 不能为了提早几百毫秒就把它挪到并行块里制造竞争。
+     *
+     * @return true 表示已确定（调用方无需再等）；false 表示仍要等 [resolve]
+     */
+    fun resolveEarly(ctx: Context): Boolean {
+        if (resolved) return true
+        if (isLinuxEnabled(ctx)) return false
+        lastMode = Mode.NATIVE
+        lastReason = "linux mode disabled"
+        resolved = true
+        return true
+    }
+
     fun setLinuxEnabled(ctx: Context, on: Boolean) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_LINUX_MODE, on).apply()
@@ -89,10 +120,11 @@ object EngineModeSelector {
      * 只在用户开了 Linux 模式时才做探测（探测本身要跑一次容器命令，几十毫秒）。
      */
     fun resolve(ctx: Context): Mode {
+        // Linux 关闭时判定恒等，复用 resolveEarly 让两处只有一份实现。
+        // 注意不能反过来「resolveEarly 里调 resolve」—— resolve 会进 readiness()
+        // 的重量级分支，那正是我们要推迟到 spawnEngine 的部分。
         if (!isLinuxEnabled(ctx)) {
-            lastMode = Mode.NATIVE
-            lastReason = "linux mode disabled"
-            resolved = true
+            resolveEarly(ctx)
             return Mode.NATIVE
         }
         val launcher = LinuxEngineLauncher.get(ctx)

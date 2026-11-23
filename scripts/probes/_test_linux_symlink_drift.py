@@ -71,10 +71,18 @@ check("L3c launcher keeps sentinel check as well",
 # L4: 装包入口
 check("L4a env mgr calls healLinksIfDrifted",
       "SelinuxContext.healLinksIfDrifted(ctx," in envmgr)
-apt_block = envmgr.split("private fun installPackagesAptLocked")[1][:4000]
+# 定位器不要用「函数开头 + 固定字符窗口」：apt 路径每加一段前置检查，
+# `apt-get update` 的偏移就往后挪（2026-11-14 实测 2203 -> 5588），
+# 4000 字符窗口直接把它挡在外面，探针抛 ValueError 而不是报红。
+# 改成「取整个函数体（到下一个私有方法为止）」再比位置 —— 与实现长度解耦。
+apt_body = envmgr.split("private fun installPackagesAptLocked", 1)[1]
+_next_fn = apt_body.find("\n    private fun ")
+if _next_fn > 0:
+    apt_body = apt_body[:_next_fn]
 check("L4b apt path heals before ① apt-get update",
-      "healLinksIfDrifted" in apt_block
-      and apt_block.index("healLinksIfDrifted") < apt_block.index('apt-get update'))
+      "healLinksIfDrifted" in apt_body
+      and "apt-get update" in apt_body
+      and apt_body.index("healLinksIfDrifted") < apt_body.index("apt-get update"))
 check("L4c bootstrap heals before writing marker",
       envmgr.index("healLinksIfDrifted") < envmgr.index("val mark = File(root, BOOTSTRAP_MARKER"))
 check("L4d bootstrap heal gated to APT (apk has no status-old dereference problem)",
@@ -82,8 +90,14 @@ check("L4d bootstrap heal gated to APT (apk has no status-old dereference proble
 
 # L5: 删除镜像时的特权兜底（同一根因的另一面：root 属主 + 裸 s0 → App 删不掉）
 activity = read(SRC / "LinuxActivity.kt")
+# 2026-11-13 改法把兜底从 runSu 换成 runPrivileged（前者在 Shizuku 可用、
+# su 不可用的设备上根本没有通道），中间还插了一趟「交还属主再删」。
+# 断言因此改成三趟的次序：先删 -> normalizeOwnership -> runPrivileged。
 check("L5a deleteImage retries via privileged rm when entries remain",
-      "Privilege.runSu(" in activity and "privileged rm recovered" in activity)
+      "Privilege.normalizeOwnership(" in activity
+      and "Privilege.runPrivileged(" in activity
+      and activity.index("Privilege.normalizeOwnership(") < activity.index("Privilege.runPrivileged(")
+      and "privileged rm recovered" in activity)
 check("L5b success judged by directory gone, not by command output",
       "if (!dir.exists())" in activity)
 

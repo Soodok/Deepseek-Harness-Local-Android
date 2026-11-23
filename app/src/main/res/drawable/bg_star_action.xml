@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 求 star 卡片右侧的行动标签底（v1.6.1）：白底胶囊。
-     底色写死白色而不是 @color/surface —— 它压在 accent 实心块上，
+     底色写死白色而不是 ?attr/dshSurface —— 它压在 accent 实心块上，
      surface 在深色主题下是深灰，深灰配蓝底再加 accent 文字会看不清。
      文字色由代码按当前强调色涂（见 AboutActivity.onResume）。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"

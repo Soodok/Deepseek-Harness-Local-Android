@@ -232,6 +232,22 @@ async function apply(ctx) {
     );
   };
 
+  // 本会话是否由**本插件**把档位写成了 off。
+  // 只有 true 时才认为「会话已经进过无思考模式」，撤回才会炸（见下方 else 分支）。
+  let offAppliedByUs = false;
+
+  const warnedNoRevert = { done: false };
+  const warnNoRevertOnce = () => {
+    if (warnedNoRevert.done) return;
+    warnedNoRevert.done = true;
+    console.warn(
+      "[android-fast-mode] this session already ran steps with reasoning off; " +
+      "switching reasoning back on would make the API reject the turn " +
+      "(history is missing thinking blocks that cannot be reconstructed). " +
+      "Staying at off for the rest of THIS session — start a new session for normal thinking.",
+    );
+  };
+
   /**
    * 该模型是否支持 `off`。
    * @returns true / false；拿不到能力信息时返回 null（未知）。
@@ -308,6 +324,7 @@ async function apply(ctx) {
         if (ok === true) {
           try {
             model.select({ provider: cur.provider, model: cur.model, reasoningEffort: "off" });
+            offAppliedByUs = true;
           } catch (e) {
             console.warn("[android-fast-mode] model.select failed: " + (e && e.message));
           }
@@ -319,34 +336,75 @@ async function apply(ctx) {
         // ok === null（探测失败）同样不改：保守优先，不能拿整轮任务赌。
       }
     } else {
-      // fast 关掉时要把之前写进去的 off 撤回来，否则会话会一直停在 off。
-      // 只撤自己写的那档：用户/别的插件设的其它档位不动。
+      // ⚠️ 这里**不撤回**（2026-11-14 真机事故，本插件第三处崩溃点）。
+      //
+      // 原来的写法是 `model.select({ provider, model })` —— 不带 effort 就等于
+      // 「回到适配器默认」，也就是 high（thinking.type = enabled），想的是
+      // 「fast 关掉就把思考还给我」。结果整轮 400：
+      //
+      //   The `content[].thinking` in the thinking mode must be passed back to the API.
+      //
+      // 因为**会话历史已经被写成混合态**：off 期间产生的 assistant 消息没有
+      // thinking 块，撤回后请求变成 thinking 模式，而 API 要求历史 assistant
+      // 消息都带回 thinking —— 拿不到就整轮失败（不是这一步失败，这一轮全丢）。
+      //
+      // 关键认知：这不是「参数没传对」，而是**已经写进会话的记录补不回来**。
+      // 一旦本会话有过 off 步，就再也不能把 reasoningEffort 切回开启态。
+      // 而触发几乎必然 —— 标记文件 30 分钟 TTL 到期是自动的、静默的。
+      //
+      // 所以：**只停止强制 off，绝不主动恢复思考**。本会话剩余时间保持 off；
+      // 新会话天然从用户默认档位开始（model/selection 是 per-session 的），
+      // 思考自然就回来了。用户手动在界面上把档位调回 high 会撞同一个 400，
+      // 那属引擎侧限制，插件拦不住 —— 所以在警告里说明白。
       const cur = model.current();
-      if (cur && cur.reasoningEffort === "off") {
-        try {
-          model.select({ provider: cur.provider, model: cur.model });
-        } catch (e) {
-          console.warn("[android-fast-mode] model.select revert failed: " + (e && e.message));
-        }
-      }
+      if (offAppliedByUs && cur && cur.reasoningEffort === "off") warnNoRevertOnce();
     }
     return next();
   };
 
-  // 引擎能力探测：有 AgentModel 就只走新路径（agent/request 改 effort 会被判违规），
-  // 没有才退回老路径。两个钩子**不能同时挂** —— 同时挂会在新引擎上先 select 成 off
-  // 再被 agent/request 改成 off（无害）但老引擎上没有 agent.model，反而白挂。
-  const hasAgentModel = () => {
+  // ---- 引擎能力探测：按「硬契约」判断，不按类名字面量猜 ----
+  //
+  // 这里原本只探 dsh-agent 里有没有字面量 `var AgentModel = class`，命中就挂
+  // pre-step、没命中就挂 agent/request。那个判据**不是契约本身**，只是某一次打包
+  // 产物的巧合：真正会 throw 的是 dsh-agent-loop 里 prepareRequest 的两条断言
+  // （文案见 HARD_CONTRACT_MARKERS），而类名换 bundler / 换 minify 配置就会变。
+  // 字面量一变而契约还在时，旧判据会误判成老引擎 → 挂上 agent/request →
+  // 每一步都 throw、整轮对话失败（issue #118 的现场）。
+  //
+  // 所以判据改成直接读那条契约。类名只作辅助信号。
+  const HARD_CONTRACT_MARKERS = [
+    "after step preparation fixed",
+    "use agent.model.select() before step preparation",
+  ];
+
+  const readEngineFile = (rel) => {
     try {
-      const p = path.join(ENGINE_ROOT, "lib/node_modules/@deepseek-ai/dsh-agent/lib/index.js");
-      if (!fs.existsSync(p)) return false;
-      // 直接读源码找 AgentModel：比 import 一个 ESM 包更轻、也不会触发副作用。
-      // 0.2.2+ 有 `var AgentModel = class`；0.2.1-rc.x grep 命中数为 0。
-      return fs.readFileSync(p, "utf8").includes("var AgentModel = class");
-    } catch { return false; }
+      const f = path.join(ENGINE_ROOT, rel);
+      if (!fs.existsSync(f)) return "";
+      return fs.readFileSync(f, "utf8");
+    } catch { return ""; }
   };
 
-  if (hasAgentModel()) {
+  // agent-loop 里存在「在 agent/request 改 effort 就 throw」的硬契约吗？
+  const hasHardContract = () => {
+    const loop = readEngineFile("lib/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js");
+    if (loop === "") return false;
+    return HARD_CONTRACT_MARKERS.some((m) => loop.includes(m));
+  };
+
+  // 有没有 agent.model（select 正解所需的 API）。
+  const hasAgentModel = () => {
+    const agent = readEngineFile("lib/node_modules/@deepseek-ai/dsh-agent/lib/index.js");
+    if (agent === "") return false;
+    return agent.includes("AgentModel");
+  };
+
+  const CONTRACT = hasHardContract();
+  // 有 agent.model 或有硬契约，都必须走 pre-step：契约在时退回 agent/request
+  // 只会整轮失败，宁可不改 effort 也不能挂错钩子。
+  const usePreStep = hasAgentModel() || CONTRACT;
+
+  if (usePreStep) {
     ctx.on("agent/pre-step", fastSelectHook);
   } else {
     ctx.on("agent/request", legacyHook);
@@ -414,7 +472,14 @@ async function apply(ctx) {
       if (action === "off") {
         try { fs.unlinkSync(marker); } catch {}
         cached = false; cachedAt = Date.now();
-        return Promise.resolve({ ok: true, fast: false, note: "fast mode OFF — back to normal (thinking on)." });
+        return Promise.resolve({
+          ok: true, fast: false,
+          note: "fast mode OFF — this session stops forcing reasoning off. " +
+            "Note: if this session already ran steps with reasoning off, switching it back ON " +
+            "would make the API reject the turn (history lacks thinking blocks that cannot be " +
+            "reconstructed), so reasoning stays off for the rest of THIS session. " +
+            "Start a new session for normal thinking.",
+        });
       }
       if (action === "status") {
         const st = readMarker(marker);

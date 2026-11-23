@@ -48,6 +48,7 @@ import app.dsh.mobile.engine.TraceExpect
 import app.dsh.mobile.engine.TraceEndpoint
 import app.dsh.mobile.engine.PruneResult
 import app.dsh.mobile.engine.PrunedStep
+import app.dsh.mobile.engine.StepShotLayout
 import app.dsh.mobile.engine.TraceContract
 import app.dsh.mobile.engine.TraceRetention
 import app.dsh.mobile.engine.MemoryContract
@@ -133,6 +134,7 @@ object BehaviourTest {
         navigationEscape()
         assertGuestPaths()
         assertExtVersionPlan()
+        assertStepShots()
         assertStubMatchesService()
 
         println()
@@ -899,7 +901,12 @@ object BehaviourTest {
         check(l.handle == 0xFFF1F5F9.toInt(), "light handle keeps the user-approved fill")
         check(d.handle == 0xFF000000.toInt(), "dark handle unchanged")
         check(l.outline != 0, "light handle has an outline (fill alone can vanish on a page)")
-        check(d.outline == 0, "dark handle keeps the old look (no outline added)")
+        // ⚠️ v1.7.20（用户报「点收起后小球不显示」，深色主题）：
+        // 这里原来断言 dark outline == 0，即「深色不描边」。实测那个前提是错的 ——
+        // 深色 handle 是纯黑 #000000，页面是 #151517，对比度只有 1.15:1
+        // （对卡片 #2C2C2E 也只有 1.51:1），把手在深色页面上就是看不见。
+        // 深色同样必须有描边，判据改为「两种主题的 outline 都要够」。
+        check(d.outline != 0, "dark handle has an outline too (black on #151517 is 1.15:1)")
         check(
             IslandPalette.contrast(l.outline, l.handle) >= 3.0,
             "outline is visible against the handle fill (>=3:1 for a UI boundary), got " +
@@ -908,6 +915,22 @@ object BehaviourTest {
         check(
             IslandPalette.contrast(l.outline, 0xFFFFFFFF.toInt()) >= 3.0,
             "outline is visible on a white page too",
+        )
+        // 深色描边要同时对「深色页面底色」和「深色卡片底」达标 —— 把手压在
+        // 任意网页/卡片上，两者都可能是背景。
+        check(
+            IslandPalette.contrast(d.outline, 0xFF151517.toInt()) >= 3.0,
+            "dark outline is visible on the dark page (#151517), got " +
+                IslandPalette.contrast(d.outline, 0xFF151517.toInt()),
+        )
+        check(
+            IslandPalette.contrast(d.outline, 0xFF2C2C2E.toInt()) >= 3.0,
+            "dark outline is visible on a dark card (#2C2C2E), got " +
+                IslandPalette.contrast(d.outline, 0xFF2C2C2E.toInt()),
+        )
+        check(
+            IslandPalette.contrast(d.outline, d.handle) >= 3.0,
+            "dark outline separates from the black handle fill",
         )
         // 整块（填充 + 描边）对白色网页的综合对比度必须够，不能只靠描边勉强
         check(
@@ -965,6 +988,78 @@ object BehaviourTest {
         }
         val left = IslandChrome.collapsedRect(IslandDock.LEFT, 1220, 2640, d3, 0.5f)
         check(left.x == 0, "left docked handle hugs the left edge")
+
+        val bottom = IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 0.5f)
+        check(bottom == IslandChrome.Metrics(544, 2562, 132, 78), "bottom handle is centered and horizontal: $bottom")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, -1f).x == 0,
+            "bottom ratio clamps below zero")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 2f).x == 1088,
+            "bottom ratio clamps above one")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 0f).x == 0 &&
+            IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 1f).x == 1088,
+            "bottom ratio reaches both horizontal edges")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 1220, 2640, d3, 0.5f, safeBottomPx = 135).y == 2427,
+            "bottom inset moves the handle above the inset")
+        check(IslandChrome.collapsedRect(IslandDock.BOTTOM, 20, 30, 1f, 1f, safeBottomPx = 100) ==
+            IslandChrome.Metrics(0, 0, 44, 26), "bottom position remains nonnegative in a small parent")
+        check(IslandChrome.collapsed(IslandDock.BOTTOM, 1220, 2640, d3, 100) == bottom,
+            "legacy collapsed API centers the bottom handle")
+        val smallPanel = IslandChrome.expanded(IslandDock.RIGHT, 120, 100, 1f, 200, 50)
+        check(smallPanel.w == 120 && smallPanel.h == 70,
+            "side menu fits a narrow, short window: $smallPanel")
+
+        // ═══ 收起态把手的 48dp 触控区（v1.7.21）═════════════════════════════
+        //
+        // 背景：旧实现用 TouchDelegate 把把手向外扩 48dp，实测**完全不生效**
+        // （只有视觉矩形本身可点）。根因是 mTouchDelegate 唯一的查询点在
+        // View.onTouchEvent，而 ViewGroup 只有在「没有任何子视图命中」时才走到
+        // super —— 把手父容器里的 WebView 铺满全屏，手指一落就被它命中，
+        // 委托永远不被查询。现在改成真实的透明命中视图，位置由 hitRect 算。
+        //
+        // 这组断言守「几何」这一半（另一半是结构探针：命中层确实存在且可点）。
+        val minTouch3 = (IslandChrome.HANDLE_MIN_TOUCH_DP * d3).toInt()
+        check(minTouch3 == 144, "48dp at density 3 is 144px: $minTouch3")
+
+        val hLeft = IslandChrome.hitRect(left, 1220, 2640, minTouch3)
+        check(hLeft.w == 144 && hLeft.h == 144, "hit rect is 48dp square, not the 26dp visual: $hLeft")
+        check(hLeft.x <= left.x && hLeft.x + hLeft.w >= left.x + left.w &&
+            hLeft.y <= left.y && hLeft.y + hLeft.h >= left.y + left.h,
+            "hit rect must fully cover the visual rect (left): visual=$left hit=$hLeft")
+        // 贴左边时视觉矩形中心距屏幕左沿只有 39px，一半的 48dp 会落到屏幕外 ——
+        // 必须夹回 (0,0) 起，否则命中层有一半是无效的。
+        check(hLeft.x == 0, "left hit rect clamps into the parent: $hLeft")
+
+        val hRight = IslandChrome.hitRect(right, 1220, 2640, minTouch3)
+        check(hRight.x + hRight.w == 1220, "right hit rect clamps to the parent's right edge: $hRight")
+        check(hRight.x <= right.x && hRight.x + hRight.w >= right.x + right.w,
+            "hit rect must fully cover the visual rect (right): visual=$right hit=$hRight")
+
+        val hTop = IslandChrome.hitRect(top, 1220, 2640, minTouch3)
+        check(hTop.y == 0, "top hit rect clamps to the parent's top edge: $hTop")
+        check(hTop.y <= top.y && hTop.y + hTop.h >= top.y + top.h,
+            "hit rect must fully cover the visual rect (top): visual=$top hit=$hTop")
+
+        // 中心对齐：命中层以视觉矩形中心为中心（夹边时才偏移）。
+        val midVisual = IslandChrome.Metrics(400, 1000, 78, 132)
+        val midHit = IslandChrome.hitRect(midVisual, 1220, 2640, minTouch3)
+        check(midHit.x + midHit.w / 2 == midVisual.x + midVisual.w / 2 &&
+            midHit.y + midHit.h / 2 == midVisual.y + midVisual.h / 2,
+            "hit rect centers on the visual rect when there is room: $midHit")
+
+        // 视觉尺寸已经够大时不再缩小到 48dp —— 取两者较大值。
+        val bigVisual = IslandChrome.Metrics(100, 100, 200, 60)
+        check(IslandChrome.hitRect(bigVisual, 1220, 2640, minTouch3).w == 200,
+            "hit rect never shrinks a visual wider than 48dp")
+        check(IslandChrome.hitRect(bigVisual, 1220, 2640, 300).w == 300,
+            "hit rect honors a larger minTouch")
+
+        // 极小父容器：不能算出负坐标（那会让命中层整个落在屏幕外）。
+        val tiny = IslandChrome.hitRect(IslandChrome.Metrics(0, 48, 26, 44), 20, 30, 48)
+        check(tiny == IslandChrome.Metrics(0, 0, 48, 48), "hit rect stays nonnegative in a tiny parent: $tiny")
+
+        // 纯函数：同输入同输出（曾被做成带状态的，第二次调用会漂）。
+        check(IslandChrome.hitRect(left, 1220, 2640, minTouch3) == hLeft,
+            "hit rect is pure: repeated calls agree")
 
         // 运行模式浮层也用这套色（v1.7.11 追加）：勾选绿与警示橙在两种底色上都要看得清
         check(d.ok == 0xFF22A06B.toInt(), "dark ok unchanged")
@@ -3117,6 +3212,130 @@ object BehaviourTest {
     // scripts/jvm/DshAccessibilityServiceStub.kt（真实类编不动宿主机 JVM）。
     // stub 一旦和真实服务脱节，编译仍然会过 —— 那是最难查的一类假绿。
     // 所以这里读真实源码，逐个确认方法名还在。
+    /**
+     * 逐步截图（v1.7.x）：侧车编解码 + 剪枝映射 + 拼接布局。
+     *
+     * 这三件事**都不会崩**，错了只会静默地把第 3 步的图挂到第 5 步旁边、
+     * 或者拼出一张越界/重叠的画布 —— 源码 grep 完全看不出来，只能在 JVM 上
+     * 按真实数据算一遍。所以这里断言的是坐标与顺序，不是「函数存在」。
+     */
+    private fun assertStepShots() {
+        val L = StepShotLayout
+
+        // ---- 侧车编解码 ----
+        val t = StepShotLayout.Thumb(3, 320, 691, "3.webp", 20480)
+        val line = L.encodeLine(t)
+        check(line == "3\t320\t691\t3\t20480\t3.webp", "侧车行格式固定为 6 列 TSV")
+        val back = L.decodeLine(line)
+        check(back != null && back == t, "侧车编解码往返一致")
+        check(back?.aspect() == t.aspect(), "宽高比按 h/w 计算")
+        check(t.label() == "3", "普通步的角标是步号")
+
+        val start = StepShotLayout.Thumb(L.START_INDEX, 320, 691, "start.webp", 1)
+        check(start.label() == L.START_LABEL, "起手一屏的角标是 S（不是 -1）")
+        check(L.decodeLine(L.encodeLine(start))?.stepIndex == L.START_INDEX, "起手索引 -1 能往返")
+
+        // 容忍度：坏行返回 null，不抛
+        check(L.decodeLine("") == null, "空行解出 null")
+        check(L.decodeLine("abc\t1\t2\tx\t3\tf.webp") == null, "索引不是数字时解出 null")
+        check(L.decodeLine("1") == null, "缺列时解出 null")
+        // 旧版两列形态：接受但尺寸未知
+        val legacy = L.decodeLine("2\t2.webp")
+        check(legacy != null && legacy.fileName == "2.webp", "两列旧形态仍能解出（向后兼容）")
+        check(legacy != null && !legacy.isValid(), "两列旧形态尺寸未知 → isValid=false")
+        check(StepShotLayout.Thumb(0, 0, 0, "x.webp").aspect() == 0f, "脏尺寸的宽高比退化为 0，不产生 NaN")
+
+        // 同一 index 出现两次：后写的那张才是最终界面
+        val merged = L.parseAll("0\t320\t691\t0\t1\ta.webp\n0\t320\t691\t0\t2\tb.webp\n")
+        check(merged.size == 1 && merged[0].fileName == "b.webp", "同一 index 重复时保留最后一条")
+        check(merged[0].bytes == 2L, "重复行的 bytes 也取最后一条")
+
+        // ---- 剪枝映射 ----
+        val all = listOf(
+            StepShotLayout.Thumb(-1, 320, 691, "start.webp", 9),
+            StepShotLayout.Thumb(0, 320, 691, "0.webp", 9),
+            StepShotLayout.Thumb(1, 320, 691, "1.webp", 9),
+            StepShotLayout.Thumb(2, 320, 691, "2.webp", 9),
+            StepShotLayout.Thumb(3, 320, 691, "3.webp", 9),
+        )
+        val kept = L.pickForKept(all, listOf(0, 2, 3))
+        check(kept.size == 4, "剪掉第 1 步后，留下的图是 起手 + 3 步")
+        check(kept.first().stepIndex == L.START_INDEX, "起手一屏永远排第一（即使剪枝删了首步）")
+        check(kept.map { it.stepIndex } == listOf(-1, 0, 2, 3), "保留顺序跟着重放顺序走")
+        check(L.pickForKept(all, listOf(0, 2, 3)).none { it.stepIndex == 1 }, "被剪掉的步不带图")
+        check(L.pickForKept(all, listOf(7)).size == 1, "只留下一个不存在的 index 时只剩起手屏")
+        check(L.pickForKept(emptyList(), listOf(0)).isEmpty(), "没有侧车时一条都不返回")
+        check(L.pickForKept(all, listOf(2, 2, 2)).size == 2, "重复 index 不重复放格子")
+
+        // ---- 布局 ----
+        check(L.plan(0).cells.isEmpty(), "n=0 不产生格子")
+        check(L.plan(0).canvasW == 0, "n=0 画布宽 0（调用方不要建位图）")
+        check(L.plan(-3).cells.isEmpty(), "负数张数按 0 处理，不抛")
+
+        val p1 = L.plan(1, cellW = 200, aspect = 2.16f, gap = 8, labelH = 22)
+        check(p1.cols == 1 && p1.rows == 1, "1 张排 1 行 1 列")
+        check(p1.canvasW == 200 + 8 * 2, "1 列画布宽 = 格宽 + 左右留白")
+        check(p1.canvasH == p1.cellH + 22 + 8 * 2, "1 行画布高 = 图高 + 角标高 + 上下留白")
+        check(p1.cellH == (200 * 2.16f).toInt(), "格高按真实宽高比算，不写死")
+
+        val p3 = L.plan(3, cellW = 200)
+        check(p3.cols == 3 && p3.rows == 1, "3 张排一行（少数几张不该留大片空白）")
+
+        val p4 = L.plan(4, cellW = 200)
+        check(p4.cols == 4 && p4.rows == 1, "4 张排 4 列 1 行")
+
+        val p5 = L.plan(5, cellW = 200)
+        check(p5.cols == 4 && p5.rows == 2, "5 张 → 4 列 2 行（第 5 张单独一行）")
+        check(p5.cells.size == 5, "格子数等于张数")
+        check(p5.canvasH == 2 * (p5.cellH + 22) + 8 * 3, "行高与行间距按行数累加")
+
+        val p9 = L.plan(9, cellW = 200)
+        check(p9.rows == 3, "9 张 → 3 行")
+        check(p9.cells.last().y > p9.cells.first().y, "最后一个格子在最后一行（自上而下排）")
+        check(p9.cells[1].x > p9.cells[0].x, "同一行内自左向右排")
+
+        // 所有格子都必须落在画布内 —— 越界会被 Canvas 静默裁掉，图就少一块
+        var inside = true
+        for (c in p9.cells) {
+            if (c.x < 0 || c.y < 0 || c.x + c.w > p9.canvasW || c.y + c.h > p9.canvasH) inside = false
+        }
+        check(inside, "9 张的所有格子都在画布内（越界会被静默裁掉）")
+
+        // 角标必须在图片上方，否则会压住界面内容
+        var labelAbove = true
+        for (c in p9.cells) if (c.labelY >= c.y) labelAbove = false
+        check(labelAbove, "角标基线在图片区上方，不压住界面内容")
+
+        // 相邻格子不重叠（重叠会让两张图叠在一起，看着像画面错乱）
+        val a = p9.cells[0]
+        val b = p9.cells[1]
+        check(a.x + a.w <= b.x, "同一行相邻格子不重叠")
+
+        // 宽高比缺失时按 2.0 估，不能算出 0 高
+        val pNoAspect = L.plan(2, cellW = 200, aspect = 0f)
+        check(pNoAspect.cellH == 400, "宽高比未知时按 2.0 估（否则格高会算成 0）")
+
+        // ---- 等比缩放 ----
+        // 竖图放进方框：受**高度**限制（320×691 比方框瘦得多），缩放比 200/691
+        val portrait = L.fitInto(320, 691, 200, 200)
+        check(portrait[0] == 92 && portrait[1] == 200, "竖图进方框按高适配，宽度按比例")
+        check(portrait[2] == 54 && portrait[3] == 0, "宽度居中留边（左右各 54），上下贴边")
+        // 竖图放进更宽的框：这时才由宽度决定
+        val tall = L.fitInto(320, 691, 200, 500)
+        check(tall[0] == 200 && tall[1] == 431, "竖图进高框按宽适配，高度按比例")
+        check(portrait[0] <= 200 && portrait[1] <= 200, "缩放后不超过框（绝不拉伸变形）")
+        val square = L.fitInto(400, 400, 200, 400)
+        check(square[0] == 200 && square[1] == 200, "方图放进竖框：按宽适配")
+        check(square[3] == 100, "方图在竖框里垂直居中（上下各留 100）")
+        val bad = L.fitInto(0, 0, 200, 300)
+        check(bad[0] == 200 && bad[1] == 300, "源尺寸为 0 时退化成整框，不产生除零")
+
+        // ---- 预算估算 ----
+        check(L.estimateBytes(emptyList()) == 0L, "空列表估算 0 字节")
+        check(L.estimateBytes(listOf(StepShotLayout.Thumb(0, 1, 1, "a", 0))) == 12_000L, "未知大小时按 12KB 估")
+        check(L.estimateBytes(listOf(StepShotLayout.Thumb(0, 1, 1, "a", 500))) == 500L, "已知大小时用真实值")
+    }
+
     private fun assertStubMatchesService() {
         println("== MemoryReplay stub vs real accessibility service ==")
         val src = findRepoFile("app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt")

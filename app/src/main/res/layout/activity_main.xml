@@ -3,6 +3,7 @@
      的边界之外（elevation 阴影是向外扩散的），默认的裁剪会把它整片切掉 ——
      表现为「设了 elevation 却完全没有阴影」，而在真机上看不出任何报错。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -15,19 +16,18 @@
         android:layout_height="match_parent" />
 
     <!-- 安装/启动进度条：Installing 显示真实解压百分比，Starting 转不确定动画 -->
-    <ProgressBar
+    <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/installProgress"
-        style="?android:attr/progressBarStyleHorizontal"
+        style="@style/Widget.Material3.LinearProgressIndicator"
         android:max="10000"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="3dp"
-        android:maxHeight="3dp"
+        app:trackThickness="3dp"
         android:layout_gravity="top"
         android:layout_marginTop="40dp"
         android:indeterminate="true"
-        android:progressTint="@color/accent"
-        android:progressBackgroundTint="@color/stroke"
+        app:indicatorColor="?attr/colorPrimary"
+        app:trackColor="?attr/colorPrimaryContainer"
         android:elevation="4dp"
         android:visibility="gone" />
 
@@ -52,6 +52,30 @@
             android:layout_height="8dp"
             android:background="@drawable/bg_island_core_dot" />
     </LinearLayout>
+
+    <!-- 灵动岛：收起态把手的**触控层**（v1.7.21）。
+
+         为什么要有这个独立的透明 View：把手的视觉尺寸只有 26×44dp（侧边）/
+         44×26dp（顶部），短边 26dp 远低于 48dp 最小触控尺寸，必须向外扩。
+         历史做法是在父容器上挂 TouchDelegate，但它**完全不生效**——
+         mTouchDelegate 的唯一查询点在 View.onTouchEvent，而 ViewGroup 只有在
+         没有任何子视图命中时才走到 super；这里的 WebView 与启动遮罩都铺满
+         全屏，手指一落就被它们命中，委托永远不会被查询（实测：把手的 48dp
+         扩展区全部点不动，只有视觉矩形本身可点）。
+
+         所以改成一个真实存在、铺在把手之上的透明 View：它在根 FrameLayout 里
+         声明得比 handleBar 晚 → z 序更高 → 先收到触摸；尺寸/位置由
+         IslandChrome.hitRect 统一计算，可见性跟随把手。 -->
+    <View
+        android:id="@+id/handleHit"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|start"
+        android:background="@android:color/transparent"
+        android:clickable="true"
+        android:focusable="false"
+        android:soundEffectsEnabled="false"
+        android:visibility="gone" />
 
     <!-- 灵动岛（展开态）：工具栏收进悬浮胶囊；宽度撑满留边距，竖屏也不裁切按钮。
          外层 FrameLayout 是贴纸图层：用户贴的图叠在胶囊上方，且与胶囊同进同退
@@ -88,7 +112,7 @@
             android:layout_weight="1"
             android:paddingStart="18dp"
             android:paddingEnd="6dp"
-            android:textColor="@color/island_text"
+            android:textColor="?attr/dshIslandText"
             android:textSize="13sp"
             android:gravity="center_vertical"
             android:singleLine="true"
@@ -101,7 +125,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_back"
-            android:tint="@color/island_success"
+            android:tint="?attr/colorTertiary"
             android:visibility="gone"
             android:contentDescription="@string/btn_back"
             android:background="@drawable/bg_island_btn" />
@@ -113,7 +137,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_restart"
-            android:tint="@color/island_accent"
+            android:tint="?attr/dshIslandAccent"
             android:contentDescription="@string/btn_restart"
             android:background="@drawable/bg_island_btn" />
 
@@ -124,7 +148,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_terminal"
-            android:tint="@color/island_accent"
+            android:tint="?attr/dshIslandAccent"
             android:contentDescription="@string/btn_terminal"
             android:background="@drawable/bg_island_btn" />
 
@@ -146,7 +170,7 @@
             android:layout_height="match_parent"
             android:padding="10dp"
             android:src="@drawable/ic_chevron"
-            android:tint="@color/island_text"
+            android:tint="?attr/dshIslandText"
             android:contentDescription="@string/btn_hide"
             android:background="@drawable/bg_island_btn" />
 
@@ -158,7 +182,7 @@
             android:padding="10dp"
             android:layout_marginEnd="2dp"
             android:src="@drawable/ic_settings"
-            android:tint="@color/island_text"
+            android:tint="?attr/dshIslandText"
             android:background="@drawable/bg_island_btn"
             android:contentDescription="@string/settings_title" />
     </LinearLayout>

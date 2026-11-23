@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.Activity
 import android.content.Context
+import android.content.DialogInterface
 import android.text.InputType
 import android.view.ViewGroup
 import android.widget.EditText
@@ -74,7 +75,7 @@ object SshPasswordDialog {
         }
         box.addView(error)
 
-        val dialog = android.app.AlertDialog.Builder(activity)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.linux_ssh_set_password)
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)
@@ -83,7 +84,7 @@ object SshPasswordDialog {
 
         dialog.show()
         // 自己接管 positive 按钮：校验不过就不关对话框（默认实现会直接关掉）
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
             val a = first.text.toString()
             val b = second.text.toString()
             when {

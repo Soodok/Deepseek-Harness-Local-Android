@@ -9,4 +9,6 @@
 #   i18n:count=<n>        —— check-i18n.py 的 ::error:: 条数上限
 
 probe:_test_turnwatcher_oom.py	他人 WIP：TurnWatcher.kt 未提交改动把 readZstd 改回调 ZstdTail.read（issue #104 回归），属会话侧改动，不在本计划范围	2026-11-11
+probe:_test_island_side_panel.py	二进制二分确认：9894be26（fix(island) 收起态把手）之前 0 红、之后 2 红（applyDock 隐藏 XML 胶囊 / 侧把手用 IslandChrome 几何）。属他人已合入 main、未推 origin 的提交，不在本轮上游移植范围	2026-11-14
+probe:_test_security_audit.py	同一提交 9894be26：GONE→VISIBLE 后补 insets 的断言失配。归属同上	2026-11-14
 i18n:count=0	2026-11-11 13:40 起 ZstdTail.kt 既有红已被其属主修掉，基线归零（再出现即新红项）	2026-11-11

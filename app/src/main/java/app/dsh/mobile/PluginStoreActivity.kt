@@ -1,23 +1,24 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.content.DialogInterface
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.InstallErrorSummary
 import app.dsh.mobile.engine.PluginCenter
 import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PluginMarket
 import app.dsh.mobile.engine.PluginMarket.Compat
 import app.dsh.mobile.engine.PluginMarket.Entry
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
 
 /**
  * 插件中心（v1.4.21 重写）。
@@ -57,8 +58,8 @@ class PluginStoreActivity : ThemedActivity() {
     private lateinit var container: LinearLayout
     private lateinit var listScroll: android.widget.ScrollView
     private lateinit var tvSubtitle: TextView
-    private lateinit var etSearch: EditText
-    private lateinit var btnClear: ImageView
+    private lateinit var etSearch: TextInputEditText
+    private lateinit var btnClear: MaterialButton
     private lateinit var btnTabMarket: TextView
     private lateinit var btnTabInstalled: TextView
     private lateinit var btnSort: TextView
@@ -108,7 +109,7 @@ class PluginStoreActivity : ThemedActivity() {
         btnTabInstalled = findViewById(R.id.btnTabInstalled)
         btnSort = findViewById(R.id.btnSort)
         btnCheckUpdates = findViewById(R.id.btnCheckUpdates)
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         btnSort.text = getString(sortMode.labelRes)
         categoryChips = findViewById(R.id.categoryChips)
@@ -315,7 +316,7 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     private fun loadMarket(force: Boolean) {
-        val query = etSearch.text.toString().trim()
+        val query = etSearch.text?.toString().orEmpty().trim()
         if (!force && query.isBlank() && marketEntries.isNotEmpty()) {
             render()
             return
@@ -366,11 +367,11 @@ class PluginStoreActivity : ThemedActivity() {
         hideKeyboard()
         etSearch.clearFocus()
         // 标签样式：选中蓝色加粗，未选中灰色
-        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
+        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else dshColor(R.attr.dshTextMuted, R.color.text_muted))
         btnTabMarket.setTypeface(null, if (market) Typeface.BOLD else Typeface.NORMAL)
-        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
+        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else dshColor(R.attr.dshTextMuted, R.color.text_muted))
         btnTabInstalled.setTypeface(null, if (!market) Typeface.BOLD else Typeface.NORMAL)
-        etSearch.visibility = if (market) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.searchRow).visibility = if (market) View.VISIBLE else View.GONE
         btnCheckUpdates.visibility = if (market) View.GONE else View.VISIBLE
         reload(verbose = true)
         findViewById<View>(R.id.listContainer).post { /* 列表从顶部开始 */ }
@@ -389,7 +390,7 @@ class PluginStoreActivity : ThemedActivity() {
         val byCategory = if (onMarket && selectedCategory.isNotBlank()) {
             source.filter { it.category == selectedCategory }
         } else source
-        val filtered = PluginMarket.filter(byCategory, etSearch.text.toString(), onlyInstalled = !onMarket)
+        val filtered = PluginMarket.filter(byCategory, etSearch.text?.toString().orEmpty(), onlyInstalled = !onMarket)
         val sorted = PluginMarket.sort(filtered, sortMode)
 
         tvSubtitle.text = when {
@@ -409,7 +410,7 @@ class PluginStoreActivity : ThemedActivity() {
                     when {
                         failed -> getString(R.string.plugin_search_fail)
                         !onMarket -> getString(R.string.plugin_none_installed)
-                        etSearch.text.isNotBlank() -> getString(R.string.plugin_search_none)
+                        !etSearch.text.isNullOrBlank() -> getString(R.string.plugin_search_none)
                         else -> getString(R.string.plugin_empty)
                     }
                 )
@@ -460,7 +461,7 @@ class PluginStoreActivity : ThemedActivity() {
 
     private fun hint(text: String): TextView = TextView(this).apply {
         this.text = text
-        setTextColor(getColor(R.color.text_secondary))
+        setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         textSize = 14f
         gravity = Gravity.CENTER
         setPadding(0, dp(30), 0, dp(10))
@@ -490,7 +491,7 @@ class PluginStoreActivity : ThemedActivity() {
         }
         nameCol.addView(TextView(this).apply {
             text = e.name
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             maxLines = 1
@@ -520,7 +521,7 @@ class PluginStoreActivity : ThemedActivity() {
         e.metaLine().takeIf { it.isNotBlank() }?.let { meta ->
             card.addView(TextView(this).apply {
                 text = meta
-                setTextColor(if (e.hasUpdate) getColor(R.color.warning) else getColor(R.color.text_secondary))
+                setTextColor(if (e.hasUpdate) dshColor(R.attr.dshWarning, R.color.warning) else dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 textSize = 11f
                 setPadding(0, dp(4), 0, 0)
             })
@@ -530,7 +531,7 @@ class PluginStoreActivity : ThemedActivity() {
         if (e.desc.isNotBlank()) {
             card.addView(TextView(this).apply {
                 text = e.desc
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -549,11 +550,11 @@ class PluginStoreActivity : ThemedActivity() {
     private fun compatBadge(e: Entry): TextView? {
         val (label, color) = when (e.compat) {
             Compat.PURE_JS -> return null   // 纯 JS 是常态，不加徽标
-            Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to getColor(R.color.danger)
-            Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to getColor(R.color.danger)
-            Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to getColor(R.color.text_secondary)
+            Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to dshColor(R.attr.dshDanger, R.color.danger)
+            Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to dshColor(R.attr.dshDanger, R.color.danger)
+            Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to dshColor(R.attr.dshTextSecondary, R.color.text_secondary)
             // issue #66：不是插件坏，是我们内置引擎落后于 npm next 线
-            Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old) to getColor(R.color.warning)
+            Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old) to dshColor(R.attr.dshWarning, R.color.warning)
         }
         return TextView(this).apply {
             text = "⚠ $label"
@@ -583,7 +584,7 @@ class PluginStoreActivity : ThemedActivity() {
              minHeight = dp(48)
             setPadding(dp(12), dp(6), dp(12), dp(6))
             setBackgroundResource(R.drawable.bg_btn_outline)
-            setTextColor(if (enabled) getColor(R.color.success) else Accent.current(this@PluginStoreActivity).argb)
+            setTextColor(if (enabled) dshColor(R.attr.dshSuccess, R.color.success) else Accent.current(this@PluginStoreActivity).argb)
             isClickable = true
             isFocusable = true
             layoutParams = LinearLayout.LayoutParams(
@@ -647,7 +648,7 @@ class PluginStoreActivity : ThemedActivity() {
             e.hasUpdate -> {
                 // 精确版本升级：pnpm 12 下 add pkg / @latest / update 全部无效（v1.4.18 实测）
                 btn.text = getString(R.string.plugin_upgrade)
-                btn.setTextColor(getColor(R.color.warning))
+                btn.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 btn.setText(getString(R.string.plugin_upgrade) + " → ${e.version}")
                 btn.setOnClickListener {
                     runInstall("${e.pkg}@${e.version}", btn, e.pkg)
@@ -655,7 +656,7 @@ class PluginStoreActivity : ThemedActivity() {
             }
             else -> {
                 btn.text = getString(R.string.plugin_installed)
-                btn.setTextColor(getColor(R.color.success))
+                btn.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                 btn.setOnClickListener { confirmUninstall(e.pkg, btn) }
             }
         }
@@ -682,7 +683,7 @@ class PluginStoreActivity : ThemedActivity() {
         if (e.repo.isNotBlank()) body.append(getString(R.string.plugin_detail_repo))
             .append(": ").append(e.repo).append('\n')
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(e.name)
             .setMessage(body.toString().trim())
             .setPositiveButton(android.R.string.ok, null)
@@ -691,7 +692,7 @@ class PluginStoreActivity : ThemedActivity() {
 
         dialog.setOnShowListener {
             // 中性按钮：拉完整 manifest（体积/仓库/全部版本）+ 兼容性判断依据
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
                 dialog.setMessage(getString(R.string.plugin_loading_detail))
                 PluginMarket.detail(e.pkg) { full, err ->
                     runOnUiThread {
@@ -721,7 +722,7 @@ class PluginStoreActivity : ThemedActivity() {
                         }
                         if (err != null) sb.append("\n(").append(err).append(')')
                         dialog.setMessage(sb.toString().trim())
-                        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isEnabled = false
+                        dialog.getButton(DialogInterface.BUTTON_NEUTRAL).isEnabled = false
                     }
                 }
             }
@@ -736,7 +737,7 @@ class PluginStoreActivity : ThemedActivity() {
     private fun showSortDialog() {
         val modes = PluginMarket.Sort.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.plugin_sort_title)
             .setSingleChoiceItems(labels, modes.indexOf(sortMode)) { d, which ->
                 sortMode = modes[which]
@@ -838,7 +839,7 @@ class PluginStoreActivity : ThemedActivity() {
         pkg: String, btn: TextView, basePkg: String, title: String, message: String,
     ) {
         if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton(R.string.plugin_install_anyway) { _, _ -> doInstall(pkg, btn, basePkg) }
@@ -856,38 +857,58 @@ class PluginStoreActivity : ThemedActivity() {
         }
         btn.text = getString(R.string.plugin_installing)
         btn.isEnabled = false
-        btn.setTextColor(getColor(R.color.text_secondary))
+        btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         // v1.4.66（宝宝反馈「下载完没有回调，一直显示安装中」）：
         // UI 层看门狗。底层已经修了阻塞读的死锁（见 runDshPluginCli），但
         // installExecutor 是**单线程**池 —— 万一某个任务仍卡住，后续所有安装
         // 会排队，用户永远看到「安装中」。
         //
-        // 这里挂一个 150 秒的兜底：超时后把按钮恢复成可点状态并提示，
-        // 用户至少能再点一次（真实状态以插件中心列表为准）。
-        // 用 token 防串：回调正常到达就作废这个看门狗。
+        // 这里挂一个兜底：超时后提示「仍在安装」，并**保持按钮禁用**、再挂下一轮。
+        //
+        // v1.7.32：旧实现是一次性 150 秒到点就把按钮恢复成「安装」并弹
+        // 「安装耗时超出预期」—— 但底层现在的判据是「无输出 60 秒」才算卡死、
+        // 绝对上限 30 分钟（见 PluginCenter.CLI_HARD_TIMEOUT_MS）。真机装一个带
+        // 原生依赖的大插件（如 dsh-project-memory：leanvec 83MB + pdfjs-dist）
+        // 在模拟器上就要 133 秒，弱网更久。旧看门狗会在 **pnpm 还在正常下载**时
+        // 把按钮放开，用户点了第二次 → 第二次安装排在单线程池后面，还得再下
+        // 一遍，看起来就像「怎么装都装不上」。
+        //
+        // 现在：到点只提示进度、报道一次真实状态，按钮维持「安装中」禁用；
+        // 一直续挂到 30 分钟（与底层硬上限对齐）才真正放手。
+        // 用 token 防串：回调正常到达就作废整个看门狗。
         val watchdogToken = Any()
         installWatchdog = watchdogToken
-        btn.postDelayed({
-            if (installWatchdog !== watchdogToken) return@postDelayed
-            if (isFinishing || isDestroyed) return@postDelayed
-            btn.text = getString(R.string.plugin_install)
-            btn.isEnabled = true
-            btn.isClickable = true
-            btn.setTextColor(getColor(R.color.text_secondary))
-            Toast.makeText(
-                this@PluginStoreActivity,
-                getString(R.string.plugin_install_timeout),
-                Toast.LENGTH_LONG,
-            ).show()
-            reload(verbose = true)
-        }, 150_000L)
+        // round 从 1 数到 WATCHDOG_MAX_ROUNDS：第 N 轮 = 已经等了 N×150s。
+        // 最后一轮必须同时「提示 + 放开按钮」，否则按钮会永久停在禁用态。
+        fun armWatchdog(round: Int) {
+            btn.postDelayed({
+                if (installWatchdog !== watchdogToken) return@postDelayed
+                if (isFinishing || isDestroyed) return@postDelayed
+                val last = round >= WATCHDOG_MAX_ROUNDS
+                if (last) {
+                    // 到达底层硬上限：这一次确实该放手了，交给用户重试。
+                    btn.text = getString(R.string.plugin_install)
+                    btn.isEnabled = true
+                    btn.isClickable = true
+                    btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
+                }
+                Toast.makeText(
+                    this@PluginStoreActivity,
+                    getString(R.string.plugin_install_timeout),
+                    Toast.LENGTH_LONG,
+                ).show()
+                reload(verbose = true)
+                if (!last) armWatchdog(round + 1)
+            }, WATCHDOG_INTERVAL_MS)
+        }
+        armWatchdog(1)
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
                 // 回调到了 → 作废看门狗
                 installWatchdog = null
                 if (ok) {
                     btn.text = getString(R.string.plugin_installed)
-                    btn.setTextColor(getColor(R.color.success))
+                    btn.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                     btn.isClickable = true
                     btn.isEnabled = true
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
@@ -929,7 +950,7 @@ class PluginStoreActivity : ThemedActivity() {
                     val shown = if (isNetworkError(msg)) getString(R.string.plugin_net_error)
                     else summarizeInstallError(msg)
                     btn.text = getString(R.string.plugin_failed, shown)
-                    btn.setTextColor(getColor(R.color.danger))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                     btn.setOnLongClickListener {
@@ -978,7 +999,7 @@ class PluginStoreActivity : ThemedActivity() {
             .filter { it.isNotEmpty() }
         if (names.isEmpty()) return false
         btn.text = getString(R.string.plugin_build_approve_btn)
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_build_pending_title))
             .setMessage(
                 getString(
@@ -1015,7 +1036,7 @@ class PluginStoreActivity : ThemedActivity() {
                     doInstall(pkg, btn, basePkg)
                 } else {
                     btn.text = getString(R.string.plugin_failed, getString(R.string.plugin_build_approve_failed).take(28))
-                    btn.setTextColor(getColor(R.color.danger))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                 }
@@ -1058,44 +1079,13 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     /**
-     * 把 pnpm / 引擎的失败原文压成按钮上那一小段（v1.5.0-beta.6）。
+     * 按钮上那一小段摘要 —— 实现见 [InstallErrorSummary]（v1.7.31）。
      *
-     * 旧实现是 `msg.take(28)`，而 pnpm 的输出是
-     *     Error: ERR_PNPM_XXX
-     *     （空行）
-     *       × adding a new package
-     *       ╰─▶ <真正原因>
-     * 前 28 字符恰好停在错误码与空行之间，**错误码本身被切掉**，按钮上只剩
-     * `Error: × adding a new packa` —— 所有失败长得一模一样，用户报给我们也
-     * 没有信息量（宝宝第 9 次反馈的现场）。
-     *
-     * 现在的取法，按判别性从高到低：
-     *   ① `ERR_PNPM_*` / `E*` 错误码（一行就能定位问题族）；
-     *   ② 上游 `dsh: ...` 诊断行；
-     *   ③ 最后一个不重复的 `╰─▶` 原因链节点；
-     *   ④ 退化到首行有效文本。
+     * 为什么搬走：这段逻辑决定「用户截图能不能提供线索」，必须能被 JVM 单测
+     * 直接喂真实 pnpm 原文验证。留在 Activity 私有方法里只能靠 py 探针看源码
+     * 字符串，证明不了「同一段原文进来，出来的是错误码还是那串 file:// 路径」。
      */
-    private fun summarizeInstallError(msg: String): String {
-        val text = msg.replace("\r\n", "\n").trim()
-        if (text.isEmpty()) return "unknown"
-        // ① 错误码：pnpm 的 ERR_PNPM_*、Node 的 ENOENT/ENOTFOUND 等
-        Regex("[A-Z][A-Z0-9_]{6,}").find(text)?.let { return it.value.take(40) }
-        // ② 上游给的诊断/拒绝行
-        text.lineSequence().firstOrNull { it.trimStart().startsWith("dsh:") }?.let {
-            return it.trim().take(60)
-        }
-        // ③ 原因链最后一节（「╰─▶」之后才是真正的根因）
-        val cause = text.lineSequence()
-            .map { it.substringAfter("▶", "").trim() }
-            .lastOrNull { it.isNotEmpty() && !it.startsWith("×") }
-        if (!cause.isNullOrEmpty()) return cause.take(60)
-        // ④ 首行有效文本（跳过 "Error:" / 空行 / "×" 开头这类无信息行）
-        return text.lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() && it != "Error:" && !it.startsWith("×") }
-            ?.take(60)
-            ?: text.take(60)
-    }
+    private fun summarizeInstallError(msg: String): String = InstallErrorSummary.summarize(msg)
 
     /**
      * 长按失败按钮 → 完整错误原文 + 一键复制（v1.5.0-beta.6）。
@@ -1106,7 +1096,7 @@ class PluginStoreActivity : ThemedActivity() {
      */
     private fun showInstallErrorDialog(pkg: String, msg: String) {
         val body = msg.trim().ifEmpty { "exit=unknown (pnpm printed nothing)" }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_error_title))
             .setMessage("$pkg\n\n$body\n\n" + getString(R.string.plugin_error_hint))
             .setPositiveButton(getString(R.string.report_copy)) { _, _ ->
@@ -1137,7 +1127,7 @@ class PluginStoreActivity : ThemedActivity() {
             PluginCenter.parseEngineRejection(this, pkg, msg)
         }.getOrNull() ?: return
         val version = rejection.version ?: return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_engine_old_title))
             .setMessage(rejection.userMessage(this))
             .setPositiveButton(getString(R.string.plugin_engine_old_force)) { _, _ ->
@@ -1157,23 +1147,29 @@ class PluginStoreActivity : ThemedActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (ok) {
                     btn.text = getString(R.string.plugin_installed)
-                    btn.setTextColor(getColor(R.color.success))
+                    btn.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
                     btn.isEnabled = true
                     btn.isClickable = true
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
                     reload(verbose = true)
                 } else {
-                    btn.text = getString(R.string.plugin_failed, msg.take(28))
-                    btn.setTextColor(getColor(R.color.danger))
+                    // v1.7.31：与首装失败用同一套摘要 —— 旧实现在这里还是裸
+                    // take(28)，会把错误码整行切掉，用户只看到半句英文。
+                    btn.text = getString(R.string.plugin_failed, summarizeInstallError(msg))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    btn.setOnLongClickListener {
+                        showInstallErrorDialog(pkg, msg)
+                        true
+                    }
                 }
             }
         }
     }
 
     private fun confirmUninstall(pkg: String, btn: TextView) {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_uninstall))
             .setMessage(pkg)
             .setPositiveButton(R.string.plugin_uninstall) { _, _ -> runUninstall(pkg, btn) }
@@ -1184,7 +1180,7 @@ class PluginStoreActivity : ThemedActivity() {
     private fun runUninstall(pkg: String, btn: TextView) {
         btn.text = getString(R.string.plugin_uninstalling)
         btn.isEnabled = false
-        btn.setTextColor(getColor(R.color.text_secondary))
+        btn.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
         PluginCenter.uninstall(this, pkg) { ok, msg ->
             runOnUiThread {
                 if (ok) {
@@ -1197,10 +1193,15 @@ class PluginStoreActivity : ThemedActivity() {
                     }
                     reload(verbose = true)
                 } else {
-                    btn.text = getString(R.string.plugin_failed, msg.take(28))
-                    btn.setTextColor(getColor(R.color.danger))
+                    // v1.7.31：同上，卸载失败也要给出可分辨的原因 + 完整原文入口
+                    btn.text = getString(R.string.plugin_failed, summarizeInstallError(msg))
+                    btn.setTextColor(dshColor(R.attr.dshDanger, R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    btn.setOnLongClickListener {
+                        showInstallErrorDialog(pkg, msg)
+                        true
+                    }
                 }
             }
         }
@@ -1208,6 +1209,22 @@ class PluginStoreActivity : ThemedActivity() {
 
     companion object {
         private const val STORE_CONTENT_MAX_WIDTH_DP = 720
+
+        /**
+         * 安装看门狗的提示间隔（v1.7.32）。
+         *
+         * 150 秒 = 旧实现唯一的「超时」点。现在它不再代表超时，只是「这么久没
+         * 消息了，提一句还在装」；每次到点都会报道一次真实状态并续挂下一轮。
+         */
+        private const val WATCHDOG_INTERVAL_MS = 150_000L
+
+        /**
+         * 看门狗最多续挂几轮，与 [app.dsh.mobile.engine.PluginCenter] 的 30 分钟
+         * 硬上限对齐：12 × 150s = 30min。
+         *
+         * 超过它才真正把按钮放开 —— 那时底层也已经杀了进程，两者不会互相打脸。
+         */
+        private const val WATCHDOG_MAX_ROUNDS = 12
 
         /**
          * 每批渲染的插件卡片数（v1.4.30，issue #62）。

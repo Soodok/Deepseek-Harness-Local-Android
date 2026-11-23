@@ -64,11 +64,11 @@ class PermissionCenterActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_permission_center)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
-        findViewById<TextView>(R.id.txtTitle).text = getString(
-            if (group == GROUP_CAPS) R.string.settings_perm_group_caps
-            else R.string.settings_perm_group_engine,
-        )
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).apply {
+            setNavigationOnClickListener { finish() }
+            setTitle(if (group == GROUP_CAPS) R.string.settings_perm_group_caps
+                     else R.string.settings_perm_group_engine)
+        }
 
         // 只显示请求的分组（另一组 GONE：视图仍在层级里，findViewById 照常工作，
         // 刷新函数无需判空）。分组子标题一并隐藏：子页顶栏标题已是同文案，再显示
@@ -118,14 +118,19 @@ class PermissionCenterActivity : ThemedActivity() {
                 }
         }
 
-        // —— 系统能力：通知权限（Android 13+ 运行时授权，Agent 推送需要） ——
+        // —— 系统能力：通知设置（API 26+，包含 Android 13+ 的通知权限） ——
         findViewById<LinearLayout>(R.id.rowNotif).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= 33) {
-                startActivity(
-                    Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName),
-                )
-            }
+            val notificationSettings = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            val appDetails = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:$packageName"),
+            )
+            runCatching { startActivity(notificationSettings) }
+                .recoverCatching { startActivity(appDetails) }
+                .onFailure {
+                    Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show()
+                }
         }
 
         // —— 系统能力：麦克风（语音输入需要 RECORD_AUDIO） ——
@@ -335,12 +340,10 @@ class PermissionCenterActivity : ThemedActivity() {
         )
     }
 
-    /** 通知权限（Android 13+ 运行时授权；低版本默认持有） */
+    /** 应用级通知是否启用；Android 12 及以下也可以在系统设置中关闭。 */
     private fun refreshNotifRow() {
-        val granted = if (Build.VERSION.SDK_INT >= 33)
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        else true
+        val granted = getSystemService(android.app.NotificationManager::class.java)
+            .areNotificationsEnabled()
         val v = findViewById<TextView>(R.id.valNotif)
         v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
         v.asStatusChip(
@@ -436,26 +439,35 @@ class PermissionCenterActivity : ThemedActivity() {
                 isChecked = checked
                 isEnabled = enabled
                 isClickable = false   // 由整行接管点击
-                buttonTintList = android.content.res.ColorStateList.valueOf(
-                    getColor(R.color.md3_primary),
-                )
             }
             val textCol = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@PermissionCenterActivity).apply {
                     text = label
                     textSize = 16f
-                    setTextColor(getColor(R.color.text_primary))
+                    setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
                 })
                 if (sub.isNotEmpty()) addView(TextView(this@PermissionCenterActivity).apply {
                     text = sub
                     textSize = 12f
-                    setTextColor(getColor(R.color.text_secondary))
+                    setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 })
             }
             return LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                contentDescription = if (sub.isEmpty()) label else "$label, $sub"
+                radio.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                accessibilityDelegate = object : View.AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(
+                        host: View, info: android.view.accessibility.AccessibilityNodeInfo,
+                    ) {
+                        super.onInitializeAccessibilityNodeInfo(host, info)
+                        info.className = android.widget.RadioButton::class.java.name
+                        info.isCheckable = true
+                        info.isChecked = radio.isChecked
+                    }
+                }
                 setPadding(dp(16), dp(12), dp(16), dp(12))
                 if (enabled) {
                     // 解析主题的 ripple 背景为真实 resId 再取 drawable（attr 不能直接 getDrawable）
@@ -471,11 +483,6 @@ class PermissionCenterActivity : ThemedActivity() {
                 isEnabled = enabled
                 if (enabled) {
                     setOnClickListener {
-                        // 互斥：重画全部 radio
-                        for (i in 0 until box.childCount) {
-                            val row = box.getChildAt(i) as LinearLayout
-                            (row.getChildAt(0) as android.widget.RadioButton).isChecked = row === this
-                        }
                         when (mode) {
                             PrivMode.ROOT -> warnRootSwitch {
                                 dismissPrivPick()
@@ -516,7 +523,6 @@ class PermissionCenterActivity : ThemedActivity() {
             .setView(box)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
-        privPickDialog?.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
         privPickDialog?.show()
     }
 
@@ -541,16 +547,16 @@ class PermissionCenterActivity : ThemedActivity() {
             .setMessage(getString(R.string.ob_priv_root_warn))
             .setCancelable(false)
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ ->
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(getString(R.string.ob_priv_root_warn2_title))
                     .setMessage(getString(R.string.ob_priv_root_warn2))
                     .setCancelable(false)
                     .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
                     .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-                    .showStyled()
+                    .show()
             }
             .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-            .showStyled()
+            .show()
     }
 
     // ------------------------------------------------------------ 无障碍
@@ -569,16 +575,7 @@ class PermissionCenterActivity : ThemedActivity() {
             .onFailure { Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show() }
     }
 
-    /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
-
-    // --------------------------------------------------------- AI 能力磁贴
+// --------------------------------------------------------- AI 能力磁贴
 
     /** 一项 AI 能力的视图与系统门槛描述（v1.6.0）。 */
     private data class CapSpec(
@@ -916,19 +913,19 @@ class PermissionCenterActivity : ThemedActivity() {
         when {
             !ok -> {
                 st.text = getString(R.string.setting_cap_state_blocked)
-                st.setTextColor(getColor(R.color.warning))
+                st.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
             }
             on && notReady -> {
                 st.text = getString(R.string.linux_state_not_deployed)
-                st.setTextColor(getColor(R.color.warning))
+                st.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
             }
             on -> {
                 st.text = getString(R.string.state_on)
-                st.setTextColor(getColor(R.color.success))
+                st.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
             }
             else -> {
                 st.text = getString(R.string.state_off)
-                st.setTextColor(getColor(R.color.text_secondary))
+                st.setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             }
         }
     }
@@ -1027,12 +1024,12 @@ class PermissionCenterActivity : ThemedActivity() {
         box.addView(TextView(this).apply {
             text = getString(spec.title)
             textSize = 17f
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(dshColor(R.attr.dshTextPrimary, R.color.text_primary))
         })
         box.addView(TextView(this).apply {
             text = getString(spec.sub)
             textSize = 13f
-            setTextColor(getColor(R.color.text_secondary))
+            setTextColor(dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
             setPadding(0, dp(8), 0, 0)
         })
         // 「门槛提示」与「开关能否点」是两件事：应用管理的开关始终可点（列出应用本来
@@ -1042,7 +1039,7 @@ class PermissionCenterActivity : ThemedActivity() {
             box.addView(TextView(this).apply {
                 text = getString(spec.need)
                 textSize = 13f
-                setTextColor(getColor(R.color.warning))
+                setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
                 setPadding(0, dp(10), 0, 0)
             })
             // 磁贴上的开关在缺权时是置灰的（点不动），所以「去补权限」必须在这里给一个
@@ -1050,7 +1047,7 @@ class PermissionCenterActivity : ThemedActivity() {
             box.addView(TextView(this).apply {
                 text = getString(R.string.setting_cap_grant_now)
                 textSize = 14f
-                setTextColor(getColor(R.color.accent))
+                setTextColor(dshColor(R.attr.dshAccent, R.color.accent))
                 setPadding(0, dp(12), 0, 0)
                 setOnClickListener {
                     if (!requestCapPerm(spec.cap)) {
@@ -1085,11 +1082,10 @@ class PermissionCenterActivity : ThemedActivity() {
         row.addView(sw)
         box.addView(row)
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setView(box)
             .setNegativeButton(getString(R.string.setting_cap_detail_close), null)
             .create()
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
         dialog.show()
 
         sw.setOnCheckedChangeListener { _, checked ->

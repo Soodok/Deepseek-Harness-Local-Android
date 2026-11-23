@@ -15,6 +15,20 @@ add_library(dshpty SHARED dsh_pty.c)
 add_executable(dsh_pty_exec dsh_pty_exec.c)
 set_target_properties(dsh_pty_exec PROPERTIES OUTPUT_NAME "libdsh_pty_exec.so")
 
+# ★必须静态链接（v1.8.3）。
+#
+# 动态 bionic 可执行文件的 `PT_INTERP` 是 `/system/bin/linker64`（实测从
+# APK 里读 ELF program header：`PT_INTERP = /system/bin/linker64`、有 PT_DYNAMIC）。
+# 而 **chroot 沙箱模式**下引擎跑在 rootfs 里，chroot 只挂
+# `/proc /dev /sys /tmp /dev/pts` 与 `/data` 系（见 LinuxSandbox.REQUIRED_MOUNT_POINTS）
+# —— **没有 /system**。于是 `execv(dsh_pty_exec)` 找不到解释器直接 ENOENT，
+# node-pty 起不来 → Web / PTY 终端在整个 chroot 模式下不可用，而其它功能都正常
+# （门脚本、引擎本身跑的是 guest 自己的 node）—— 症状正好是「只有 pty 终端不能用」。
+#
+# 静态链接没有 PT_INTERP，内核直接装载，任何 rootfs 里都能跑；
+# 本文件不调用 `__android_log_print`，也不需要额外的 bionic 运行时。
+target_link_options(dsh_pty_exec PRIVATE "-static")
+
 # 16KB 页对齐：Android 15+ 部分 aarch64 真机内核使用 16384 字节页，
 # LOAD p_align=4096 的 so 在其上 dlopen 会报 "program alignment" 失败。
 # 不依赖 NDK r27+ 的默认行为，对所有 ndkVersion 显式生效。
@@ -26,6 +40,69 @@ target_link_options(dsh_pty_exec PRIVATE
 target_link_libraries(dshpty
     # 仅依赖 log，无 STL —— 纯 C11 实现，规避 NDK STL 兼容问题
     log)
+
+# ---------------------------------------------------------------------------
+# dsh_setuid_shim —— 让 xorg 的 Popen() 在 Android App 域里跑得通（v1.6.0-beta.23）
+#
+# Xvfb 初始化键盘时调 xkbcomp，走 xserver 自己封装的 "safer popen"
+# （os/utils.c: Popen），其子进程分支是：
+#
+#     if (setgid(getgid()) == -1) _exit(127);
+#     if (setuid(getuid()) == -1) _exit(127);
+#     execl("/bin/sh", "sh", "-c", command, NULL);
+#
+# 即「先放弃所有特权再执行命令」。而 Android App 域
+# （u:r:untrusted_app_27，CapEff=0）内核一律拒绝 setuid/setgid —— 即使传的
+# 就是进程自己当前的 uid/gid —— 子进程按源码 _exit(127)，父进程 Pclose()
+# 拿到 127，Xvfb 依次打出：
+#
+#     Error compiling keymap / XKB: Failed to compile keymap
+#     Keyboard initialization failed... / Failed to activate virtual core keyboard: 2
+#
+# 当场退出、一个 listening socket 都不建 —— 用户侧只是「点开始画面无反应」。
+#
+# 这个 .so 通过 LD_PRELOAD 只对 Xvfb 生效，把「放弃自己本来就已经是的那个
+# 身份」按恒等变换处理（返回成功）；任何别的 uid/gid 请求照常透传给内核，
+# 失败就如实失败，绝不伪造提权成功。
+#
+# ⚠️ 构建约束：
+#   - -ffreestanding -fno-builtin：不引入任何 libc 符号
+#   - -nostdlib：产物无 NEEDED、无 UND 符号 —— 它会被同时灌进 musl(Alpine)
+#     与 glibc 两个 rootfs，任何 libc 依赖都会在其中一边解析失败
+#   - 全程裸 syscall（aarch64: svc #0 / x86_64: syscall）：xorg 在 fork 出来的
+#     子进程里调 setuid，此时 dlsym 可能撞上 dl 锁
+#   - 16KB 页对齐：Android 15+ 的 16KB 页内核要求 LOAD 段 p_align >= 页大小
+# ---------------------------------------------------------------------------
+add_library(dsh_setuid_shim SHARED dsh_setuid_shim.c)
+# ⚠️ OUTPUT_NAME 只写裸名字，**不要**自己加 lib 前缀和 .so 后缀。
+#   AGP 会把 SHARED 库按 OUTPUT_NAME 再套一层：实测写 "libdsh_setuid_shim.so"
+#   得到 APK 条目 lib/arm64-v8a/liblibdsh_setuid_shim.so.so（大小正确但没人认得），
+#   而 App 侧按 /libdsh_setuid_shim.so 找，于是永远找不到 → 永远 warn、永远没装上。
+set_target_properties(dsh_setuid_shim PROPERTIES OUTPUT_NAME "dsh_setuid_shim")
+target_compile_options(dsh_setuid_shim PRIVATE
+    -ffreestanding
+    -fno-builtin
+    -fno-stack-protector)
+target_link_options(dsh_setuid_shim PRIVATE
+    "-nostdlib"
+    # ⚠️ --as-needed 不是可选项，是这条构建约束的一部分。
+    #
+    #   "-nostdlib" 只管「不要默认启动文件与默认库」，它管不住 NDK toolchain 通过
+    #   CMAKE_C_STANDARD_LIBRARIES 追加进来的 "-latomic -lm"：CMake 在生成阶段把
+    #   它们直接拼进 Ninja 的 LINK_LIBRARIES 变量，那是生成器级变量，
+    #   set_target_properties(... LINK_LIBRARIES "") 也覆盖不掉（两种写法都试过，
+    #   build.ninja 里始终是 "-latomic -lm"）。
+    #
+    #   后果：产物 dynamic 段里会多一条 NEEDED libm.so（实测 APK 条目 3264 B）。
+    #   而 Alpine musl rootfs 里根本没有 libm.so（musl 把 libm 并进 libc，只有
+    #   lib/ld-musl-aarch64.so.1）—— musl ldso 会静默忽略这条 NEEDED 而不报错，
+    #   功能上没坏，但和上面「产物无 NEEDED」的承诺不符；换到真 glibc rootfs 上
+    #   还会凭空多拉一个库。
+    #
+    #   加上 --as-needed 后，链接器发现 libm / atomic 一个符号都没被引用，就不再
+    #   写 DT_NEEDED：实测产物从 3264 B 降到 3240 B，dynamic 段只剩 SONAME。
+    "-Wl,--as-needed"
+    "-Wl,-z,max-page-size=16384")
 
 # ---------------------------------------------------------------------------
 # dsh_alpine —— Linux 用户态运行器（免 root 的 seccomp 容器）

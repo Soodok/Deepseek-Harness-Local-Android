@@ -568,6 +568,18 @@ val prepareRuntimeAssets by tasks.registering {
         outDir.deleteRecursively()
         outDir.mkdirs()
 
+        // MainActivity and RuntimeInstaller share the build-generated polyfill asset.
+        val polyfillScript = File(projRoot, "scripts/patch-webview-polyfill.py")
+        val polyfillOut = File(outDir, "js/legacy-webview-polyfill.html")
+        val polyfillRc = providers.exec {
+            commandLine(pythonCmd, polyfillScript.absolutePath, "--asset-out", polyfillOut.absolutePath)
+            isIgnoreExitValue = true
+        }.result.get().exitValue
+        if (polyfillRc != 0 || !polyfillOut.isFile) {
+            throw GradleException("WebView polyfill asset generation failed (exit=$polyfillRc)")
+        }
+        logger.lifecycle("runtime: generated WebView polyfill asset (${polyfillOut.length()} bytes)")
+
         val manifestScript = File(projRoot, "scripts/write-runtime-manifest.py")
         val runtimeOut = File(outDir, "runtime.zip")
 

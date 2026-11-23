@@ -94,6 +94,16 @@ rm -rf "$PKG_DIR/src" "$PKG_DIR/lib/types" "$PKG_DIR/scripts"
 "$FIND" "$PKG_DIR" -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -delete
 rm -f "$PKG_DIR/README.md" "$PKG_DIR/SKILLS.md"
 
+# ---- 3b. Windows 远端路径补丁 ---------------------------------------------
+# 0.2.13 的远端路径层是纯 POSIX 假定：绑定 C:\Users\me 会在任何 SFTP 动作之前就
+# 被 normalizeRemoteRoot 拒掉（Win32 OpenSSH 的 SFTP 只认 /C:/Users/me）。
+# 补丁做三件事：① C:\x / C:/x / /c:/x 收敛成 /C:/x；② 根包含比较在 Windows 根下
+# 大小写不敏感；③ 命令层对 Windows 根明示不支持（而非让 cmd.exe 报语法错）。
+# 锚点失配会 exit 1 —— 上游改版必须重新 review 锚点，不能静默跳过。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python "$HERE/patch-hardssh-windows-paths.py" --root "$PKG_DIR"
+python "$HERE/patch-hardssh-windows-paths.py" --root "$PKG_DIR" --check
+
 # ---- 4. 只安装运行期依赖 ssh2 / ws ----------------------------------------
 SSH2_RANGE="$(node -e 'const p=require(process.argv[1]); process.stdout.write(p.dependencies?.ssh2||"")' "$PKG_DIR/package.json")"
 WS_RANGE="$(node -e 'const p=require(process.argv[1]); process.stdout.write(p.dependencies?.ws||"")' "$PKG_DIR/package.json")"

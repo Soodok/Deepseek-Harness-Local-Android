@@ -344,7 +344,17 @@ Strategy notes (when to prefer which entry — the roster above lists every name
 
 9. **Label the memory you just earned.** A finished a11y task is recorded automatically and stored as a *pending* memory with a derived signature like `com.android.settings: Display -> Dark theme`. That signature is searchable but ugly. Once the task actually succeeded, call `POST /memory/v2/label {"intent":"<one normalized sentence>","title":"<short label>"}` so the next run can find it by meaning. Only label tasks you verified as successful — a mislabeled failure teaches the system the wrong thing.
 
-10. **Replay instead of re-planning.** Before planning a multi-step UI task, try `POST /memory/run {"intent":"<the same sentence>","fp":<the text set from /screen>,"auto":true}`. It answers `tier=high` by executing the stored steps locally (no planning round-trip), and `tier=mid|low` by refusing — in that case plan normally and do not force it. A replay that stops with `reason=anchor-mismatch` means the screen changed: re-plan, do not retry the same memory.
+10. **Look at the memory before you trust it.** A memory may also carry a *contact sheet*: one image
+stitched from the screen after every step, labelled `S` (before step 1) then `0,1,2...`.
+`/memory/v2/get` returns `strip` (the sheet) plus `images` (per-step shots) as **absolute paths**,
+and `hasImages` tells you whether any exist. Read the sheet with `read_image` **once** when the text
+alone leaves you guessing: it is the cheapest way to tell "通讯录 vs 聊天页" or to notice that a button
+moved between the recording and now. Do not read every step image — the sheet already has them all,
+and `GET /memory/v2/shot?id=<id>&step=<n>` exists only for a single close-up (`step=-1` is the pre-step-1
+screen). Images are recorded only when the accessibility service can take screenshots and the page is
+not protected, so `hasImages=false` is normal on some devices.
+
+11. **Replay instead of re-planning.** Before planning a multi-step UI task, try `POST /memory/run {"intent":"<the same sentence>","fp":<the text set from /screen>,"auto":true}`. It answers `tier=high` by executing the stored steps locally (no planning round-trip), and `tier=mid|low` by refusing — in that case plan normally and do not force it. A replay that stops with `reason=anchor-mismatch` means the screen changed: re-plan, do not retry the same memory.
 
 For duplicate detection, compare page/target + action + verification result, not just button text; Back and scrolling may legitimately repeat on different pages.
 

@@ -119,11 +119,21 @@ check("S8 交还失败不中断装包（只记日志）",
 check("D1 有 socketsAlive 健康标记", "socketsAlive" in dns)
 check("D2 currentPort 同时判 running 与 socketsAlive",
       re.search(r"fun currentPort\(\)[^\n]*running\.get\(\)\s*&&\s*socketsAlive\.get\(\)", dns) is not None)
-check("D3 start 幂等判据会检查健康并重绑", "listener socket is dead" in dns)
-check("D4 acceptLoop 异常时标记 socket 死亡",
-      re.search(r"tcp accept:[\s\S]{0,300}socketsAlive\.set\(false\)", dns) is not None)
-check("D5 udpLoop 异常时标记 socket 死亡",
-      re.search(r"udp recv:[\s\S]{0,300}socketsAlive\.set\(false\)", dns) is not None)
+start_block = re.search(r"fun start\([^\n]*\): Int \{([\s\S]*?)\n    /\*\*", dns)
+check("D3 start 仅在 socket 和监听循环健康时复用端口，否则停止并重绑",
+      start_block is not None and re.search(
+          r"if \(running\.get\(\) && port > 0\) \{\s*"
+          r"if \(socketsAlive\.get\(\) && loopAlive\.get\(\)\) return port"
+          r"[\s\S]*?\bstop\(\)", start_block.group(1)) is not None)
+for name, loop, operation in (("D4", "acceptLoop", "ss.accept()"),
+                              ("D5", "udpLoop", "us.receive(pkt)")):
+    block = re.search(r"private fun %s\([^\n]*\) \{([\s\S]*?)\n    \}" % loop, dns)
+    check(name + " 监听异常时仅当前代标记 socket 死亡",
+          block is not None and re.search(
+              re.escape(operation) + r"\s*\} catch \(e: Throwable\) \{"
+              r"[\s\S]*?if \(running\.get\(\)\) \{[\s\S]*?"
+              r"if \(generation\.get\(\) == myGen\) socketsAlive\.set\(false\)",
+              block.group(1)) is not None)
 check("D6 容器执行前端口取不到会重绑",
       "LinuxDnsProxy.start(ctx)" in runner and "DSH_DNS_PORT" in runner)
 
@@ -146,6 +156,50 @@ check("B1 loader 有 link 复制兜底（ldr_copy_link）", re.search(r"static l
 check("B1b SYS_link 分支接触发判定", re.search(r"if \(lr < 0 && ldr_link_denied\(lr\)\) lr = ldr_copy_link", loader_txt) is not None)
 check("B1c SYS_linkat 分支接触发判定", re.search(r"ldr_copy_link\(ofd, use_op, nfd, use_np\)", loader_txt) is not None)
 check("B1d 判据覆盖 EACCES(13) 与 EPERM(1)", re.search(r"rc == -1 \|\| rc == -13", loader_txt) is not None)
+
+# B4~B6（2026-11-21 review 阶段补）：伪文件系统透传的「开关变量」契约。
+# 事故形态：透传命中的一侧 ob/nb 从未被写过（未初始化栈内存），却照样当路径
+# 交给内核 —— 透传等于没做，而且 gcc -O2 -Wall -Wextra 一声不吭。
+# 实测后果：容器内 ln /proc/self/fd/1 /tmp/x 报 Cross-device link。
+ren_branch = re.search(r"case SYS_rename: case SYS_link:", loader_txt)
+ren_body = ""
+if ren_branch:
+    ren_body = loader_txt[ren_branch.start(): ren_branch.start() + 3000]
+check("B4 SYS_rename/SYS_link 分支用开关变量选指针（不是照样传缓冲）",
+      "int o_pass = dev_passthrough(op);" in ren_body
+      and "int n_pass = dev_passthrough(np);" in ren_body
+      and ren_body.count("const char *use_op = o_pass ? op : ob;") == 1
+      and ren_body.count("const char *use_np = n_pass ? np : nb;") == 1,
+      "缺开关变量时透传一侧的缓冲是未初始化栈内存")
+check("B4b SYS_rename/SYS_link 的内核调用只用 use_op/use_np",
+      re.search(r"raw6\(SYS_renameat, ofd, \(long\)use_op,[\s\S]{0,80}nfd, \(long\)use_np",
+                ren_body) is not None
+      and re.search(r"raw6\(SYS_linkat, ofd, \(long\)use_op, nfd, \(long\)use_np",
+                    ren_body) is not None,
+      "把 use_op/use_np 换回 ob/nb 就退回未初始化缓冲")
+check("B4c 复制兜底也走 use_op/use_np（第三处同源坑）",
+      re.search(r"ldr_copy_link\(ofd, use_op, nfd, use_np\)", ren_body) is not None
+      and re.search(r"ldr_copy_link\(ofd, ob, nfd, nb\)", ren_body) is None,
+      "兜底路径拿未初始化缓冲去 openat，只在 SELinux 拒绝 link 时才触发")
+
+renat_branch = re.search(r"case SYS_renameat:\s*case SYS_renameat2: {", loader_txt)
+renat_body = ""
+if renat_branch:
+    renat_body = loader_txt[renat_branch.start(): renat_branch.start() + 2500]
+check("B5 SYS_renameat/renameat2 有 /proc /dev /sys 透传守卫",
+      "if (dev_passthrough(op)) { /* 原样交给内核 */ }" in renat_body
+      and "if (dev_passthrough(np)) { /* 原样交给内核 */ }" in renat_body,
+      "缺守卫时容器内 rename 伪文件系统路径会被翻成 rootfs 相对路径 -> ENOENT")
+# 注意：注释里那段 /* ... */ 不能直接进 re 模式 —— "/…*" 会被当成量词，
+# 实测把整条断言变成永不命中（正是本探针要找的那类假绿）。一律 re.escape。
+_g_op = re.escape("if (dev_passthrough(op)) { /* 原样交给内核 */ }")
+_g_np = re.escape("if (dev_passthrough(np)) { /* 原样交给内核 */ }")
+_m_op = re.escape("else if (bind_map(op, oh)) { ofd = -100; op = oh; }")
+_m_np = re.escape("else if (bind_map(np, nh)) { nfd = -100; np = nh; }")
+check("B5b 透传守卫在 bind_map 之前（顺序反了就会被翻译抢先）",
+      re.search(_g_op + r"\s*" + _m_op, renat_body) is not None
+      and re.search(_g_np + r"\s*" + _m_np, renat_body) is not None,
+      "两条都命中时以透传为先")
 check("B2 哨兵覆盖 status-old", re.search(r"File\(rootfs, \"var/lib/dpkg/status-old\"\)", selinux) is not None)
 check("B3 哨兵覆盖 diversions-old", re.search(r"File\(rootfs, \"var/lib/dpkg/diversions-old\"\)", selinux) is not None)
 

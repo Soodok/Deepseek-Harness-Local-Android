@@ -116,24 +116,29 @@ rm -rf "$ROOT/data"
 # session-persistence-jsonl/sandbox-local/node-addon-system/plugin-manager/app-boot
 # 九个包 sha256 一致），依赖清单也是同样的 86 项，仅版本号整体抬升 ——
 # 故所有锚点天然仍然命中，无需改动任何补丁。
-# v1.6.1 升级到 0.2.2-rc.1：这次**不一样**，9 个锚点文件里 8 个字节都变了
-# （只有 subprocess-local/lib/index.js 未变），不能再假设锚点天然命中。已用
-# 真实 npm install 解析出的依赖树（654 包，rc.5 是 616 包）逐项实打补丁验证：
-#   · ptc-runtime-android  OLD_SET/ENV_OLD/MAP_OLD 三处仍命中
-#   · fs-local-android     PROBE_OLD 仍命中
-#   · attachment-local     OLD_IMPORTS + SYNC_RE 仍命中（五项校验全过）
-#   · webview-polyfill     ANCHOR_RE（<script type="module">）仍命中
-#   · session-persistence  index.js 的 fs/promises import 行与 worker.cjs 的
-#                          link 调用仍命中
+# v1.6.1 升级到 0.2.2-rc.1：9 个锚点文件里 8 个字节都变了（只有
+# subprocess-local/lib/index.js 未变），补丁逐个实打验证后仍全部命中。
+# v1.7.x 升级到 0.2.2-rc.3（2026-11-14）：rc.1 → rc.3 之间 10 个锚点文件里
+# **7 个字节变了**（attachment-local / session-persistence index.js /
+# agent-preset-registry 三个未变），逐项实打结论：
+#   · ptc-runtime-android  三处锚点（OLD_SET/ENV_OLD/MAP_OLD）仍命中，幂等
+#   · fs-local-android     PROBE_OLD 旧/rc.2 双形态仍命中（新包走 rc.2 形态）
+#   · attachment-local     五项校验全过
+#   · webview-polyfill     ANCHOR_RE 仍命中（index.html 1009 → 10497 字节）
+#   · session-persistence  index.js import 行与 worker.cjs link 属性仍命中
 #   · node-pty-android     runner-launch-*.js 通配仍命中
-#   · apiproxy             **目标包不存在**（rc.5 时就已消失，非本次回归），
-#                          脚本输出 WARN 并跳过；原生 opener 现由
-#                          @deepseek-ai/dsh-native-command 承担，Android 走
-#                          「native path opener is unsupported」分支
-# 依赖清单 86 → 90 项，新增 dsh-experimental-forge-bundle /
-# dsh-experimental-liveshare / dsh-official-bundles /
-# dsh-personalized-recommendations，四者均无原生依赖（无需重新编译 node-pty/koffi）。
-DSH_VERSION="${DSH_VERSION:-0.2.2-rc.1}"
+#   · llm-deepseek         ANCHOR 仍命中
+#   · apiproxy             目标包不存在（rc.5 起就没了），WARN 后跳过
+# 包清单 330 → 338（@deepseek-ai 下）：新增 dsh-agent-team / dsh-cua(-bundle) /
+# dsh-computer-use / dsh-mcp-manager / dsh-office-kit / dsh-skill-office /
+# dsh-tool-office / dsh-terminal-panel / dsh-tool-agent-team /
+# dsh-client-ui-agent-team / dsh-client-ui-account-notifications /
+# dsh-deepseek-chat-import / dsh-error / dsh-util-ripgrep /
+# libreoffice-kit-wasm；移除 dsh-api-account-controller /
+# dsh-deepseek-account-platform / dsh-office-to-pdf 与四个 experimental-agent-team。
+# 新增包均无原生依赖（唯一 .wasm 是 libreoffice-kit-wasm 的 soffice.wasm，
+# 由 make-lite-runtime.py 在 lite 包里剥掉），node-pty/koffi 打桩路径不变。
+DSH_VERSION="${DSH_VERSION:-0.2.2-rc.3}"
 mkdir -p "$WORK/bundle" && cd "$WORK/bundle"
 printf '{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"%s"}}' \
   "$DSH_VERSION" > package.json
@@ -284,6 +289,21 @@ fi
 # fail-fast：形态识别不了必须中止构建 —— 静默漏打补丁等于把「存图即失败」的包发给用户。
 python3 "$SCRIPTS_DIR/patch-attachment-local.py" "$ROOT" || {
   echo "错误：dsh-attachment-local 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
+# [sharp] Android 的 `runtimePlatform` 拼成 "android-arm64"，上游 switch 里
+# **没有这个 case**，只能靠 switch 之后的 `@img/sharp-wasm32` 回退兜底。这一步
+# 失败时 sharp 抛出的帮助文本会建议用户 `npm install libvips` /
+# `npm i @img/sharp-wasm32` —— 而 App 的离线包两件事都做不到，用户照着做只会
+# 继续失败，还会误以为是网络或 API key 问题（报错挂在模型请求上，整轮直接判
+# TRANSPORT 失败）。补丁做两件事：① 显式加 `android-arm64`/`android-arm` case，
+# 命中即 break 走 wasm32 回退（注意**不能**指向 @img/sharp-linux-arm64，那是
+# glibc ELF，Android dlopen 必失败）；② 把 help 换成可操作的说明。
+# 真机意义上 wasm32 回退是**能用的**：本机伪造 platform/arch 实测 metadata、
+# jpeg(85)、webp、raw 全部通过；所以缺的是「Android 没被当成一等情形」。
+python3 "$SCRIPTS_DIR/patch-sharp-android.py" "$ROOT" || {
+  echo "错误：sharp Android 回退补丁失败（上游形态已变？），中止构建" >&2
   exit 1
 }
 

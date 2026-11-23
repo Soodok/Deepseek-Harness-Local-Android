@@ -13,6 +13,8 @@ import android.widget.TextView
 import app.dsh.mobile.R
 import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.EngineModeSelector
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.progressindicator.CircularProgressIndicator
 import java.util.Locale
 
 /**
@@ -43,6 +45,7 @@ class SplashController(
     private val root: View,
     private val minimumMs: Long,
     private val isBusy: () -> Boolean,
+    private val snapshotForDisplay: (BootTrace.Snapshot) -> BootTrace.Snapshot,
     private val onWatchdog: () -> Unit,
     private val onHidden: () -> Unit,
 ) {
@@ -50,8 +53,9 @@ class SplashController(
     private fun <T : View> view(id: Int): T = root.findViewById(id)
 
     private val body = view<View>(R.id.splashBody)
-    private val ring = view<SplashRingView>(R.id.splashRing)
+    private val ring = view<CircularProgressIndicator>(R.id.splashRing)
     private val status = view<TextView>(R.id.splashStatus)
+    private var lastFailed: Boolean? = null
     private val elapsed = view<TextView>(R.id.splashElapsed)
     private val percent = view<TextView>(R.id.splashPercent)
     private val detail = view<TextView>(R.id.splashDetail)
@@ -59,7 +63,6 @@ class SplashController(
     private val stepsPanel = view<View>(R.id.splashStepsPanel)
     private val steps = view<TextView>(R.id.splashSteps)
 
-    private val modeBadge = view<View>(R.id.splashModeBadge)
     private val modeDot = view<View>(R.id.splashModeDot)
     private val modeTitle = view<TextView>(R.id.splashModeTitle)
     private val modeSub = view<TextView>(R.id.splashModeSub)
@@ -106,7 +109,7 @@ class SplashController(
     private val exit = Runnable {
         if (!disposed) {
             body.animate().cancel()
-            ring.stopMotion()
+            ring.visibility = View.INVISIBLE
             if (ValueAnimator.areAnimatorsEnabled()) {
                 root.animate()
                     .alpha(0f)
@@ -144,7 +147,7 @@ class SplashController(
             toggle.setText(
                 if (expanded) R.string.splash_hide_steps else R.string.splash_show_steps,
             )
-            if (expanded) renderSteps(BootTrace.snapshot.value)
+            if (expanded) renderSteps(snapshotForDisplay(BootTrace.snapshot.value))
         }
 
         render(BootTrace.snapshot.value)
@@ -180,8 +183,9 @@ class SplashController(
     }
 
     /** 渲染一帧。UI 线程调用。 */
-    fun render(snapshot: BootTrace.Snapshot) {
+    fun render(rawSnapshot: BootTrace.Snapshot) {
         if (disposed || closing) return
+        val snapshot = snapshotForDisplay(rawSnapshot)
         renderMode()
 
         val stage = snapshot.stage
@@ -199,9 +203,11 @@ class SplashController(
                 BootTrace.Stage.FAILED -> R.string.splash_failed
             },
         )
-        status.setTextColor(
-            activity.getColor(if (failed) R.color.splash_failure else R.color.splash_text),
-        )
+        status.setTextColor(MaterialColors.getColor(
+            status,
+            if (failed) androidx.appcompat.R.attr.colorError
+            else com.google.android.material.R.attr.colorOnSurface,
+        ))
 
         // 耗时行：只在文本真的变化时 setText，避免每帧重排
         val elapsedText = activity.getString(
@@ -216,7 +222,27 @@ class SplashController(
         // 进度环：只在传输类阶段用确定进度
         val transfer = stage == BootTrace.Stage.DOWNLOADING || stage == BootTrace.Stage.EXTRACTING
         val fraction = if (transfer) install.fraction?.takeIf { it.isFinite() } else null
-        ring.setState(fraction, failed)
+        // A static arc remains visible when system animations are disabled or startup fails.
+        val indeterminate = fraction == null && !failed && ValueAnimator.areAnimatorsEnabled()
+        if (ring.isIndeterminate != indeterminate) {
+            // ProgressBar forbids switching modes while visible; hide first.
+            ring.visibility = View.INVISIBLE
+            ring.isIndeterminate = indeterminate
+            ring.visibility = View.VISIBLE
+        }
+        ring.contentDescription = status.text
+        if (lastFailed != failed) {
+            lastFailed = failed
+            ring.setIndicatorColor(MaterialColors.getColor(
+                ring,
+                if (failed) androidx.appcompat.R.attr.colorError
+                else androidx.appcompat.R.attr.colorPrimary,
+            ))
+        }
+        if (!indeterminate) {
+            val progress = fraction ?: 0.25f
+            ring.setProgressCompat((progress * 10000).toInt(), false)
+        }
         percent.text = if (fraction != null) {
             activity.getString(
                 R.string.splash_ui_phase_percent,
@@ -279,7 +305,7 @@ class SplashController(
         root.removeOnLayoutChangeListener(widthListener)
         root.animate().cancel()
         body.animate().cancel()
-        ring.stopMotion()
+        ring.visibility = View.INVISIBLE
         toggle.setOnClickListener(null)
     }
 
@@ -327,19 +353,8 @@ class SplashController(
         } else {
             activity.getString(subRes)
         }
-        val tint = activity.getColor(
-            when {
-                !resolved -> R.color.splash_text_muted
-                linux -> R.color.splash_mode_linux_tint
-                else -> R.color.splash_mode_native_tint
-            },
-        )
-        val badgeBg = activity.getColor(
-            when {
-                !resolved -> R.color.splash_mode_pending
-                linux -> R.color.splash_mode_linux
-                else -> R.color.splash_mode_native
-            },
+        val tint = MaterialColors.getColor(
+            modeTitle, com.google.android.material.R.attr.colorOnSecondaryContainer,
         )
 
         modeTitle.setText(titleRes)
@@ -350,12 +365,6 @@ class SplashController(
         modeDot.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(tint)
-        }
-        // 徽章底整块重画：不能只 setColor，否则会丢掉 XML 里的描边
-        modeBadge.background = GradientDrawable().apply {
-            cornerRadius = dp(12).toFloat()
-            setColor(badgeBg)
-            setStroke(dp(1).coerceAtLeast(1), (tint and 0x00FFFFFF) or 0x33000000)
         }
     }
 

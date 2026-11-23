@@ -1,12 +1,12 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.res.ColorStateList
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 结构化报告弹窗（v1.4.45）：状态徽章 + 分项列表，替代 `setMessage` 纯文本堆砌。
@@ -119,13 +119,13 @@ object ReportDialog {
             textCol.addView(TextView(activity).apply {
                 text = item.title
                 textSize = 14f
-                setTextColor(activity.getColor(R.color.text_primary))
+                setTextColor(activity.dshColor(R.attr.dshTextPrimary, R.color.text_primary))
             })
             if (item.detail.isNotBlank()) {
                 textCol.addView(TextView(activity).apply {
                     text = item.detail
                     textSize = 12f
-                    setTextColor(activity.getColor(R.color.text_secondary))
+                    setTextColor(activity.dshColor(R.attr.dshTextSecondary, R.color.text_secondary))
                 })
             }
             row.addView(
@@ -141,7 +141,7 @@ object ReportDialog {
             ) {
                 list.addView(TextView(activity).apply {
                     setBackgroundResource(R.drawable.bg_status_chip)
-                    backgroundTintList = ColorStateList.valueOf(activity.getColor(R.color.divider))
+                    backgroundTintList = ColorStateList.valueOf(activity.dshColor(R.attr.dshDivider, R.color.divider))
                     setPadding(0, 0, 0, 0)
                 }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
             }
@@ -151,7 +151,7 @@ object ReportDialog {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
         )
 
-        AlertDialog.Builder(activity)
+        MaterialAlertDialogBuilder(activity)
             .setTitle(title)
             .setView(box)
             .setPositiveButton(android.R.string.ok, null)
@@ -162,7 +162,6 @@ object ReportDialog {
             }
             .create()
             .apply {
-                setOnShowListener { window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded) }
                 show()
             }
     }

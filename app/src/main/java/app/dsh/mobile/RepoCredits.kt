@@ -60,10 +60,11 @@ object RepoCredits {
         ),
 
         // —— 工具链与 rootfs ——
-        // 扩展中心那 57 个扩展**全部**从 Termux 仓库实时取（不预打包），
+        // 扩展中心那 58 个扩展**全部**从 Termux 仓库实时取（不预打包），
         // 所以这一条代表的是它的整条供给链，不只是「一个工具链来源」。
+        // 数量会随目录增减而变，这里只是给人看的量级，不参与任何断言。
         Repo(
-            "Termux packages (extension centre: all 57 packages, fetched live)",
+            "Termux packages (extension centre: all packages, fetched live)",
             "https://github.com/termux/termux-packages",
         ),
         Repo("termux-app (terminal-view widget)", "https://github.com/termux/termux-app"),
@@ -96,7 +97,7 @@ object RepoCredits {
 
         // —— 社区插件源：这些是**代码里真的内置/接线**的（预装、桥接、更新源）——
         //
-        // 注意：扩展中心那 57 个**不逐个列**。它们是 Termux 仓库里的普通软件包
+        // 注意：扩展中心的近 60 个条目**不逐个列**。它们是 Termux 仓库里的普通软件包
         // （python / gcc / ffmpeg / radare2 …），上游署名在上面的 termux-packages
         // 一条里；逐个列会把关于页变成一张三百行的软件清单，对用户没有信息量。
         Repo("dsh-pet-bridge (desktop pet bridge)", "https://github.com/XiaoPb/dsh-pet-bridge"),

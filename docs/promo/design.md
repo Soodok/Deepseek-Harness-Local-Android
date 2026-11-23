@@ -10,7 +10,7 @@
 
 文案使用 DSH Mobile、DeepSeek Harness. Now in your pocket.、完整 Agent 引擎，在 Android 上运行。卖点为 No Root、No Termux、19 Extensions；前者对应默认普通模式，19 项指按需安装的环境扩展。不使用完全离线大模型或所有数据永不离开设备的表述。
 
-实际截图：`E:/Deepeek harness/_build_v128/emu35-toolbar.png`（1080 × 2400，真实欢迎界面）与 `E:/Deepeek harness/_build_v128/emu44-tools.png`（1080 × 2400，当前扩展中心）。保留 UI 内容，只作缩放、裁去模拟器状态栏并置入手机框。装饰标签是海报设计元素。
+实际截图：`docs/promo/assets/emu35-toolbar.png`（1080 × 2400，真实欢迎界面）与 `docs/promo/assets/emu44-tools.png`（1080 × 2400，当前扩展中心）。保留 UI 内容，只作缩放、裁去模拟器状态栏并置入手机框。装饰标签是海报设计元素。
 
 ## 输出文件
 

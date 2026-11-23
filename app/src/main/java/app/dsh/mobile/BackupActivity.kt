@@ -1,13 +1,16 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import app.dsh.mobile.engine.ChatImportLayer
 import app.dsh.mobile.engine.ChatRecovery
+import app.dsh.mobile.engine.EngineConfig
+import com.google.android.material.materialswitch.MaterialSwitch
 
 /**
  * 备份与恢复（v1.4.46）：从设置主页数据区收拢的低频数据操作子页。
@@ -38,7 +41,7 @@ class BackupActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_backup)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // —— 数据导出（issue #31 第一步）：系统文件选择器选保存位置 ——
         exportSub = findViewById(R.id.txtExportSub)
@@ -72,6 +75,28 @@ class BackupActivity : ThemedActivity() {
             showConfigFilePicker()
         }
 
+        // —— 官方 chat 导出包导入（v1.6.0-beta.17）：开关 + 重启提示 ——
+        // 这个开关只决定引擎启动时是否多挂一层 patch（见 ChatImportLayer），
+        // 改完当场重写层文件，让「重启引擎」拿到的是新状态；引擎在跑时不重启不生效。
+        val swChatImport = findViewById<MaterialSwitch>(R.id.swChatImport)
+        val runtimeHasPlugin = java.io.File(EngineConfig.engineRoot(this), ChatImportLayer.PLUGIN_ENTRY).isFile
+        swChatImport.isChecked = DshApp.chatImportEnabled(this) && runtimeHasPlugin
+        // 运行时没带这个包时拨不动：开关能点亮但能力不存在，比灰着更误导。
+        swChatImport.isEnabled = runtimeHasPlugin
+        swChatImport.setOnCheckedChangeListener { _, checked ->
+            DshApp.setChatImportEnabled(this, checked)
+            runCatching { EngineConfig.ensureChatImportLayer(this) }
+            md3Dialog()
+                .setTitle(R.string.setting_chat_import)
+                .setMessage(R.string.setting_chat_import_restart_hint)
+                .setPositiveButton(R.string.action_restart_now) { _, _ ->
+                    (application as app.dsh.mobile.DshApp).supervisor.restart()
+                    Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         // —— 对话恢复（v1.4.4）：扫描未登记进工作区的会话，确认后登记回去 ——
         val recoverSub = findViewById<TextView>(R.id.txtRecoverSub)
         findViewById<LinearLayout>(R.id.rowRecoverChats).setOnClickListener {
@@ -89,7 +114,7 @@ class BackupActivity : ThemedActivity() {
                         recoverSub.text = getString(R.string.recover_none)
                         return@runOnUiThread
                     }
-                    AlertDialog.Builder(this)
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.setting_recover_chats)
                         .setMessage(getString(R.string.recover_confirm, result.orphans.size))
                         .setPositiveButton(R.string.recover_confirm_yes) { _, _ ->
@@ -167,7 +192,7 @@ class BackupActivity : ThemedActivity() {
             return
         }
         val labels = candidates.map { it.first + "\n" + it.third }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.setting_config_files)
             .setItems(labels) { d, which ->
                 d.dismiss()
@@ -237,7 +262,7 @@ class BackupActivity : ThemedActivity() {
                         R.string.import_done, s.sessionFiles, s.workspaceFiles, s.overwritten,
                     )
                     if (s.sessionFiles > 0 || s.workspaceFiles > 0) {
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.import_done_title)
                             .setMessage(getString(R.string.import_done_body, s.sessionFiles + s.workspaceFiles))
                             .setPositiveButton(R.string.import_done_restart) { _, _ ->
@@ -295,7 +320,7 @@ class BackupActivity : ThemedActivity() {
                         if (!s.hasRegistry) append("\n\n").append(getString(R.string.export_no_registry))
                     }
                     if (!isFinishing && !isDestroyed) {
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.setting_export_data)
                             .setMessage(msg)
                             .setPositiveButton(android.R.string.ok, null)
@@ -306,7 +331,7 @@ class BackupActivity : ThemedActivity() {
                     exportSub?.text = failed
                     // 失败也弹窗：只改行内小字很容易看漏（真机实测反馈）
                     if (!isFinishing && !isDestroyed) {
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.setting_export_data)
                             .setMessage(failed + "\n\n" + getString(R.string.export_log_hint))
                             .setPositiveButton(android.R.string.ok, null)

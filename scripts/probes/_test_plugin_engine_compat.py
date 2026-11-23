@@ -67,9 +67,10 @@ check("映射：EngineTooOld -> Compat.ENGINE_TOO_OLD",
 check("UI：安装前拦截并解释原因",
       "Result.EngineTooOld ->" in store and "plugin_engine_too_old_body" in store,
       "只标红不解释 → 用户以为是插件坏了")
+# v1.8.0：静态色改走 dshColor(...)，判据钉住「warning 语义」而不是字面形式
 check("UI：用 warning 色而非 danger（不是错误，是版本落后）",
-      'Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old) to getColor(R.color.warning)'
-      in store)
+      "getString(R.string.plugin_compat_engine_old) to dshColor(R.attr.dshWarning, R.color.warning)" in store
+      or "getString(R.string.plugin_compat_engine_old) to getColor(R.color.warning)" in store)
 
 # ---------------------------------------------------------------- 文案三语
 for loc in ("values", "values-zh-rCN", "values-de"):

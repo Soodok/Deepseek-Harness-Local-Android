@@ -464,7 +464,17 @@ class LinuxEngineLauncher(private val ctx: Context) {
         //   内层 `env -i` 清掉，所以真正生效的是 [ChrootArgv.buildEngine] 里那份。
         //   这里把 env 也一并传给 buildEngine，保证两边是同一份值。
         if (Sandbox.resolve(ctx) == Sandbox.CHROOT) {
-            val envMap = envVars
+            // ★chroot 模式必须**剔除** DSH_TERMINAL_*（v1.8.3）。
+            //
+            // 那四个量是给「引擎在宿主命名空间」的 seccomp 模式用的：node-pty 兼容层
+            // 读到它们会把 `exec shell` 改写成「经 dsh_alpine 进容器再 exec」。
+            // 而 chroot 模式下引擎**本来就跑在 rootfs 里**，再包一层等于在容器里
+            // 再起一个容器：rootfs / interp / bind 全是**宿主路径**，在 chroot 内
+            // 根本不存在 → 终端起不来（或退化成不可用）。
+            //
+            // 判断依据不是「有没有设变量」，而是「这一层是否已经在容器内」。
+            val envForChroot = envVars.filterNot { it.startsWith("DSH_TERMINAL_") }
+            val envMap = envForChroot
                 .mapNotNull { line ->
                     val i = line.indexOf('=')
                     if (i <= 0) null else line.substring(0, i) to line.substring(i + 1)
@@ -486,7 +496,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
                 Log.i(TAG, "engine via ${ChrootArgv.describe(chrootArgv)}")
                 return LaunchSpec(
                     argv = chrootArgv,
-                    env = envVars,
+                    env = envForChroot,
                     cwd = workspaces,
                     guestCwd = "/ws",
                 )
@@ -669,6 +679,34 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add("TERM=xterm-256color")
             add("DSH_HOME=/dsh")
             // 关掉宿主 bionic 的库路径：容器内是 musl
+            //
+            // ★DNS 免 root 桥接的端口必须显式传进终端会话。
+            //
+            // musl 的 getaddrinfo 把 DNS 端口硬编码成 53，容器的 resolv.conf 因此
+            // 只写不带端口的 `nameserver 127.0.0.1`；真实端口靠 loader 双向改写
+            // （出程 53 → <port>，回程 <port> → 53，见 CMakeLists.txt 的 DNS 桥接
+            // 注释），端口号从 DSH_DNS_PORT 读取。
+            //
+            // 漏传的后果不是「DNS 变慢」而是彻底失效：端口没被改写，查询照样发往
+            // 127.0.0.1:53，而 53 是特权端口、App uid 绑不上，于是无人监听。
+            // 现场报错是
+            //     ERROR: tree-2.2.1-r0: temporary error (try again later)
+            // —— 看起来像镜像站故障，实际与网络无关。真机单变量对照确认：
+            // 终端内 `export DSH_DNS_PORT=<port>` 后同一条 `apk add` 立即成功
+            // （OK: 81 MiB in 40 packages），`unset` 后立刻退回 temporary error。
+            //
+            // 本函数长期只给五项（PATH/HOME/TMPDIR/TERM/DSH_HOME），而
+            // [buildEngineArgv] 给十九项，于是引擎进程内联网正常、终端里全废。
+            // [LinuxContainerRunner] 的同名注入早已存在（见其 241 行注释），
+            // 说明这是同一个机制第三次漏接线 —— 新增入口时务必核对这张表。
+            //
+            // 取不到端口时当场重绑一次：代理一旦被看门狗判定失效就会 stop()，
+            // 此后 currentPort() 返回 0，静默不注入等于让整条链路哑掉。
+            val dnsPort = LinuxDnsProxy.currentPort().takeIf { it > 1023 }
+                ?: runCatching { LinuxDnsProxy.start(ctx) }
+                    .getOrDefault(0)
+                    .takeIf { it > 1023 }
+            dnsPort?.let { add("DSH_DNS_PORT=$it") }
         }
 
         return LaunchSpec(

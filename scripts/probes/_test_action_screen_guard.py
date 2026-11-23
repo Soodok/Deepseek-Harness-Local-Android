@@ -25,10 +25,7 @@ import os
 import re
 import sys
 
-# ★不能写死本地 worktree 路径：曾经是 ROOT = "E:/tmp/wt-guard"（并行会话的临时目录），
-#   在本机能跑，一到 GitHub Actions（ubuntu）就全组失败 —— 而失败信息只是
-#   「Run regression probes」，看不出是路径问题，导致 i18n-check 连红多轮。
-#   按文件位置回溯三层：scripts/probes/x.py → 仓库根。
+# 按脚本位置定位仓库根，避免依赖某台机器上的绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BRIDGE = ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"
 DIALOG = ROOT + "/app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt"

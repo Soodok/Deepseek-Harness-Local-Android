@@ -146,7 +146,9 @@ def main():
     # 2026-11-07 on-device: a second identical `when` condition makes the later
     # branch unreachable in Kotlin - no compiler error, no warning. The status bar
     # still read "engine degraded, 3 unavailable" while the notice never appeared.
-    _healthy_branches = main.count(
+    render_body = main.split('private fun render(state: EngineSupervisor.State)', 1)[-1]
+    render_body = render_body.split('private fun showDegradedNotice(', 1)[0]
+    _healthy_branches = render_body.count(
         'is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode ->')
     ok(_healthy_branches == 1,
        "[C2] exactly one Healthy/SafeMode branch in the state when()",

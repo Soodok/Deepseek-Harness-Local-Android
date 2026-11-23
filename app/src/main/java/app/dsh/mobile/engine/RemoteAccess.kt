@@ -310,7 +310,11 @@ object RemoteAccess {
     fun lanAddresses(): List<String> = LanAddress.all()
 
     /**
-     * 给用户看的状态摘要（UI 与 `/remote/status` 共用一份，避免两处口径分叉）。
+     * 给用户看的状态摘要。
+     *
+     * ⚠️ 这里**没有**对应的 HTTP 路由：旧的 KDoc 写「UI 与 `/remote/status` 共用一份」，
+     * 但那个端点从未实现过（summary() 在桥里零调用方）。保留这个函数是给未来接一个
+     * 只读状态端点用的；要接就两边一起改，不要再单方面在注释里宣布它存在。
      */
     fun summary(ctx: Context): org.json.JSONObject = org.json.JSONObject().apply {
         put("enabled", isEnabled(ctx))

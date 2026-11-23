@@ -239,8 +239,58 @@ Android 没有桌面端的系统文件夹选择框，DSH 内核固定使用 **br
 - SSH 主机与凭据存于应用私有目录（`$DSH_HOME/dsh-ssh.json`，0600）；默认不落盘密码，
   `secretStorage: vault` 时才加密保存。
 - 插件的 REST 路由（`/api/dsh-ssh/*`、`/api/dsh-hardssh/*`）仅限回环并做同源校验。
-- 引擎只监听 `127.0.0.1`；远程访问能力来自**出站** SSH 连接，不会把手机变成公开入口。
+- 默认状态下引擎与桥只监听 `127.0.0.1`；远程 SSH 能力来自**出站**连接。
+  ⚠️ 例外：设置里「远程访问手机能力」打开后，能力桥会改绑 `0.0.0.0:3083` 并另开
+  `0.0.0.0:3091`（配对/门脚本分发），此时手机在局域网内是可达的 ——
+  只接受配对密钥，且只接受私网来源，但**确实不再是纯回环**。用完就关掉开关。
 - 远端路径收敛在绑定的 `remoteRoot` 内；相对路径禁止 `..`，符号链接逃逸按错误拒绝。
+
+## Windows 远端（半支持，实测边界）
+
+Windows + OpenSSH 的服务器**可以绑定为工作区，文件类工具可用，命令类工具不支持**。
+这条边界是实测出来的，不是推测（设备侧证据见下）。
+
+**支持的输入写法**（都收敛到同一个根）：
+
+| 用户写法 | 收敛结果 |
+|---|---|
+| `C:/Users/me` | `/C:/Users/me` |
+| `C:\Users\me` | `/C:/Users/me` |
+| `/c:/Users/me` | `/C:/Users/me`（盘符大写） |
+| `C:/Users/me/` | `/C:/Users/me`（去尾斜杠） |
+
+根包含判定在 Windows 根下按大小写不敏感比较（Win32 OpenSSH 的 `realpath`
+不一定折叠盘符，实测 `/c:/Users/me` 会原样返回小写），POSIX 根仍保持敏感。
+
+**可用**：`read` / `write` / `edit` / `glob` / `grep` —— 它们走纯 SFTP，
+不依赖远端 shell。搜索阶梯自带纯 SFTP 兜底，所以宿主机没有 ripgrep 也能答。
+
+**不可用**：`bash` / 子进程 / `ssh_exec` 类命令执行。会得到明确报错：
+
+```
+subprocess-ssh: '/C:/Users/me' 在 Windows 主机上。当前版本只适配了 SFTP 文件读写/搜索，
+命令执行层（bash / 子进程）尚未适配 cmd.exe / pwsh，请改用文件类工具。
+```
+
+为什么不硬撑：插件把所有命令包成
+`if command -v timeout ...; then timeout ... "${SHELL:-/bin/sh}" -c ...`，
+cmd.exe 不认这套语法，会在远端直接语法错误，连降级机会都没有。
+
+**为什么是这个边界**：客户端补丁（`scripts/patch-hardssh-windows-paths.py`）在打包时
+注入，把路径方言收敛与大小写折叠做成 helper，并在命令层显式拒绝。上游
+`ssh/capabilities/service.ts` 的 `classifyPlatform` 其实能识别 `windows`，
+但目前无人消费；`remote/remote-subprocess.ts` 仍把 `{platform: 'posix'}` 写死。
+
+**分期计划**（上游未做，本仓库只落地 P0/P1）：
+P0 命令层明确报错（已做）→ P1 路径层方言化 + `path.win32` 语义（已做）→
+P2 命令层统一走 `pwsh -EncodedCommand <base64-UTF16LE>`（可绕开引号转义，未做）→
+P3 探测脚本按方言分版（未做）。
+
+**实测依据**（Windows 11 + OpenSSH_for_Windows_9.5，客户端 Android 14 / x86_64）：
+`C:/Users/me` 与 `C:\Users\me` 两种写法在未打补丁的 0.2.13 上均报
+`root-mismatch: remote root must be an absolute POSIX path`；打补丁后四种写法
+都能 realpath / writeFile / stat / readFile / readdir / rename / unlink 通过，
+越界路径与前缀同名兄弟目录（`/C:/Users/me2`）都被正确拒绝。
 
 ## 排障
 

@@ -2,13 +2,13 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
+    android:background="?attr/dshBg"
     android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:background="@color/bg"
+        android:background="?attr/dshBg"
         android:elevation="2dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
@@ -28,7 +28,7 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/pet_title"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/dshTextPrimary"
             android:textSize="20sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -60,7 +60,7 @@
                 android:layout_marginTop="18dp"
                 android:lineSpacingExtra="3dp"
                 android:text="@string/pet_pack_license"
-                android:textColor="@color/text_muted"
+                android:textColor="?attr/dshTextMuted"
                 android:textSize="11sp" />
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>

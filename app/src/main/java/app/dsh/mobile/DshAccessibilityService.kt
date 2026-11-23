@@ -344,9 +344,12 @@ class DshAccessibilityService : AccessibilityService() {
             StatusOverlay.flashNotice(getString(R.string.voice_need_permission), 4_000L)
             return
         }
-        // 三个通道任一可用就放行（优先级见 listenIntoPanel）：
-        // 系统识别 → 云端 API（已配 key）
-        val usable = AsrManager.isAvailable(this) || CloudAsr.isConfigured(this)
+        // Only check the selected channel; unselected configured APIs must not be used.
+        val usable = when (AsrManager.voiceMode(this)) {
+            AsrManager.VoiceMode.SYSTEM -> AsrManager.isAvailable(this)
+            AsrManager.VoiceMode.API -> CloudAsr.isConfigured(this)
+            AsrManager.VoiceMode.LEGACY -> AsrManager.isAvailable(this) || CloudAsr.isConfigured(this)
+        }
         if (!usable) {
             StatusOverlay.flashNotice(getString(R.string.voice_no_service), 4_000L)
             return
@@ -465,32 +468,23 @@ class DshAccessibilityService : AccessibilityService() {
     private fun listenIntoPanel() {
         val panel = voicePanel
 
-        // 通道优先级（v1.2.75，主人决定去掉本地模型）：
-        //   ① 系统自带识别（零配置、离线、质量好）—— 有就用它
-        //   ② 系统没有 → 云端 API（免费或自建，只要 OpenAI 兼容即可）
-        // 不再保留离线 Vosk：small 模型质量太差，大模型（228MB）又不划算，
-        // 本项目追求"干更多事"而非塞满体积（主人决策）。
-        if (AsrManager.isAvailable(this)) {
-            startSystemListening(panel)
+        val mode = AsrManager.voiceMode(this)
+        if (mode != AsrManager.VoiceMode.API && AsrManager.isAvailable(this)) {
+            startSystemListening(panel, allowCloudFallback = mode == AsrManager.VoiceMode.LEGACY)
             return
         }
-        if (CloudAsr.isConfigured(this)) {
+        if (mode != AsrManager.VoiceMode.SYSTEM && CloudAsr.isConfigured(this)) {
             startCloudListening(panel)
             return
         }
 
-        // 两条路都不可用：明确告诉用户去配云端 API（设置页有入口）
+        // 所选通道不可用。
         panel?.setHint(getString(R.string.voice_no_service))
         StatusOverlay.setListening(false)
     }
 
-    /**
-     * ① 系统自带识别（首选）。
-     *
-     * 系统 SpeechRecognizer 通常自带离线包且质量好、零配置、不联网 ——
-     * 只要设备有识别服务就用它（主人指定「软件优先使用系统自带识别」）。
-     */
-    private fun startSystemListening(panel: VoicePanel?) {
+    /** 系统服务可自行联网；EXTRA_PREFER_OFFLINE 只是提示，不是隐私保证。 */
+    private fun startSystemListening(panel: VoicePanel?, allowCloudFallback: Boolean) {
         StatusOverlay.setListening(true)
         recordingForBuzz = true   // 与 buzzStart() 配对
         startWatchdog()           // 面板消失即释放麦克风
@@ -511,7 +505,7 @@ class DshAccessibilityService : AccessibilityService() {
             onError = { msg ->
                 // 系统识别中途失败（如没装离线包）→ 若配了云端，自动切过去接着听
                 Log.w("DshA11y", "system asr error: $msg")
-                if (CloudAsr.isConfigured(this)) {
+                if (allowCloudFallback && AsrManager.voiceMode(this) == AsrManager.VoiceMode.LEGACY && CloudAsr.isConfigured(this)) {
                     // ⚠️ v1.2.92：切通道前**清空面板里系统识别的残留**。
                     // 云端通道是「追加」语义，旧版直接切过去 → 系统识别留下的半句
                     // 会和云端结果拼在一起，主人实测「一次性复制两段发出去」。
@@ -1415,8 +1409,46 @@ class DshAccessibilityService : AccessibilityService() {
         return Triple(pixels, w, h)
     }
 
+    /**
+     * 截图并编码成 PNG base64。
+     *
+     * 与 [screenshotArgb] 共用同一套实测结论（见其注释），但这里是**对外端点**
+     * （`GET /screenshot`），必须自己处理三件 [screenshotArgb] 已经处理过的事 ——
+     * 早先它三件都没做，于是真机实测并发两张截图必有一张 400：
+     *
+     * 1. **系统节流**：`takeScreenshot` 有 `INTERVAL_TIME_SHORT(3)` 配额，一次失败
+     *    就返回 null 会让调用方看到「screenshot failed (timeout or unsupported)」，
+     *    分不清是节流还是真不可用。这里按 450ms 退避重试 3 次。
+     * 2. **悬浮窗会截进画面**（用户实测反馈）：截图前临时隐藏自己的悬浮窗，
+     *    用 try/finally 保证恢复。
+     * 3. **并发互斥**：桥的请求池是 4 线程，两个 `/screenshot` 同时进来会互相
+     *    吃掉配额，结果一成一败。加锁串行化，后到的排队而不是失败。
+     *
+     * @return (宽, 高, PNG base64)；失败返回 null
+     */
     fun screenshotBase64(timeoutMs: Long = 3000L): Triple<Int, Int, String>? {
         if (Build.VERSION.SDK_INT < 30) return null
+        // 串行化整段（含浮窗隐藏与重试）：节流配额是全局的，并行只会互相拖垮。
+        synchronized(shotLock) {
+            val svcForAvoid = instance
+            StatusOverlay.beginCaptureAvoid(svcForAvoid)
+            try {
+                repeat(3) { attempt ->
+                    screenshotBase64Once(timeoutMs)?.let { return it }
+                    if (attempt < 2) {
+                        // 抓到 450ms 以外再试，与 screenshotArgb 的退避口径一致
+                        try { Thread.sleep(450L) } catch (e: InterruptedException) { return null }
+                    }
+                }
+                return null
+            } finally {
+                StatusOverlay.endCaptureAvoid(svcForAvoid)
+            }
+        }
+    }
+
+    /** 单次取帧 + PNG 编码（不含重试与浮窗处理，见 [screenshotBase64]）。 */
+    private fun screenshotBase64Once(timeoutMs: Long): Triple<Int, Int, String>? {
         val latch = CountDownLatch(1)
         var bmp: Bitmap? = null
         val callback = object : TakeScreenshotCallback {
@@ -1424,12 +1456,14 @@ class DshAccessibilityService : AccessibilityService() {
                 runCatching {
                     val hw = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
                     bmp = hw?.copy(Bitmap.Config.ARGB_8888, false)
+                    hw?.recycle()
                 }
                 screenshot.hardwareBuffer.close()
                 latch.countDown()
             }
 
             override fun onFailure(errorCode: Int) {
+                Log.w("DshA11y", "screenshotBase64 failed: errorCode=$errorCode")
                 latch.countDown()
             }
         }
@@ -1438,8 +1472,15 @@ class DshAccessibilityService : AccessibilityService() {
         val bitmap = bmp ?: return null
         val baos = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-        return Triple(bitmap.width, bitmap.height, Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP))
+        val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+        val w = bitmap.width
+        val h = bitmap.height
+        bitmap.recycle()
+        return Triple(w, h, b64)
     }
+
+    /** 截图串行锁（见 [screenshotBase64] 第 3 条）。 */
+    private val shotLock = Any()
 
     /** 屏幕上是否存在文本/描述包含 q 的节点（/wait 的服务端判定） */
     fun screenContains(q: String): Boolean {

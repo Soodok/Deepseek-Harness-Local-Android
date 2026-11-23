@@ -139,12 +139,73 @@ object ProfilePluginProvisioner {
         }.onFailure { Log.w(TAG, "$pkg: cannot record pending state: ${it.message}") }
     }
 
+    /**
+     * 重新释放**已被删掉的内置暂存 tgz**（v1.7.32）。
+     *
+     * 为什么需要它：内置插件首装后，profile 的 `package.json` 里留下
+     * `"<pkg>": "file:<filesDir>/plugin-staging/<pkg>-<ver>-staged.tgz"`，
+     * 而 lockfile 的 importers/packages/snapshots 三处都指向同一路径。这个
+     * tgz **一旦消失**（用户清缓存、旧版本的成功路径删过它、或升级覆盖时被
+     * 误删），pnpm 之后任何操作都会死在
+     *     Could not install from ".../xxx-staged.tgz" as it does not exist
+     * 且 `pnpm install --fix-lockfile` 也救不回来（目标不存在时它 exit 1、
+     * 一个字节都不改，真机实测）。
+     *
+     * 修法只有一条：把 APK 里那份同名资产**再解出来**。文件内容由 sha256
+     * 校验，与当初装上的完全一致，所以不需要跑 pnpm —— 路径一恢复，
+     * lockfile 立刻重新自洽。
+     *
+     * @return 实际重建的文件数（0 = 没有需要修的）
+     */
+    fun restoreMissingStaged(ctx: Context): Int {
+        var restored = 0
+        for (plugin in REGISTRY) {
+            runCatching {
+                val asset = readAsset(ctx, plugin) ?: return@runCatching
+                val stagingDir = File(ctx.filesDir, "plugin-staging").apply { mkdirs() }
+                val staged = File(stagingDir, asset.tgz.removeSuffix(".tgz") + "-staged.tgz")
+                if (staged.isFile && staged.length() > 0L) return@runCatching
+                ctx.assets.open("${plugin.assetRoot}/${asset.tgz}").use { input ->
+                    staged.outputStream().use { out -> input.copyTo(out) }
+                }
+                // 与首装同一条校验：宁可重建失败，也不把半个文件留给 pnpm。
+                asset.sha256?.let { want ->
+                    val got = sha256(staged)
+                    if (!got.equals(want, ignoreCase = true)) {
+                        staged.delete()
+                        error("sha256 mismatch (got=$got want=$want)")
+                    }
+                }
+                restored++
+                Log.i(TAG, "${plugin.pkg}: restored missing staged tgz -> ${staged.name}")
+            }.onFailure {
+                Log.w(TAG, "${plugin.pkg}: restore staged tgz failed: ${it.message}")
+            }
+        }
+        return restored
+    }
+
     /** 供 EngineSupervisor 在 spawnEngine 之前调用；不抛异常。 */
     fun ensureAll(ctx: Context) {
         if (PluginKillSwitch.isRestoring(ctx)) {
             Log.i(TAG, "plugin restore in progress; skip provisioning")
             return
         }
+        // v1.7.32：开机先把**已经丢失的暂存 tgz**补回来。
+        //
+        // 装在设备上的老版本可能已经经历过多轮升级，`package.json` 里还留着
+        // `file:<staging tgz>` 这个 spec，而那个文件被清掉过（早期版本成功路径
+        // 删过它、用户清过缓存、或升级覆盖时被误删）。这种状态下 profile 是
+        // 「一次都装不了」：任何 `pnpm add` 都会死在
+        //     Could not install from ".../xxx-staged.tgz" as it does not exist
+        // 而 `--fix-lockfile` 也救不回来（目标不存在时 exit 1，实测）。
+        //
+        // 放在开机而不是「等第一次安装失败再补」，是因为这个故障是**持久**的：
+        // 不补就每次都要失败一次才自愈，用户看到的是「插件永远装不上」。
+        // 代价极小：只对两个内置插件各判一次文件是否存在。
+        runCatching { restoreMissingStaged(ctx) }
+            .onSuccess { if (it > 0) Log.i(TAG, "boot: restored $it missing staged tgz") }
+            .onFailure { Log.w(TAG, "boot: restore staged tgz failed: ${it.message}") }
         for (plugin in REGISTRY) {
             runCatching { applyPending(ctx, plugin) }
                 .onFailure { Log.w(TAG, "${plugin.pkg}: pending apply failed: ${it.message}") }

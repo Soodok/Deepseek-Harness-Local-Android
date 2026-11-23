@@ -40,17 +40,13 @@ class AsrAppActivity : ThemedActivity() {
         OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_asr_app)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // ---- 主卡片：我们的识别服务（已装 → 打开；未装 → 去 Releases 下载）----
-        val installed = isPluginInstalled()
         findViewById<TextView>(R.id.oursTitle).setText(R.string.asrapp_ours)
         findViewById<TextView>(R.id.oursDesc).setText(R.string.asrapp_ours_desc)
-        findViewById<TextView>(R.id.oursAction).setText(
-            if (installed) R.string.asrapp_installed_open else R.string.asrapp_download
-        )
         findViewById<View>(R.id.oursCard).setOnClickListener {
-            if (installed) openPlugin() else openUrl(RELEASE_PAGE)
+            if (isPluginInstalled()) openPlugin() else openUrl(RELEASE_PAGE)
         }
 
         // ---- 四步教程 ----
@@ -67,6 +63,13 @@ class AsrAppActivity : ThemedActivity() {
         findViewById<TextView>(R.id.repoTitle).setText(R.string.asrapp_repo_title)
         findViewById<TextView>(R.id.repoDesc).setText(R.string.asrapp_repo_desc)
         findViewById<View>(R.id.repoCard).setOnClickListener { openUrl(REPO_PAGE) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        findViewById<TextView>(R.id.oursAction).setText(
+            if (isPluginInstalled()) R.string.asrapp_installed_open else R.string.asrapp_download
+        )
     }
 
     private fun bindStep(titleId: Int, bodyId: Int, titleRes: Int, bodyRes: Int) {

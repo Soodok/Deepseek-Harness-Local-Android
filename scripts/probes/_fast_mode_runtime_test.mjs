@@ -23,6 +23,8 @@ if (!PLUGIN) {
   console.error("usage: node fast_mode_runtime_test.mjs <plugin.mjs>");
   process.exit(2);
 }
+/** 源码原文，供「某段写法必须不存在」这类结构断言用。 */
+const SRC = fs.readFileSync(PLUGIN, "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -182,20 +184,49 @@ function makeCtx(reasoningEfforts = ["off", "low", "high", "xhigh"], strictProxy
   };
 }
 
-/** 加载插件。先把它拷到一个有 engine 目录结构的位置，好让能力探测能命中。 */
-async function loadPlugin(engineWithAgentModel) {
+/**
+ * 加载插件。先把它拷到一个有 engine 目录结构的位置，好让能力探测能命中。
+ *
+ * @param engineWithAgentModel - 引擎的 dsh-agent 里有没有 AgentModel 类。
+ * @param opts.agentLiteral      - 覆盖 dsh-agent 里那行的写法，用于负对照：
+ *   模拟「换 bundler 后类名字面量变了、但类还在」的情形（issue #118 的成因）。
+ * @param opts.loopContract      - 引擎的 dsh-agent-loop 里有没有硬契约断言文案。
+ *   true 才写那两条文案；false/省略时写一份没有任何断言的假 agent-loop。
+ */
+async function loadPlugin(engineWithAgentModel, opts = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fm-"));
   const engineRoot = path.join(tmp, "engine");
   const pluginDir = path.join(engineRoot, "android-plugins");
   fs.mkdirSync(pluginDir, { recursive: true });
-  // 造一个假 dsh-agent 包，让 hasAgentModel() 的探测能读到（或不读到）
+  // 造一个假 dsh-agent 包，让能力探测能读到（或不读到）
   const agentLib = path.join(engineRoot, "lib", "node_modules", "@deepseek-ai", "dsh-agent", "lib");
   fs.mkdirSync(agentLib, { recursive: true });
+  // ★ 这段话里绝对不能出现 "AgentModel" 这个词 —— 旧版注释写的是
+  //   "0.2.1-rc.x: no AgentModel"，探测用 includes("AgentModel") 会命中注释，
+  //   把老引擎误判成新引擎（探针自己造成的假阳性）。
   fs.writeFileSync(
     path.join(agentLib, "index.js"),
     engineWithAgentModel
-      ? "var AgentModel = class { constructor(){} };\nexport { AgentModel };\n"
-      : "// 0.2.1-rc.x: no AgentModel\nexport const x = 1;\n",
+      ? (opts.agentLiteral || "var AgentModel = class { constructor(){} };\nexport { AgentModel };\n")
+      : "// 0.2.1-rc.x: this engine has no model-selection class\nexport const x = 1;\n",
+  );
+  // 造一个假 dsh-agent-loop 包：硬契约判据读的就是这里的断言文案
+  const loopLib = path.join(engineRoot, "lib", "node_modules", "@deepseek-ai", "dsh-agent-loop", "lib");
+  fs.mkdirSync(loopLib, { recursive: true });
+  fs.writeFileSync(
+    path.join(loopLib, "index.js"),
+    opts.loopContract
+      ? [
+          "// 0.2.2-rc.x: prepareRequest 的两条硬断言",
+          "function assertProposed(proposedConfig, selection) {",
+          "  if (proposedConfig.reasoningEffort !== selection.reasoningEffort) {",
+          "    throw new Error('after step preparation fixed');",
+          "  }",
+          "  // use agent.model.select() before step preparation",
+          "}",
+          "export { assertProposed };",
+        ].join("\n")
+      : "// 0.2.1: agent/request 可以自由改 effort\nexport const x = 1;\n",
   );
   // tools 包（defineTool 会被动态 import；给个最小实现）
   const toolsLib = path.join(engineRoot, "lib", "node_modules", "@deepseek-ai", "dsh-tools", "lib");
@@ -255,13 +286,26 @@ async function loadPlugin(engineWithAgentModel) {
           JSON.stringify(agent.model.current()));
   }
 
-  // A8: fast 关掉后要撤回 off
+  // A8: fast 关掉后**不许撤回** off
+  //
+  // 2026-11-14 真机事故：撤回写成 `select({provider, model})`（不带 effort）
+  // = 回到适配器默认 high = thinking 开启，而 off 期间写进会话的 assistant
+  // 消息没有 thinking 块 → 下一轮 400：
+  //   The `content[].thinking` in the thinking mode must be passed back to the API.
+  // 历史补不回来，所以唯一安全做法是：停止强制 off，但不主动恢复思考。
   fs.unlinkSync(path.join(home, "fast-mode"));
   await new Promise((r) => setTimeout(r, 1600));
+  const beforeRevert = state.selectCalls.length;
   await runPreStepHook(hooks, agent, state);
-  check("A8 fast 关闭：撤回 off（否则用户后续都没思考了）",
-        agent.model.current().reasoningEffort !== "off",
+  check("A8 fast 关闭：不撤回 off（撤回会让下一轮 400）",
+        agent.model.current().reasoningEffort === "off",
         JSON.stringify(agent.model.current()));
+  check("A8b fast 关闭时不调用 select（一次都不能调）",
+        state.selectCalls.length === beforeRevert,
+        `${beforeRevert} -> ${state.selectCalls.length}`);
+  check("A8c fast 关闭：撤回路径已删干净（源码里没有不带 effort 的 select）",
+        !/model\.select\(\s*\{\s*provider:\s*cur\.provider,\s*model:\s*cur\.model\s*\}\s*\)/.test(SRC),
+        "不带的 effort 的 select 就是「恢复默认档位」= 那个会炸的行为");
 
   // A9: 已经在 off 且 fast 开 → 幂等，不重复 select
   fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));
@@ -398,6 +442,73 @@ async function loadPlugin(engineWithAgentModel) {
   check("C8 严格 ctx 下仍能正常探测并关掉思考（功能没被修没）",
         state.selectCalls.length === 1 && state.selectCalls[0].reasoningEffort === "off",
         "selectCalls=" + JSON.stringify(state.selectCalls));
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// ── D. issue #118 回归：类名字面量变了、但契约还在 ───────────
+//
+// 旧判据只看 dsh-agent 里有没有 `var AgentModel = class` 这个字面量。
+// 换 bundler / 换 minify 后类名写法一变，就会把「有硬契约的新引擎」误判成老引擎
+// → 挂 agent/request → 引擎 prepareRequest 每步 throw → 整轮对话失败。
+// 这一组用负对照证明：字面量变了但契约在时，仍必须挂 pre-step。
+
+{
+  const { mod, home, tmp } = await loadPlugin(true, {
+    // 类还在，但不是旧判据要的那个字面量
+    agentLiteral: "class AgentModel { constructor(){} }\nexport default AgentModel;\n",
+    loopContract: true,
+  });
+  const { hooks, ctx } = makeCtx();
+  await mod.apply(ctx);
+
+  check("D1 类名字面量变了（class AgentModel）：仍挂 agent/pre-step",
+        (hooks["agent/pre-step"] || []).length === 1,
+        "hooks=" + Object.keys(hooks).filter((k) => !k.startsWith("__")).join(","));
+  check("D2 类名字面量变了：仍不挂 agent/request（否则每步 throw）",
+        (hooks["agent/request"] || []).length === 0,
+        "agent/request 处理器数=" + (hooks["agent/request"] || []).length);
+
+  const { agent, state } = makeAgent(true, "xhigh");
+  fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));
+  await new Promise((rr) => setTimeout(rr, 1600));
+  await runPreStepHook(hooks, agent, state);
+  check("D3 类名字面量变了：fast 仍能关掉思考",
+        state.selectCalls.length === 1 &&
+          state.selectCalls[0].reasoningEffort === "off",
+        "selectCalls=" + JSON.stringify(state.selectCalls));
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+{
+  // 更极端：连 AgentModel 这个词都探不到（模拟被内联/minify 掉），但契约在。
+  // 此时必须「宁可不改也不能挂错钩子」—— 挂 agent/request 就是整轮失败。
+  const { mod, tmp } = await loadPlugin(false, { loopContract: true });
+  const { hooks, ctx } = makeCtx();
+  await mod.apply(ctx);
+
+  check("D4 只剩契约（探不到类名）：挂 agent/pre-step",
+        (hooks["agent/pre-step"] || []).length === 1,
+        "hooks=" + Object.keys(hooks).filter((k) => !k.startsWith("__")).join(","));
+  check("D5 只剩契约：绝不挂 agent/request",
+        (hooks["agent/request"] || []).length === 0,
+        "agent/request 处理器数=" + (hooks["agent/request"] || []).length);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+{
+  // 反向负对照：既没有类也没有契约（真·老引擎）→ 必须走 agent/request，
+  // 证明上面两条不是「无脑挂 pre-step」造出来的假绿。
+  const { mod, tmp } = await loadPlugin(false, { loopContract: false });
+  const { hooks, ctx } = makeCtx();
+  await mod.apply(ctx);
+
+  check("D6 真·老引擎（无类无契约）：退回 agent/request",
+        (hooks["agent/request"] || []).length === 1 &&
+          (hooks["agent/pre-step"] || []).length === 0,
+        "hooks=" + Object.keys(hooks).filter((k) => !k.startsWith("__")).join(","));
 
   fs.rmSync(tmp, { recursive: true, force: true });
 }

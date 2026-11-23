@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.Application
 import app.dsh.mobile.engine.EngineSupervisor
+import com.google.android.material.color.DynamicColors
 import app.dsh.mobile.engine.ExtensionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,20 @@ class DshApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 动态取色：官方推荐在 Application 里注册一次，由 ActivityLifecycleCallbacks
+        // 在 onActivityPreCreated 阶段套用主题覆盖层。
+        // https://developer.android.com/develop/ui/views/theming/dynamic-colors
+        //
+        // 条件：Android 12+ 且用户在「主题」页打开了动态取色。
+        // 前提是 Activity 不要自己 setTheme()，否则会把这层覆盖冲掉。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            DynamicColors.applyToActivitiesIfAvailable(
+                this,
+                com.google.android.material.color.DynamicColorsOptions.Builder()
+                    .setPrecondition { activity, _ -> ThemeAccent.dynamicEnabled(activity) }
+                    .build(),
+            )
+        }
         // 让插件兼容性检查能读到内置引擎版本（issue #66：判定插件要求的引擎
         // 版本是否高于我们内置的版本）。用 applicationContext，不泄漏 Activity。
         app.dsh.mobile.engine.NativePluginCheck.attachContext(this)
@@ -44,6 +59,18 @@ class DshApp : Application() {
             }
             prev?.uncaughtException(thread, throwable)
         }
+        // ★运行模式判定前移：进程一起来就定下能立刻确定的那一半。
+        //
+        // 原实现只在 spawnEngine 里 resolve()，实测要到冷启 1.2~2.4 秒才轮到
+        // （前面隔着孤儿回收、preflight、runtime-install、hardssh、profile-plugins），
+        // 在那之前遮罩显示「检测运行环境」。用户的原话就是「启动 1.4 秒之后运行
+        // 环境才检测出来」—— 检测本身实测只要 0~6 ms，慢的是它排队的位置。
+        //
+        // 放在这里而不是 MainActivity.onCreate：Application 先于任何 Activity，
+        // 遮罩第一帧渲染时 lastMode 已经是真值，连「检测中」那一帧都不会出现。
+        // 成本是 Linux 关闭时读一次 SharedPreferences 布尔值（微秒级）。
+        // Linux 开启时返回 false，仍由 spawnEngine 里的 resolve() 做完整探测。
+        runCatching { app.dsh.mobile.engine.EngineModeSelector.resolveEarly(this) }
         supervisor = EngineSupervisor(this)
         // v1.6.11：容器内 DNS 代理必须随进程启动，不能只挂在 readiness()。
         //
@@ -153,6 +180,23 @@ class DshApp : Application() {
         fun setUserExitedExplicitly(context: android.content.Context, exited: Boolean) {
             context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_USER_EXITED, exited).apply()
+        }
+
+        /**
+         * 官方 DeepSeek chat 导出包导入开关（v1.6.0-beta.17）。
+         *
+         * 缺省**关**：这个能力对应引擎里多挂一层 patch 层（见 ChatImportLayer），
+         * 上游注释写明 shipped profile 不含该层，属于可选能力；用户从「备份与恢复」页拨开。
+         */
+        private const val KEY_CHAT_IMPORT = "deepseek_chat_import"
+
+        fun chatImportEnabled(context: android.content.Context): Boolean =
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_CHAT_IMPORT, false)
+
+        fun setChatImportEnabled(context: android.content.Context, on: Boolean) {
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_CHAT_IMPORT, on).apply()
         }
 
         /**

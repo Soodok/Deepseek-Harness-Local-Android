@@ -3,6 +3,7 @@ package app.dsh.mobile
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.content.Intent
 import android.widget.ImageView
 import android.widget.TextView
@@ -38,9 +39,31 @@ class AboutActivity : ThemedActivity() {
         // onResume 里 UpdateDialogs.maybeShow 的就绪弹窗依赖干净状态（v1.4.56 修）。
         AppUpdatePrefs.clearStaleInstallState(this)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         findViewById<TextView>(R.id.txtVersion).text =
             getString(R.string.about_version, versionName())
+
+        // 永久关闭问题反馈：只给「关」这一个粒度。
+        // 先设初值再挂监听，否则 setChecked 会立刻回调一次、把刚读到的值又写回去。
+        val swReportOff = findViewById<android.widget.Switch>(R.id.swReportOff)
+        swReportOff.isChecked = ReportConsentGate.permanentlyDisabled(this)
+        swReportOff.setOnCheckedChangeListener { _, checked ->
+            ReportConsentGate.setPermanentlyDisabled(this, checked)
+        }
+
+        var versionTapCount = 0
+        var firstVersionTapAt = 0L
+        findViewById<TextView>(R.id.txtVersion).setOnClickListener {
+            if (DeveloperModePrefs.isEnabled(this)) return@setOnClickListener
+            val now = SystemClock.elapsedRealtime()
+            if (versionTapCount == 0 || now - firstVersionTapAt > 5_000L) { versionTapCount = 0; firstVersionTapAt = now }
+            versionTapCount += 1
+            if (versionTapCount >= 7) {
+                versionTapCount = 0
+                DeveloperModePrefs.setEnabled(this, true)
+                Toast.makeText(this, R.string.developer_options_unlocked, Toast.LENGTH_LONG).show()
+            }
+        }
 
         // fork 构建要显式声明身份：仓库地址按构建期 RepoConfig 显示，
         // 避免把 XiaoPb 的包看成上游正式包（两者签名与发版节奏都不同）。

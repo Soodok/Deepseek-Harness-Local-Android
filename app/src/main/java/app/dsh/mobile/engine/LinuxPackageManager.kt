@@ -220,6 +220,7 @@ class LinuxPackageManager(private val ctx: Context) {
         val verified = if (r.ok) true else allInstalled(packages)
         if (verified) {
             installedCache.clear()
+            healPackageFiles(packages)
             // 不再做「把绝对符号链接改成相对」那一步。
             //
             // 曾经的假设是：容器没有 chroot，绝对链接会被内核按宿主根解析。
@@ -268,6 +269,83 @@ class LinuxPackageManager(private val ctx: Context) {
                 diagnose(r.combined())
             },
         )
+    }
+
+    /**
+     * 装完包之后收拾两类「包装上了、但文件不可用」的残留。
+     *
+     * ## 真机证据（2026-11-14 / PLZ110 / Alpine 3.22）
+     *
+     * 装 `build-base` 之后 `apk info -e gcc` 认得、数据库里也有，但：
+     *
+     * ```
+     * /usr/bin/gcc:  -rw-r--r--   ← 缺 x 位，`gcc --version` 报 not found
+     * /usr/bin/as:   -rw-r--r--   ← 同上
+     * /usr/bin/ld:   -rw-r--r--   ← 同上
+     * /usr/include:  drwxr-xr-x root root   ← 属主是 root，App 写不进
+     * ```
+     *
+     * 后果链：`/usr/include` 写不进 → `apk add musl-dev` 报
+     * `failed to rename usr/include/sys/.apk.xxx to .../vt.h` 与
+     * `ERROR: 14 errors updating directory permissions` → `stdio.h` 不落地
+     * → `gcc` 编任何 C 文件都报 `fatal error: stdio.h: No such file or directory`。
+     *
+     * 手工验证过：`chmod +x /usr/bin/gcc` 后 `gcc --version` 立刻正常；
+     * `chown -R <uid> /usr/include` 后 `apk del musl-dev && apk add musl-dev`
+     * 才把 `stdio.h` 装上、`gcc` 才编得出 `C-OK`。
+     *
+     * ## 两类分开处理，因为修法完全不同
+     *
+     * | 症状 | 判据 | 谁能修 |
+     * |---|---|---|
+     * | 可执行文件缺 x 位 | 是 ELF/带 shebang 且无 x 位 | **App 自己**（属主已是自己） |
+     * | 头文件目录属主漂移 | 目录 `canWrite()` 为假 | 只有特权通道 |
+     *
+     * 第二类只在装「需要编译链的包」时才尝试 —— 那是要起 `su`/Shizuku 的
+     * 有代价操作，不该在装个 `curl` 时也走一遍。判据见
+     * [RootfsModes.wantsHeaders]。
+     *
+     * 全程静默兜错：这是一步**修补**，不该让本来成功的装包变红。
+     */
+    private fun healPackageFiles(packages: List<String>) {
+        val root = runCatching { env.rootfsDir() }.getOrNull() ?: return
+        // ① 补 x 位 —— 纯 App 域操作，无条件做（代价只是几次 listFiles）
+        val fixed = runCatching { RootfsModes.repairExecBits(root) }.getOrDefault(0)
+        if (fixed > 0) {
+            Log.w(
+                TAG,
+                "healed $fixed executable bit(s) after apk add " + packages.joinToString(",") +
+                    " (files were 0644, gcc/as/ld would report 'not found')",
+            )
+        }
+        // ② 头文件目录属主 —— 只在装编译链相关包时试
+        if (!RootfsModes.wantsHeaders(packages)) return
+        val include = java.io.File(root, "usr/include")
+        if (!include.isDirectory) return
+        if (runCatching { include.canWrite() }.getOrDefault(false)) return
+        val ok = runCatching { Privilege.normalizeOwnership(ctx, include) }.getOrDefault(false)
+        Log.w(
+            TAG,
+            "heal usr/include ownership: ok=" + ok +
+                " (apk add musl-dev fails with 'failed to rename .../vt.h' without it)",
+        )
+        if (ok) {
+            // 属主交还之后必须重装一次：上一次的 apk add 已经把包**记进数据库**了
+            // （所以 `apk info -e musl-dev` 是 yes），但文件没落地。
+            // 不 del 直接 add 是幂等跳过 —— 头文件永远不会补上。真机实测如此。
+            runCatching {
+                dbLock.withLock {
+                    runner.run("/sbin/apk", listOf("del", "musl-dev"), 120_000)
+                }
+                dbLock.withLock {
+                    runner.run(
+                        "/sbin/apk",
+                        listOf("add", "--no-progress", "--no-chown", "musl-dev"),
+                        300_000,
+                    )
+                }
+            }.onFailure { Log.w(TAG, "re-add musl-dev failed: " + it.message) }
+        }
     }
 
     /**

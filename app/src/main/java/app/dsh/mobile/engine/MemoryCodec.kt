@@ -72,6 +72,13 @@ object MemoryCodec {
         }
         // 稳定任务键：非空才写（旧文件没有这个字段，解码给空串）
         if (e.taskKey.isNotBlank()) put("taskKey", e.taskKey)
+        // 逐步截图（v1.7.x）：空的时候一个字段都不写，老读者的 JSON 与从前逐字相同
+        if (e.startShot.isNotBlank()) put("startShot", e.startShot)
+        if (e.strip.isNotBlank()) put("strip", e.strip)
+        // shots 只在「至少有一张」时写，且长度与 steps 对齐（归一在 MemoryStore.upsert 做）
+        if (e.shots.any { it.isNotBlank() }) {
+            put("shots", JSONArray().apply { for (sh in e.shots) put(sh) })
+        }
         if (withHistory && e.history.isNotEmpty()) {
             put("history", JSONArray().apply { for (r in e.history) put(encodeRevision(r)) })
         }
@@ -154,6 +161,13 @@ object MemoryCodec {
             sceneFp = stringList(o.optJSONArray("sceneFp")),
             history = if (withHistory) revisionsOf(o.optJSONArray("history")) else emptyList(),
             taskKey = o.optString("taskKey"),
+            startShot = o.optString("startShot"),
+            // ⚠️ 这里**不能**用 stringList：它会过滤掉空串，而 shots 里空串是
+            // 「这一步没有图」的**占位**，位置就是含义。用 stringList 会把
+            // `["","b.webp","c.webp"]` 读成 `["b.webp","c.webp"]`，于是第 2 步的图
+            // 被挂到第 1 步上 —— normalizeShots 只能补尾，修不回来。真·错图。
+            shots = positionalList(o.optJSONArray("shots")),
+            strip = o.optString("strip"),
         )
     }.getOrElse {
         MemoryEntry(id = "", pkg = MemoryContract.UNKNOWN_PKG, intent = "", createdAt = 0L)
@@ -434,6 +448,29 @@ object MemoryCodec {
             val v = a.opt(i) ?: continue
             val s = if (v is String) v else v.toString()
             if (s.isNotEmpty()) out.add(s)
+        }
+        return out
+    }
+
+    /**
+     * 位置敏感的字符串数组：**保留空串**。
+     *
+     * 与 [stringList] 的区别只有一个，但差别是致命的：`shots` 里空串表示
+     * 「这一步没有图」，下标就是含义。用 [stringList] 读会把 `["","b","c"]`
+     * 变成 `["b","c"]`，第 2 步的图就挂到第 1 步上（见 MemoryCodec 解码处注释）。
+     *
+     * 容忍 `null`：与空串等价（都当「这张没有」），保持位置不塌缩。
+     */
+    private fun positionalList(a: JSONArray?): List<String> {
+        if (a == null || a.length() == 0) return emptyList()
+        val out = ArrayList<String>(a.length())
+        for (i in 0 until a.length()) {
+            if (a.isNull(i)) {
+                out.add("")
+                continue
+            }
+            val v = a.opt(i)
+            out.add(if (v is String) v else v?.toString().orEmpty())
         }
         return out
     }

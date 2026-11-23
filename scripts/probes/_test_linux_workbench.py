@@ -264,6 +264,52 @@ ok("E3 成功与失败两处都写 pkgs（而不是常量 BOOTSTRAP_PACKAGES）"
    ENV_C.count("pkgs.joinToString") == 2,
    "失败分支写常量会让 attempted 标记与真实尝试不符")
 
+print("=== E2. bootstrap 标记自愈必须核对包状态（v1.7.17，真机 2026-11-20）===")
+# 真机实测的假绿：删掉 .dsh-bootstrap.gui 后重开页面，标记被按 8 个包名写回，
+# flavorPackagesReady() 从此恒真 —— 页面「已就绪 / 装 30 工具 / 磁盘 85.5 MB」，
+# 点「开始画面」得到 Xvfb: not found。根因是自愈只查 bash/curl 两个探针文件，
+# 却把 GUI 的六个额外包一起写进标记：缓存被写成事实。
+_HB = re.search(r"private fun healBootstrapMarker\([\s\S]{0,3000}?\n    }", ACT_C)
+ok("E2a 自愈函数可定位", _HB is not None, "改签名 / 改缩进会让下面的断言全部失效")
+_HB_C = _HB.group(0) if _HB else ""
+
+ok("E2b 自愈前先核对真实包状态（env.missingPackages）",
+   "env.missingPackages(" in _HB_C,
+   "只查 bash/curl 文件 = 把「文件在」外推成「额外包也装了」")
+
+ok("E2c 成功标记必须由 stillMissing.isEmpty() 守卫",
+   re.search(r"stillMissing\.isEmpty\(\)[\s\S]{0,120}?writeText\(pkgs\.joinToString", _HB_C) is not None,
+   "无条件 writeText(pkgs) 就是本次真机假绿的原样")
+
+# ⚠️ E2c 只锁「有 isEmpty 守卫」这个**形态**，锁不住守卫背后的值从哪来。
+#   实测变异：把 stillMissing 的右值换成 emptyList<String>()，E2a~E2g 全绿 ——
+#   而这恰好就是本次事故的原样（stillMissing 恒空 → 永远写成功标记）。
+#   所以必须单独钉住「stillMissing 必须真的来自 probe 的探测结果」。
+ok("E2c2 stillMissing 的右值必须来自 probe 的探测结果，不能是常量",
+   re.search(r"val\s+stillMissing\s*=\s*probe\.[A-Za-z_]", _HB_C) is not None
+   # 常量写法（emptyList() / listOf() / emptySet() 等）一律判红，不给绕过的余地
+   and re.search(r"val\s+stillMissing\s*=\s*(?:emptyList|listOf|listOfNotNull|mutableListOf|emptySet)", _HB_C) is None,
+   "stillMissing 恒空会让自愈永远写成功标记，等于把缓存又写成事实")
+
+ok("E2d 有缺包时写 attempted: 前缀（交给环境层重试）",
+   re.search(r'writeText\("attempted:" \+ pkgs\.joinToString', _HB_C) is not None,
+   "写成成功标记会让缺包永远不再重试")
+
+ok("E2e 探测失败时早退且不写任何标记",
+   re.search(r"isFailure[\s\S]{0,400}?return", _HB_C) is not None
+   and "writeText" not in (_HB_C.split("isFailure")[0] if "isFailure" in _HB_C else ""),
+   "容器起不来时既不该断言装过，也不该落 attempted 把重试堵死")
+
+ok("E2f 标记已存在时不自愈（重试归 ensureBootstrapPackages）",
+   re.search(r"bootstrapMarker\(option\)\.isFile[\s\S]{0,60}?\) return", _HB_C) is not None,
+   "每次刷新都起容器核对，代价无谓")
+
+ok("E2g 环境层暴露 missingPackages 且按 pkgManager 分派",
+   "fun missingPackages(" in ENV_C
+   and re.search(r"missingPackages\([\s\S]{0,300}?PackageManager\.APK[\s\S]{0,60}?verifyApkInstalled", ENV_C) is not None
+   and re.search(r"PackageManager\.APT[\s\S]{0,60}?verifyAptInstalled", ENV_C) is not None,
+   "UI 层拿不到包管理器状态就只能退回猜文件")
+
 ok("D8 GUI 形态的可用性判据存在，且两架构产物都随包",
    "availableOnThisAbi" in CAT_C
    # 2026-11-11：arm64 的 inputd/x11frsrv 已用 clang 交叉编译补齐，

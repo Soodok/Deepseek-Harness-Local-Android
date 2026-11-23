@@ -3,5 +3,5 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path android:fillColor="@color/icon_color" android:pathData="M3 5h3v2H5v13h14V7h-1V5h3v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5zM12 8.4l3.6 3.6h-2.4v3.6h-2.4v-3.6H8.4L12 8.4z"/>
+    <path android:fillColor="?attr/dshIconColor" android:pathData="M3 5h3v2H5v13h14V7h-1V5h3v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5zM12 8.4l3.6 3.6h-2.4v3.6h-2.4v-3.6H8.4L12 8.4z"/>
 </vector>

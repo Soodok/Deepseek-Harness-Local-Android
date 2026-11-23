@@ -57,12 +57,17 @@ node_modules/
 scripts/probes/_parts/
 scripts/probes/*.bin
 
-# 根目录调试草稿（UI dump / 临时截图，v1.4.x 清理）
+# 根目录调试草稿（UI dump / 临时截图 / 一次性分析脚本，v1.4.x 清理）
 /_*.xml
 /_*.png
 /_*.mjs
 /_*.sh
 /_*.json
+# v1.6.0-beta.14：一次性分析/出图脚本（读 catalog、数端点、裁发布图）——
+# 它们只是当时取证用的草稿，不是项目工具，留在 status 里会一直被误认为「本会话 WIP」
+/_*.py
+# 截图/构建日志的临时堆放目录
+/_tmp_shots/
 /social-preview.png
 /dsh-mobile-social.png
 
@@ -82,8 +87,14 @@ scripts/probes/*.bin
 !/scripts/probes/_test_ask_bridge.mjs
 !/scripts/probes/_test_mcp_image.mjs
 !/scripts/probes/_test_linux_frame_surface.py
+# Linux 画面启动探针（v1.6.0-beta.12）：守住 pkill 自杀、写死 :99、-nolock、假成功四类回归
+!/scripts/probes/_test_linux_frame_launch.py
 !/scripts/probes/_test_linux_chroot_sandbox.py
 !/scripts/probes/_test_linux_workbench.py
+!/scripts/probes/_test_linux_jobs.py
+# 插件安装自愈探针（v1.7.32）：守住 spec 来源不被 @latest 改写、丢失的暂存 tgz 能从 APK 重建、
+# 双阈值超时（无输出 60s / 绝对 30min）与错误摘要不再把 file:// 路径当正文
+!/scripts/probes/_test_plugin_install_selfheal.py
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # Android API 下限探针：禁止 skipNBytes/readNBytes 这类 minSdk 之上才有的 API（issue #98）
@@ -92,12 +103,26 @@ scripts/probes/*.bin
 !/scripts/probes/_test_linux_dns_bypass.py
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py
+# v1.6.0-beta.18：本轮四条 issue 的守卫探针（各有负对照，误删即失去回归网）
+!/scripts/probes/_test_immersive_mode.py
+!/scripts/probes/_test_mobile_layout_version.py
+!/scripts/probes/_test_transport_body_size.py
 # 容器符号链接 + lchown 翻译探针：守住 Ubuntu apt 装包链路（v1.5.1）
 !/scripts/probes/_test_dsh_alpine_symlink_rel.py
 # 扩展中心健康检查/修复分派探针：守住 Linux 模式不走 Termux 的 MARKER 体系（v1.5.1）
 !/scripts/probes/_test_linux_ext_health.py
 # 引导页 v2 探针：七步结构 / 双形态 / 配色重涂 / 能力开关分组 / 首页按钮不偏右（v1.7.0）
 !/scripts/probes/_test_onboarding_v2.py
+# 界面风格令牌探针（v1.8.0）：守住「两套风格真的分叉、通知图标不被 attr 化」
+!/scripts/probes/_test_style_tokens.py
+# 语音服务页「本地识别状态卡」的版本闸门（v1.8.2 真机事故）：
+# 只判 getPackageInfo 成功就会把「装了旧版」当成「已安装」，一键按钮点下去抛
+# ActivityNotFoundException，再被兜底说成「请先安装」→ 用户明明装了却被告知没装。
+!/scripts/probes/_test_voice_asr_version.py
+!/scripts/probes/_test_report_channel.py
+# 主题取色重建闭环探针（v1.7.14，移植 PR #102）：守住「点动态取色不许疯狂闪烁」——
+# 开关不自恢复、模式未变不重建、系统栏按 colorSurface 取色（M1–M4 四个变异都验证过会变红）
+!/scripts/probes/_test_theme_flicker.py
 # 凭据失败判定探针：守住「日志时间戳里的 401 不能触发重新登录」（v1.5.3）
 !/scripts/probes/_test_engine_auth_marker.py
 # 引擎失败归因探针（v1.5.3）：守「失败必须被归类成可判断的原因」
@@ -136,6 +161,9 @@ scripts/probes/*.bin
 !/scripts/probes/_test_root_pnpm_locks.py
 !/scripts/probes/_test_plugin_engine_compat.py
 !/scripts/probes/_test_plugin_install_errors.py
+# 扩展入口补链守卫（v1.6.0-beta.15）：守住「相对 target 按链接父目录解析」+
+# 安装期清单重放 + 启动期存量补链 + binutils 声明别名 + 仍拒真越界
+!/scripts/probes/_test_ext_link_guard.py
 !/scripts/probes/_test_webview_media_permission.py
 !/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_test_webview_polyfill_v4.mjs
@@ -201,6 +229,10 @@ scripts/probes/*.bin
 !/scripts/probes/_test_screen_mask.py
 !/scripts/probes/_test_protected_pages.py
 !/scripts/probes/_test_a11y_screen_doc.py
+# 逐步截图（v1.7.x）：记忆里带「每步当时的界面」的侧车与拼图。守住的契约是
+# 「哪张图对应哪一步」与三类静默失败（取帧过期、队列吞账、清空后晚到帧重建目录）——
+# 全都不会崩，只会悄悄少一张图或错一步，事后无法归因。
+!/scripts/probes/_test_a11y_step_shots.py
 tasks/
 _bench/
 
@@ -298,8 +330,74 @@ local-overrides/
 # 否则把 val matched = (actual == want) 改成 val matched = true 也能全绿。
 !/scripts/probes/_test_system_toggles.py
 
+# v1.7.14：灵动岛两处观感契约。
+# ① 「收起态展开只撑开一次」——旧代码先 renderIslandVisibility() 再在 120ms 后
+#    压小重撑，屏幕上是满宽亮相→消失→再撑开；探针锚定起点属性必须早于渲染。
+# ② 侧边面板边缘投影 —— setShadowLayer 在硬件画布上**静默失效**（只剩硬边矩形，
+#    正好是用户不要的「描边」），所以必须钉住 LAYER_TYPE_SOFTWARE，不能只看有没有
+#    调用 setShadowLayer。
+!/scripts/probes/_test_island_expand_once.py
+!/scripts/probes/_test_island_panel_shadow.py
+
 # 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
 /tmp/
 
 # UI 预览服务的运行时状态（含 pid，不属于源码）
 docs/ui-preview/.preview-server.json
+
+# #110 隐藏的开发者选项：7 连击解锁、陈旧入口自守、不绕过 CapabilityGate
+!/scripts/probes/_test_developer_options.py
+
+# WebView polyfill 交付链路探针（issue #107）：守住「patch 脚本是唯一真源、构建期
+# 导出 asset、运行期两条路径自愈、WebView 只拦引擎首页」这一整条链，以及
+# URL.canParse 不许被改名成没人用的名字（改名后现场照样 TypeError，探针要红）。
+!/scripts/probes/_test_webview_polyfill_delivery.py
+# 锚定浮层定位兜底探针（issue #119）：守住能力门禁（position-anchor）、只动
+# role=dialog 且非 aria-modal 的浮层、内联 !important 与视口夹取；含三条负对照。
+!/scripts/probes/_test_chat_anchor_fallback.py
+!/scripts/probes/_chat_anchor_fallback_runtime_test.mjs
+
+# 官方 chat 导出包导入（v1.6.0-beta.17）：守住「层文本带引号 + 上限挂在 config +
+# 探测不到包就删层 + patchPaths 顺序 + 开关接线 + 六 locale」整条装配链。
+!/scripts/probes/_test_deepseek_chat_import.py
+
+# 冷启动热点回退守卫：顺序/归因探针都管不了「有人又把全树遍历加回来」——
+# 那种改动只会让启动变慢，所有门禁照样全绿。三条热点各对应一次实测修复，
+# 四条负对照都能打红（去掉剪枝、guardian 回 listFiles、去掉 resolveEarly 调用）。
+!/scripts/probes/_test_boot_hotspots.py
+
+# 前端语法高亮预热的空闲化：删掉预热也能让首绘变快，但第一次滚到代码块时
+# 现场编译 typescript grammar 要 500~660 ms —— 只是把卡顿挪到用户眼前。
+# 探针同时禁止「保留立即预热」和「完全不预热」，只放行空闲执行。
+!/scripts/probes/_test_frontend_warmup_idle.py
+
+# 3080 清场脚本的转义纪律：raw string 里写「反斜杠 + 美元符」或「两个反斜杠的 \0」
+# 都只会得到一条 exit 0 的静默 no-op —— 探针必须能把这些形态打红。
+!/scripts/probes/_test_port_reclaim_script.py
+
+# loader 崩溃可观测性（issue #125）：DEBUG 开关必须直扫 envp（读 g_env_store 恒 0），
+# 阶段标记与致命信号兜底都挂在 g_dbg 上 —— 任一退回去都得打红。
+!/scripts/probes/_test_loader_diagnostics.py
+
+# 签名单钥不一致的解释文案（issue #94）：指纹对照必须真的从判定分支写出来，
+# 六套 locale 的新串必须带占位符 —— 任一退回去都得打红。
+!/scripts/probes/_test_update_signature_hint.py
+# Windows 远端目录绑定（dsh-hardssh 0.2.13 实测）：路径层必须方言感知，命令层必须对
+# Windows 根明示不支持。探针跑真实补丁脚本 + 0.2.13 原始片段快照（fixtures）。
+!/scripts/probes/_test_hardssh_windows_paths.py
+!/scripts/probes/fixtures/
+!/scripts/probes/fixtures/**
+!/scripts/probes/_test_report_bundle.py
+
+# 启动前清理残留锁（.credentials.yaml.lock 等）：引擎被系统杀掉时会在写一半留下
+# 0 字节锁，上游 atomic-write 把它当「活着」永久等待 —— 真机实测 40.5 秒后整引擎
+# 失败。探针守三条：坏记录无论多新都删、活 DSH 写者不删、session.lock 永不触碰。
+!/scripts/probes/_test_stale_lock_heal.py
+# sharp 在 Android 上的 wasm32 回退补丁（v1.6.0-beta.33，真机 TRANSPORT 事故）：
+# `runtimePlatform` 是 "android-arm64"，上游 switch 没有这个 case，一旦 wasm32
+# 缺件就抛「Manually install libvips >= 8.18.7 / npm i @img/sharp-wasm32」——
+# 离线包两件都做不到，报错还挂在模型请求上，整轮判 TRANSPORT 失败。
+!/scripts/probes/_test_sharp_android.py
+# 设置页「行内展开」探针（issue #111）：语言与运行时代理改在行下方就地铺开，
+# 同意类（远程访问/局域网 WebUI）仍保留弹窗 —— 断言要能分辨这两类，不能一刀切。
+!/scripts/probes/_test_settings_inline_panels.py

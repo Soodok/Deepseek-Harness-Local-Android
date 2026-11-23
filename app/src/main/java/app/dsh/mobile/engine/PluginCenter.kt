@@ -31,6 +31,23 @@ object PluginCenter {
 
     private const val TAG = "PluginCenter"
 
+    /**
+     * `dsh plugin add/remove` 的**无输出**超时（v1.7.32）。
+     *
+     * 真机实测：pnpm 在下载期间每 2~3 秒必打一行进度（最大间隔 3s）。
+     * 60 秒一个字节都没有，说明进程卡在锁/交互/网络黑洞上，不是「慢」。
+     */
+    private const val CLI_IDLE_TIMEOUT_MS = 60_000L
+
+    /**
+     * 同一条命令的**绝对**上限（v1.7.32）。
+     *
+     * 防止「一直在产出但永远装不完」把单线程池永久占住（后续所有安装排队）。
+     * 30 分钟：实测最慢的真实插件（leanvec 83MB + pdfjs-dist）在模拟器上 133 秒，
+     * 真机弱网留 10 倍余量。
+     */
+    private const val CLI_HARD_TIMEOUT_MS = 30 * 60_000L
+
     /** 远程清单：我们仓库根目录维护，CI/手动更新；raw 直读无需鉴权 */
     private const val CATALOG_URL =
         "https://raw.githubusercontent.com/Soodok/Deepseek-Harness-Local-Android/main/community-plugins.json"
@@ -112,14 +129,34 @@ object PluginCenter {
      * ⚠️ 必须查真实文件而非内存标记：主人实测「装完显示已安装，退出重进又能装」
      * （旧版只记 UI 内存状态，Activity 重建即丢）。
      */
-    fun installedPackages(ctx: Context): Set<String> = runCatching {
+    fun installedPackages(ctx: Context): Set<String> = installedSpecs(ctx).keys
+
+    /**
+     * profile 里声明的**依赖规格**（`package.json` 的 dependencies 原样值）。
+     *
+     * 与 [installedPackages] 只差「值」：键集合完全相同，这里多带每个包的
+     * specifier（`^0.4.12` / `file:/data/.../staged.tgz` / `1.2.3`）。
+     *
+     * 为什么必须能读到 spec（v1.7.32）：[install] 旧实现对**任何**已装包都用
+     * `"$pkg@latest"`，而内置插件的 spec 是 `file:<staging tgz>`。pnpm 收到
+     * `@latest` 会把它当成「换了个来源」，直接把 `file:` 改写成 registry
+     * 版本号：
+     *     [WARN] Replaced "@xiaopb/dsh-mobile-layout" ("file:.../staged.tgz")
+     *            with "@xiaopb/dsh-mobile-layout@latest" from a different source.
+     * 那一刻起这个插件就**不再来自 APK 自带的那份 tgz**，而是永远跟着 npm
+     * 走；且 lockfile 的 packages/snapshots 两段指向 registry 后，暂存 tgz
+     * 一旦缺失就再也修不回来（`--fix-lockfile` 也是 exit 1）。
+     */
+    fun installedSpecs(ctx: Context): Map<String, String> = runCatching {
         val pj = java.io.File(EngineConfig.dshHome(ctx), "profiles/web/package.json")
-        if (!pj.isFile) return emptySet()
-        val deps = JSONObject(pj.readText()).optJSONObject("dependencies") ?: return emptySet()
-        deps.keys().asSequence().toSet()
+        if (!pj.isFile) return emptyMap()
+        val deps = JSONObject(pj.readText()).optJSONObject("dependencies") ?: return emptyMap()
+        buildMap {
+            for (k in deps.keys()) put(k, deps.optString(k, ""))
+        }
     }.getOrElse {
         Log.w(TAG, "read installed packages failed: ${it.message}")
-        emptySet()
+        emptyMap()
     }
 
     /**
@@ -269,7 +306,30 @@ object PluginCenter {
                 if (ensureNpmrcRegistry(ctx)) {
                     Log.i(TAG, "install $pkg: pinned npm registry to mirror in .npmrc")
                 }
-                val spec = if (pkg in installedPackages(ctx)) "$pkg@latest" else pkg
+                // v1.7.32：**本地 `file:` 依赖绝不能被 @latest 覆盖**。
+                //
+                // 旧实现只判「在不在 dependencies 里」就一律 `$pkg@latest`。
+                // 内置插件（mobile-layout / solution-explorer）由 APK 自带 tgz
+                // 首装，spec 是 `file:<staging 路径>`；对它发 `@latest` 会让 pnpm
+                // 判定「来源变了」并原地改写：
+                //     [WARN] Replaced "@xiaopb/dsh-mobile-layout" ("file:...") with
+                //            "@xiaopb/dsh-mobile-layout@latest" from a different source
+                // 之后这个包就**永久脱离** APK 自带的那份资产，跟着 registry 走。
+                // 真机上表现为「点更新/重装内置插件后，下次装任何插件都报
+                //  Broken lockfile / 找不到 staged.tgz」—— 因为 lockfile 里还留着
+                // 已不存在（或已被改写）的 file: 条目，而 package.json 已经指向 npm。
+                //
+                // 现在的规则：只有**远端版本范围**（`^1.2.3` / `latest` / 空）才升级；
+                // `file:` / `link:` / `git+` / `http(s):` 这些本地或直连来源一律
+                // 原样重装同一个 spec —— 语义是「确保它按声明装好」，不是「去追最新版」。
+                val installedSpec = installedSpecs(ctx)[pkg]
+                val spec = when {
+                    installedSpec == null -> pkg
+                    isLocalOrDirectSpec(installedSpec) ->
+                        if (installedSpec.isBlank()) pkg else "$pkg@$installedSpec"
+                    else -> "$pkg@latest"
+                }
+                Log.i(TAG, "install $pkg: spec=$spec (installed=$installedSpec)")
                 val r = runDshPluginCli(ctx, "add", spec)
                 ok = r.first
                 msg = r.second
@@ -319,6 +379,93 @@ object PluginCenter {
                         ok = r4.first
                         msg = if (ok) r4.second
                         else "${r4.second} [selinux context healed, still failing]"
+                    }
+                }
+                // ══════════════════════════════════════════════════════════
+                // v1.7.30（用户 2026-11-14 反馈：插件中心「安装失败，Broken lockfile」）
+                //
+                // 报错原文（pnpm 12.18.0 / 真机 PLZ110）：
+                //     Error: ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY
+                //       × adding a new package
+                //       ╰─▶ Broken lockfile: no entry for '<pkg>@<ver>' in pnpm-lock.yaml
+                //     help: To fix the lockfile, run 'pnpm install --fix-lockfile'.
+                //
+                // 成因不是「用户做了什么」，而是**这份 lockfile 的 importers 与
+                // packages/snapshots 两段自相矛盾**：importers 里记着某依赖的
+                // 普通版本号，而 packages/snapshots 里只有它的 `file:` 形态键。
+                // 老版本（v1.5.x）确实干过这件事 —— `normalizeDependencySpec` 事后
+                // 把 importers 的 `file:` 改回纯版本号，只改一段，另两段没动。
+                // 那版代码早已删除，但**设备上的坏 lockfile 会一直留着**，
+                // 于是之后每一次装插件都死在同一条错误上（用户看到的就是「又坏了」）。
+                //
+                // 与 storeDir 分叉的区别：那个是字符串拼写，改一行就好；这个是
+                // 整份派生结构不自洽，只能让 pnpm 自己重建 —— 官方给的解法就是
+                // `pnpm install --fix-lockfile`（真机实测：先复现、跑它、再装即成功）。
+                // 所以这里照做：**只让 pnpm 修 lockfile，不手工改它**。
+                // ══════════════════════════════════════════════════════════
+                // ══════════════════════════════════════════════════════════
+                // v1.7.32：`file:` 依赖的目标文件不存在 —— 这是**独立于 lockfile**
+                // 的失败形态，必须单独判，不能指望 broken-lockfile 分支兜住。
+                //
+                // 设备实测原文（vC402 / pnpm 12.21.0，删掉 staged tgz 后跑 add）：
+                //     Error:   × adding a new package
+                //       ├─▶ Failed to resolve dependency tree: Failed to resolve
+                //       │   dependency: Could not install from "/data/user/0/.../
+                //       │   xxx-staged.tgz" as it does not exist.
+                //       ╰─▶ Failed to resolve @xiaopb/dsh-mobile-layout@file:/...
+                //     Command failed with exit code 1: pnpm add is-odd
+                //
+                // 注意它**不含** ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY 也不含
+                // Broken lockfile（实测 grep 计数为 0），所以旧实现里所有自愈
+                // 分支都不命中，这条错误被原样抛给用户 —— 用户看到的就是「装什么
+                // 都失败」，而真正坏掉的只是 APK 自带的一个 tgz 文件。
+                //
+                // 修复方向确定：这些 tgz 是 APK 里的资产，随时能重建，重建后
+                // 重试同一 spec 即可。重建走 sha256 校验，不做「有文件就算数」。
+                // ══════════════════════════════════════════════════════════
+                if (!ok && isMissingLocalTargetError(msg)) {
+                    val restored = runCatching {
+                        ProfilePluginProvisioner.restoreMissingStaged(ctx)
+                    }.getOrDefault(0)
+                    Log.w(
+                        TAG,
+                        "install $pkg: local dependency target missing; restored=$restored; retrying once",
+                    )
+                    if (restored > 0) {
+                        val r0 = runDshPluginCli(ctx, "add", spec)
+                        ok = r0.first
+                        msg = if (ok) r0.second
+                        else "${r0.second} [rebuilt $restored bundled tarball(s), still failing]"
+                    }
+                }
+                if (!ok && isBrokenLockfileError(msg)) {
+                    // v1.7.32：先补回**丢失的内置暂存 tgz**，再谈修 lockfile。
+                    //
+                    // 顺序很重要：`file:` 依赖的目标不存在时，`--fix-lockfile`
+                    // 必然 exit 1 且什么都不改（实测）。旧实现直接跑它 → 得到
+                    // `[pnpm install --fix-lockfile ran, still failing]`，把
+                    // 「资产丢了」误报成「lockfile 修不动」。
+                    // 这些 tgz 是 APK 自带资产，完全能重建，所以先重建再修。
+                    val restored = runCatching {
+                        ProfilePluginProvisioner.restoreMissingStaged(ctx)
+                    }.getOrDefault(0)
+                    if (restored > 0) {
+                        Log.w(TAG, "install $pkg: restored $restored missing staged tgz; retrying")
+                    }
+                    val healed = healBrokenLockfile(ctx)
+                    Log.w(
+                        TAG,
+                        "install $pkg: broken lockfile; restored=$restored fix-lockfile=$healed; retrying once",
+                    )
+                    if (healed) {
+                        val r6 = runDshPluginCli(ctx, "add", spec)
+                        ok = r6.first
+                        msg = if (ok) r6.second
+                        else "${r6.second} [pnpm install --fix-lockfile ran, still failing]"
+                    } else if (restored > 0) {
+                        // 重建了资产但 fix 仍失败：这不是「lockfile 修不动」，而是
+                        // 修不动之外还有别的原因，原样把 pnpm 的话抛上去。
+                        msg = "$msg [rebuilt $restored bundled tarball(s); please retry]"
                     }
                 }
                 // ══════════════════════════════════════════════════════════
@@ -598,6 +745,14 @@ object PluginCenter {
         // 关流，保证一定返回。
         val outBuf = StringBuilder()
         val errBuf = StringBuilder()
+        // 最后一次「有字节产出」的时刻（v1.7.32）。
+        //
+        // 用来区分两种完全不同的「慢」：
+        //  · 正在下载 → pnpm 每 2~3 秒必打一行进度（真机实测最大间隔 3s），
+        //    只要还在产出就跑得动，不该被杀；
+        //  · 卡死/等输入 → 连续几十秒一个字节都没有，那才是真超时。
+        // 旧实现只有一个固定 120 秒墙钟，把这两种混为一谈。
+        val lastOutputAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         fun pump(input: java.io.InputStream, sink: StringBuilder) = Thread {
             runCatching {
                 input.bufferedReader().use { r ->
@@ -605,6 +760,7 @@ object PluginCenter {
                     var n = r.read(buf)
                     while (n > 0) {
                         synchronized(sink) { sink.append(buf, 0, n) }
+                        lastOutputAt.set(System.currentTimeMillis())
                         n = r.read(buf)
                     }
                 }
@@ -614,16 +770,42 @@ object PluginCenter {
         val outT = pump(p.inputStream, outBuf)
         val errT = pump(p.errorStream, errBuf)
 
-        val finished = p.waitFor(120, TimeUnit.SECONDS)
-        if (!finished) {
-            // 强杀 + 关流：否则读线程会一直阻塞，installExecutor 仍被占着
-            runCatching { p.destroyForcibly() }
-            runCatching { p.inputStream.close() }
-            runCatching { p.errorStream.close() }
-            runCatching { outT.join(1000) }
-            runCatching { errT.join(1000) }
-            Log.w(TAG, "plugin $verb $pkg timed out (120s); killed")
-            return false to "plugin $verb timed out (120s)"
+        // ⚠️ v1.7.32（真机「插件装不上」反馈的根因之一）：
+        //
+        // 旧实现 `p.waitFor(120, SECONDS)` —— 120 秒墙钟。而真机上装一个
+        // 带原生依赖的插件（如 @yolk_vat-y/dsh-project-memory：leanvec 83MB
+        // + pdfjs-dist），在**干净模拟器 + 好网络**下就要 133 秒（实测），
+        // 真机弱网必然被这条线砍掉。症状极具误导性：pnpm 明明装完了，App
+        // 却报「timed out (120s)」，用户再点一次又从头下载一遍。
+        //
+        // 现在改成双阈值：
+        //  · [CLI_IDLE_TIMEOUT_MS]：连续这么久**一个字节都没有**才判卡死；
+        //  · [CLI_HARD_TIMEOUT_MS]：绝对上限，防止无限次产出把单线程池占满。
+        // 两者都远大于实测的「最大无输出间隔 3s」，正常下载不会被误杀。
+        val startedAt = System.currentTimeMillis()
+        // 每 500ms 醒一次检查两个阈值；进程退出则直接离开循环。
+        while (!p.waitFor(500, TimeUnit.MILLISECONDS)) {
+            val now = System.currentTimeMillis()
+            val idleMs = now - lastOutputAt.get()
+            val totalMs = now - startedAt
+            val idleHit = idleMs >= CLI_IDLE_TIMEOUT_MS
+            val hardHit = totalMs >= CLI_HARD_TIMEOUT_MS
+            if (idleHit || hardHit) {
+                // 强杀 + 关流：否则读线程会一直阻塞，installExecutor 仍被占着
+                runCatching { p.destroyForcibly() }
+                runCatching { p.inputStream.close() }
+                runCatching { p.errorStream.close() }
+                runCatching { outT.join(1000) }
+                runCatching { errT.join(1000) }
+                val why = if (idleHit) {
+                    "no output for ${idleMs / 1000}s (total ${totalMs / 1000}s)"
+                } else {
+                    "hard limit ${totalMs / 1000}s"
+                }
+                Log.w(TAG, "plugin $verb $pkg timed out: $why; killed")
+                // 文案要能区分「卡死」和「太慢」：用户/我们据此判断该重试还是该查网络。
+                return false to "plugin $verb timed out after ${totalMs / 1000}s: $why"
+            }
         }
         // 进程已退出：给读线程一点时间把剩余缓冲读完（通常瞬间完成）
         runCatching { outT.join(2000) }
@@ -1671,6 +1853,217 @@ object PluginCenter {
         }
         changed
     }.getOrDefault(false)
+    /**
+     * 坏 lockfile 的判据（v1.7.30，用户 2026-11-14 反馈「插件中心又装不上」）。
+     *
+     * 真机原文（PLZ110 / pnpm 12.18.0）：
+     *     Error: ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY
+     *       × adding a new package
+     *       ╰─▶ Broken lockfile: no entry for '<pkg>@<ver>' in pnpm-lock.yaml
+     *     help: To fix the lockfile, run 'pnpm install --fix-lockfile'.
+     *
+     * 用「错误码前缀 + 人话」双签名，理由同 [isUnexpectedStoreError]：
+     * 错误码可能被 UI / 日志截断（用户截图里就断过），人话那句更稳；
+     * 而单看 "lockfile" 又会误伤 ERR_PNPM_OUTDATED_LOCKFILE 之外的一大票
+     * 正常提示，所以必须带 Broken 这个限定词。
+     */
+    internal fun isBrokenLockfileError(msg: String): Boolean =
+        msg.contains("ERR_PNPM_LOCKFILE_MISSING_DEPENDENC", ignoreCase = true) ||
+            msg.contains("Broken lockfile", ignoreCase = true)
+
+    /**
+     * 本地依赖（`file:` / 相对路径）的目标文件不存在（v1.7.32）。
+     *
+     * pnpm 的原文有两种写法，都要认：
+     *  · `Could not install from "<path>" as it does not exist.`（解析阶段）
+     *  · `ENOENT: no such file or directory, open '<path>'`（解包阶段）
+     *
+     * 只认「本地路径 + 不存在」这一个组合。不能放宽成「出现 staged.tgz 就算」——
+     * 包的名字里带 tgz、或错误里引用了别的路径时会造成误判，进而把无关失败
+     * 也引向重建分支，掩盖真正的原因。
+     *
+     * 与 [isBrokenLockfileError] 是**互斥**的两类故障：那次是 lockfile 结构自相
+     * 矛盾（文件都在），这次是文件本身没了（lockfile 可能完全正常）。设备实测
+     * 刻意确认过：目标缺失时的报错里 `Broken lockfile` 计数为 0。
+     */
+    internal fun isMissingLocalTargetError(msg: String): Boolean {
+        val installMissing = msg.contains("as it does not exist", ignoreCase = true) &&
+            msg.contains("Could not install from", ignoreCase = true)
+        val enoentMissing = msg.contains("ENOENT", ignoreCase = true) &&
+            msg.contains(".tgz", ignoreCase = true)
+        return installMissing || enoentMissing
+    }
+
+    /**
+     * 修坏 lockfile（v1.7.30）：跑 pnpm 官方的 `install --fix-lockfile`。
+     *
+     * ## 为什么是「让 pnpm 自己修」而不是我们改文件
+     *
+     * 坏法不是某一行的笔误，而是**同一份 lockfile 的 importers 段与
+     * packages/snapshots 段对不上**：importers 里记着某依赖的纯版本号，
+     * packages/snapshots 里只有它的 `file:` 形态键（v1.5.x 的
+     * normalizeDependencySpec 只改了一段，代码删除后设备上的产物一直留着）。
+     * 这种派生结构上的不自洽，任何「按行正则修补」都只能猜，猜错的代价是
+     * 之后每次装插件都失败；pnpm 自己有权威解析器，官方解法就是这一句。
+     *
+     * 真机实测（2026-11-14）：复现报错 → 跑本函数（310ms，退出码 0）
+     * → importers 自动恢复成 `file:` 形态 → 再 add 同一包即成功。
+     *
+     * ## 安全性
+     *
+     * · 只动 `profiles/web/pnpm-lock.yaml`（连带 pnpm 自己的 node_modules 收敛），
+     *   不碰 .npmrc / pnpm-workspace.yaml / package.json；
+     * · 跑之前把原文件备份成 `pnpm-lock.yaml.broken-<ts>`，最坏情况能整份换回；
+     * · 只在**已经失败**且命中 [isBrokenLockfileError] 时触发，正常安装零开销。
+     *
+     * @return 真的修成功（exit 0）才返回 true —— 失败时静默返回 false，
+     *         由调用方把 pnpm 原文抛给用户，不谎报「已修复」
+     */
+    private fun healBrokenLockfile(ctx: Context): Boolean = runCatching {
+        val engine = EngineConfig.engineRoot(ctx)
+        val pnpmJs = File(engine, "lib/node_modules/corepack/dist/pnpm.js")
+        if (!pnpmJs.isFile) {
+            Log.w(TAG, "healBrokenLockfile: pnpm.js missing at " + pnpmJs.absolutePath)
+            return@runCatching false
+        }
+        val profile = File(EngineConfig.dshHome(ctx), "profiles/web")
+        val lock = File(profile, "pnpm-lock.yaml")
+        if (!profile.isDirectory || !lock.isFile) {
+            Log.w(TAG, "healBrokenLockfile: no lockfile at " + lock.absolutePath)
+            return@runCatching false
+        }
+        // ⚠️ v1.7.32：**先确认每个 `file:` 依赖的目标真的还在盘上**。
+        //
+        // `--fix-lockfile` 只能修「lockfile 记错了」这种自相矛盾；如果依赖本身
+        // 指向的文件已不存在，pnpm 会报
+        //     Could not install from ".../xxx-staged.tgz" as it does not exist
+        // 并以 **exit 1** 收尾（真机实测），lockfile 一个字节都不会改。
+        // 那种情况下继续跑修复毫无意义，而且旧实现会把它当成「修完还失败」，
+        // 用户看到的是 `[pnpm install --fix-lockfile ran, still failing]` ——
+        // 把「资产丢了」误报成「lockfile 修不动」，排查方向完全跑偏。
+        //
+        // 这里提前识别，交给上层给可操作的话（重启 App 重新释放内置资产）。
+        val missing = missingLocalSpecs(ctx)
+        if (missing.isNotEmpty()) {
+            Log.w(
+                TAG,
+                "healBrokenLockfile: refusing to run; local dependency target(s) missing: " +
+                    missing.joinToString(", ") { it.first + " -> " + it.second },
+            )
+            return@runCatching false
+        }
+        // 备份：--fix-lockfile 会整份重写，留一份原始字节才能回滚
+        val backup = File(profile, "pnpm-lock.yaml.broken-" + System.currentTimeMillis())
+        val backedUp = runCatching { lock.copyTo(backup, overwrite = false) }.isSuccess
+        if (!backedUp) Log.w(TAG, "healBrokenLockfile: backup failed; proceeding (pnpm may still fix)")
+
+        val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
+        val pb = ProcessBuilder(
+            buildList {
+                add(EngineConfig.nodeBin(ctx).absolutePath)
+                add(pnpmJs.absolutePath)
+                add("install")
+                add("--fix-lockfile")
+                add("--reporter=append-only")
+            },
+        )
+        pb.directory(profile)
+        pb.environment().clear()
+        env.forEach { kv ->
+            val i = kv.indexOf('=')
+            if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
+        }
+        // --fix-lockfile 不需要交互输入；合并 stderr 免掉「先读哪个流」的死锁
+        pb.redirectErrorStream(true)
+        val p = pb.start()
+        val buf = StringBuilder()
+        val pump = Thread {
+            runCatching {
+                p.inputStream.bufferedReader().use { r ->
+                    val b = CharArray(8192)
+                    var n = r.read(b)
+                    while (n > 0) {
+                        synchronized(buf) { buf.append(b, 0, n) }
+                        n = r.read(b)
+                    }
+                }
+            }
+        }.also { it.isDaemon = true; it.start() }
+        val finished = p.waitFor(120, TimeUnit.SECONDS)
+        if (!finished) {
+            runCatching { p.destroyForcibly() }
+            runCatching { p.inputStream.close() }
+            runCatching { pump.join(1000) }
+            Log.w(TAG, "healBrokenLockfile: pnpm install --fix-lockfile timed out (120s)")
+            return@runCatching false
+        }
+        runCatching { pump.join(2000) }
+        val out = synchronized(buf) { buf.toString() }.trim()
+        Log.i(
+            TAG,
+            "healBrokenLockfile: exit=" + p.exitValue() +
+                " backup=" + (if (backedUp) backup.name else "-") +
+                " out=" + out.takeLast(400),
+        )
+        if (p.exitValue() != 0) runCatching { backup.delete() }
+        p.exitValue() == 0
+    }.getOrDefault(false)
+
+    /**
+     * 找出 `file:` / 裸路径依赖里**目标已不存在**的那些（pkg -> 期望路径）。
+     *
+     * 用途见 [healBrokenLockfile] 的前置检查：这些缺失是 `--fix-lockfile` 治不了
+     * 的（pnpm 会 exit 1，且一个字节都不改），必须让上层给出「重新释放内置资产」
+     * 的提示，而不是谎称「已在修 lockfile」。
+     *
+     * 只查 `file:` 与裸绝对/相对路径 —— `link:` 指向工作区目录、`git+`/`http`
+     * 需要网络，都不该在这里判断。
+     */
+    internal fun missingLocalSpecs(ctx: Context): List<Pair<String, String>> = runCatching {
+        val profile = File(EngineConfig.dshHome(ctx), "profiles/web")
+        installedSpecs(ctx).mapNotNull { (pkg, spec) ->
+            val s = spec.trim()
+            val raw = when {
+                s.startsWith("file:") -> s.removePrefix("file:")
+                s.startsWith("/") || s.startsWith("./") || s.startsWith("../") -> s
+                else -> return@mapNotNull null
+            }
+            if (raw.isBlank()) return@mapNotNull null
+            val target = File(raw).let { if (it.isAbsolute) it else File(profile, raw) }
+            if (target.exists()) null else pkg to target.absolutePath
+        }
+    }.getOrElse {
+        Log.w(TAG, "missingLocalSpecs failed: ${it.message}")
+        emptyList()
+    }
+
+    /**
+     * 这个依赖规格是不是**本地文件或直连来源**（不该被 `@latest` 覆盖）。
+     *
+     * 覆盖 pnpm/npm 支持的全部「非远端版本范围」写法：
+     *  · `file:...` / `link:...` —— 本地路径或 tarball；
+     *  · `git+ssh://` / `git+https://` / `github:user/repo` —— 直连仓库；
+     *  · `http://` / `https://` —— 直连 tarball；
+     *  · 裸绝对/相对路径（`/data/...`、`./x.tgz`）—— pnpm 也接受。
+     *
+     * 反过来说，`^1.2.3` / `~1.2.3` / `1.2.3` / `latest` / `*` / 空串都属于
+     * 远端范围 —— 那些才该用 `@latest` 去追新。
+     */
+    internal fun isLocalOrDirectSpec(spec: String): Boolean {
+        val s = spec.trim()
+        if (s.isEmpty()) return false
+        return s.startsWith("file:") ||
+            s.startsWith("link:") ||
+            s.startsWith("git+") ||
+            s.startsWith("git:") ||
+            s.startsWith("github:") ||
+            s.startsWith("http://") ||
+            s.startsWith("https://") ||
+            s.startsWith("/") ||
+            s.startsWith("./") ||
+            s.startsWith("../")
+    }
+
     /** [ERR_PNPM_UNEXPECTED_STORE] 的判据：错误码 + 人话双签名。 */
     private fun isUnexpectedStoreError(msg: String): Boolean =
         msg.contains("ERR_PNPM_UNEXPECTED_STORE", ignoreCase = true) ||

@@ -94,6 +94,7 @@ object LogJanitor {
         if (depth > 8) return
         val children = runCatching { root.listFiles() }.getOrNull() ?: return
         for (f in children) {
+            if (f.isDirectory && f.name in NOISE_DIRS) continue
             val isLink = runCatching { java.nio.file.Files.isSymbolicLink(f.toPath()) }
                 .getOrDefault(false)
             if (isLink) continue
@@ -104,6 +105,31 @@ object LogJanitor {
             }
         }
     }
+
+    /**
+     * 遍历时**整棵跳过**的目录名。
+     *
+     * ## 为什么必须剪
+     *
+     * 实测（模拟器，dsh-home 共 2053 个条目）：
+     *  · `.node-compile-cache-native` 独占 **1086 个文件**（53%），全是 Node 的
+     *    字节码缓存，绝不会有 `.log`；
+     *  · `node_modules` 动辄上万个文件，同样只放依赖。
+     *
+     * 不剪时 `log-sweep` 稳定吃 **420~510ms**（preflight 三个并行任务里的最慢项，
+     * 因此它就是该阶段的墙钟）。遍历本身不是瓶颈，瓶颈是逐条 `listFiles` +
+     * `isSymbolicLink` 走 NIO 转 Path 的 syscall 开销 —— 剪掉这两棵后剩不到 900 条。
+     *
+     * 安全性：日志只在 `<profile>/.plugin-manager/logs/` 与引擎自己的 `*.log`，
+     * 都在这些目录**之外**；pnpm 也不会把 `.log` 写进 `node_modules` 里当作需要
+     * 裁剪的对象（那是依赖包自己的资源，本来就不该动）。
+     */
+    private val NOISE_DIRS = setOf(
+        "node_modules",
+        ".node-compile-cache-native",
+        ".node-compile-cache",
+        ".git",
+    )
 
     /**
      * 把文件裁到只保留尾部 [keep] 字节，返回释放的字节数。
@@ -163,7 +189,13 @@ object LogJanitor {
             val isLink = runCatching { java.nio.file.Files.isSymbolicLink(f.toPath()) }
                 .getOrDefault(false)
             if (isLink || !f.isDirectory) continue
-            if (f.name == name) visit(f) else findDirsNamed(f, name, depth + 1, visit)
+            if (f.name == name) {
+                visit(f)
+            } else if (f.name !in NOISE_DIRS) {
+                // 与 walkLogFiles 同一个剪枝理由：`.plugin-manager` 只会出现在
+                // profile 树里，钻进 node_modules / 编译缓存纯属白跑。
+                findDirsNamed(f, name, depth + 1, visit)
+            }
         }
     }
 

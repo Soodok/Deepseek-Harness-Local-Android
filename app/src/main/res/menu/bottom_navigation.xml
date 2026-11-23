@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:id="@+id/dsh_bottom_toolbar_home" android:icon="@drawable/ic_bottom_home"
+        android:title="@string/bottom_toolbar_home" />
+    <item android:id="@+id/dsh_bottom_toolbar_menu" android:icon="@drawable/ic_bottom_menu"
+        android:title="" app:contentDescription="@string/bottom_toolbar_menu" />
+    <item android:id="@+id/dsh_bottom_toolbar_settings" android:icon="@drawable/ic_settings"
+        android:title="@string/settings_title" />
+</menu>

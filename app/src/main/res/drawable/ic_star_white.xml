@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 五角星（实心）：求 star 卡片的图标。
-     直接用白色而不是 @color/icon_color —— 它压在 accent 底色上，
+     直接用白色而不是 ?attr/dshIconColor —— 它压在 accent 底色上，
      icon_color 在深色主题下是白色、浅色主题下是深灰，深灰在蓝底上会糊掉。
      accent 的实心块在任何主题里都是中深色，白星始终有对比。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"

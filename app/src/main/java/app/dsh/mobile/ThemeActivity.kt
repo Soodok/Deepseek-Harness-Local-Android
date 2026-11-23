@@ -1,47 +1,32 @@
 package app.dsh.mobile
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.os.Bundle
-import android.widget.TextView
-import android.widget.Toast
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.TextAppearanceSpan
+import android.view.View
+import android.widget.LinearLayout
+import android.widget.RadioGroup
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.chip.Chip
-import com.google.android.material.chip.ChipGroup
-import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.slider.Slider
-import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.radiobutton.MaterialRadioButton
+import com.google.android.material.R as MaterialR
 
 /**
- * 主题与配色（v1.5.x）：独立管理页，替代原来外观页里的「配色方案」弹窗。
+ * 主题设置（v1.6.x）。
  *
- * 三种取色来源，互斥：
- *  · 预设   —— Chip 单选里的五套固定配色
- *  · 自定义 —— 色相/饱和度/明度三个 MD3 Slider + 十六进制输入，随拖随预览
- *  · 动态   —— Android 12+ 跟随系统壁纸取色（MaterialSwitch 打开）
- *
- * 改动统一走「写偏好 → recreate()」，让 ThemeManager.wrap 重新选 values(-night)，
- * 避免局部刷新残留旧颜色。
+ * 严格按 Google 官方 Material 3 用法，见 docs/md3/README.md：
+ *   1. 外观模式：MaterialRadioButton 单选，写 [ThemePref]
+ *   2. 配色方案：系统动态取色或预设色板，写 [ThemeAccent]
  */
 class ThemeActivity : ThemedActivity() {
 
     override val usesSettingsBackground: Boolean get() = true
 
-    private lateinit var swDynamic: MaterialSwitch
-    private lateinit var subDynamic: TextView
-    private lateinit var chipGroup: ChipGroup
-    private lateinit var txtCurrent: TextView
-    private lateinit var layoutHex: com.google.android.material.textfield.TextInputLayout
-    private lateinit var editHex: TextInputEditText
-    private lateinit var seekHue: Slider
-    private lateinit var seekSat: Slider
-    private lateinit var seekVal: Slider
-    private lateinit var btnApply: MaterialButton
-
-    /** 滑块回调里会写回 hex，加个锁避免互相触发。 */
-    private var syncing = false
+    private lateinit var paletteSelector: ThemePaletteSelector
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -54,224 +39,83 @@ class ThemeActivity : ThemedActivity() {
 
         findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
-        swDynamic = findViewById(R.id.swDynamic)
-        subDynamic = findViewById(R.id.subDynamic)
-        chipGroup = findViewById(R.id.chipPresets)
-        txtCurrent = findViewById(R.id.txtCurrentAccent)
-        layoutHex = findViewById(R.id.layoutHex)
-        editHex = findViewById(R.id.editHex)
-        seekHue = findViewById(R.id.seekHue)
-        seekSat = findViewById(R.id.seekSat)
-        seekVal = findViewById(R.id.seekVal)
-        btnApply = findViewById(R.id.btnApplyCustom)
-
-        setupDynamic()
-        setupChips()
-        setupCustom()
-        refreshSummary()
+        paletteSelector = ThemePaletteSelector(
+            this, ThemeAccent.selected(this), ThemeAccent.dynamicSupported,
+        ) { id ->
+            if (id != ThemeAccent.selected(this)) {
+                ThemeAccent.setSelected(this, id)
+                recreate()
+            }
+        }
+        findViewById<LinearLayout>(R.id.paletteContainer).addView(paletteSelector)
+        bindModeRows()
     }
 
     override fun onResume() {
         super.onResume()
         OrientationPrefs.applyToSettingsPage(this)
-        refreshSummary()
+        refresh()
     }
 
-    // ---------------------------------------------------------------- 动态取色
+    // ---------------------------------------------------------------- 外观模式
 
-    private fun setupDynamic() {
-        if (!ThemeAccent.dynamicSupported) {
-            swDynamic.isEnabled = false
-            swDynamic.isChecked = false
-            subDynamic.setText(R.string.theme_dynamic_unsupported)
-            subDynamic.alpha = 0.6f
-            return
+    private val ThemeMode.radioId: Int
+        get() = when (this) {
+            ThemeMode.LIGHT -> R.id.rbModeLight
+            ThemeMode.DARK -> R.id.rbModeDark
+            ThemeMode.SYSTEM -> R.id.rbModeSystem
         }
-        val mode = ThemeAccent.mode(this)
-        swDynamic.isChecked = mode == ThemeAccent.Mode.DYNAMIC
-        swDynamic.setOnCheckedChangeListener { _, checked ->
-            if (syncing) return@setOnCheckedChangeListener
-            // 三种来源互斥：打开动态色 = 退出预设/自定义
-            ThemeAccent.setMode(
-                this,
-                if (checked) ThemeAccent.Mode.DYNAMIC else ThemeAccent.Mode.PRESET,
-            )
-            recreate()
-        }
-    }
 
-    // ---------------------------------------------------------------- 预设配色
-
-    private fun setupChips() {
-        val ids = listOf(
-            R.id.chipSky to Accent.SKY,
-            R.id.chipIndigo to Accent.INDIGO,
-            R.id.chipTeal to Accent.TEAL,
-            R.id.chipViolet to Accent.VIOLET,
-            R.id.chipAmber to Accent.AMBER,
+    private fun bindModeRows() {
+        val options = listOf(
+            ThemeMode.LIGHT to R.string.theme_mode_light_sub,
+            ThemeMode.DARK to R.string.theme_mode_dark_sub,
+            ThemeMode.SYSTEM to R.string.theme_mode_system_sub,
         )
-        val preset = Accent.currentPreset(this)
-        val mode = ThemeAccent.mode(this)
-        // 动态取色启用时禁用预设选择，三个来源只允许一个生效。
-        chipGroup.isEnabled = mode != ThemeAccent.Mode.DYNAMIC
-        for (i in 0 until chipGroup.childCount) {
-            chipGroup.getChildAt(i).isEnabled = mode != ThemeAccent.Mode.DYNAMIC
-        }
-        syncing = true
-        ids.forEach { (id, accent) ->
-            val chip = findViewById<Chip>(id)
-            // 用 chip 底色直接表达预设色；文字按亮度取黑/白，避免浅底白字看不清。
-            val color = accent.argb
-            chip.chipBackgroundColor = android.content.res.ColorStateList.valueOf(color)
-            chip.setTextColor(contrastOn(color))
-            // 互斥：动态色或自定义色生效时，预设 chip 一律不选中
-            chip.isChecked = mode == ThemeAccent.Mode.PRESET && accent == preset
-        }
-        syncing = false
-
-        chipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (syncing || checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
-            val picked = ids.firstOrNull { it.first == checkedIds.first() }?.second ?: return@setOnCheckedStateChangeListener
-            Accent.set(this, picked) // 同时关闭动态取色并切换为 PRESET
-            recreate()
-        }
-    }
-
-    // ---------------------------------------------------------------- 自定义颜色
-
-    private fun setupCustom() {
-        val current = ThemeAccent.customColor(this)
-        val hsv = FloatArray(3)
-        Color.colorToHSV(current, hsv)
-
-        seekHue.valueFrom = 0f
-        seekHue.valueTo = 360f
-        seekHue.stepSize = 1f
-        seekHue.value = snap(hsv[0], 0f, 360f)
-
-        seekSat.valueFrom = 0f
-        seekSat.valueTo = 100f
-        seekSat.stepSize = 1f
-        seekSat.value = snap(hsv[1] * 100f, 0f, 100f)
-
-        seekVal.valueFrom = 0f
-        seekVal.valueTo = 100f
-        seekVal.stepSize = 1f
-        seekVal.value = snap(hsv[2] * 100f, 0f, 100f)
-
-        editHex.setText(String.format("#%06X", current and 0xFFFFFF))
-
-        val onSlider = { _: Slider, _: Float, fromUser: Boolean ->
-            if (fromUser) syncFromSliders()
-        }
-        seekHue.addOnChangeListener(onSlider)
-        seekSat.addOnChangeListener(onSlider)
-        seekVal.addOnChangeListener(onSlider)
-
-        editHex.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) applyHexInput(refreshOnly = true)
-        }
-
-        btnApply.setOnClickListener {
-            applyHexInput(refreshOnly = false)
-        }
-
-        // 互斥提示：当前不是自定义模式时，说明点了会切换过去
-        if (ThemeAccent.mode(this) != ThemeAccent.Mode.CUSTOM) {
-            layoutHex.helperText = getString(R.string.theme_custom_inactive)
-        } else {
-            layoutHex.helperText = null
-        }
-    }
-
-    private fun currentSliderColor(): Int = Color.HSVToColor(
-        floatArrayOf(
-            seekHue.value,
-            (seekSat.value / 100f).coerceIn(0f, 1f),
-            (seekVal.value / 100f).coerceIn(0f, 1f),
-        ),
-    )
-
-    private fun syncFromSliders() {
-        if (syncing) return
-        syncing = true
-        val color = currentSliderColor()
-        editHex.setText(String.format("#%06X", color and 0xFFFFFF))
-        paintHexBox(color)
-        syncing = false
-    }
-
-    /** 十六进制输入：合法就采纳，非法就回落当前滑块颜色。 */
-    private fun applyHexInput(refreshOnly: Boolean) {
-        if (syncing) return
-        val raw = editHex.text?.toString()?.trim().orEmpty()
-        val parsed = raw.removePrefix("#").toIntOrNull(16)?.takeIf { it in 0..0xFFFFFF }
-        if (parsed != null) {
-            val color = parsed or 0xFF000000.toInt()
-            val hsv = FloatArray(3)
-            Color.colorToHSV(color, hsv)
-            syncing = true
-            seekHue.value = snap(hsv[0], 0f, 360f)
-            seekSat.value = snap(hsv[1] * 100f, 0f, 100f)
-            seekVal.value = snap(hsv[2] * 100f, 0f, 100f)
-            syncing = false
-            paintHexBox(color)
-            if (!refreshOnly) commitCustom(color)
-        } else if (refreshOnly) {
-            syncing = true
-            editHex.setText(String.format("#%06X", currentSliderColor() and 0xFFFFFF))
-            syncing = false
-        } else {
-            Toast.makeText(this, getString(R.string.theme_custom_invalid), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun commitCustom(color: Int) {
-        ThemeAccent.setCustomColor(this, color)
-        ThemeAccent.setMode(this, ThemeAccent.Mode.CUSTOM)
-        recreate()
-    }
-
-    /** 用输入框当前色给 OutlinedBox 描边，给一点即时反馈。 */
-    private fun paintHexBox(color: Int) {
-        runCatching {
-            layoutHex.boxStrokeColor = color
-            layoutHex.setBoxStrokeColorStateList(
-                android.content.res.ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()),
-                    intArrayOf(color, color),
-                ),
+        val inset = resources.getDimensionPixelSize(R.dimen.md3_item_padding_h)
+        val rowHeight = resources.getDimensionPixelSize(R.dimen.md3_item_two_line)
+        for ((mode, subtitleRes) in options) {
+            val radio = findViewById<MaterialRadioButton>(mode.radioId)
+            // One native label gives the radio both lines without a second accessibility stop.
+            val label = SpannableStringBuilder(getText(mode.labelRes)).append('\n')
+            val subtitleStart = label.length
+            label.append(getText(subtitleRes))
+            label.setSpan(
+                TextAppearanceSpan(radio.context, MaterialR.style.TextAppearance_Material3_BodyMedium),
+                subtitleStart, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
             )
+            label.setSpan(
+                ForegroundColorSpan(MaterialColors.getColor(radio, MaterialR.attr.colorOnSurfaceVariant)),
+                subtitleStart, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+            radio.text = label
+
+            // CompoundButton draws its indicator at the view edge, outside text padding.
+            // Inset the original drawable without shrinking the row's click/focus bounds.
+            radio.buttonDrawable?.let { drawable ->
+                val rtl = radio.layoutDirection == View.LAYOUT_DIRECTION_RTL
+                // Detach first so CompoundButton does not clear the wrapper's child callback.
+                radio.buttonDrawable = null
+                radio.buttonDrawable = InsetDrawable(
+                    drawable, if (rtl) 0 else inset, 0, if (rtl) inset else 0, 0,
+                )
+                radio.minHeight = rowHeight
+            }
+            radio.setOnClickListener {
+                if (ThemePref.get(this) == mode) return@setOnClickListener
+                ThemePref.set(this, mode)
+                recreate()
+            }
         }
+        refreshModeSelection()
     }
 
-    /**
-     * Material Slider 要求赋值必须落在 `valueFrom + n × stepSize` 的格点上，
-     * 否则直接抛 IllegalStateException。HSV 换算是浮点结果（例如 204.53），
-     * 必须先吸附到整数格点再赋值，否则一进页面就崩。
-     */
-    private fun snap(value: Float, from: Float, to: Float): Float =
-        Math.round(value).toFloat().coerceIn(from, to)
-
-    /** 背景色上该用黑字还是白字：按相对亮度取对比更强的一方。 */
-    private fun contrastOn(color: Int): Int {
-        val r = (color shr 16) and 0xFF
-        val g = (color shr 8) and 0xFF
-        val b = color and 0xFF
-        val luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
-        return if (luminance > 0.6) Color.BLACK else Color.WHITE
+    private fun refreshModeSelection() {
+        findViewById<RadioGroup>(R.id.appearanceModeGroup).check(ThemePref.get(this).radioId)
     }
 
-    // ---------------------------------------------------------------- 状态摘要
-
-    private fun refreshSummary() {
-        val accent = Accent.current(this)
-        txtCurrent.text = getString(
-            R.string.theme_current_fmt,
-            getString(accent.labelRes),
-        )
-        if (ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC) {
-            txtCurrent.text = getString(R.string.theme_current_dynamic)
-        }
+    private fun refresh() {
+        refreshModeSelection()
+        paletteSelector.setSelectedId(ThemeAccent.selected(this))
     }
 }

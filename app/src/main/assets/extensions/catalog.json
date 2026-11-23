@@ -226,6 +226,21 @@
       "iconRes": "ic_ext_zig"
     },
     {
+      "id": "bun",
+      "name": "Bun",
+      "category": "Language runtimes",
+      "categoryKey": "lang",
+      "desc": "Bun 1.4 — JavaScript/TypeScript runtime and bundler, a drop-in much faster alternative to Node.js (bun / bunx)",
+      "bins": [
+        "bun",
+        "bunx"
+      ],
+      "packages": [
+        "bun"
+      ],
+      "iconRes": "ic_ext_bun"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "Build & tooling",

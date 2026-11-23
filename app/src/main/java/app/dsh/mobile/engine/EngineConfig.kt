@@ -1613,6 +1613,9 @@ object EngineConfig {
             |# turnRewind/list and turnRewind/rewind.
             |    - id: android-turn-rewind
             |      name: ./android-plugins/turn-rewind/index.js
+            |# Anchor fallback (issue #119): old Android WebViews lack CSS anchor positioning.
+            |    - id: android-chat-anchor-fallback
+            |      name: ./android-plugins/chat-anchor-fallback/index.js
             |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
             |# sidebar into a drawer and also registered a session-delete route plus
             |# response compression; in practice it produced many bugs (vanishing quick
@@ -1666,6 +1669,7 @@ object EngineConfig {
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
                 "resume-reconnect" to listOf("package.json", "index.js", "client.js"),
                 "turn-rewind" to listOf("package.json", "index.js", "client.js", "core.js"),
+                "chat-anchor-fallback" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")

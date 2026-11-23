@@ -197,6 +197,36 @@ object BootTrace {
     }
 
     /**
+     * 完成一个阶段，但**耗时由调用方给定**，只用于并行块。
+     *
+     * 为什么需要：[step] 把「上一条 step 的 atMs 到此刻」当作本阶段耗时。串行
+     * 阶段这样算是对的，但并行块里的任务共享同一段墙钟 —— 三条 step 连着调时，
+     * 第一条会吞掉整块时间，后两条必然记成 0~1ms。
+     *
+     * 实测踩过：orphan-reap 记成 4881ms，实际是「孤儿回收 + 属主检查 + guardian
+     * 恢复」三任务并行块的总墙钟，被读成「孤儿回收花 4.9 秒」，据此排查了半天
+     * 根本不存在的 /proc 扫描瓶颈。归因错了比没有数字更糟。
+     *
+     * @param key      稳定 ASCII 键
+     * @param elapsedMs 该任务**自己**测到的耗时（在任务内部起止取差值）
+     */
+    fun stepElapsed(key: String, elapsedMs: Long) {
+        synchronized(lock) {
+            val cur = _snapshot.value
+            if (!cur.running) return
+            val atMs = (System.currentTimeMillis() - cur.startedAt).coerceAtLeast(0L)
+            val s = Step(key = key, durationMs = elapsedMs.coerceAtLeast(0L), atMs = atMs)
+            _snapshot.value = cur.copy(steps = cur.steps + s, currentStep = null)
+            buffer.append("  ")
+                .append(key.padEnd(22))
+                .append(elapsedMs.coerceAtLeast(0L).toString().padStart(6))
+                .append(" ms   (cumulative ")
+                .append(atMs)
+                .append(" ms)\n")
+        }
+    }
+
+    /**
      * 标记「某阶段即将开始」——必须在耗时操作**之前**调用。
      *
      * 与 [step] 配对：`mark(k)` … 操作 … `step(k)`。界面上因此能显示正在跑的那一步，

@@ -793,6 +793,24 @@ object EndpointCatalog {
                         "frame_seq 是累计帧计数 —— 它一直不涨说明那块屏上没有任何东西在重绘。",
                 ),
                 e(
+                    "report", "GET", "/dev/report", "问题反馈通道状态：能不能发 / 服务端通不通 / 无障碍就绪没",
+                    examples = listOf("report status", "dev api GET /dev/report"),
+                    limits = "disabled=true 表示用户在「关于」页永久关闭了问题反馈，此时任何上报都会被拒。\n" +
+                        "server_reachable=false 不代表永远发不了，可能只是此刻没网。\n" +
+                        "accessibility_ready=false 时无法弹同意窗口 —— 按失败关闭处理，不许降级成「不弹窗直接发」。",
+                ),
+                e(
+                    "report/send", "POST", "/dev/report",
+                    "AI 主动上报问题（会弹 30 秒同意窗口，用户点了同意才真的发出去）",
+                    params = "action=preview|send, title=标题, body=正文, files=[路径]",
+                    body = "{\"action\":\"send\",\"title\":\"修了 X\",\"files\":[\"/data/.../fix.patch\"]}",
+                    examples = listOf("report preview -t 标题 -a a.patch", "report fixed -a fix.patch -t 修了 X"),
+                    limits = "① action=preview 只算不发，先看再决定。\n" +
+                        "② 顺序固定：体积检查 → 无障碍 → 用户同意 → 换一次性 token → 上传；任何一步拿不到就失败关闭。\n" +
+                        "③ 附件仅 txt/log/md/json/jsonl/patch/diff/zip，单次 ≤2 MiB；服务端二次审查，命中密钥/身份证/银行卡会 422 并给行号。\n" +
+                        "④ 用户拒绝或 30 秒超时 → 403 CONSENT_DENIED，什么都没发出去，也不占配额。",
+                ),
+                e(
                     "vscreen", "POST", "/dev/vscreen",
                     "虚拟屏：给 AI 开一块**不显示在物理屏上**的第二块屏，把 App 启过去操作",
                     cap = "vscreen", perm = "root（createVirtualDisplay 的 TRUSTED flag 要签名级 ADD_TRUSTED_DISPLAY）",
@@ -855,6 +873,18 @@ object EndpointCatalog {
                     params = "id=<记忆 id>",
                     examples = listOf("dev memory_get id=m_1234"),
                     limits = "id 不存在返回 no such memory（不是空对象）。",
+                ),
+                e(
+                    "memory_shot", "GET", "/memory/v2/shot",
+                    "取一条记忆的界面截图（默认返回拼好的总览图）",
+                    params = "id=<记忆 id>  step=<步号，可选；给 -1 取任务起手那一屏>",
+                    examples = listOf(
+                        "dev memory_shot id=m_1234",
+                        "dev memory_shot id=m_1234 step=2",
+                    ),
+                    limits = "① 只返回**绝对路径**，用 read_image 打开，不要 base64；\n" +
+                        "② 省略 step 得到总览拼图：一格一步，角标 S 是任务起手屏，数字是步号；\n" +
+                        "③ 这条记忆没图时返回 no images for this memory（可能是禁止截图的 App，也正常）。",
                 ),
                 e(
                     "memory_save", "POST", "/memory/v2/upsert",
@@ -1055,6 +1085,78 @@ object EndpointCatalog {
                     examples = listOf(
                         "dev linux/exec cmd='uname -m'",
                         "dev linux/exec cmd='apk add --no-progress curl' timeout_ms=60000",
+                    ),
+                ),
+            )
+        ),
+        Triple(
+            "任务化执行", "把编译这类长活离机跑：提交 → 轮询 → 取产物", listOf(
+                e(
+                    "jobs/submit", "POST", "/dev/jobs",
+                    "提交一个容器内任务，立即返回 jobId；执行在后台，最多 2 个并发",
+                    cap = "linux",
+                    body = "{\"cmd\":\"make -j2\",\"workdir\":\"/ws\",\"timeout_ms\":600000,\"label\":\"build\"}",
+                    limits = "① 整组受 cap.linux 门控，与 /dev/linux/exec 同一个开关。\n" +
+                        "② 返回 **202** 不是 200 —— 意思是「已受理」，不是「已完成」。\n" +
+                        "③ 同时最多 2 个任务在跑（WORKERS=2），超出的排队等；队列里的状态是 queued。\n" +
+                        "④ 单任务硬超时默认 5 分钟、上限 20 分钟，到点标记 state=timeout。\n" +
+                        "⑤ 容器没部署时直接 409，先调 /dev/linux/deploy。",
+                    examples = listOf(
+                        "dev api POST /dev/jobs '{\"cmd\":\"make -j2\",\"label\":\"build\"}'",
+                    ),
+                ),
+                e(
+                    "jobs/list", "GET", "/dev/jobs",
+                    "最近的任务（默认 20 条，含 state / exit_code / 耗时 / 输出字节数）",
+                    cap = "linux",
+                    limits = "① 按 jobId 倒序（jobId 前缀是时间戳），新的在前。\n" +
+                        "② 只保留最近 50 个任务目录，多余的按开始时间删最老的**已终态**任务。\n" +
+                        "③ state 取值：queued / running / success / failed / timeout / cancelled / error。\n" +
+                        "④ `error` 是任务体自身抛异常（不是命令退出码非零），message 在 error 字段。",
+                    examples = listOf("dev jobs", "dev api GET '/dev/jobs?limit=5'"),
+                ),
+                e(
+                    "jobs/get", "GET", "/dev/jobs/get",
+                    "单个任务的详情（必须带 id）",
+                    cap = "linux",
+                    limits = "① id 必填，缺了返 400；不存在的 id 返 404。\n" +
+                        "② 详情里没有日志正文 —— 日志走 /dev/jobs/log，避免每次轮询搬几百 KB。",
+                    examples = listOf("dev api GET '/dev/jobs/get?id=job-20261114-...'"),
+                ),
+                e(
+                    "jobs/log", "GET", "/dev/jobs/log",
+                    "读任务日志尾部（默认 stdout 最后 200 行）",
+                    cap = "linux",
+                    limits = "① 默认读 stdout，`stream=stderr` 读错误流。\n" +
+                        "② 只读尾部，最多往回扫 512 KB；`lines` 夹在 1..2000。\n" +
+                        "③ 单条日志文件上限 8 MiB，超了截断并追加 `[truncated: ...]` 标记 —— " +
+                        "一条 `yes` 不该有写满磁盘的权力。\n" +
+                        "④ 任务还没产生输出时返回空字符串，不是 404。",
+                    examples = listOf(
+                        "dev api GET '/dev/jobs/log?id=job-...&lines=50'",
+                        "dev api GET '/dev/jobs/log?id=job-...&stream=stderr'",
+                    ),
+                ),
+                e(
+                    "jobs/cancel", "POST", "/dev/jobs/cancel",
+                    "请求取消任务（协作式：当前命令返回后标记 cancelled）",
+                    cap = "linux",
+                    limits = "① **不承诺立刻终止**：置标志位，命令返回后才标终态。\n" +
+                        "② 已终态的任务返 409，并带上真实 state（不要在 UI 里假装成功）。\n" +
+                        "③ 取消后即使命令成功了，state 也是 cancelled —— 谁下的令谁负责。",
+                    examples = listOf("dev api POST /dev/jobs/cancel '{\"id\":\"job-...\"}'"),
+                ),
+                e(
+                    "jobs/artifact", "GET", "/dev/jobs/artifact",
+                    "取任务产物（编译出的二进制等），返回 base64 + sha256",
+                    cap = "linux",
+                    limits = "① path 相对任务目录；`..` 穿出目录会被拒（规范比对，不是字符串找 `..`）。\n" +
+                        "② 单文件上限 **8 MiB** —— bridge 响应只能是字符串，base64 会膨胀 33%。" +
+                        "更大的产物走 /dev/open-file 或 peersync。\n" +
+                        "③ 必须用返回的 sha256 校验：JSON 里塞 base64 一旦被中间层改动，" +
+                        "拿到手的二进制会静默损坏。",
+                    examples = listOf(
+                        "dev api GET '/dev/jobs/artifact?id=job-...&path=out/app'",
                     ),
                 ),
             )

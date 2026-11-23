@@ -536,6 +536,7 @@ object AgentBridge {
         "POST /memory/v2/learn" to Route("POST") { c, _, b -> MemoryRoutes.memLearn(c, b) },
         "POST /memory/v2/label" to Route("POST") { c, _, b -> MemoryRoutes.memLabel(c, b) },
         "POST /memory/v2/lookup" to Route("POST") { c, _, b -> MemoryRoutes.memLookup(c, b) },
+        "GET /memory/v2/shot" to Route("GET") { c, q, _ -> MemoryRoutes.memShot(c, q) },
         "GET /memory/v2/stats" to Route("GET") { c, _, _ -> MemoryRoutes.memStats(c) },
         "POST /memory/v2/migrate" to Route("POST") { c, _, _ -> MemoryRoutes.memMigrate(c) },
         "POST /memory/v2/config" to Route("POST") { _, _, b -> MemoryRoutes.memConfig(b) },
@@ -563,6 +564,9 @@ object AgentBridge {
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
         "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
+        // 问题反馈：App 里唯一会往外发数据的通道。必须先过用户的 30 秒同意浮窗。
+        "GET /dev/report" to Route("GET") { c, _, _ -> reportStatus(c) },
+        "POST /dev/report" to Route("POST") { c, _, b -> reportSend(c, b) },
         // 虚拟屏：给 AI 的第二块屏。核心是 uid 0 的 app_process 进程，
         // 由门脚本 vscreen 转发；这里只做能力闸门 + 参数白名单。
         "GET /dev/vscreen" to Route("GET") { c, _, _ ->
@@ -693,6 +697,14 @@ object AgentBridge {
         "POST /dev/linux/switch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.switch(c, b) },
         "POST /dev/linux/deploy" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.deploy(c, b) },
         "POST /dev/linux/exec" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.exec(c, b) },
+        // 任务化执行（同受 cap.linux 门控）。exec 的硬上限是 120 秒且要返全量输出，
+        // 编译这种跑几分钟、输出几百 KB 的活走不通，所以单独一层「提交 → 轮询 → 取产物」。
+        "POST /dev/jobs" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.JobsCap.submit(c, b) },
+        "GET /dev/jobs" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.list(c, q) },
+        "GET /dev/jobs/get" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.get(c, q) },
+        "GET /dev/jobs/log" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.log(c, q) },
+        "POST /dev/jobs/cancel" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.JobsCap.cancel(c, b) },
+        "GET /dev/jobs/artifact" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.JobsCap.artifact(c, q) },
         "GET /dev/notifications" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.NotifyCap.read(c, q) },
         "POST /dev/clipboard" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.clipboard(c, b) },
         "POST /dev/control" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.control(c, b) },
@@ -4246,6 +4258,99 @@ document.getElementById('api').textContent = checks.map(function(c){
         }
         return 200 to result.toString()
     }
+
+    // ── /dev/report：AI 主动上报（唯一往外发数据的通道） ──────────────────
+    //
+    // 三件事必须按顺序发生，顺序错了这个功能就没有意义：
+    //   1) 用户看到「要发什么」并点同意（30 秒，超时即拒绝）
+    //   2) 才向服务端换一次性 token
+    //   3) 带 token 上传
+    // 任何一步缺失都失败关闭，绝不降级成「不带 token 直接发」。
+    private fun reportStatus(ctx: Context): Pair<Int, String> = runCatching {
+        val disabled = app.dsh.mobile.ReportConsentGate.permanentlyDisabled(ctx)
+        val reachable = runCatching {
+            val c = (java.net.URL(app.dsh.mobile.ReportUpload.BASE + "/report.php")
+                .openConnection() as java.net.HttpURLConnection)
+            c.connectTimeout = 8000
+            c.readTimeout = 8000
+            val ok = c.responseCode in 200..299
+            c.disconnect()
+            ok
+        }.getOrDefault(false)
+        val a11y = DshAccessibilityService.instance != null
+        200 to buildString {
+            append("""{"ok":true,"disabled":""").append(disabled)
+            append(""","server_reachable":""").append(reachable)
+            append(""","accessibility_ready":""").append(a11y)
+            append(""","endpoints":{"consent":""").append(org.json.JSONObject.quote(app.dsh.mobile.ReportUpload.CONSENT_ENDPOINT))
+            append(""","upload":""").append(org.json.JSONObject.quote(app.dsh.mobile.ReportUpload.UPLOAD_ENDPOINT))
+            append("""},"limits":{"max_bytes":""").append(app.dsh.mobile.ReportUpload.MAX_BYTES)
+            append(""","consent_timeout_ms":30000}""")
+            append("""}""")
+        }
+    }.getOrElse { 500 to """{"ok":false,"error":"status failed"}""" }
+
+    private fun reportSend(ctx: Context, body: String): Pair<Int, String> = runCatching {
+        val obj = runCatching { org.json.JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        val action = obj.optString("action", "send").lowercase()
+        val title = obj.optString("title").take(200)
+        val text = obj.optString("body").take(8000)
+
+        val paths = mutableListOf<String>()
+        obj.optJSONArray("files")?.let { a ->
+            for (i in 0 until a.length()) {
+                a.optString(i).takeIf { it.isNotBlank() }?.let(paths::add)
+            }
+        }
+        obj.optString("file").takeIf { it.isNotBlank() }?.let(paths::add)
+
+        val files = paths.map { java.io.File(it) }
+        val missing = files.filter { !it.isFile || !it.canRead() }.map { it.absolutePath }
+        if (missing.isNotEmpty()) {
+            val arr = org.json.JSONArray()
+            missing.forEach(arr::put)
+            return 400 to """{"ok":false,"code":"BAD_FILE","missing":$arr}"""
+        }
+        val total = files.sumOf { it.length() }
+
+        if (action == "preview") {
+            val names = org.json.JSONArray()
+            files.forEach { names.put(it.name) }
+            return 200 to """{"ok":true,"action":"preview","title":${org.json.JSONObject.quote(title)},""" +
+                """"files":$names,"bytes":$total,""" +
+                """"note":"nothing sent; call again with action=send to trigger the consent dialog"}"""
+        }
+
+        if (app.dsh.mobile.ReportConsentGate.permanentlyDisabled(ctx)) {
+            return 403 to """{"ok":false,"code":"REPORT_DISABLED","error":"bug reporting is turned off in About"}"""
+        }
+        if (total > app.dsh.mobile.ReportUpload.MAX_BYTES) {
+            return 413 to """{"ok":false,"code":"TOO_LARGE","limit":${app.dsh.mobile.ReportUpload.MAX_BYTES},"got":$total}"""
+        }
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled — the consent dialog rides on it"}"""
+
+        val names = files.map { it.name }
+        val approved = app.dsh.mobile.ReportConsentGate.request(svc, title, text.take(160), names, total)
+        if (!approved) {
+            return 403 to """{"ok":false,"code":"CONSENT_DENIED","error":"the user did not approve within 30 seconds"}"""
+        }
+        val token = app.dsh.mobile.ReportUpload.mintConsent()
+            ?: return 502 to """{"ok":false,"code":"CONSENT_ISSUE_FAILED","error":"cannot obtain a consent token"}"""
+
+        val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
+        val fields = mapOf(
+            "install_id" to app.dsh.mobile.ReportBundle.installId(ctx),
+            "title" to title,
+            "body" to text,
+            "mode" to "agent",
+            "app_version" to (info?.versionName ?: ""),
+            "version_code" to ((info?.longVersionCode ?: 0L).toString()),
+        )
+        app.dsh.mobile.ReportUpload.upload(fields, files, token)
+    }.getOrElse { e -> 500 to """{"ok":false,"error":"report failed: ${e.message?.replace('"', '\'')}"}""" }
+
 
     /** POST /tap-id —— 按 resource-id 点击（v1.2.141）。比文本定位稳：不受界面语言、OCR 误差影响 */
     private fun tapId(body: String): Pair<Int, String> {

@@ -234,9 +234,36 @@ check("灵动岛: 工具栏高度回归标准 rowH",
 check("灵动岛: 圆尺寸受「不溢出屏幕」约束",
       "maxDotNoOverflow" in main_act,
       "直径超过圆心到顶距离的两倍就会跑到屏幕外")
-check("灵动岛: 小圆用 TouchDelegate 扩到 48dp 触控区",
-      "applyHandleTouchTarget" in main_act and "TouchDelegate" in main_act,
-      "视觉尺寸只有 38dp 时手指点不中（用户实测「我都点不到」）")
+# ⚠️ 旧断言（v1.4.59 → v1.7.20）只查了两个函数/类名是否存在：
+#     "applyHandleTouchTarget" in main_act and "TouchDelegate" in main_act
+# 结果它守着一段**从来没生效过**的死代码 —— TouchDelegate 挂在根 FrameLayout 上，
+# 而根布局里的 WebView / 启动遮罩都铺满全屏，ViewGroup 永远进不到 super.onTouchEvent，
+# mTouchDelegate 因此永远不会被查询（实测 48dp 扩展区逐点点不动）。断言全绿，
+# 用户却一直点不到。典型假绿。
+# 现在改为守住「真实存在的东西」：布局里有可点的命中层 + 代码按档计算并套用它的矩形。
+main_xml = read("app/src/main/res/layout/activity_main.xml")
+check("灵动岛: 布局里有独立的 48dp 拖尾命中层（不是 TouchDelegate）",
+      'android:id="@+id/handleHit"' in main_xml and
+      "applyHandleTouchTarget" not in main_act,
+      "TouchDelegate 在根 FrameLayout 上是死代码：子视图铺满全屏时它永远不被查询")
+check("灵动岛: 命中层可点且不吃焦点、默认隐藏",
+      re.search(r'android:id="@\+id/handleHit"[^>]*', main_xml) is not None and
+      'android:clickable="true"' in main_xml and
+      'android:visibility="gone"' in main_xml,
+      "不可点就白搭；不隐藏会挡在网页上吃点击")
+check("灵动岛: 命中层矩形由 IslandChrome.hitRect 统一计算",
+      "IslandChrome.hitRect(" in main_act and "fun hitRect(" in read(
+          "app/src/main/java/app/dsh/mobile/IslandChrome.kt"),
+      "几何必须只有一个来源，否则改一处漏一处")
+check("灵动岛: 命中层可见性跟随把手（同进同退）",
+      re.search(r'hit\?\.visibility\s*=\s*if \(showHandle\)', main_act) is not None,
+      "只藏把手不藏命中层 → 屏幕外留下一块看不见却吃触摸的幽灵区")
+check("灵动岛: 贴边时申请系统手势排除区",
+      "systemGestureExclusionRects" in main_act,
+      "手势导航下贴边 26dp 把手处在系统返回手势的起手区，会被系统抢走")
+check("灵动岛: 拖拽位移同时带动命中层",
+      "h.translationX = tx" in main_act and "h.translationY = ty" in main_act,
+      "命中层停在原地会让拖动中途失去后续事件")
 check("灵动岛: 工具栏与圆用各自的 top（wantRowTop / wantTop）",
       "m.topMargin != wantRowTop" in main_act,
       "混用会让工具栏跟着圆心下移")

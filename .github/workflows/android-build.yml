@@ -615,7 +615,12 @@ jobs:
           if [ "${{ matrix.package }}" = "full" ]; then
             ARGS+=(-PruntimeZip="${{ github.workspace }}/runtime-dist/runtime.zip")
           fi
-          gradle -p . assembleDebug "${ARGS[@]}" --stacktrace 2>&1 | tee build-${{ matrix.abi }}-${{ matrix.package }}.log
+          # JVM 单测不区分 ABI 或包形态。只在 arm64 noruntime 跑一次，复用 APK 构建环境和编译结果。
+          TASKS=(assembleDebug)
+          if [ "${{ matrix.abi }}" = "arm64-v8a" ] && [ "${{ matrix.package }}" = "noruntime" ]; then
+            TASKS+=(:app:testDebugUnitTest)
+          fi
+          gradle -p . "${TASKS[@]}" "${ARGS[@]}" --stacktrace 2>&1 | tee build-${{ matrix.abi }}-${{ matrix.package }}.log
           if [ -n "${DSH_RELEASE_STORE_PASSWORD:-}" ] && [ -f keystore/dsh-release.keystore ]; then
             # -PrequireReleaseSigning=true：正式包缺私钥时必须失败，不能产出
             # app-release-unsigned.apk 让发布链路误当正式包上传。

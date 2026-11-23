@@ -34,6 +34,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/Soodok/Deepseek-Harness-Local-Android?color=64748b)](https://github.com/Soodok/Deepseek-Harness-Local-Android/commits/main)
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
 [![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
+[![Afdian](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E4%BD%9C%E8%80%85-946ce6?style=for-the-badge&logo=heart&logoColor=white)](https://afdian.com/a/114514soodok)
 
 ---
 
@@ -132,6 +133,8 @@
 | **CI 收集 + SONAME 去重 + SHA 校验**，全部 `.so` **16 KB 页对齐** | 产物可复现；Android 15+ 的 16 KB 页内核直接可用 |
 
 另有一条：前端注入 **polyfill**，把 WebView 门槛从 Chrome 126 **拉回 85**——国产 ROM 常见的 96 实测可用。
+
+> 门槛分两笔账，别混：**JS 侧**（语法 + API）确实是 85，构建期用 esbuild 把 `static {}` 转译掉、再补 20 项现代 API（共 22 处安装：按 API 名去重 20 项，其中 `groupBy` 分挂 `Object` 与 `Map` 两处、`any`/`timeout`/`abort`/`throwIfAborted` 亦同名分挂），`MIN_CHROME = 85` 就是按它定的；**CSS 侧**做不到 85 —— 上游样式表用了 `:has()`（105）、`color-mix()`（111）、`anchor()` + `position-try`（125），在 85–124 上是**静默降级**（不报错、不白屏，但部分样式与弹层定位失效，例如 `anchor()` 缺失时弹出面板会落到视口顶部）。抬门槛会砍掉一大批现役设备，所以选择留在 85 并用客户端插件兜底已知的定位缺口，详见「边界」。
 
 ---
 
@@ -575,6 +578,10 @@ Windows Git Bash 用 `gradle.bat` 替代 `./gradlew`。
 
 **无障碍读不全所有界面。** 纯 Canvas、游戏画面、部分受保护页面没有可用节点树，程序会按层降级（节点树 → OCR → 图标几何 → 帧差），但仍不能把所有图形界面变成可靠的结构化信息。
 
+**WebView 的 CSS 门槛低于 JS 门槛。** `MIN_CHROME = 85` 守的是 JS 侧（语法转译 + API polyfill，见 `WebViewDiagnostics.kt:75` 与 `_test_webview_syntax_floor.mjs`）。CSS 侧上游用了 `:has()`（Chrome 105）、`color-mix()`（111）、CSS anchor positioning（`anchor()` / `position-anchor` / `position-try`，**125**）——这些 polyfill 补不了，在 85–124 的内核上**静默降级**：不报错、不白屏，但选择器不匹配、颜色表达式失效、弹层拿不到相对触发点的坐标。实测（Chrome 157 + rc.3 真 CSS、412×915）：`anchor()` 声明被丢弃后，本轮用量面板落在 (100, 12) 即**视口顶边**，离触发按钮 678px。目前用客户端插件兜底已定位的那一处（`chat-anchor-fallback`），其余 CSS 降级仅影响观感，不改功能；抬门槛属产品决策，未做。
+
+**官方 chat 导入是「可选层」，不是默认能力。** 引擎运行时自带 `@deepseek-ai/dsh-deepseek-chat-import`，但上游注明 shipped profile 不含这一层 —— 要在「备份与恢复」页拨开开关、重启引擎后，侧栏「新建会话」旁才会出现上传按钮。上传包**整包读进内存再解压、不落盘**，所以我们在层里把上限收到 **256 MiB 上传 / 64 MiB 单条目**（上游桌面默认是 512 / 256）；超过就返回 `too-large`，不会尝试边下边解。导出包格式是官方 v3（`deepseek_data-*.zip`），导入后会话进入选定工作区，原会话标题会作为会话名。
+
 **不该拿它做的事。** 不要用虚拟 HID / 无障碍 / Root 绕过风控、欺骗用户、操作未授权设备。项目**不提供**让注入输入「不可检测」的实现。
 
 ---
@@ -626,6 +633,20 @@ dev api GET /dev/routes
 - [Telegram](https://t.me/+4VN3pYyH6i8yNDA1)
 
 提 issue 请附：设备型号、Android 版本、CPU ABI、版本号、当前运行模式、相关权限状态、`logcat`、最小复现步骤、失败时的原始输出。
+
+---
+
+## 💜 支持这个项目
+
+项目以 MIT 许可开源，所有功能免费、无付费墙、无订阅、无激活码 —— 赞助**不解锁任何东西**，纯粹是让这件事能继续做下去。
+
+如果它帮你省了时间，可以在这里请作者喝杯咖啡：
+
+**[afdian.com/a/114514soodok](https://afdian.com/a/114514soodok)**
+
+赞助主要用在：真机测试设备与配件、构建与签名环境、域名与服务器、以及跟进上游版本的维护时间。
+
+不赞助也完全没问题 —— 提一个带复现步骤的 Issue、写一份真实使用反馈、把项目推荐给需要的人，同样是实实在在的帮助。
 
 ---
 

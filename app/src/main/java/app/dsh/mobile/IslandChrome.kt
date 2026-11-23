@@ -3,7 +3,7 @@ package app.dsh.mobile
 import kotlin.math.roundToInt
 
 /** 灵动岛停靠在屏幕哪条边。 */
-enum class IslandDock { TOP, LEFT, RIGHT }
+enum class IslandDock { TOP, LEFT, RIGHT, BOTTOM }
 
 /**
  * 灵动岛靠边展开的几何计算（v1.5.6）。
@@ -48,14 +48,16 @@ object IslandChrome {
         density: Float,
         yCenter: Int,
     ): Metrics {
-        val w = px(COLLAPSED_W_DP, density)
-        val h = px(COLLAPSED_H_DP, density)
+        val horizontalBottom = dock == IslandDock.BOTTOM
+        val w = px(if (horizontalBottom) COLLAPSED_H_DP else COLLAPSED_W_DP, density)
+        val h = px(if (horizontalBottom) COLLAPSED_W_DP else COLLAPSED_H_DP, density)
         val safe = px(EDGE_SAFE_DP, density)
-        val y = (yCenter - h / 2).coerceIn(safe, (screenH - h - safe).coerceAtLeast(safe))
+        val y = if (horizontalBottom) (screenH - h).coerceAtLeast(0) else
+            (yCenter - h / 2).coerceIn(safe, (screenH - h - safe).coerceAtLeast(safe))
         val x = when (dock) {
             IslandDock.LEFT -> 0
             IslandDock.RIGHT -> (screenW - w).coerceAtLeast(0)
-            IslandDock.TOP -> ((screenW - w) / 2).coerceAtLeast(0)
+            IslandDock.TOP, IslandDock.BOTTOM -> ((screenW - w) / 2).coerceAtLeast(0)
         }
         return Metrics(x, y, w, h)
     }
@@ -73,10 +75,10 @@ object IslandChrome {
         contentH: Int,
         yCenter: Int,
     ): Metrics {
-        val w = px(PANEL_W_DP, density)
+        val w = px(PANEL_W_DP, density).coerceAtMost(screenW.coerceAtLeast(0))
         val safe = px(EDGE_SAFE_DP, density)
-        val maxH = (screenH * MAX_HEIGHT_RATIO).roundToInt()
-        val h = contentH.coerceIn(px(120, density), maxH)
+        val maxH = (screenH * MAX_HEIGHT_RATIO).roundToInt().coerceAtLeast(0)
+        val h = contentH.coerceIn(minOf(px(120, density), maxH), maxH)
         val y = (yCenter - h / 2).coerceIn(safe, (screenH - h - safe).coerceAtLeast(safe))
         val x = when (dock) {
             IslandDock.RIGHT -> (screenW - w).coerceAtLeast(0)
@@ -97,6 +99,7 @@ object IslandChrome {
      * 而且它是纯函数，能在宿主 JVM 上断言（真机重现需要特定 insets 时序）。
      *
      * @param safeTopPx 顶部安全边（状态栏 / 挖孔下沿）。贴顶时 y 取它和 10dp 的较大值。
+     * @param safeBottomPx Bottom inset in pixels; negative values are treated as zero.
      * @param ratio     沿边位置（0..1）——只影响沿边那一维，另一维贴边为 0。
      */
     fun collapsedRect(
@@ -106,9 +109,11 @@ object IslandChrome {
         density: Float,
         ratio: Float,
         safeTopPx: Int = 0,
+        safeBottomPx: Int = 0,
     ): Metrics {
-        val wDp = if (dock == IslandDock.TOP) COLLAPSED_H_DP else COLLAPSED_W_DP
-        val hDp = if (dock == IslandDock.TOP) COLLAPSED_W_DP else COLLAPSED_H_DP
+        val horizontal = dock == IslandDock.TOP || dock == IslandDock.BOTTOM
+        val wDp = if (horizontal) COLLAPSED_H_DP else COLLAPSED_W_DP
+        val hDp = if (horizontal) COLLAPSED_W_DP else COLLAPSED_H_DP
         val w = px(wDp, density)
         val h = px(hDp, density)
         val safe = px(EDGE_SAFE_DP, density)
@@ -118,6 +123,12 @@ object IslandChrome {
             IslandDock.TOP -> Metrics(
                 x = (r * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0)),
                 y = topBase,
+                w = w,
+                h = h,
+            )
+            IslandDock.BOTTOM -> Metrics(
+                x = (r * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0)),
+                y = (parentH - h - safeBottomPx.coerceAtLeast(0)).coerceAtLeast(0),
                 w = w,
                 h = h,
             )
@@ -135,6 +146,42 @@ object IslandChrome {
             )
         }
     }
+
+    /**
+     * 收起态把手的**触控矩形**（v1.7.21）。
+     *
+     * ## 为什么需要这个纯函数
+     * 把手视觉尺寸是 26×44dp（侧边）或 44×26dp（顶部），短边只有 26dp，
+     * 远低于 Android 的 48dp 最小触控尺寸 —— 用户实测「我都点不到」。
+     *
+     * 历史修法是在父容器上挂 [android.view.TouchDelegate] 向外扩 48dp，
+     * 但那条路**完全不生效**（v1.7.21 实测 + SDK 源码证实）：
+     *   1. `TouchDelegate.mBounds` 要的是**父容器局部坐标**，旧代码却按
+     *      「以把手为原点」写成负起点，把手不在父原点时整块矩形错位；
+     *   2. 更致命的是 `mTouchDelegate` 唯一的查询点在 `View.onTouchEvent`，
+     *      而 `ViewGroup.dispatchTouchEvent` 只有在 `mFirstTouchTarget == null`
+     *      （没有任何子视图命中）时才会走到 `super`。把手的父容器是根
+     *      FrameLayout，其中的 WebView 与启动遮罩都铺满全屏，手指一落就有
+     *      子视图命中 → 委托**永远不被查询** → 48dp 扩展是纯死代码。
+     *
+     * 所以改成「真实的透明命中视图」：位置与尺寸由这里算，Activity 只负责套用。
+     *
+     * @param m          把手的视觉矩形（[collapsedRect] 的结果）
+     * @param parentW    父容器宽（px）
+     * @param parentH    父容器高（px）
+     * @param minTouchPx 最小触控边长（px），通常 48dp
+     */
+    fun hitRect(m: Metrics, parentW: Int, parentH: Int, minTouchPx: Int): Metrics {
+        val size = maxOf(minTouchPx, maxOf(m.w, m.h))
+        val cx = m.x + m.w / 2
+        val cy = m.y + m.h / 2
+        val x = (cx - size / 2).coerceIn(0, (parentW - size).coerceAtLeast(0))
+        val y = (cy - size / 2).coerceIn(0, (parentH - size).coerceAtLeast(0))
+        return Metrics(x, y, size, size)
+    }
+
+    /** 最小触控边长（dp）。Android 无障碍规范的下限，不要为了「好看」调小。 */
+    const val HANDLE_MIN_TOUCH_DP = 48
 
     /** 展开面板是否被高度上限截断（需要内部滚动）。 */
     fun needsScroll(screenH: Int, density: Float, contentH: Int): Boolean {
@@ -197,9 +244,23 @@ object IslandPalette {
          * drawable/bg_dynamic_island_dot.xml 的做法（0.5dp stroke + 外环），
          * 代码生成的背景把那一层丢了。
          *
-         * 取 0 表示不描边（深色主题沿用原来的纯黑，不做任何改动）。
+         * 取 0 表示不描边。**两种主题都必须给非 0 值**（v1.7.20 起）：
+         * 深色主题原本是 0，理由是「纯黑把手在深色页面上看着没问题」——
+         * 实测不成立：#000000 对深色页面 #151517 只有 1.15:1，对卡片
+         * #2C2C2E 只有 1.51:1，用户报的「收起后小球不显示」正是这个。
          */
         val outline: Int = 0,
+        /**
+         * 侧边展开面板的边缘投影色（v1.7.14）。
+         *
+         * 为什么不用 elevation：系统投影色在浅/深主题下固定偏灰，而面板压在
+         * **任意网页**上，底色不可控（和 [outline] 的成因一样）。这里显式给色，
+         * 浅色用低透明度黑、深色用高一点透明度的黑 —— 深色面板本身全黑，
+         * 投影要更实才看得出「浮起来」。
+         *
+         * 取 0 表示不投阴影。
+         */
+        val panelShadow: Int = 0,
     )
 
     val DARK = Colors(
@@ -214,7 +275,15 @@ object IslandPalette {
         ok = 0xFF22A06B.toInt(),
         okSoft = 0x3322A06B,
         warn = 0xFFB45309.toInt(),
-        outline = 0,   // 深色沿用旧观感，一个像素都不改
+        // ⚠️ v1.7.20：这里原来是 0（「深色沿用旧观感」），但纯黑把手压在深色
+        // 页面上只有 1.15:1 —— 用户报的「收起后小球不显示」就是它。
+        // 与浅色同色：#7B8899 对深色页面 5.06:1、对深色卡片 3.86:1、
+        // 对黑色填充 5.82:1，三个方向都过 UI 边界要求的 3:1。
+        // 不改 handle 填充：用户明确不要改把手颜色（观感）。
+        outline = 0xFF7B8899.toInt(),
+        // 深色面板是纯黑，投 24% 黑在深色页面上几乎看不出；提到 48% 才有
+        // 「浮起来一层」的层次，又不会在浅色网页上变成脏污块。
+        panelShadow = 0x7A000000,
     )
 
     val LIGHT = Colors(
@@ -241,6 +310,10 @@ object IslandPalette {
         warn = 0xFF92400E.toInt(),
         // 对 handle 3.29:1、对纯白 3.61:1 —— 满足 UI 元素边界 3:1，又不至于成黑框
         outline = 0xFF7B8899.toInt(),
+        // 浅色面板 #F7F9FC 压在纯白页上只差 3%，靠投影拉开层次。
+        // 22% 黑（约 #000 的 56 级）在 #F7F9FC 上肉眼可见、不显灰脏；
+        // 再深就会像「描了一圈粗边」，与用户「不描边」的要求相反。
+        panelShadow = 0x38000000,
     )
 
     fun of(dark: Boolean): Colors = if (dark) DARK else LIGHT

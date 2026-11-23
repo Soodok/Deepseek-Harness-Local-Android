@@ -24,6 +24,7 @@ import app.dsh.mobile.engine.LinuxDnsProxy
 import app.dsh.mobile.engine.LinuxEnvironmentManager
 import app.dsh.mobile.engine.LinuxPackageManager
 import app.dsh.mobile.engine.LinuxRootfsCatalog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,6 +71,14 @@ import java.io.File
  * 3. **不静默降级**：环境不可用时明确说明缺什么、该做什么，不假装一切正常。
  */
 class LinuxActivity : ThemedActivity() {
+
+    /**
+     * 整屏自绘的 Linux 工作台不跟随界面风格。
+     *
+     * 它的底色、分组卡、状态点全是代码里算出来的（80 处 addView、29 处 getColor），
+     * 配色按「深色工作台」设计 —— 套 Material 3 暖灰会让自绘部分与
+     * `?attr/dshXxx` 部分互相打架。等它的自绘层也改成令牌驱动后再纳入。
+     */
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var env: LinuxEnvironmentManager
@@ -144,6 +153,23 @@ class LinuxActivity : ThemedActivity() {
     private var inputChannel: app.dsh.mobile.engine.LinuxInputChannel? = null
     /** 触摸总开关：用户点「开始」之后才把手指动作送进容器 */
     private var inputEnabled = false
+
+    /**
+     * 帧服务的状态目录（容器内路径）。
+     *
+     * 指向 App 私有 files —— 它已被 buildBinds 挂进容器，两边都能读写。
+     *
+     * ★不能放容器内 /tmp：真机上 /tmp 有时是 tmpfs、有时是 rootfs 里的实体
+     *   目录，跨 runner.shell() 是否存活没有保证。而 display 号与各进程 pid
+     *   必须被**另外两次** runner.shell()（开触摸、停画面）读到，所以只能放
+     *   bind 目录这种一定可见的地方。
+     */
+    private val frameStateDir: String
+        get() = "/data/data/$packageName/files"
+
+    /** 当前 X11 display 号所在文件（容器内路径，由 startFrameServer 写入） */
+    private val frameDisplayFile: String
+        get() = "$frameStateDir/dsh-display"
 
     /**
      * 每个发行版行的行内进度控件（v1.5.3）。
@@ -397,33 +423,71 @@ class LinuxActivity : ThemedActivity() {
         }
         val shared = app.dsh.mobile.engine.LinuxInputChannel.containerPath(packageName)
         /*
-         * DISPLAY 必须显式给 :99 —— 与 startFrameServer() 里 Xvfb 的 display 号
-         * 同一个。不写死而用 `${DISPLAY:-:0}` 是不行的：`runner.shell()` 起的
-         * 是全新的 shell，继承不到 App 那边设置的环境，最终会退到 `:0` 而
-         * 那个 display 上根本没有 X 服务器，inputd 报 `INPUTD_FAIL open display`。
+         * DISPLAY 号不再是写死的 :99 —— startFrameServer() 现在每次挑一个
+         * 没被占用的号（99..119，绕开残留 socket），挑中的写进 frameDisplayFile
+         * （/data/data/<pkg>/files/dsh-display，已 bind 进容器）。
+         *
+         * 拿不到那个文件说明「画面还没起过」：直接报错让用户先点「开始画面」，
+         * 别猜一个 :0 去撞 —— 撞空的报错是 INPUTD_FAIL open display，
+         * 用户完全看不出是「顺序错了」还是「X 没起来」。
          */
         val res = runner.shell(
-            // ★合并（2026-11-09）：[i] 形式防自杀 —— 本 shell 的 cmdline 里就含
-            //   "inputd" 字面量（下面 nohup 那行），裸写 pkill -f inputd 会杀掉
-            //   自己这条 sh，导致 sleep / nohup / echo STARTED 全不执行。
-            "pkill -f [i]nputd 2>/dev/null; sleep 0.2; " +
-                "nohup env DISPLAY=:99 inputd $shared 1 " +
-                ">/tmp/inputd.log 2>&1 & echo STARTED",
-            timeoutMs = 15_000L,
+            // ★停旧进程不能用 pkill -f [i]nputd：本 sh 的 cmdline 里就有
+            //   /inputd 字面量，正则 [i]nputd 会匹配到它 → 自杀（真机实测
+            //   rc=143，后面 nohup 根本不执行）。用行首锚点 + pidfile。
+            """
+            [ -e $frameStateDir/dsh-inputd.pid ] && { kill "${'$'}(cat $frameStateDir/dsh-inputd.pid)" 2>/dev/null; rm -f $frameStateDir/dsh-inputd.pid; }
+            pkill -f '^/inputd ' 2>/dev/null
+            sleep 0.2
+            D=${'$'}(cat $frameDisplayFile 2>/dev/null)
+            if [ -z "${'$'}D" ]; then echo INPUTD_FAIL no-display; exit 0; fi
+            if [ ! -e /tmp/.X11-unix/X${'$'}D ]; then echo "INPUTD_FAIL no-x-socket display=:${'$'}D"; exit 0; fi
+            nohup env DISPLAY=:${'$'}D /inputd ${shared} 1 >/tmp/inputd.log 2>&1 &
+            echo ${'$'}! > $frameStateDir/dsh-inputd.pid
+            sleep 0.5
+            if ! kill -0 "${'$'}(cat $frameStateDir/dsh-inputd.pid 2>/dev/null)" 2>/dev/null; then
+              echo INPUTD_FAIL exited
+              head -6 /tmp/inputd.log 2>/dev/null
+              exit 0
+            fi
+            echo "INPUTD_OK display=:${'$'}D"
+            exit 0
+            """.trimIndent(),
+            timeoutMs = 20_000L,
         )
-        if (!res.ok) {
-            return@runAsync getString(R.string.linux_input_failed, res.combined())
+        val out = res.combined()
+        if (!out.contains("INPUTD_OK")) {
+            return@runAsync getString(R.string.linux_input_failed, out.take(600))
         }
         inputEnabled = true
         getString(R.string.linux_input_enabled) + " → " + shared
-
     }
 
     /**
-     * 在容器里启动帧服务。
+     * 在容器里启动帧服务（X11 路线：Xvfb + xterm + x11frsrv 抓 X 合成结果）。
      *
-     * 输出走 `nohup ... &` 后台，不阻塞 UI；帧服务自己写共享文件，
-     * 这里只管把进程拉起来。
+     * ## 三个真机实测踩出来的坑（2026-11-14 定位，PLZ110 / Android 16）
+     *
+     * 1. **`pkill -f [x]yz` 防不住自杀**。`pkill -f` 匹配整条 cmdline，而这条
+     *    `sh -c` 自己的 cmdline 里既有 `[x]11frsrv` 这段模式文本，又有
+     *    `nohup /x11frsrv …` 里的 `/x11frsrv` 字面量 —— 正则 `[x]11frsrv`
+     *    命中的是后者，于是 sh 把自己杀掉（实测 `Terminated` rc=143），
+     *    **后面的 Xvfb / xterm / 帧服务全都不执行，界面上也没有任何报错**。
+     *    换成 `^/x11frsrv`（行首锚定）后不可能误伤：本 shell 的 cmdline 以
+     *    运行器路径开头。停旧进程另外用 pidfile 兜一层。
+     *
+     * 2. **display 号不能写死 :99**。上一轮若留下 root 属主的
+     *    `/tmp/.X11-unix/X99`，sticky 目录里 app uid 删不掉它 → 新 Xvfb 报
+     *    `Cannot establish any listening sockets` 直接退出。用户体感就是
+     *    「以前能跑，重启之后再起不来」。现在每次挑一个 socket 与 lock 都
+     *    不存在的号（99..119），从根上绕开残留，不依赖删除权限。
+     *
+     * 3. **`-nolock` 只有 root 能用**（非 root 只打一行 Warning，且完全不解
+     *    决 socket 冲突），已去掉；冲突改用挑号解决。
+     *
+     * 另外：以前是 fire-and-forget，命令一发就报「已启动」，哪怕一帧都没出。
+     * 现在**等共享文件里的 seq 真的变了**才认成功，否则把 xvfb / 帧服务日志
+     * 的前几行原样带回 —— 不静默降级。
      */
     private fun startFrameServer() = runAsync(null) {
         // 先清掉可能残留的旧进程，避免两个帧服务抢同一个共享文件。
@@ -433,6 +497,11 @@ class LinuxActivity : ThemedActivity() {
         // 是不行的（容器内那路径不存在），所以传 /data/data/<pkg>/files 形式，
         // 该目录已由 buildBinds 映射进容器。
         val shared = "/data/data/${packageName}/files/${file.name}"
+        // 状态文件（display 号 + 各进程 pid）走 frameStateDir / frameDisplayFile，
+        // 见那两个属性上的说明：必须落在 bind 进容器的 App 私有目录里，
+        // 否则「开触摸」「停画面」这两次独立的 runner.shell() 读不到。
+        val stateDir = frameStateDir
+        val displayFile = frameDisplayFile
         /*
          * ★两条画面路线并联，按**产物是否随包**自动选（合并 2026-11-09）。
          *
@@ -451,30 +520,101 @@ class LinuxActivity : ThemedActivity() {
          */
         val useX11 = env.x11FrameAvailable()
         val cmd = if (useX11) {
-            // X11：启动顺序有依赖（实测踩过）—— Xvfb 必须先起来，否则 x11frsrv 报
-            // `X11FRSRV_FAIL open display`；X 的 socket 目录得先清，否则上一次残留的
-            // abstract socket 会让新实例报 `Cannot establish any listening sockets`
-            // （换 display 号没用，得清目录）。
+            // 启动顺序有依赖（实测踩过）：Xvfb 必须先起来，否则 x11frsrv 报
+            // X11FRSRV_FAIL open display。
             //
-            // ★所有 pkill 模式都写成 [x]yz 形式：pkill -f 匹配整条 cmdline，而这条
-            //   shell 自己的 cmdline 里就含 "x11frsrv" / "framesrv" / "Xvfb :99"
-            //   字面量，裸写会把自己杀掉 —— 后面起帧服务全不执行且无任何报错。
-            buildString {
-                append("pkill -f [x]11frsrv 2>/dev/null; pkill -f [f]ramesrv 2>/dev/null; ")
-                append("pkill -f '[X]vfb :99' 2>/dev/null; sleep 0.3; ")
-                append("rm -rf /tmp/.X11-unix; mkdir -p /tmp/.X11-unix; ")
-                append("nohup Xvfb :99 -screen 0 1280x720x24 -nolock >/tmp/xvfb.log 2>&1 & ")
-                append("sleep 2; ")
-                // 示例程序：一个能明确显示「这是容器里的真实程序」的终端。
-                // 用 -e 直接跑内容，不用 &（后台起的 xterm 不会画东西，实测）。
-                append("export DISPLAY=:99; ")
-                append("nohup xterm -T 'DSH Container' -geometry 100x30 ")
-                append("-e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' ")
-                append(">/dev/null 2>&1 & ")
-                append("sleep 2; ")
-                append("nohup /x11frsrv $shared 1280 720 30 >/tmp/x11frsrv.log 2>&1 & ")
-                append("sleep 1; echo STARTED")
-            }
+            // ★停旧进程一律用「pidfile 优先 + 行首锚定兜底」，不再用 pkill -f [x]yz：
+            //   [x]yz 只能防住「字面量整体出现」，防不住正则去匹配同一条命令行里的
+            //   /x11frsrv 字面量（真机实测直接把 sh 自己 SIGTERM 掉，rc=143）。
+            //   '^/x11frsrv' 带行首锚点，而 sh 的 cmdline 以运行器路径开头，永不误伤。
+            //
+            // ★display 号每轮现挑：残留的 /tmp/.X11-unix/X99 若属主是 root，在
+            //   sticky 目录里 app uid 删不掉 → 新 Xvfb 报 Cannot establish any
+            //   listening sockets 直接退出。挑号绕开残留，不依赖删除权限。
+            //   挑中的号写进 $displayFile（App 私有 files，已 bind 进容器），
+            //   setInputEnabled() 另起一次 shell 时按它设 DISPLAY。
+            //   ★不能放容器内 /tmp：可能是不跨调用存活的 tmpfs。
+            //
+            // ★-nolock 已去掉：只有 root 能用，非 root 只打一行 Warning 且不解决
+            //   任何 socket 冲突。
+            //
+            // 最后**等真实帧落地**才报成功：od 读文件头第 4 字节的 seq，与启动前
+            // 的基线比较，并要求文件至少一帧像素大小。以前 fire-and-forget，命令
+            // 一发就报「已启动」，哪怕一帧都没出。
+            """
+            # Fail fast on a non-GUI image: without these the run just times out
+            # with "nohup: Xvfb: not found", which reads as a code bug.
+            if ! command -v Xvfb >/dev/null 2>&1; then echo DSHFRAME_FAIL missing-xvfb; exit 0; fi
+            if [ ! -x /x11frsrv ]; then echo DSHFRAME_FAIL missing-x11frsrv; exit 0; fi
+            for f in $stateDir/dsh-*.pid; do
+              [ -e "${'$'}f" ] && { kill "${'$'}(cat ${'$'}f)" 2>/dev/null; rm -f "${'$'}f"; }
+            done
+            pkill -f '^/x11frsrv' 2>/dev/null
+            pkill -f '^/framesrv' 2>/dev/null
+            pkill -f '^Xvfb ' 2>/dev/null
+            sleep 0.3
+            DISP=
+            for d in 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119; do
+              if [ ! -e /tmp/.X11-unix/X${'$'}d ] && [ ! -e /tmp/.X${'$'}d-lock ]; then DISP=${'$'}d; break; fi
+            done
+            if [ -z "${'$'}DISP" ]; then echo DSHFRAME_FAIL no-free-display; exit 0; fi
+            mkdir -p /tmp/.X11-unix 2>/dev/null
+            chmod 1777 /tmp/.X11-unix 2>/dev/null
+            # Xvfb hardcodes XKB_OUTPUT_DIR=/var/lib/xkb/ (see "strings Xvfb").
+            # When that directory is missing or not writable, its xkbcomp call
+            # fails and the server dies with "Failed to activate virtual core
+            # keyboard" before creating any socket. Create it and report the
+            # state we actually got, so a future failure says which it was.
+            mkdir -p /var/lib/xkb 2>/dev/null
+            # A previous run as another uid may have left it unwritable; the
+            # chmod is best-effort (it fails harmlessly when we do not own it).
+            [ -w /var/lib/xkb ] || chmod 777 /var/lib/xkb 2>/dev/null
+            if [ -w /var/lib/xkb ]; then XKBDIR=writable; else XKBDIR=not-writable; fi
+            # LD_PRELOAD is scoped to Xvfb and xterm only. Both drop privileges
+            # at init (setgid(getgid()) / setuid(getuid())) before doing real work,
+            # and the Android app domain (untrusted_app_27, CapEff=0) rejects
+            # setuid/setgid even when the target id equals the current one.
+            # Measured on 2026-11-21 (PLZ110 / Android 16):
+            #   - Xvfb without the shim: no listening socket, "Failed to compile keymap"
+            #   - Xvfb with the shim: socket established (0 -> 1)
+            #   - xterm without it: "setegid(10501): Operation not permitted" then exit
+            # Scoped on purpose: only these two need the privilege-drop patch, and a
+            # blanket export would just make every process load one more library.
+            KBSHIM=/usr/lib/libdsh-setuid-shim.so
+            if [ -r "${'$'}KBSHIM" ]; then XKBSHIM=on; else XKBSHIM=off; fi
+            export DISPLAY=:${'$'}DISP
+            echo "${'$'}DISP" > $displayFile
+            BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+            LD_PRELOAD=${'$'}KBSHIM nohup Xvfb :${'$'}DISP -screen 0 1280x720x24 >/tmp/xvfb.log 2>&1 &
+            echo ${'$'}! > $stateDir/dsh-xvfb.pid
+            sleep 2
+            # xterm hits the same wall: without the shim it prints
+            # "setegid(...): Operation not permitted" and exits, leaving the frame
+            # area blank -- which the user still sees as "start screen does nothing".
+            LD_PRELOAD=${'$'}KBSHIM nohup xterm -T 'DSH Container' -geometry 100x30 -e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' >/tmp/xterm.log 2>&1 &
+            echo ${'$'}! > $stateDir/dsh-xterm.pid
+            sleep 2
+            nohup /x11frsrv ${shared} 1280 720 30 >/tmp/x11frsrv.log 2>&1 &
+            echo ${'$'}! > $stateDir/dsh-x11frsrv.pid
+            i=0
+            while [ ${'$'}i -lt 120 ]; do
+              NOW=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+              SZ=${'$'}(stat -c %s ${shared} 2>/dev/null || echo 0)
+              if [ -n "${'$'}NOW" ] && [ "${'$'}NOW" != "${'$'}BASE" ] && [ "${'$'}SZ" -ge 3000000 ]; then
+                echo "DSHFRAME_OK display=:${'$'}DISP seq=${'$'}NOW size=${'$'}SZ"
+                exit 0
+              fi
+              sleep 0.1
+              i=${'$'}((i+1))
+            done
+            echo DSHFRAME_FAIL no-frame
+            echo "--- xkbdirectory: ${'$'}XKBDIR (${'$'}(ls -ld /var/lib/xkb 2>&1))"
+            echo "--- xkb setuid shim: ${'$'}XKBSHIM (${'$'}KBSHIM)"
+            echo "--- xvfb:"; head -6 /tmp/xvfb.log 2>/dev/null
+            echo "--- x11frsrv:"; head -6 /tmp/x11frsrv.log 2>/dev/null
+            echo "--- xterm:"; head -4 /tmp/xterm.log 2>/dev/null
+            exit 0
+            """.trimIndent()
         } else {
             // framesrv：第 7 个参数是取像素方式，auto = 有 AHardwareBuffer 就走 AHB
             // 直写、否则自动退回 glReadPixels。产线实测（模拟器 x86_64 / 720p）
@@ -483,18 +623,57 @@ class LinuxActivity : ThemedActivity() {
             //
             // 必须传 auto 而不是硬编码 ahb：真机 gralloc 与模拟器不同（pitfalls #41），
             // 硬编码一旦不支持就是整个画面功能失败，而 auto 只是慢一点。
-            "pkill -f [f]ramesrv 2>/dev/null; " +
-                "nohup /framesrv 1280 720 0 16 $shared clear auto >/dev/null 2>&1 & echo STARTED"
+            //
+            // ★这里同样不能用 pkill -f [f]ramesrv：本 sh 的 cmdline 里就有
+            //   /framesrv 字面量，实测自杀（rc=143）。用行首锚点 + pidfile。
+            //
+            // ★framesrv 是 bionic 程序（interp /system/bin/linker64），要经 loader
+            //   的 cleaner 代跑；容器 rootfs 里没有 /system/bin，guest_open 会失败，
+            //   于是报 "sh: /framesrv: not found"（rc=127）而文件明明在。这里把
+            //   **执行结果原样带回**，不再 fire-and-forget —— 用户至少能看到
+            //   cleaner_exec FAIL 这类真实原因。
+            """
+            for f in $stateDir/dsh-*.pid; do
+              [ -e "${'$'}f" ] && { kill "${'$'}(cat ${'$'}f)" 2>/dev/null; rm -f "${'$'}f"; }
+            done
+            pkill -f '^/framesrv' 2>/dev/null
+            sleep 0.2
+            BASE=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+            nohup /framesrv 1280 720 0 16 ${shared} clear auto >/tmp/framesrv.log 2>&1 &
+            echo ${'$'}! > $stateDir/dsh-framesrv.pid
+            i=0
+            while [ ${'$'}i -lt 120 ]; do
+              NOW=${'$'}(od -A n -t u4 -j 4 -N 4 ${shared} 2>/dev/null | tr -d ' ')
+              SZ=${'$'}(stat -c %s ${shared} 2>/dev/null || echo 0)
+              if [ -n "${'$'}NOW" ] && [ "${'$'}NOW" != "${'$'}BASE" ] && [ "${'$'}SZ" -ge 3000000 ]; then
+                echo "DSHFRAME_OK seq=${'$'}NOW size=${'$'}SZ"
+                exit 0
+              fi
+              sleep 0.1
+              i=${'$'}((i+1))
+            done
+            echo DSHFRAME_FAIL no-frame
+            head -8 /tmp/framesrv.log 2>/dev/null
+            exit 0
+            """.trimIndent()
         }
         val res = if (useX11) {
             runner.shell(cmd, timeoutMs = 40_000L)
         } else {
-            runner.shell(cmd, timeoutMs = 15_000L)
+            runner.shell(cmd, timeoutMs = 25_000L)
         }
-        if (res.ok) {
-            getString(R.string.linux_screen_started) + " → " + shared
+        // ★不能只看 res.ok：脚本自己以 0 退出（为了把日志带回来），
+        //   真正的成功判据是它**等到了新帧**并打印了 DSHFRAME_OK。
+        val out = res.combined()
+        if (res.ok && out.contains("DSHFRAME_OK")) {
+            val head = out.lineSequence().firstOrNull { it.contains("DSHFRAME_OK") }?.trim()
+            getString(R.string.linux_screen_started) + " → " + (head ?: shared)
+        } else if (out.contains("DSHFRAME_FAIL missing-")) {
+            // 缺包与「装了但起不来」是两种完全不同的处置：前者要用户切到
+            // GUI 形态让 App 去装包，后者是代码问题。分开说，别混成一句「失败」。
+            getString(R.string.linux_screen_missing_gui)
         } else {
-            getString(R.string.linux_screen_start_failed, res.combined())
+            getString(R.string.linux_screen_start_failed, out.take(600))
         }
     }
 
@@ -526,20 +705,20 @@ class LinuxActivity : ThemedActivity() {
         // 起之前先 pkill 上一轮遗留进程，避免两个进程抢同一文件把 seq 搅乱；
         // 起之后轮询等第一帧真落盘（最多 6 秒），否则 UI 会说「已开始」但画面空白。
         //
-        // ★pkill 的模式必须写成 [x]yz 形式（本函数里是 [w]lshot / [f]ramesrv）。
+        // ★停旧进程用行首锚定 '^/wlsrc/wlshot'，不能用 '[w]lshot .* --loop'。
         //
         // pkill -f 匹配的是整条 cmdline，而这条 shell 自己的 cmdline 里就含
-        // "wlshot .* --loop" 这串字面量 —— 于是 pkill 会把自己杀掉。实测：
+        // "/wlsrc/wlshot $shared 5000 --loop 8" 这串字面量 —— 模式
+        // "[w]lshot .* --loop" 匹配的是字面 "wlshot … --loop"，正好命中它，
+        // 于是 sh 把自己杀掉。实测：
         //
-        //   $ sh -c 'echo BEFORE; pkill -f "wlshot .* --loop"; echo AFTER'
+        //   $ sh -c 'echo BEFORE; pkill -f "[w]lshot .* --loop"; echo AFTER'
         //   BEFORE
         //   Terminated            <- AFTER 永远不打印
         //
-        // 后果是后面 nohup 起帧服务、等首帧、echo WLSHOT_STARTED 全都不执行：
-        // 用户点「抓合成画面」看起来什么也没发生，而且没有任何报错。
-        //
-        // 正则 [w]lshot 匹配字面 "wlshot"，而字面量本身是 "[w]lshot"，与自己
-        // 不匹配，所以不会自杀。实测 AFTER 正常打印。
+        // 「[x]yz 防自杀」这句话只对「裸写 pkill -f wlshot」成立；只要同一条
+        // 命令里出现 /wlsrc/wlshot 这种带路径的写法，正则就会命中的是那个字面量。
+        // 行首锚定 '^/wlsrc/wlshot' 则不可能匹配到以运行器路径开头的 sh 自己。
         val res = runner.shell(
             """
             if ! command -v sway >/dev/null 2>&1; then
@@ -564,7 +743,7 @@ class LinuxActivity : ThemedActivity() {
               fi
             done
             if [ -z "${'$'}DISP" ]; then echo NO_SOCKET; exit 0; fi
-            pkill -f '[w]lshot .* --loop' 2>/dev/null
+            pkill -f '^/wlsrc/wlshot' 2>/dev/null
             nohup env XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP               /wlsrc/wlshot $shared 5000 --loop 8 >/tmp/wlshot.log 2>&1 &
             i=0
             while [ ${'$'}i -lt 60 ]; do
@@ -585,14 +764,31 @@ class LinuxActivity : ThemedActivity() {
         }
     }
 
-    /** 停掉帧服务（容器内 pkill）。画面停在最后一帧，不黑屏。 */
+    /**
+     * 停掉帧服务。画面停在最后一帧，不黑屏。
+     *
+     * ★同样不能用 `pkill -f [x]11frsrv`：本 sh 的 cmdline 里会出现同一条命令里的
+     *   `/x11frsrv`、`/framesrv`、`/wlsrc/wlshot` 字面量，`[x]yz` 这种写法只能
+     *   防住「字面量整体出现」，防不住正则匹配同条命令里的裸路径 —— 真机实测
+     *   直接把这条 sh 自己 SIGTERM 掉（rc=143），后面的 echo STOPPED 不执行。
+     *   改用行首锚定 + pidfile：这两个都不可能命中以运行器路径开头的 sh 自身。
+     */
     private fun stopFrameServer() = runAsync(null) {
         val res = runner.shell(
-            // ★合并（2026-11-09）：三路进程都要收 —— main 的 X11 路线（x11frsrv）、
-            //   feat 的 framesrv、以及 wlshot 循环。全部写成 [x] 形式防自杀（见
-            //   captureCompositor 里 pkill 自匹配的说明）。
-            "pkill -f [x]11frsrv; pkill -f [f]ramesrv; " +
-                "pkill -f '[w]lshot .* --loop'; echo STOPPED",
+            """
+            for f in $frameStateDir/dsh-*.pid; do
+              [ -e "${'$'}f" ] && { kill "${'$'}(cat ${'$'}f)" 2>/dev/null; rm -f "${'$'}f"; }
+            done
+            pkill -f '^/x11frsrv' 2>/dev/null
+            pkill -f '^/framesrv' 2>/dev/null
+            pkill -f '^/inputd ' 2>/dev/null
+            pkill -f '^/wlsrc/wlshot' 2>/dev/null
+            pkill -f '^Xvfb ' 2>/dev/null
+            rm -f $frameDisplayFile
+            echo STOPPED
+            exit 0
+            exit 0
+            """.trimIndent(),
             timeoutMs = 10_000L,
         )
         if (res.ok) getString(R.string.linux_screen_stopped)
@@ -2225,12 +2421,12 @@ class LinuxActivity : ThemedActivity() {
         } else {
             getString(R.string.linux_workbench_install_body, wholeMb(size.download), wholeMb(size.installed))
         }
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.linux_workbench_install_title, title))
             .setMessage(body)
             .setPositiveButton(R.string.linux_workbench_install_go) { _, _ -> installPackages(packages, size) }
             .setNegativeButton(android.R.string.cancel, null)
-            .showRounded()
+            .show()
     }
 
     /**
@@ -2245,12 +2441,12 @@ class LinuxActivity : ThemedActivity() {
             return
         }
         val opt = LinuxRootfsCatalog.active(this)
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.linux_workbench_repair_title)
             .setMessage(getString(R.string.linux_workbench_repair_body, opt.displayName + " " + opt.versionLabel))
             .setPositiveButton(R.string.linux_workbench_repair_go) { _, _ -> deploy(force = true) }
             .setNegativeButton(android.R.string.cancel, null)
-            .showRounded()
+            .show()
     }
 
     // ================= 镜像是否真的装好 =================
@@ -2417,21 +2613,51 @@ class LinuxActivity : ThemedActivity() {
      * 文件在就是事实，标记只是它的加速副本 —— 缓存丢了重建即可。
      */
     private fun healBootstrapMarker(option: LinuxRootfsCatalog.Option) {
+        // 只在标记**整份不见**时自愈。标记存在（含 attempted:）说明环境层已经
+        // 落过账，重试归 ensureBootstrapPackages 管 —— 这里再插手会变成每次
+        // 刷新都起一次容器核对，得不偿失。
+        if (runCatching { bootstrapMarker(option).isFile }.getOrDefault(false)) return
         if (!bootstrapFilesPresent(option)) return
         if (option.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE && !nodePresent(option)) return
-        if (runCatching { env.flavorPackagesReady(option) }.getOrDefault(false)) return
         if (!runCatching { env.isDeployed(option) }.getOrDefault(false)) return
-        runCatching {
-            // 内容与环境层写的一致（BOOTSTRAP_PACKAGES + 形态额外包），否则
-            // 环境层下次读到这份标记会以为「形态的额外包也装过了」。
-            val pkgs = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + option.flavor.extraPackages
-            bootstrapMarker(option).writeText(pkgs.joinToString(","))
-        }.onSuccess {
-            android.util.Log.i("LinuxActivity", "bootstrap marker healed from on-disk files")
+        // ★必须逐个问包管理器，**不能**把「bash/curl 文件在」外推成「形态额外包
+        //   也装过」（v1.7.17，真机 2026-11-20）。
+        //
+        //   旧实现只要 bootstrapFilesPresent + nodePresent 成立，就把
+        //   BOOTSTRAP_PACKAGES + flavor.extraPackages 全量写进标记。而 GUI 形态的
+        //   六个额外包（xvfb / xterm / xdotool / libx11 / libxtst / font-misc-misc）
+        //   与 bash / curl 毫无关系 —— 删掉 .dsh-bootstrap.gui 后重开页面，标记
+        //   立刻被按 8 个包名写回，flavorPackagesReady() 从此恒真：页面显示
+        //   「已就绪 / 已装工具 30 / 磁盘 85.5 MB」，点「开始画面」得到一句
+        //   Xvfb: not found。标记从「记录事实」变成了「伪造事实」。
+        val pkgs = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + option.flavor.extraPackages
+        val probe = runCatching { env.missingPackages(option, pkgs) }
+        if (probe.isFailure) {
+            // 容器起不来时不写任何标记：既不敢断言「装过」，也不该落 attempted
+            // 把重试堵死。页面继续按「缺依赖」显示，这是诚实的。
+            android.util.Log.w(
+                "LinuxActivity",
+                "bootstrap marker heal skipped, package probe failed: " +
+                    (probe.exceptionOrNull()?.message ?: ""),
+            )
+            return
         }
-    }
-
-    /** IO 快照：只读事实，不起容器、不写状态 */
+        val stillMissing = probe.getOrDefault(pkgs)
+        runCatching {
+            if (stillMissing.isEmpty()) {
+                bootstrapMarker(option).writeText(pkgs.joinToString(","))
+            } else {
+                // 只记「尝试过」，让环境层下一轮照常再装一次；绝不写成成功。
+                bootstrapMarker(option).writeText("attempted:" + pkgs.joinToString(","))
+            }
+        }.onSuccess {
+            android.util.Log.i(
+                "LinuxActivity",
+                "bootstrap marker healed from package probe: missing=" +
+                    stillMissing.joinToString(","),
+            )
+        }
+    }    /** IO 快照：只读事实，不起容器、不写状态 */
     private fun loadWorkbenchFacts(option: LinuxRootfsCatalog.Option): WorkbenchFacts {
         // ★先自愈标记，再读事实（v1.7.13）。
         // 顺序就是语义：`flavorReady` 只看标记，而标记可能丢 / 停在 attempted。
@@ -2665,7 +2891,10 @@ class LinuxActivity : ThemedActivity() {
         // 卡片自己吃掉点击：否则点在卡片的留白上会穿到背景层，把浮层关掉
         card.isClickable = true
         val width = minOf(dp(320), resources.displayMetrics.widthPixels - dp(48))
-        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply {
+            topMargin = dp(24)
+            bottomMargin = dp(24)
+        })
         container.addView(
             host,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
@@ -2730,7 +2959,7 @@ class LinuxActivity : ThemedActivity() {
 
     /** 重启引擎：有中断后果，先确认。确认框与「诊断与维护」页里那一个用同一组文案 */
     private fun confirmRestartEngine() {
-        android.app.AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.restart_confirm_title))
             .setMessage(getString(R.string.restart_confirm_body))
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -2738,17 +2967,8 @@ class LinuxActivity : ThemedActivity() {
                 toast(getString(R.string.linux_workbench_restart_done))
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showRounded()
+            .show()
     }
-
-    /** 与设置页的对话框同一个圆角底板 */
-    private fun android.app.AlertDialog.Builder.showRounded(): android.app.AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
 
     // ================= 删除镜像 =================
 
@@ -2778,12 +2998,12 @@ class LinuxActivity : ThemedActivity() {
                 reportFailure(getString(R.string.linux_workbench_delete_running))
                 return@launch
             }
-            android.app.AlertDialog.Builder(this@LinuxActivity)
+            MaterialAlertDialogBuilder(this@LinuxActivity)
                 .setTitle(getString(R.string.linux_workbench_delete_title, name))
                 .setMessage(getString(R.string.linux_workbench_delete_body, mb(probe.second)))
                 .setPositiveButton(R.string.action_delete) { _, _ -> deleteImage(opt, name, probe.second) }
                 .setNegativeButton(android.R.string.cancel, null)
-                .showRounded()
+                .show()
         }
     }
 
@@ -3080,6 +3300,47 @@ class LinuxActivity : ThemedActivity() {
             else -> ReportDialog.Item(
                 warn, getString(R.string.linux_workbench_diag_readiness), readinessReason(ready),
             )
+        }
+
+        // ★运行器**真跑一次**（issue #125）。
+        //
+        // 上面那两项（deployLinuxRunner + isFixedBaseLinuxRunner）只看 ELF 头，
+        // 于是 rootfs 完整、runner 静态基线也对时，界面报「Runner: OK」，而现场
+        // runner 每次调用都 SIGSEGV(rc=139) —— 用户被一条**没有验证过**的 OK
+        // 结论指向错误的排查方向（去查 apk 镜像、去查 rootfs），实际是 loader 崩。
+        //
+        // 判据换成「在这个 rootfs 里真的能跑一条命令」：起一次容器跑
+        // `/bin/busybox echo`，退出码非 0 就如实贴出原始输出（含 rc 与 stderr），
+        // 让「Runner: OK」变成有证据的结论。
+        //
+        // 成本：一次容器 fork（实测 200~300ms），只在用户主动点「诊断」时发生，
+        // 不进冷启路径。
+        if (st.state == LinuxEnvironmentManager.State.READY) {
+            val self = runCatching {
+                LinuxContainerRunner.get(this).run(
+                    guestPath = "/bin/busybox",
+                    args = listOf("echo", "runner-ok"),
+                    timeoutMs = 20_000L,
+                    skipReady = true,
+                )
+            }.getOrNull()
+            items += when {
+                self == null -> ReportDialog.Item(
+                    warn,
+                    getString(R.string.linux_workbench_diag_runner_selftest),
+                    getString(R.string.linux_diag_unreadable),
+                )
+                self.ok && self.combined().contains("runner-ok") -> ReportDialog.Item(
+                    ok,
+                    getString(R.string.linux_workbench_diag_runner_selftest),
+                    self.combined() + " (" + self.durationMs + " ms)",
+                )
+                else -> ReportDialog.Item(
+                    bad,
+                    getString(R.string.linux_workbench_diag_runner_selftest),
+                    "rc=" + self.exitCode + if (self.combined().isBlank()) "" else ": " + self.combined(),
+                )
+            }
         }
 
         val port = LinuxDnsProxy.currentPort()

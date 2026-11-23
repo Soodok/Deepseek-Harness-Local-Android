@@ -4,13 +4,15 @@
      这样换配色时光晕跟着变色，不用在 XML 里写死五种颜色。
 
      gradientRadius 必须带 dp：不带单位时按 **px** 解析。原值 "100" 在 density 2.75
-     的机器上只有 36dp 半径，而容器 doneGlow 是 200dp —— 实测光晕直径约 205px，
-     比 84dp（231px）的 logo 还小。100dp = 容器的一半，渐变正好在边缘归零。 -->
+     的机器上只有 36dp 半径，光晕直径约 205px，比 logo 还小。
+     半径必须**等于容器的一半**，否则渐变还没到全透明就被椭圆裁掉，边缘会出现
+     一圈硬边框（v2 把容器收到 120dp 后实测就是这么方方正正一块）。
+     容器 120dp → 半径 60dp，渐变正好在边缘归零。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <gradient
         android:type="radial"
-        android:gradientRadius="100dp"
+        android:gradientRadius="60dp"
         android:startColor="#66FFFFFF"
         android:centerColor="#26FFFFFF"
         android:endColor="#00FFFFFF" />

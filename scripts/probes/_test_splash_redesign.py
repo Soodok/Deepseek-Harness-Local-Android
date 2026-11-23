@@ -116,18 +116,12 @@ check(
 )
 
 # ── 3. 环的语义 ─────────────────────────────────────────────────────
-check("ring draws a full track first", "canvas.drawArc(rect, 0f, 360f" in ring_code)
-check("determinate sweep equals the real fraction", "360f * frac" in ring_code)
-check("no fake easing on the determinate arc", "0.9f * frac" not in ring_code)
-check("indeterminate sweep is a short arc", "SWEEP_DEG = 90f" in ring_code)
-check("indeterminate arc is not a full circle", "SWEEP_DEG = 360f" not in ring_code)
+check("ring uses the Material circular indicator", "CircularProgressIndicator" in layout_splash)
+check("determinate progress uses the real fraction", "val progress = fraction ?: 0.25f" in ctrl_code and "progress * 10000" in ctrl_code)
+check("indeterminate mode reflects unknown progress", "fraction == null && !failed" in ctrl_code)
 
 # ── 4. 动画必须能停 ─────────────────────────────────────────────────
-check("ring stops when detached", "onDetachedFromWindow" in ring_code and "cancelAnimator()" in ring_code)
-check("ring respects system animator setting", "areAnimatorsEnabled()" in ring_code)
-check("ring stops on window visibility change", "onWindowVisibilityChanged" in ring_code)
-check("controller exposes stopMotion", "fun stopMotion()" in ring_code)
-check("controller calls stopMotion before fading out", "ring.stopMotion()" in ctrl_code)
+check("controller hides the indicator when closing", "ring.visibility = View.INVISIBLE" in ctrl_code)
 check(
     "controller removes its callbacks on dispose",
     ctrl_code.count("root.removeCallbacks(") >= 3,
@@ -141,10 +135,8 @@ check(
 check("dismiss is idempotent in activity", "if (splashDismissed) return" in main_code)
 
 # ── 6. 主题与尺寸 ───────────────────────────────────────────────────
-check("splash palette is decoupled from accent", "splash_text" in read(
-    os.path.join(ROOT, "app/src/main/res/values/colors.xml")))
-check("night palette defines the same keys", "splash_text" in read(
-    os.path.join(ROOT, "app/src/main/res/values-night/colors.xml")))
+check("splash background uses semantic surface", 'android:background="?attr/colorSurface"' in layout_splash)
+check("splash text uses semantic roles", '?attr/colorOnSurface' in layout_splash)
 check("no hardcoded card container in the splash layout", "splash_card" not in layout_splash)
 check("splash body is width-capped in code", "dp(420)" in ctrl_code or "dp(420)" in ctrl)
 
@@ -164,8 +156,8 @@ check("splash logo is tinted (not left at the shared white vector)",
       re.search(r'android:id="@\+id/splashLogo"[^>]*android:tint=', _LAYOUT_SPLASH, re.S)
       is not None
       or re.search(r'android:tint="@color/splash_logo_tint"', _LAYOUT_SPLASH) is not None)
-check("splash logo tint uses a dedicated color resource",
-      "@color/splash_logo_tint" in _LAYOUT_SPLASH)
+check("splash logo uses the on-surface role",
+      'android:tint="?attr/colorOnSurface"' in _LAYOUT_SPLASH)
 
 
 def _hex_of(name, path):
@@ -195,19 +187,15 @@ _night_tint = _hex_of("splash_logo_tint", _night)
 check("splash_logo_tint is defined in both palettes",
       _light_tint is not None and _night_tint is not None)
 
-if _light_tint and _night_tint:
-    # 用启动背景的三个端点里最亮的那个做最坏情况
-    _bg_keys = ["splash_start", "splash_mid", "splash_end"]
-    _light_bgs = [_hex_of(k, _val) for k in _bg_keys]
-    _night_bgs = [_hex_of(k, _night) for k in _bg_keys]
-    _lc = min(_contrast(_light_tint, bg) for bg in _light_bgs if bg)
-    _nc = min(_contrast(_night_tint, bg) for bg in _night_bgs if bg)
-    # 3:1 是图形元素（非文字）的可辨识下限；实测白鲸在浅色下只有 1.04:1
-    check("light-mode whale is clearly visible (>=3:1, worst bg endpoint; "
-          "contrast %.2f:1 with tint #%s)" % (_lc, _light_tint), _lc >= 3.0)
-    check("dark-mode whale stays white and visible (>=3:1; night tint #%s, "
-          "contrast %.2f:1)" % (_night_tint, _nc),
-          _night_tint.upper() == "FFFFFF" and _nc >= 3.0)
+import xml.etree.ElementTree as ET
+for qualifier in ("values", "values-night"):
+    palette = ET.parse(os.path.join(ROOT, "app/src/main/res", qualifier, "md3_palettes.xml"))
+    for style in palette.getroot().findall("style"):
+        roles = {item.get("name"): (item.text or "").strip().lstrip("#")
+                 for item in style.findall("item")}
+        surface, logo = roles.get("colorSurface"), roles.get("colorOnSurface")
+        check("%s %s logo contrast >=3:1" % (qualifier, style.get("name")),
+              bool(surface and logo and _contrast(surface, logo) >= 3.0))
 
 # ── 引导页完成页鲸鱼 ──────────────────────────────────────────────────
 # 它底下压着 bg_onboarding_glow 径向光晕，而光晕在运行时被染成用户选的强调色
