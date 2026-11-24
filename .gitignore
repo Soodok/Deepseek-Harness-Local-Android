@@ -233,6 +233,11 @@ scripts/probes/*.bin
 # 「哪张图对应哪一步」与三类静默失败（取帧过期、队列吞账、清空后晚到帧重建目录）——
 # 全都不会崩，只会悄悄少一张图或错一步，事后无法归因。
 !/scripts/probes/_test_a11y_step_shots.py
+# 容器扩展装包的三处「装完就不能用」（issue #131，v1.7.x）：镜像源速度、
+# x86_64 老式 syscall 被 App 层 seccomp 二次拦、绝对符号链接无 chroot 解析。
+# 三处都不会让编译或别的探针变红 —— 现场表现只是「装了十分钟后报 Install failed」
+# 或「dotnet 报 not found 而二进制明明是好的」，所以必须进 CI。
+!/scripts/probes/_test_linux_symlink_heal.py
 tasks/
 _bench/
 

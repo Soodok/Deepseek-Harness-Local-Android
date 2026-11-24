@@ -2356,9 +2356,22 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                         "Add it to APK_MIRROR_VERSION — falling back silently would install " +
                         "packages from the wrong Alpine release (see 8e91833f)."
                 )
+            // ★镜像源必须换快的那家（2026-11-24 实测，模拟器 x86_64 / 同一容器 /
+            //   同一 8 秒窗口 / 同一个 mono-6.14.1-r0.apk）：
+            //     http://mirrors.aliyun.com          2,595,682 B → 324 KB/s
+            //     https://mirrors.tuna.tsinghua.edu.cn  29,114,010 B → 3.6 MB/s
+            //   差 11 倍。后果不是「慢一点」，而是**大包必然装不上**：
+            //   LinuxPackageManager.install 的默认 timeoutMs 是 600_000，
+            //   mono 84MB 在 324KB/s 下要 4.3 分钟（刚好擦边），dotnet8-sdk
+            //   闭包 522MB 要 27 分钟 —— 实测两次都在 600s 被砍，
+            //   日志只有一句 `apk add X: rc-ok=false verified=false`，
+            //   而中途已下载的部分留在 rootfs 里，用户重试又是从头开始。
+            //   现场表现是「扩展中心点安装，等十分钟，报 Install failed」。
+            //   清华源同时是 https，少一层明文风险。阿里云的 /etc/hosts 旧账
+            //   与本条无关（那说的是 DNS 不能用时写死 IP，早已改成真 DNS）。
             return listOf(
-                "http://mirrors.aliyun.com/alpine/$v/main",
-                "http://mirrors.aliyun.com/alpine/$v/community",
+                "https://mirrors.tuna.tsinghua.edu.cn/alpine/$v/main",
+                "https://mirrors.tuna.tsinghua.edu.cn/alpine/$v/community",
             )
         }
 

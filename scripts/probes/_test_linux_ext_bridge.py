@@ -422,6 +422,43 @@ def main():
     ok("ubuntu clang passes through (no 'clang17' fixup)",
        "clang" not in apt, "clang should not be renamed on Ubuntu")
 
+    # --- issue #131：Mono / .NET 的发行版分歧 ---
+    # 这一组的关键不是「有没有映射」，而是**两边答案不同**：
+    #   Termux 把 mono 拆成 mono + mono-libs 两个包；
+    #   Alpine 只有单个 mono（85MB，89 个 bin），没有 mono-libs；
+    #   Ubuntu 连裸 mono 都没有，只有 mono-complete/mono-devel/mono-runtime。
+    # 只断言一边就会漏掉「mono-libs 在不存在的发行版里被透传成 apk add mono-libs」
+    # 这种必失败路径（装包时报 unable to select packages）。
+    # 判据不是「表里有没有 mono-libs 这一项」，而是 **packagesOf 解析出来的
+    # 最终包列表里绝不能出现 mono-libs**（Alpine 没这个包，透传必失败）。
+    # 两种合法写法：∩ unavailable（跳过）、∩ renames（改名到存在的包）。
+    # 这里按 packagesOf 的真实语义逐包模拟，避免只查表名造成假绿。
+    mono_pkgs = next((it["packages"] for it in cat["items"] if it["id"] == "mono"), [])
+    resolved = []
+    for p in mono_pkgs:
+        if p in apk_un:
+            continue
+        resolved.extend(as_list(apk.get(p, p)))
+    ok("alpine mono-libs is NOT passed through (Alpine folds libs into mono)",
+       "mono-libs" not in resolved,
+       "resolved=%r; Alpine has no mono-libs, so `apk add mono-libs` would fail"
+       % (resolved,))
+    ok("alpine mono itself passes through unchanged",
+       "mono" not in apk or as_list(apk.get("mono")) == ["mono"],
+       "got %r" % (apk.get("mono"),))
+    ok("ubuntu mono maps to mono-complete (not mono-runtime alone)",
+       "mono-complete" in as_list(apt.get("mono")),
+       "got %r; mono-runtime is runtime-only, mcs/csc live in mono-complete"
+       % (apt.get("mono"),))
+    ok("ubuntu mono-libs marked unavailable (no separate package)",
+       "mono-libs" in apt_un, "not in UBUNTU_UNAVAILABLE")
+    ok("alpine dotnet-sdk-8.0 maps to dotnet8-sdk",
+       "dotnet8-sdk" in as_list(apk.get("dotnet-sdk-8.0")),
+       "got %r" % (apk.get("dotnet-sdk-8.0"),))
+    ok("ubuntu dotnet-sdk-8.0 passes through (same name in noble)",
+       "dotnet-sdk-8.0" not in apt,
+       "noble packages it under the same name; a rename would break it")
+
     print("\n[F] 分派纪律：对外入口必须显式收 family")
     for fn in ("packagesOf", "unavailableReason", "partialNote", "allPackages"):
         m = re.search(r"fun\s+" + fn + r"\s*\((?:[^)]*)\)", src, re.S)

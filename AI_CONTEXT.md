@@ -17407,3 +17407,112 @@ git -c http.proxy=http://127.0.0.1:18794 -c https.proxy=http://127.0.0.1:18794 p
 
 - 本地 = 远端（`git rev-list --left-right --count origin/main...HEAD` → `0 0`），HEAD `16ba14f5`。
 - 剩余 open 14 条，其中 #127/#124/#122/#83/#96/#60/#59/#41/#26/#2 等 10 条**在等报告人补证据**，无人可强推；#125/#108/#119 已给修法待复验；#106 待我做文档素材。
+
+## 第一百六十二章（v1.7.x · 2026-11-24）扩展中心补 mono / .NET：三个「装完就不能用」的真因
+
+### 1. 起因（issue #131）
+
+报告人（nuolinuoyi，2026-11-22）请求扩展中心补三个逆向常用工具：mono 系（Il2CppDumper 的地基）、.NET、frida。逐条查证结果：
+
+| 请求 | 结论 | 依据 |
+|---|---|---|
+| mono | **能做** | Termux `mono` 6.14.1-2（2.2MB）+ `mono-libs`(46MB)；Alpine `mono` 6.14.1-r0（85MB，89 个 bin 含 mono/mcs/csc/monodis）；Ubuntu `mono-complete` |
+| .NET | **能做**（只 8.0 LTS） | Termux `dotnet-sdk-8.0` 46MB / `dotnet-sdk-9.0` 48MB；Alpine `dotnet8-sdk` 8.0.134-r0；Ubuntu 只有 8.0（`dotnet-sdk-9.0` 不存在） |
+| frida | **不能走包仓库** | Termux aarch64 索引 3039 个包 0 条（`termux-root`/`termux-x11` 仓库均 404）；Alpine main 5666 + community 20500 个包 0 条；PyPI 的 frida 历史文件名无 android/aarch64 wheel |
+
+frida 只能自带二进制走 `ExtensionManager.kt:153` 的 `Artifact(url, dest, sha256)` 机制（下载强校验同 deb 链路），属发布决策，且「server 与 host 同机自注入」的 bionic 可跑性尚未实测 —— 本轮不做，回帖说明。
+
+只做 8.0 一档的理由：Ubuntu 侧只有 8.0，做成「8/9 两档」会让 Ubuntu 用户选 9 时静默失败。
+
+### 2. catalog 与映射表
+
+- `catalog.json` / `catalog.zh-rCN.json` 各加两条（58 → **60**）：`mono`（`bins=["mono","mcs","csc"]`、`packages=["mono","mono-libs"]`、`ic_ext_mono`）、`dotnet`（`bins=["dotnet"]`、`packages=["dotnet-sdk-8.0"]`、`ic_ext_dotnet`）。
+- **必须重排**：`ExtensionStoreActivity.buildList()` 只在 `category != lastCategory` 时插小节标题，而 `_test_net_cli_extensions.py[A0]` 断言「同 categoryKey 必须连续」。初版追加到文件末尾 → lang 出现 0..9 与 58..59 两段 → A0 红。移到 `bun`(i=9) 之后，现 i=10/11，lang 段连续 0..11。
+- `LinuxExtensionBridge.kt` 四处：`ALPINE_NAMES += "dotnet-sdk-8.0"→["dotnet8-sdk"]`；`ALPINE_UNAVAILABLE += "mono-libs"`（Alpine 只有一个 85MB mono）；`UBUNTU_NAMES += "mono"→["mono-complete"]`（noble 无裸 mono，`mono-runtime` 没有 mcs/csc）；`UBUNTU_UNAVAILABLE += "mono-libs"`。`dotnet-sdk-8.0` 在 Ubuntu 同名透传。
+- 第一版把 `mono-libs` 误放进 renames 写成 `listOf("mono")`，被新断言判红后改为 unavailable —— 语义上「本发行版无此独立包」才是 unavailable 该表的用途。
+- 图标 `ic_ext_mono.xml`（463B，三圆等边三角）/ `ic_ext_dotnet.xml`（504B，外圆 r=8.8 + 内圆 r=3.6 反向绕向在 nonZero 下挖空成环）。
+
+### 3. 三个「装完就不能用」的真因（本轮实测取证）
+
+#### 缺陷 A：镜像源太慢 → 大包必然撞 600s 超时
+
+`LinuxEnvironmentManager.apkRepositories` 原用 `http://mirrors.aliyun.com`。**容器内同一 8 秒窗口实测**（同一个 `mono-6.14.1-r0.apk`）：
+
+```
+http://mirrors.aliyun.com            2,595,682 B / 8s ≈  324 KB/s
+https://mirrors.tuna.tsinghua.edu.cn 29,114,010 B / 8s ≈  3.6 MB/s
+```
+
+差 11 倍。`LinuxPackageManager.install` 默认 `timeoutMs=600_000`：mono 84MB 在 324KB/s 下要 4.3 分钟（擦边），dotnet8-sdk 闭包 **522MB 要 27 分钟 —— 必超**。实测两次都正好在 **600s 整**被砍，日志只有一句 `apk add X: rc-ok=false verified=false`，中途已下载部分留在 rootfs，用户重试从头开始。现场表现即「点安装、等十分钟、报 Install failed」。
+
+修法：改 `https://mirrors.tuna.tsinghua.edu.cn/alpine/$v/main|community`（同时是 https）。
+
+#### 缺陷 B：x86_64 老式 syscall 被 App 层 seccomp 二次拦截
+
+容器内实测矩阵（python `os.*` 与直接 `libc.syscall` 两条路径都验证）：
+
+```
+os.stat ("/proc")  OK    ← fstatat(262) 是 *at 号，Android 放行
+os.lstat("/proc") EPERM  ← lstat(6) 被二次拦
+os.stat ("/etc")   OK
+os.lstat("/etc")   OK    ← 非透传，翻 rootfs 走 newfstatat
+```
+
+同一现象命中 `/dev`、`/sys`；`ln -s`、`rm /tmp/x`、`os.symlink` 也全 EPERM（`symlink(88)` EPERM / `symlinkat(266)` rc=0）。
+
+**机制**：Android 的 zygote 给每个 App 进程额外装了一层 seccomp，它**只按 syscall 号判、不看调用者 IP**。`dsh_alpine.c` 的透传分支用 `raw6(nr,...)` 原样重发同一个老式号 —— 指令地址在 loader 段被我们自己的 IP 白名单放行，但 Android 那层照样按号拦 → SIGSYS 再投递 → 重入守卫（`sigsys_impl` 开头判 RIP 在 loader 段）直接给 guest 返 `-EPERM`。
+
+**后果不止「少个工具」**：全 rootfs 扫描 **369 条相对链接**全部可跟随，**唯一 1 条绝对链接** `/usr/bin/dotnet → /usr/lib/dotnet/dotnet` 跟不动 → `dotnet` 报 not found，而 `/usr/lib/dotnet/dotnet --version` 正常返 8.0.134。mono 的 `/usr/bin/mono → mono-sgen` 是相对的，所以没暴露。
+
+修法（`dsh_alpine.c` +144/−5）：新增 `static int legacy_path_to_at(long nr, long dirfd, const char *p, long a1, long a2, unsigned long long *out, long a3)`，把 stat→newfstatat(0)、lstat→newfstatat(AT_SYMLINK_NOFOLLOW)、access→faccessat、open→openat、unlink→unlinkat(**flags 写死 0**，老式 unlink 只有 1 个参数)、rmdir→unlinkat(AT_REMOVEDIR)、mkdir→mkdirat、chmod→fchmodat、chown/lchown→fchownat、utime/utimes→utimensat、readlink→readlinkat、mknod→mknodat 全翻译。三处调用：相对路径早返回、dev_passthrough 透传出口、rename/link/symlink 的相对早返回。
+
+#### 缺陷 C：绝对符号链接在无 chroot 容器里跟不动
+
+即便 B 修好、`lstat` 通了，`/usr/bin/dotnet` 依然 `stat` → ENOENT。原因独立：容器没有 chroot，链接目标字符串是写进 inode 的原文，内核按**宿主根**解析绝对目标。
+
+修法：`RootfsModes.repairAbsoluteLinks(rootfs, limit=200)`，只扫 `BIN_DIRS`，`Files.readSymbolicLink` 取目标，只处理 `startsWith("/")` **且目标确实落在 rootfs 内**（`File(rootfs, target.trimStart('/')).exists()`）的链接（指向宿主的 `/proc` `/dev` 保持原样），用 `Path.relativize` 相对化后 delete + createSymbolicLink。接在 `LinuxPackageManager.healPackageFiles` 的第 ② 段（无条件执行，不能被 `wantsHeaders` 早返回挡住 —— 装 curl 也要修）。
+
+`healPackageFiles` 原注释「不再做把绝对符号链接改成相对那一步」已重写。它曾断言「绝对链接也工作正常」，依据是真机 aarch64 上 `go version` 通 —— 那条结论对 `go` 成立但对 `dotnet` 不成立，差别不在 ABI 而在是否存在 App 那层 seccomp。
+
+### 4. 模拟器端到端实测（emulator-5556 / AVD dsh131 / x86_64 / Android 14）
+
+新建专机 `dsh131`（1080×2340@440dpi、ram 4096M），不动并发的 `dsh34`(5554)/`dsh_flutter_20261116`(5570)。
+
+| 项目 | 修复前 | 修复后 |
+|---|---|---|
+| `python3` `/proc` `/dev/null` `/sys` 的 lstat | 三条全 EPERM | 三条全 OK |
+| 产品链路 `POST /ext/install {"id":"mono"}` | 600s 撞超时、`rc-ok=false` | **12s 内 `state=green`**，logcat `apk add mono: rc-ok=true verified=true`（55s 含下载） |
+| 产品链路 `POST /ext/install {"id":"dotnet"}` | 600s 撞超时、`rc-ok=false` | **30s 内 `state=green`**，`apk add dotnet8-sdk: rc-ok=true verified=true`（45s） |
+| `mono --version` | —— | `Mono JIT compiler version 6.14.1 (tarball Sat May 10 11:02:04 UTC 2025)` |
+| `mcs --version` / `csc -version` | —— | `Mono C# compiler version 6.14.1.0` / `3.9.0-6.21124.20 (db94f4cc)` |
+| `readlink /usr/bin/dotnet` | `/usr/lib/dotnet/dotnet`（绝对） | **`../lib/dotnet/dotnet`**（已相对化） |
+| `dotnet --version` | `not found` | **`8.0.134`** |
+| `dotnet --list-sdks` | —— | `8.0.134 [/usr/lib/dotnet/sdk]` |
+| 端到端编译 | —— | `mcs h.cs` → `BUILD_RC=0`、`h.exe 3072B`、`mono h.exe` → `MONO-CS-OK` |
+
+### 5. 门禁
+
+| 检查 | 结果 |
+|---|---|
+| 全量探针 | **PASS=168 / FAIL=0**（跳过 `corepack_hardlink`：noruntime 下无 `assets/runtime.zip`，属已知预期） |
+| `check-i18n.py` | `All i18n checks passed`（`H. Catalog: 60 extension(s)`） |
+| `_test_linux_ext_bridge.py` | checks=184 / failed=0 |
+| `_test_linux_symlink_heal.py`（本轮新建） | checks=25 / failed=0 |
+| `run-a11y-jvm-test.sh` | **passed=2476 / failed=0** |
+| `_test_dsh_alpine_source_sync.py` | checks=148 / failed=0 |
+| `compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` | BUILD SUCCESSFUL |
+| `assembleDebug` + 装模拟器 | Success，`lib/x86_64/libdsh_alpine.so` 62456 B |
+
+载荷：`libdsh_alpine.so` x86_64 `61,096 → 62,456 B / md5 a2cff65b44edbd867f362d9b0f094b47`；arm64-v8a `43,016 B / md5 2348ea8cbdf25d74a76688f1f3f313e6`（源码改动对 aarch64 是空操作 —— 通用 ABI 没有老式号 —— 但探针要求产物晚于源码）。
+
+### 6. 构建与测试链路的两个坑（可复用）
+
+1. **`build-loader.sh` 必须 `unset MSYS_NO_PATHCONV`**。设了它之后 clang 收到 `/e/Deepeek harness/dsh-android/app/src/main/cpp/dsh_alpine.c` 报 `no such file or directory`（该变量让 MSYS 不做路径转换，而 NDK 的 clang 是 Windows 程序）。
+2. **`run-a11y-jvm-test.sh` 的 jar 解析必须同系列回退**。Gradle 缓存被清过之后 `kotlin-reflect` 只剩 1.6.10/1.9.20/1.9.23/2.0.21/2.2.x/2.3.20，独缺脚本钉的 1.9.24 —— 旧 `pick()` 直接 `sort -V | tail -1` 落到 2.3.20，与 stdlib 1.9.24 混搭。`K2JVMCompiler` 在 `parseCommandLineArguments` 里走 `getOrCreateKotlinClass` → `CachesKt`，而 `CachesKt` 引用 **2.x 才有的** `kotlin/jvm/internal/KotlinGenericDeclaration` → `NoClassDefFoundError` → 整套宿主断言在「编译」阶段就 `FAILED: compilation`，看起来像 JVM 测试挂了而与被测代码无关。修法：首选版本缺失时先退到**同 major.minor 系列**（`${3%.*}`）再找。
+
+### 7. 尚未验证
+
+- **真机 PLZ110 未验**：本轮全程模拟器（真机 `192.168.101.21:9000` 报 `connect 10060` 超时）。真机是 arm64-v8a / Android 16，缺陷 B 只存在于 x86_64 老式号，但缺陷 C（绝对链接无 chroot）在两种 ABI 上都在，理论上真机同样受益 —— 未实测。
+- **Ubuntu 发行版下的 mono/dotnet 未实装**：只核了 `aptindex-names.txt.gz` 里的包名（`mono-complete` / `dotnet-sdk-8.0` 均在册），未在 ubuntu:base 容器里真跑 `apt install`。`mono-complete` 的依赖闭包与 glibc 兼容性未验。
+- **frida**：未做，需发布决策（自带二进制 + sha256 强校验）。
+- **超时后残留的 apk 子进程**：缺陷 A 修复前实测「600s 砍掉父进程后 `apk` 子进程仍在跑、数据库锁被占住」，后续重试撞 `ERROR: Unable to lock database: temporary error`。本轮只修了「让它不至于超时」，**未加「超时即杀整棵子进程树」**的处理 —— 慢网环境仍可能留下持锁进程。

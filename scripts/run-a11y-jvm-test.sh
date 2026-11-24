@@ -52,11 +52,24 @@ from_list() {  # from_list <artifact-name>
 }
 
 pick() {  # pick <group-path> <artifact-name> [prefer-version]
-  local dir="$CACHE/$1/$2" pref hit
+  local dir="$CACHE/$1/$2" pref hit series
   [ -d "$dir" ] || return 0
   if [ -n "${3:-}" ]; then
     pref=$(find "$dir" -name "$2-$3.jar" 2>/dev/null | head -1)
     [ -n "$pref" ] && { printf '%s\n' "$pref"; return 0; }
+    # ★首选版本缺失时必须先退到**同 major.minor 系列**，不能直接 sort -V 取全局最大。
+    #
+    #   踩过的坑（2026-11-24）：Gradle 缓存被清过之后 kotlin-reflect 只剩
+    #   1.6.10 / 1.9.20 / 1.9.23 / 2.0.21 / 2.2.x / 2.3.20，独缺我们钉的 1.9.24
+    #   —— 于是直接落到 2.x 的 2.3.20，与 stdlib 1.9.24 混搭。K2JVMCompiler 在
+    #   parseCommandLineArguments 里走 getOrCreateKotlinClass → CachesKt，
+    #   而 CachesKt 引用 **2.x 才有的** kotlin/jvm/internal/KotlinGenericDeclaration
+    #   → NoClassDefFoundError，整套宿主断言在「编译」阶段就 FAILED: compilation，
+    #   看起来像「JVM 测试挂了」，而与被测代码毫无关系。
+    #   同系列（1.9.x）之间这些内部类对得上，跨大版本对不上。
+    series="${3%.*}"          # 1.9.24 -> 1.9
+    hit=$(find "$dir" -name "$2-$series.*.jar" 2>/dev/null | sort -V | tail -1)
+    [ -n "$hit" ] && { printf '%s\n' "$hit"; return 0; }
   fi
   hit=$(find "$dir" -name "$2-*.jar" 2>/dev/null | sort -V | tail -1)
   printf '%s\n' "$hit"

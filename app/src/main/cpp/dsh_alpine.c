@@ -1837,6 +1837,88 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
 }
 #endif
 
+#if defined(DSH_ARCH_X86_64)
+// 把「老式无 dirfd 路径 syscall」翻译成等价 *at 号（dirfd 原样传，路径不翻译）。
+//
+// ## 为什么必须翻译，不能原样重发
+//
+// Android 的 zygote 给每个 App 进程额外装了一层 seccomp：它**只按 syscall 号
+// 判**，不看调用者 IP。我们自己的过滤器按 IP 白名单放行 loader 段的重发，
+// 于是第一次 trap 进来的老式号（stat=4 / lstat=6 / access=21 / open=2 …）
+// 在 handler 里 raw6 重发同一个号 —— 指令地址在 loader 段被我们放行，但
+// Android 那层照样按号拦 → SIGSYS 再投递 → 重入守卫（sigsys_impl 开头）
+// 看到 RIP 在 loader 段，直接给 guest 返回 -EPERM。
+//
+// 实测（2026-11-24，模拟器 x86_64 / Android 14 / App uid 10192）：
+//   os.stat ("/proc")  OK    ← fstatat(262) 是 *at 号，Android 放行
+//   os.lstat("/proc") EPERM  ← lstat(6) 被二次拦 → 守卫给 EPERM
+//   os.stat ("/etc")  OK
+//   os.lstat("/etc")  OK    ← 非透传，翻 rootfs 走 newfstatat
+// 同一现象命中 /dev、/sys；连 `ln -s`、`rm /tmp/x` 都 EPERM。
+//
+// 而 aarch64 的通用 ABI **根本没有**老式号（只有 *at 变体），所以整段
+// 只在 x86_64 编译。
+//
+// 返回 1 = 已调用 *at 版本并把结果写进 out；0 = 该号没有 *at 等价物。
+// 参数编号与老式语义严格对应：stat(path,buf)→a1=buf、open(path,fl,md)→a1=fl/a2=md、
+// access(path,md)→a1=md、chown(path,u,g)→a1=u/a2=g、readlink(path,buf,n)→a1=buf/a2=n。
+// ★unlink/rmdir 的老式形式**没有**第二个参数 —— a1 是无意义寄存器，
+//   unlinkat 的 flags 必须写死（实测拿垃圾值当 AT_* 会 EINVAL）。
+static int legacy_path_to_at(long nr, long dirfd, const char *p,
+                             long a1, long a2, unsigned long long *out,
+                             long a3) {
+    (void)a3;
+    switch (nr) {
+    case SYS_stat:
+        *out = (unsigned long long)raw6(SYS_newfstatat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_lstat:
+        *out = (unsigned long long)raw6(SYS_newfstatat, dirfd, (long)p, a1,
+                                        0x100 /*AT_SYMLINK_NOFOLLOW*/, 0, 0);
+        return 1;
+    case SYS_access:
+        *out = (unsigned long long)raw6(SYS_faccessat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_open:
+        *out = (unsigned long long)raw6(SYS_openat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    case SYS_unlink:
+        *out = (unsigned long long)raw6(SYS_unlinkat, dirfd, (long)p, 0, 0, 0, 0);
+        return 1;
+    case SYS_rmdir:
+        *out = (unsigned long long)raw6(SYS_unlinkat, dirfd, (long)p,
+                                        0x200 /*AT_REMOVEDIR*/, 0, 0, 0);
+        return 1;
+    case SYS_mkdir:
+        *out = (unsigned long long)raw6(SYS_mkdirat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_chmod:
+        *out = (unsigned long long)raw6(SYS_fchmodat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_chown:
+        *out = (unsigned long long)raw6(SYS_fchownat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    case SYS_lchown:
+        *out = (unsigned long long)raw6(SYS_fchownat, dirfd, (long)p, a1, a2,
+                                        0x100 /*AT_SYMLINK_NOFOLLOW*/, 0);
+        return 1;
+    case SYS_utime:
+    case SYS_utimes:
+        // utimes 的 timeval→timespec 不换算（见老式分支里的说明：只是亚秒偏差）
+        *out = (unsigned long long)raw6(SYS_utimensat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_readlink:
+        *out = (unsigned long long)raw6(SYS_readlinkat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    case SYS_mknod:
+        *out = (unsigned long long)raw6(SYS_mknodat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    default:
+        return 0;
+    }
+}
+#endif
+
 static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     (void)info;
     ucontext_t *u = (ucontext_t *)uc;
@@ -2474,11 +2556,20 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     case SYS_lchown: case SYS_utimes: case SYS_mknod: {
         const char *lp = (const char *)r[0];
         if (!lp || lp[0] != '/') {
-            // 相对路径（由内核按 cwd 或 dirfd 解析）——原样转发。
+            // 相对路径（由内核按 cwd 解析）——**不能原样重发老式号**。
             // ★这里同样必须就地转发，不能 `break`：
             //   break 会落到函数末尾 default，而那里用的是
             //   a0 = (long)(int)(unsigned int)r[0]，指针被截断成 32 位。
             //   实测症状：容器内 `cd /tmp && cat rel` 报 Bad address。
+            //
+            // ★★而「原样重发」在 App 进程里会被 Android 的 zygote seccomp
+            //   二次拦截（只按号判），重入守卫给 EPERM —— 实测相对路径也中：
+            //     cd /etc && python3 -c 'os.lstat("hostname")'  → EPERM
+            //     cd /etc && python3 -c 'os.stat("hostname")'   → OK
+            //   所以相对路径走同一张翻译表（dirfd=AT_FDCWD，路径不翻译）。
+            //   guest 的 cwd 与宿主 cwd 是同一个（chdir 在本层做过翻译），
+            //   因此 AT_FDCWD 对相对路径在语义上与原调用完全等价。
+            if (legacy_path_to_at(nr, -100, lp, a1, a2, &r[0], a3)) return;
             r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
             return;
         }
@@ -2534,8 +2625,44 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   都会这样（只是恰好只有透传路径才走 break）。
             //
             //   注意要用**原始 r[0]**（64 位），不是 a0。
-            r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
-            return;
+            //
+            // ★★但「原样重发老式号」在 App 进程里**必然被二次拦截**
+            //   （2026-11-24 实测，模拟器 x86_64 / Android 14 / App uid）：
+            //
+            //   Android 的 zygote 给每个 App 进程额外装了一层 seccomp，它只按
+            //   syscall **号**判、不看调用者 IP。我们自己的过滤器按 IP 白名单放
+            //   行 loader 段（0x2xxxxxxx）的重发，于是第一次 trap 进来的 e.g.
+            //   lstat(6) 在 handler 里 raw6 重发 6 —— 指令地址在 loader 段被我们
+            //   放行，但 Android 那层照样按号拦 → SIGSYS 再投递 → 重入守卫（见
+            //   sigsys_impl 开头）判定 RIP 在 loader 段，直接给 guest 返回 -EPERM。
+            //
+            //   实测矩阵（python os.* / 直接 syscall 两条路径都验证过）：
+            //     os.stat ("/proc")  OK    ← fstatat(262) 是 *at 号，Android 放行
+            //     os.lstat("/proc") EPERM  ← lstat(6) 被二次拦 → 守卫给 EPERM
+            //     os.stat ("/etc")  OK
+            //     os.lstat("/etc")  OK    ← 非 passthrough，翻 rootfs 走 newfstatat
+            //   同一现象也命中 /dev、/sys；连 `ln -s`、`rm /tmp/x` 都 EPERM。
+            //
+            //   后果不是「少个工具」，而是**绝对符号链接全部失效**：
+            //   容器里 369 个相对链接（→ ../../bin/busybox）能跟随，只有 1 个
+            //   绝对链接 /usr/bin/dotnet → /usr/lib/dotnet/dotnet 跟不动，
+            //   于是 `dotnet` 报 "not found" 而 /usr/lib/dotnet/dotnet --version
+            //   正常返回 8.0.134 —— 极易被误判成「包没装好」。
+            //   mono 的 /usr/bin/mono → mono-sgen 是相对的，所以它没暴露。
+            //
+            //   正解：透传路径**必须翻译成 *at 号**再发，不能原样重发老式号。
+            //   翻译表与下面 switch 里对 rootfs 路径用的完全同一套（语义等价
+            //   且已被大量实测覆盖），只是 dirfd 用 AT_FDCWD、路径不翻译。
+            {
+                // ★透传路径也**必须翻译成 *at 号**：原样重发老式号会被
+                //   Android 的 zygote seccomp 二次拦截 → 重入守卫给 EPERM。
+                //   完整实测与机制见 legacy_path_to_at 的注释。
+                if (legacy_path_to_at(nr, -100, lp, a1, a2, &r[0], a3)) return;
+                // 没有 *at 等价物的（如 truncate）保留原样重发；
+                // 这类号若是 App 进程不拦的，保留原样语义最安全。
+                r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
+                return;
+            }
         }
         char lbuf[PATH_MAX];
         long lfd = -100;
@@ -2626,7 +2753,17 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         const char *np = (const char *)r[1];
         if (!op || op[0] != '/' || !np || np[0] != '/') {
             // 同上面那条：必须就地转发，`break` 会落到 default 用截断的 a0。
-            r[0] = (unsigned long long)raw6(nr, (long)op, (long)np, a2, a3, a4, a5);
+            //
+            // ★且必须翻成 *at 号：老式 rename(82)/link(86) 在 App 进程里会被
+            //   Android 的 zygote seccomp 二次拦（只按号判），重入守卫给 EPERM。
+            //   实测 `ln -s` / `rm /tmp/x` 全 EPERM 就是这个原因。
+            if (nr == SYS_rename) {
+                r[0] = (unsigned long long)raw6(SYS_renameat, -100, (long)op,
+                                                -100, (long)np, 0, 0);
+            } else {
+                r[0] = (unsigned long long)raw6(SYS_linkat, -100, (long)op,
+                                                -100, (long)np, 0, 0);
+            }
             return;
         }
         char ob[PATH_MAX], nb[PATH_MAX];
@@ -2679,7 +2816,9 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         const char *np = (const char *)r[1];
         // linkpath 必须是绝对的才需要翻译；相对 linkpath 由内核按 cwd 解析。
         if (!np || np[0] != '/') {
-            r[0] = (unsigned long long)raw6(nr, (long)tp, (long)np, a2, a3, a4, a5);
+            // 同上：relative linkpath 也必须走 symlinkat，老式 symlink(88)
+            // 会被 Android 的 seccomp 二次拦 → 重入守卫 EPERM。
+            r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)tp, -100, (long)np, 0, 0, 0);
             return;
         }
         char nb[PATH_MAX];

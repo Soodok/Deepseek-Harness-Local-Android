@@ -241,6 +241,37 @@
       "iconRes": "ic_ext_bun"
     },
     {
+      "id": "mono",
+      "name": "Mono",
+      "category": "Language runtimes",
+      "categoryKey": "lang",
+      "desc": "Mono runtime + C# compiler (mono / mcs / csc), the base Il2CppDumper-style reverse tools need",
+      "bins": [
+        "mono",
+        "mcs",
+        "csc"
+      ],
+      "packages": [
+        "mono",
+        "mono-libs"
+      ],
+      "iconRes": "ic_ext_mono"
+    },
+    {
+      "id": "dotnet",
+      "name": ".NET 8 SDK",
+      "category": "Language runtimes",
+      "categoryKey": "lang",
+      "desc": ".NET 8 LTS SDK (dotnet CLI): build and run C# / F# / VB projects, publish self-contained binaries",
+      "bins": [
+        "dotnet"
+      ],
+      "packages": [
+        "dotnet-sdk-8.0"
+      ],
+      "iconRes": "ic_ext_dotnet"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "Build & tooling",

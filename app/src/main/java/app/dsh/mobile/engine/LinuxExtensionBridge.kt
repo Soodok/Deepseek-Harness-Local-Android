@@ -126,6 +126,22 @@ object LinuxExtensionBridge {
         // traceroute）在 Alpine 全部**同名存在**，未列入本表，已逐个对 v3.22 的
         // main 5666 + community 20495 核过版本号，不是猜的。
         "python-yt-dlp" to listOf("yt-dlp"),
+        // ---- v1.7.x：.NET / Mono（issue #131）----
+        // Termux 把 mono 拆成 `mono`（运行时 + 编译器，2.2MB）与 `mono-libs`
+        // （46MB 的平台无关库）。Alpine 只有**一个** `mono`（community，
+        // 85MB，自带 89 个 bin：mono / mcs / csc / monodis…），没有 mono-libs
+        // （对着 v3.22 main 5666 + community 20500 核对，`mono-libs` 0 命中）。
+        // mono-libs 归到 ALPINE_UNAVAILABLE（该表语义正是「本发行版无此独立包」），
+        // 这样 packagesOf 会跳过它、只装 mono —— 若映射成 listOf("mono") 虽然
+        // LinkedHashSet 也会去重成单包，但表意错了（那是「改名」不是「没有」）。
+        // Termux 的 dotnet 是带版本连字符的 `dotnet-sdk-8.0`；Alpine 用
+        // `dotnet8-` 前缀（community：dotnet8-sdk 8.0.134-r0，
+        // 依赖 dotnet8-hostfxr → dotnet-host）。单装 sdk 就够（sdk 依赖
+        // runtime 与 targeting-pack，闭包由 apk 自己解）。
+        // 只映射 8.0：Alpine 虽有 dotnet9-sdk，但 Ubuntu 侧只有 8.0，
+        // 做多版本会让「选了 9 装不了」在 Ubuntu 上静默失败，故 catalog
+        // 只提供 8.0 LTS 一档。
+        "dotnet-sdk-8.0" to listOf("dotnet8-sdk"),
     )
 
     /**
@@ -187,6 +203,21 @@ object LinuxExtensionBridge {
         "fd" to listOf("fd-find"),
         "python-yt-dlp" to listOf("yt-dlp"),
         "poetry" to listOf("python3-poetry"),
+        // ---- v1.7.x：.NET / Mono（issue #131）----
+        // Ubuntu noble 没有裸 `mono`（索引里只有 mono-runtime / mono-devel /
+        // mono-complete），而 Termux 的 `mono` 包**同时**提供运行时与编译器
+        // （mono / mcs / csc 都在里面），对应 noble 的 `mono-complete`
+        // （它把 mono-runtime + mono-devel 一并拉进来，才是等价物）。
+        // 只装 mono-runtime 的话 `mcs` 不存在 —— 那是纯运行时。
+        "mono" to listOf("mono-complete"),
+        // Termux 的 mono-libs 是独立的 46MB 库包；noble 没有同名包，
+        // 库由 mono-complete 的依赖闭包提供，故映射成空（不传任何名字）。
+        // 用 `listOf()` 会被「no empty mapping target」断言打红 —— 这不是缺陷，
+        // 是那张表不该表达「映射到零个包」。正确做法是把它放进
+        // UBUNTU_UNAVAILABLE（见该表注释），语义是「本发行版无独立对应包」。
+        // Termux 的 dotnet-sdk-8.0 在 noble **同名存在**（main 仓库），
+        // 无需改名；dotnet-sdk-9.0 在 noble 没有（只有 8.0），留给
+        // UBUNTU_UNAVAILABLE 说明。
     )
 
     /**
@@ -241,6 +272,15 @@ object LinuxExtensionBridge {
         // 不建虚拟网卡、不需要 root，所以 Termux 模式正常装，Linux 模式置灰。
         "bun" to
             "bun is not packaged by Alpine; install it in the Termux store (no Linux mode needed)",
+        // ---- v1.7.x：Mono（issue #131）----
+        // Termux 把 mono 拆成 `mono` + `mono-libs`（46MB 库）；Alpine 只有一个
+        // 85MB 的 `mono`（community，自带 89 个 bin 含 mono/mcs/csc/monodis），
+        // **没有** `mono-libs`（对着 v3.22 main 5666 + community 20500 核过）。
+        // 不列在这里的话，catalog 的 packages 里的 `mono-libs` 会被
+        // packagesOf 当同名透传 → `apk add mono-libs` 报 unable to select
+        // packages，用户看到「装包失败」而不是「这个库已含在 mono 里」。
+        "mono-libs" to
+            "mono-libs has no separate package on Alpine; the single mono package already ships the libraries",
     )
 
     /**
@@ -283,6 +323,14 @@ object LinuxExtensionBridge {
         // bundlewrap，但那是 Ruby 的，不是 bun 运行时）。
         "bun" to
             "bun is not packaged by Ubuntu 24.04; use the Termux store or the upstream installer",
+        // ---- v1.7.x：.NET / Mono（issue #131）----
+        // Termux 把 mono 拆成 `mono`（运行时+编译器）与 `mono-libs`（46MB 库）。
+        // noble 只有 mono-runtime / mono-devel / mono-complete 三个包，**没有**
+        // 独立的 mono-libs（对着 noble 69648 个包名核过）—— 库被 mono-complete
+        // 的依赖闭包覆盖。列在这里（而不是在 UBUNTU_NAMES 里映射成空）是因为
+        // 「本发行版无此独立包」正是本表的语义，而空映射会被表自洽断言判红。
+        "mono-libs" to
+            "mono-libs has no separate package on Ubuntu; mono-complete already ships the libraries",
     )
 
     /**

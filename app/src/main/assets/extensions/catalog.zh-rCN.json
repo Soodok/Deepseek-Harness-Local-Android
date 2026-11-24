@@ -241,6 +241,37 @@
       "iconRes": "ic_ext_bun"
     },
     {
+      "id": "mono",
+      "name": "Mono",
+      "category": "语言运行时",
+      "categoryKey": "lang",
+      "desc": "Mono 运行时 + C# 编译器（mono / mcs / csc），Il2CppDumper 这类逆向工具的地基",
+      "bins": [
+        "mono",
+        "mcs",
+        "csc"
+      ],
+      "packages": [
+        "mono",
+        "mono-libs"
+      ],
+      "iconRes": "ic_ext_mono"
+    },
+    {
+      "id": "dotnet",
+      "name": ".NET 8 SDK",
+      "category": "语言运行时",
+      "categoryKey": "lang",
+      "desc": ".NET 8 LTS SDK（dotnet 命令）：编译运行 C# / F# / VB 项目、发布自包含二进制",
+      "bins": [
+        "dotnet"
+      ],
+      "packages": [
+        "dotnet-sdk-8.0"
+      ],
+      "iconRes": "ic_ext_dotnet"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "编译构建",
