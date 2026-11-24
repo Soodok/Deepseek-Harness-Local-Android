@@ -238,6 +238,10 @@ scripts/probes/*.bin
 # 三处都不会让编译或别的探针变红 —— 现场表现只是「装了十分钟后报 Install failed」
 # 或「dotnet 报 not found 而二进制明明是好的」，所以必须进 CI。
 !/scripts/probes/_test_linux_symlink_heal.py
+# 滑块值域守卫（v1.7.x）：`Slider.valueTo` 必须覆盖它承载的那个量的语义上限。
+# 判据错的后果不是编译失败，而是**进页面必崩**（BaseSlider 在第一次 onSizeChanged
+# 才校验），现场表现成「点一下选项应用就重启」——极易被误判成路由没到位。
+!/scripts/probes/_test_slider_range_guard.py
 tasks/
 _bench/
 

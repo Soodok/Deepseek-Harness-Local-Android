@@ -17516,3 +17516,146 @@ os.lstat("/etc")   OK    ← 非透传，翻 rootfs 走 newfstatat
 - **Ubuntu 发行版下的 mono/dotnet 未实装**：只核了 `aptindex-names.txt.gz` 里的包名（`mono-complete` / `dotnet-sdk-8.0` 均在册），未在 ubuntu:base 容器里真跑 `apt install`。`mono-complete` 的依赖闭包与 glibc 兼容性未验。
 - **frida**：未做，需发布决策（自带二进制 + sha256 强校验）。
 - **超时后残留的 apk 子进程**：缺陷 A 修复前实测「600s 砍掉父进程后 `apk` 子进程仍在跑、数据库锁被占住」，后续重试撞 `ERROR: Unable to lock database: temporary error`。本轮只修了「让它不至于超时」，**未加「超时即杀整棵子进程树」**的处理 —— 慢网环境仍可能留下持锁进程。
+
+## 第一百六十三章（v1.7.x · 2026-11-24）个性化设置「点一下应用就重启」——不是路由问题，是滑块值域越界
+
+### 1. 用户报告与原假设
+
+用户原话：「之前 md3 pr 合并之后，现在界面个性化设置完全有问题，点击选项直接应用重启，应该是有些页面路由根本没有被路由到位」。
+
+**用户的假设（路由没到位）被实测否定。** 真实原因是一处与路由完全无关的滑块值域缺陷。
+
+### 2. 排查过程（逐层排除，不靠猜）
+
+**第一层：路由是否真有问题？**
+- Manifest 注册 1273 个 `android:name`；全仓 `Intent(this, XxxActivity::class.java)` 的目标逐个比对 → **零个未注册**。
+- 每个 `setContentView(R.layout.x)` 的 Activity，把代码里引用的 `R.id.*` 与布局定义的 id 交叉核对 → 5 处「不在本布局」，逐个查证：
+  - `ExtensionStoreActivity` 的 `menuReinstall`/`menuUninstall` → 在 `menu_ext_actions.xml`（菜单资源，正常）
+  - `MainActivity` 的 `content`（DecorView 自带）、`splash`/`splashScroll` → 在 `view_boot_splash.xml`（include 进来的浮层，正常）
+  - `PermissionListActivity` 的 `permFull`/`permName`/`permState` → 在 `item_permission.xml`（列表项，正常）
+  - `WipeChatsActivity` 的 `actionSelectAll` → 在 `menu_wipe_chats.xml`（菜单，正常）
+  - **`SettingsActivity:1077` 的 `R.id.valLayoutMode` → `activity_settings.xml` 里根本没有这个 id**（`findViewById` 返回 null，`?.` 吞掉，属**死代码**，不造成崩溃）
+- 结论：**路由层没有问题**。
+
+**第二层：全量 Activity 冷启动扫描（27 个）**
+用 `am start -n app.dsh.mobile/.<Activity>` + 判 `pidof` 存活 + `logcat` 计 `FATAL EXCEPTION`：
+
+| 结果 | 页面 |
+|---|---|
+| **崩** | `SettingsBgActivity`（唯一） |
+| ok | 其余 26 个（Appearance / Theme / IslandDock / Settings / A11y / Update / Backup / DeveloperOptions / UserPrompt / WipeChats / Maintenance / PeerSync / MemoryPanel / PermissionCenter / PermissionList / LogViewer / ExtensionStore / Linux / AsrApp / VoiceService / Terminal / FileEditor / About / PluginStore / Report / ShareInbox / Onboarding） |
+
+**第三层：外观页逐行点击实测**
+在模拟器上 `uiautomator dump` 拿到每行中心坐标，逐个点击后判进程存活：
+
+| 行 | 结果 |
+|---|---|
+| 主题行 (540,472) → ThemeActivity | ok |
+| **设置背景行 (540,680) → SettingsBgActivity** | **pid 22328 → DEAD，FATAL=1** |
+| 布局模式行 (540,881) | ok（List / Grid / Collapse 三种逐个选，偏好 `settings_layout` 正确落盘 `list`/`grid`/`collapse`） |
+| 状态栏位行 (540,1088) → IslandDock | ok |
+| 屏幕朝向行 (540,1386) | ok |
+| 跟随朝向开关 (920,1724) | ok |
+| 全屏开关 (920,2064) | ok |
+
+主题页四项（Light / System / Blue / Teal / 系统动态）逐个点击 → 全 ok；选 Light 后回外观页 `valTheme` 正确变成 `Light`，偏好 `theme_mode=light` 回读一致。
+
+### 3. 真因（DshApp 的崩溃落盘文件直接给出）
+
+`/data/data/app.dsh.mobile/files/crash-last.txt`（`DshApp` 的全局未捕获异常处理器写的）：
+
+```
+time: 1795523307111
+thread: main
+java.lang.IllegalStateException: Slider value(100.0) must be greater or equal to
+valueFrom(0.0), and lower or equal to valueTo(75.0)
+	at com.google.android.material.slider.BaseSlider.validateValues(BaseSlider.java:746)
+	at com.google.android.material.slider.BaseSlider.validateConfigurationIfDirty(BaseSlider.java:796)
+	at com.google.android.material.slider.BaseSlider.updateTicksCoordinates(BaseSlider.java:2634)
+	at com.google.android.material.slider.BaseSlider.updateTrackWidth(BaseSlider.java:2697)
+	at com.google.android.material.slider.BaseSlider.onSizeChanged(BaseSlider.java:2629)
+	at android.view.View.sizeChange(View.java:24612)
+	at android.view.View.setFrame(View.java:24564)
+	at android.view.View.layout(View.java:24415)
+	...
+```
+
+`SettingsBgActivity.kt` 原文（三个滑块共用一处 `forEach`）：
+
+```kotlin
+listOf(seekAlpha, seekBlur, seekControlAlpha).forEach {
+    it.valueFrom = 0f
+    it.valueTo = 75f          // ← 三个都设成 0..75
+    it.stepSize = 1f
+}
+```
+
+而三个滑块承载的量的语义上限**并不相同**（以 `CustomVisualPref` 的读取侧 `coerceIn` 为准）：
+
+| 滑块 | 取值来源 | 语义上限 | 默认值 |
+|---|---|---|---|
+| `seekBgAlpha` | `settingsBgAlpha()` | `coerceIn(0, 100)` | **100** |
+| `seekBgBlur` | `settingsBgBlur()` | `coerceIn(0, 75)` | 0 |
+| `seekControlAlpha` | `settingsBgControlAlpha()` | `coerceIn(0, 100)` | **90** |
+
+于是 `seekAlpha.value = 100f` 越界 → `BaseSlider` 在**第一次 `onSizeChanged`**（不是赋值当场）抛 `IllegalStateException` → 进程被系统杀掉 → `DshApp` 重写 `crash-last.txt` → 用户看到「点一下就重启」。
+
+**为什么难查**：崩溃点在布局测量阶段，`onCreate` 全程无异常，静态检查、编译、单测全绿；表现又极像「页面路由错乱」（点一行、闪一下、回到别处）。
+
+### 4. 修法
+
+`SettingsBgActivity.onCreate` 改成三个滑块各自设值域（保留原注释说明为什么不能共用一个上限）：
+
+```kotlin
+seekAlpha.valueFrom = 0f;        seekAlpha.valueTo = 100f;        seekAlpha.stepSize = 1f
+seekBlur.valueFrom = 0f;         seekBlur.valueTo = 75f;         seekBlur.stepSize = 1f
+seekControlAlpha.valueFrom = 0f; seekControlAlpha.valueTo = 100f; seekControlAlpha.stepSize = 1f
+```
+
+**不把读取侧 `coerceIn` 改成 ≤75 的理由**：100% 满不透明是用户真想要的合法值（它本来就是默认值），语义上限就该是 100；把用户的选择改小才是错的。而 blur 的 75 是对的（档位百分比 0/25/50/75，见 `BG_BLUR_PRESETS`）。
+
+### 5. 新增探针 `scripts/probes/_test_slider_range_guard.py`（17 行→190 行）
+
+守住「`Slider.valueTo` 必须覆盖它承载的量的语义上限」。判据不靠人眼：
+1. **A 段**：三个 `seekXxx` 必须各自出现 `valueTo =`；剥行注释后不许再有统一的 `it.valueTo = 75f`。
+2. **B 段**：按 `seekXxx.value = CustomVisualPref.getter(this)` 反查 getter 的 `coerceIn(0, N)`，再与同文件里该 `seekXxx` 的 `valueTo` 比大小。
+   - ★这里踩过一次自己的假绿：第一版正则只认**块体**函数（`[^{]*\{`），而 `settingsBgAlpha`/`settingsBgControlAlpha` 都是**表达式体**（`fun x(...): Int = prefs(...).coerceIn(0, 100)`），正则便跨过到下一个函数的 `{`，把别人的上限认成它的 → `settingsBgControlAlpha` 解析不到上限，B 段直接「跳过」，把它改回 75f 也不红。改成显式分「表达式体 / 块体」两种切法后才真判。
+3. **C 段**：崩溃原文留在注释里，供后来人核对。
+
+**三组变异反验**（全部真红、恢复后 md5 一致 `72e524d79a58a81259aed58d00584898`）：
+
+| 变异 | 打红的断言 |
+|---|---|
+| `seekAlpha.valueTo` 改回 `75f` | `B seekAlpha.valueTo=75 覆盖 settingsBgAlpha() 的上限 100 — 越界 100 > 75` |
+| `seekControlAlpha.valueTo` 改回 `75f` | 同上（controlAlpha，双红因为该滑块有两处赋值点） |
+| 改回 `listOf(...).forEach { it.valueTo = 75f }` | `A1 seekAlpha/seekBlur/seekControlAlpha 单独设了 valueTo` 三条 + `A1b` |
+
+### 6. 修复后实测（模拟器 emulator-5556 / AVD dsh131 / x86_64 / Android 14）
+
+| 项 | 修复前 | 修复后 |
+|---|---|---|
+| 直开 `SettingsBgActivity` | pid DEAD，FATAL=1 | **pid 存活，FATAL=0** |
+| 外观页点「设置背景」行 | pid 22328 → DEAD | 进页正常，不重启 |
+| 三折叠卡（Background opacity / Blur / Control opacity）逐个展开 | 首帧即崩 | 全部展开，`bgAlphaBody` 正常撑开 (99,897)-(981,1126) |
+| `valBgAlpha` / `valControlAlpha` 文案 | —— | `100%` / `90%`（与偏好的默认值一致，未被裁剪） |
+
+### 7. 门禁
+
+| 检查 | 结果 |
+|---|---|
+| 全量探针 | **PASS=169 / FAIL=0**（新增 `_test_slider_range_guard.py` 后总数 +1） |
+| 新探针 | checks=9 / failed=0（三组变异各能打红自己那条） |
+| `check-i18n.py` | All i18n checks passed |
+| `run-a11y-jvm-test.sh` | **passed=2476 / failed=0** |
+| `compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` | BUILD SUCCESSFUL |
+| `assembleDebug` + 装模拟器 | Success |
+
+### 8. 顺带查实但**未修**的两处（如实记录）
+
+1. **`SettingsActivity:1077` 的 `findViewById<TextView>(R.id.valLayoutMode)` 是死代码**：`activity_settings.xml` 里没有 `valLayoutMode`，`findViewById` 恒返回 null，`?.` 把它吞掉。不影响功能（设置主页的布局模式值由「外观与显示」子页显示），但它是「以为会更新、实际什么都没做」的隐患 —— 若将来有人在设置主页加回这一行，会以为文案会自动刷新。
+2. **设置主页 `SettingsActivity.onResume` 的 recreate 比对用的是 `applied*` 快照**（`appliedTheme`/`appliedPalette`/`appliedLayout` 在 `onCreate:242-244` 更新），因此不会死循环 —— 这条**已确认无问题**，记在此处避免下次重复排查。
+
+### 9. 尚未验证
+
+- **真机 PLZ110 未验**：本轮全程模拟器（真机 `192.168.101.21:9000` 一直 `connect` 10060 超时）。滑块越界是纯 Kotlin/AndroidX 逻辑，与 ABI 无关，理论上真机同样；但未实测。
+- **landscape / 大字体下的布局**：只在 1080×2340@440dpi 竖屏测过，未覆盖窄屏、大字、横屏。
