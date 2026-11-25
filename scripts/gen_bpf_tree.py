@@ -91,6 +91,22 @@ LEGACY_X86_64 = [
     "lchown",
     "utimes",
     "mknod",
+    # ★2026-11-25 补：time（issue #132 的第一性成因）。
+    #
+    #   Android 的 zygote seccomp 拦 time(201)、放行 clock_gettime(228)：
+    #   容器内裸 syscall 实测（python ctypes，模拟器 x86_64 / Android 14）
+    #       time(201, &t)                        rc=-1 errno=1  EPERM
+    #       clock_gettime(228, CLOCK_REALTIME)   rc=0  sec 正确
+    #       gettimeofday(96)                     rc=0  sec 正确
+    #   不拦它的后果不是「少个功能」，而是**整个 apt 装不了包**：
+    #   gpgv 判定签名是否在有效期内要拿当前时间，拿不到就退化成 0（1970），
+    #   于是每个 Release 都被判成「未来」——
+    #       E: Release file ... is not valid yet (invalid for another 19838d ...)
+    #   而 19838 天恰好等于该 Release 的 Date 距 epoch 的天数，差一天都不差。
+    #   gpgv 自己也会直说 `Fatal: time() failed`。
+    #   用户看到的是「GPG error / Unable to locate package」，极易误判成
+    #   镜像源或签名坏了 —— 实际是容器里没有可信的当前时间。
+    "time",
     # ★2026-11-22 补：pipe。
     #
     #   Android 给 App 装的那层 seccomp 放行 pipe2(293)、**拦 pipe(22)**，

@@ -2047,6 +2047,63 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         r[0] = (unsigned long long)sel_r;
         return;
     }
+    // ★time → clock_gettime（v1.7.x；仅 x86_64，与 poll/select/fork 同源问题）。
+    //
+    //   ★★这是 issue #132「Ubuntu 装包全失败」的**第一性成因**：
+    //
+    //   现象链（三层证据互相印证，2026-11-25 模拟器 x86_64 / Android 14）：
+    //     ① 手工跑 gpgv 校验 InRelease，它自己直说：
+    //          gpgv: Signature made Thu Apr 25 15:11:21 2024 UTC
+    //          gpgv: Fatal: time() failed
+    //     ② apt 报「Release file ... is not valid yet
+    //          (invalid for another 19838d 15h 10min 24s)」
+    //        而 19838 天**恰好**等于那个 Release 的 Date 字段
+    //        （Thu, 25 Apr 2024 15:10:33 UTC）距 epoch 0 的天数
+    //        ！ 差一天都不差 —— 说明 apt 拿到的时间是 **0**，不是当前时间。
+    //     ③ 容器内裸 syscall（python ctypes，注意 228 的 a0 是 clk_id 不是指针，
+    //        第一版把指针传给 a0，得到 errno=22 EINVAL，误判成「228 也被拦」）：
+    //          time(201, &t)                        rc=-1 errno=1 EPERM  ← 真被拦
+    //          clock_gettime(228, CLOCK_REALTIME)   rc=0  sec 正确        ← 放行
+    //          gettimeofday(96)                     rc=0  sec 正确
+    //          clock_gettime64(403)                 rc=-1 errno=1 EPERM
+    //          date +%s                             正确（走 vDSO，不落 syscall）
+    //
+    //   机制：Android 给 App 进程装的那层 zygote seccomp **按号拦、不看 IP**，
+    //   它挡 time(201)。我们 handler 里没有 case SYS_time → 落到函数末尾
+    //   default 原样重发 201 → 外层再拦 → 重入守卫给 guest -EPERM。
+    //   gpgv 的判定逻辑是「签名时间 > 当前时间 ⇒ 未来」，拿不到时间时它会
+    //   退化成 0，于是**每一个** Release 都被判成「19838 天后才生效」。
+    //   用户看到的是「GPG error: At least one invalid signature was
+    //   encountered」+「Unable to locate package」，极易误判成镜像源或
+    //   签名坏了，实际是**容器里没有可信的当前时间**。
+    //
+    //   修法：time(201) 翻译成 clock_gettime(228, CLOCK_REALTIME=0)。
+    //   选 228 而不是 96 的理由：228 是「精确到纳秒的当前墙上时间」的原生接口，
+    //   与 time() 语义一一对应；96 只是兼容入口。两者在 App 域都放行（第 ③ 条实测），
+    //   所以 96 留作 228 失败时的兜底。
+    //   time(tloc) 的语义：返回值写入 tloc（可为 NULL），同时返回秒数。
+    if (nr == SYS_time) {
+        struct dsh_ts_time { long tv_sec; long tv_nsec; };
+        struct dsh_ts_time ts;
+        long tg_r = raw6(SYS_clock_gettime, 0 /*CLOCK_REALTIME*/, (long)&ts, 0, 0, 0, 0);
+        if (tg_r < 0) {
+            // clock_gettime 也失败时退回 gettimeofday（它不在拦截名单里，
+            // 上面第 ③ 条实测 rc=0），保证 time() 不会连「1970」都给不出。
+            struct dsh_tv_time { long tv_sec; long tv_usec; };
+            struct dsh_tv_time tv;
+            if (raw6(SYS_gettimeofday, (long)&tv, 0, 0, 0, 0, 0) == 0) {
+                ts.tv_sec = tv.tv_sec;
+                tg_r = 0;
+            }
+        }
+        if (tg_r >= 0) {
+            if (r[0]) *(long *)(unsigned long long)r[0] = ts.tv_sec;
+            r[0] = (unsigned long long)ts.tv_sec;
+        } else {
+            r[0] = (unsigned long long)(long)-EPERM;
+        }
+        return;
+    }
 #endif
     // ★fork → clone（v1.7.x；仅 x86_64，与 poll/select 同源问题）。
     //
@@ -3898,120 +3955,124 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_X86_64, 1, 0),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 250, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 254, 0),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr)),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_lchown, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lchown, 0, 127),
-        BPF_STMT(BPF_JMP|BPF_JA, 247),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lchown, 0, 131),
+        BPF_STMT(BPF_JMP|BPF_JA, 251),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlinkat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 66),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 243, 242),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 247, 246),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimensat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 34),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 239, 238),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 243, 242),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 17),
-        BPF_STMT(BPF_JMP|BPF_JA, 236),
+        BPF_STMT(BPF_JMP|BPF_JA, 240),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat2, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 232, 231),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 236, 235),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat2, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 228, 227),
-        BPF_STMT(BPF_JMP|BPF_JA, 226),
-        BPF_STMT(BPF_JMP|BPF_JA, 225),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 232, 231),
+        BPF_STMT(BPF_JMP|BPF_JA, 230),
+        BPF_STMT(BPF_JMP|BPF_JA, 229),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 222, 221),
-        BPF_STMT(BPF_JMP|BPF_JA, 220),
-        BPF_STMT(BPF_JMP|BPF_JA, 219),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 226, 225),
+        BPF_STMT(BPF_JMP|BPF_JA, 224),
+        BPF_STMT(BPF_JMP|BPF_JA, 223),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_eventfd, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_eventfd, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 217),
+        BPF_STMT(BPF_JMP|BPF_JA, 221),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 214),
-        BPF_STMT(BPF_JMP|BPF_JA, 212),
-        BPF_STMT(BPF_JMP|BPF_JA, 211),
+        BPF_STMT(BPF_JMP|BPF_JA, 218),
+        BPF_STMT(BPF_JMP|BPF_JA, 216),
+        BPF_STMT(BPF_JMP|BPF_JA, 215),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_signalfd, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_signalfd, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 209),
-        BPF_STMT(BPF_JMP|BPF_JA, 207),
-        BPF_STMT(BPF_JMP|BPF_JA, 206),
+        BPF_STMT(BPF_JMP|BPF_JA, 213),
+        BPF_STMT(BPF_JMP|BPF_JA, 211),
+        BPF_STMT(BPF_JMP|BPF_JA, 210),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 17),
-        BPF_STMT(BPF_JMP|BPF_JA, 204),
+        BPF_STMT(BPF_JMP|BPF_JA, 208),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 200, 199),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 204, 203),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 196, 195),
-        BPF_STMT(BPF_JMP|BPF_JA, 194),
-        BPF_STMT(BPF_JMP|BPF_JA, 193),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 200, 199),
+        BPF_STMT(BPF_JMP|BPF_JA, 198),
+        BPF_STMT(BPF_JMP|BPF_JA, 197),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlinkat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 190, 189),
-        BPF_STMT(BPF_JMP|BPF_JA, 188),
-        BPF_STMT(BPF_JMP|BPF_JA, 187),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 194, 193),
+        BPF_STMT(BPF_JMP|BPF_JA, 192),
+        BPF_STMT(BPF_JMP|BPF_JA, 191),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 185),
+        BPF_STMT(BPF_JMP|BPF_JA, 189),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_linkat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 186),
+        BPF_STMT(BPF_JMP|BPF_JA, 184),
+        BPF_STMT(BPF_JMP|BPF_JA, 183),
         BPF_STMT(BPF_JMP|BPF_JA, 182),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimes, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimes, 0, 35),
         BPF_STMT(BPF_JMP|BPF_JA, 180),
-        BPF_STMT(BPF_JMP|BPF_JA, 179),
-        BPF_STMT(BPF_JMP|BPF_JA, 178),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_init, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_init, 0, 31),
-        BPF_STMT(BPF_JMP|BPF_JA, 176),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdirat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdirat, 0, 18),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 172, 171),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 176, 175),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchownat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchownat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 168, 167),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 172, 171),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 164, 163),
-        BPF_STMT(BPF_JMP|BPF_JA, 162),
-        BPF_STMT(BPF_JMP|BPF_JA, 161),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 168, 167),
+        BPF_STMT(BPF_JMP|BPF_JA, 166),
+        BPF_STMT(BPF_JMP|BPF_JA, 165),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknodat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknodat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 158, 157),
-        BPF_STMT(BPF_JMP|BPF_JA, 156),
-        BPF_STMT(BPF_JMP|BPF_JA, 155),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 162, 161),
+        BPF_STMT(BPF_JMP|BPF_JA, 160),
+        BPF_STMT(BPF_JMP|BPF_JA, 159),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_add_watch, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_add_watch, 0, 7),
-        BPF_STMT(BPF_JMP|BPF_JA, 153),
+        BPF_STMT(BPF_JMP|BPF_JA, 157),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 149, 148),
-        BPF_STMT(BPF_JMP|BPF_JA, 147),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 153, 152),
+        BPF_STMT(BPF_JMP|BPF_JA, 151),
+        BPF_STMT(BPF_JMP|BPF_JA, 150),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_init, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_init, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 148),
         BPF_STMT(BPF_JMP|BPF_JA, 146),
         BPF_STMT(BPF_JMP|BPF_JA, 145),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statfs, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 14),
         BPF_STMT(BPF_JMP|BPF_JA, 143),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_epoll_create, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_epoll_create, 0, 6),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_time, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_time, 0, 6),
         BPF_STMT(BPF_JMP|BPF_JA, 140),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimes, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimes, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_epoll_create, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_epoll_create, 0, 2),
         BPF_STMT(BPF_JMP|BPF_JA, 137),
         BPF_STMT(BPF_JMP|BPF_JA, 135),
         BPF_STMT(BPF_JMP|BPF_JA, 134),

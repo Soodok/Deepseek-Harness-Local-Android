@@ -242,6 +242,13 @@ scripts/probes/*.bin
 # 判据错的后果不是编译失败，而是**进页面必崩**（BaseSlider 在第一次 onSizeChanged
 # 才校验），现场表现成「点一下选项应用就重启」——极易被误判成路由没到位。
 !/scripts/probes/_test_slider_range_guard.py
+# issue #132 的三处「装包必失败」（v1.7.x）：Ubuntu rootfs 与 node 只写死 arm64、
+# apt 源写死 ubuntu-ports（非 amd64 归档）、`time(201)` 被 App 层 seccomp 拦
+# 导致 gpgv 拿不到当前时间。三处都不会让编译或其他探针变红 —— 现场表现分别是
+# 「apt 报 [exit 132] 且无输出」「Unable to locate package」「GPG error 签名无效」，
+# 全都极易被误判成镜像源或网络问题。另有两条收尾缺陷（dpkg-divert --rename 的
+# realpath EPERM、一趟 dpkg -i 过不了 Pre-Depends）同样只在真装包时暴露。
+!/scripts/probes/_test_linux_abi_and_time.py
 tasks/
 _bench/
 

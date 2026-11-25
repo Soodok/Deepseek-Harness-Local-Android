@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-21 22:35 · `main` 代码提交 `56b616e2`（已推）· 工作副本 vC408 / 1.6.0-beta.32（未打 tag）· 本轮**x86_64 loader 产物漂移**：`jniLibs/x86_64/libdsh_alpine.so` 一直不在任何断言里，改了 `dsh_alpine.c` 只编 arm64 也全绿。用当前源码重编 x86_64（59,496 B / md5 `129912ed…`，同命令可复现同 md5），探针补 `[7]` 段 12 条（64 → 76 checks），模拟器 App 域端到端复验 `apk update` OK 26337 / `apk add jq` OK 92 MiB / `jq --version` 1.8.2，详见第一百五十五章。上一轮**记忆带图的三处生命周期缺口**（fork 丢图 / upsert·label 不扫孤儿 / `resetMemory` 死代码）详见第一百五十四章。此前：`ab65ab20`（v1.6.0-beta.30，loader linkat 不认 `/proc/self/fd/N` 修复，容器 `apk update`/`apk add` 数据库写全通，见第一百五十三章）· `624c9074`（beta.26 legacy 透传修复，第一百五十二章）· `07fe1b61`（PR #102 已合并）· 记忆带图主干（第一百四十七章，`1c286a74`）· WebUI 首屏 1.7 秒空档查明为 shiki 预热的三次 tokenize（641~843 ms），已挪到 `requestIdleCallback`，实测首屏省 797 ms / 27.6%（五轮交替配对，见第一百四十三章）；同期排掉一次构建缓存污染（外层类 dex 缺失导致 `NoClassDefFoundError`）。
+**最后更新**：2026-11-26 03:10 · `main` 代码提交 `42d49aad`（已推，远端=本地）· 本轮 **issue #132 Ubuntu 装包全链修复**：三个 ABI/时间缺陷（Ubuntu rootfs 与 node 只写死 arm64 → x86_64 必 SIGILL、apt 源写死 `ubuntu-ports`、`time(201)` 被 App 层 seccomp 拦导致 gpgv 拿不到时间） + 两处收尾缺陷（`dpkg-divert --rename` 的 realpath EPERM、一趟 `dpkg -i` 过不了 Pre-Depends）。模拟器全新 rootfs 产品链路实测 `POST /ext/install python` **第 3 轮收敛**、`iU`=0、`ii` 三包、`pip 24.0`、`STDLIB_OK`；第二例 `git` 一轮收敛。新增探针 `_test_linux_abi_and_time.py`（六段，七组变异全真红）。详见**第一百六十四章**。上一轮个性化滑块值域越界（进页面必崩）详见第一百六十三章；此前：扩展中心补 mono/.NET（第一六二章）· 23 条 open issue 盘点（第一六一章）· E 盘瘦身 232G→103G（第一六〇章）· Xvfb accept 被 seccomp 拦（第一五九章）· 灵动岛全透明僵死（第一五八章）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
@@ -17659,3 +17659,259 @@ seekControlAlpha.valueFrom = 0f; seekControlAlpha.valueTo = 100f; seekControlAlp
 
 - **真机 PLZ110 未验**：本轮全程模拟器（真机 `192.168.101.21:9000` 一直 `connect` 10060 超时）。滑块越界是纯 Kotlin/AndroidX 逻辑，与 ABI 无关，理论上真机同样；但未实测。
 - **landscape / 大字体下的布局**：只在 1080×2340@440dpi 竖屏测过，未覆盖窄屏、大字、横屏。
+
+## 第一百六十四章（v1.7.x · 2026-11-25）issue #132：Ubuntu 装包全链修复 —— 三个 ABI/时间缺陷 + 两处收尾缺陷
+
+> 报告人 nuolinuoyi 的两条主张里，**只有一条是真缺陷**，但它背后藏着五个独立的 bug，
+> 每一个单独出现都会让「Ubuntu 装包」100% 失败，而它们的现场表现全都指向错误方向
+> （镜像源坏了 / 权限不足 / 签名过期）。这一章按「现场表现 → 分层取证 → 真因 → 修法」记。
+
+### 1. 报告人主张的分诊
+
+| 主张 | 判定 | 证据 |
+|---|---|---|
+| ① `apt-get install python3-pip` 半成功，`dpkg -l` 出 5~7 个 `iU`，`libpython3.12-stdlib` 卡 iU，标准库缺一半 | **真实现象，但根因有三层**（见 §3–§5），不是「`--force-not-root` 没做」 | 本机全新 rootfs 完整复现：`round 1: missing=python3,python3-pip` |
+| ② rootfs 里 44 个 `/usr` 目录属主是 root，容器 uid 写不进 | **当前代码不复现**（报告人装的是旧包，或曾被 `su` 跑过 pnpm） | 真机 PLZ110：`find /usr -type d -user root` = **0**；模拟器全新 rootfs `find / -xdev -user root` = **0** |
+
+`--force-not-root` 在 main 与 tag `v1.6.0-beta.30`（vc406）里都已有 4 处
+（`LinuxEnvironmentManager.kt:1666` / `:1697`、`LinuxRootfsCatalog.kt:729` / `:652`），
+所以①里「缺这个开关」的推断不成立 —— 真正的失败在别的层。
+
+### 2. 真 bug 一：Ubuntu rootfs 与 node 只写死 arm64 → x86_64 设备必 SIGILL
+
+现场：`switch ubuntu` + `deploy` 返回 `{"ok":true,"deployed":true}`，
+但容器内 `apt-get update` 与 `-d install` 全部 `[exit 132]`（128+4 = SIGILL），**零输出**。
+
+取证：rootfs 的 `lib/` 下只有 `aarch64-linux-gnu`；设备 abi 是 `x86_64`。
+`LinuxRootfsCatalog.kt` 的 UBUNTU 段**零处** `IS_ARM64` 分支（4 个 URL / sha256 /
+compressedBytes / interpPath 全写死 arm64），`nodeTarball` 也只写死 `linux-arm64.tar.xz`。
+**同机的 Alpine 一切正常 —— 因为 Alpine 段本来就有 ABI 分支。** 所以这不是「Ubuntu 专属
+缺陷」，是「Ubuntu 漏了一个分支」。
+
+修法（`LinuxRootfsCatalog.kt`）：
+- `nodeTarball` 的 `urls` / `sha256` / `bytes` 三处按 `IS_ARM64` 分支。
+  x64 sha256 `f52ec50e959d72d5c680d9731420b2661cd2a8070e94c7369b6ddfcd8b7278be`
+  逐字取官方 SHASUMS256.txt，bytes `32_131_120L` 由 Content-Length 实测。
+- UBUNTU 加四条 amd64 rootfs 源（tuna / aliyun / ustc / cdimage，2026-11-25 实测全 200），
+  sha256 `e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86`、
+  compressedBytes `30_028_293L`。
+- `interpPath` 按 ABI（`/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`）。
+- ★`IS_ARM64` 原声明在 `nodeTarball` 之后 → Kotlin 报
+  `Variable 'IS_ARM64' must be initialized` 三处，整块前移才编过。
+
+验证：`lib/` 出 `x86_64-linux-gnu`、`uname -m` = x86_64、`apt 2.8.3 (amd64)`、
+`dpkg -l | grep -c ^ii` = 91，`apt-get update` 不再 132。
+
+### 3. 真 bug 二：apt 源写死 `ubuntu-ports`（非 amd64 归档）
+
+`ubuntu-ports` 只收录非 amd64 架构；amd64 的主归档是 `/ubuntu/`。写死 ports 时
+x86_64 容器拿到的索引里**一个 amd64 包都没有** → `E: Unable to locate package python3`。
+这个报错看起来像「源挂了」，实际是「查错了归档」。
+
+修法：`aptSources` 按 ABI 选 `ubuntu-ports`(arm64) / `ubuntu`(amd64)。
+验证：容器内 `/etc/apt/sources.list.d/ubuntu.sources` 变成
+`URIs: http://mirrors.tuna.tsinghua.edu.cn/ubuntu/`。
+
+### 4. 真 bug 三（**第一性成因**）：`time(201)` 被 App 层 seccomp 拦
+
+修完上面两条后 apt 能下载了，但**每个** InRelease 都被判签名无效：
+
+```
+W: GPG error: ... noble InRelease: At least one invalid signature was encountered.
+E: Release file for .../dists/noble/InRelease is not valid yet
+   (invalid for another 19838d 15h 10min 24s)
+```
+
+三层互证：
+
+1. **手工 gpgv 直说真话**：
+   ```
+   $ gpgv --keyring /etc/apt/trusted.gpg.d/ubuntu-keyring-2018-archive.gpg InRelease
+   gpgv: Signature made Thu Apr 25 15:11:21 2024 UTC
+   gpgv:                using RSA key F6ECB3762474EDA9D21B7022871920D1991BC93C
+   gpgv: Fatal: time() failed          ← 不是签名坏，是拿不到时间
+   ```
+2. **算术铁证**：`19838` 天**恰好**等于那个 Release 的
+   `Date: Thu, 25 Apr 2024 15:10:33 UTC` 距 epoch 0 的天数
+   （`1714057833 // 86400 = 19838`，差一天都不差）。noble-updates 的 `20782d` 同理。
+   即 apt 拿到的「当前时间」是 **0**（1970），于是所有 Release 都「未来才生效」。
+3. **容器内裸 syscall**（python ctypes）：
+
+   | syscall | 结果 |
+   |---|---|
+   | `time(201, &t)` | `rc=-1 errno=1 EPERM` ← **真被拦** |
+   | `clock_gettime(228, CLOCK_REALTIME)` | `rc=0`，秒数正确 |
+   | `gettimeofday(96)` | `rc=0`，正确 |
+   | `clock_gettime64(403)` | `rc=-1 errno=1 EPERM` |
+   | `date +%s` | 正确（走 vDSO，不落 syscall） |
+
+   ★踩坑：第一版把指针传进 `clock_gettime` 的 a0 —— 那是 `clk_id` 不是指针，
+   得到 `errno=22 EINVAL`，误判成「228 也被拦」。纠正后确认 228 正常。
+
+机制与已修过的 `poll(7)` / `select(23)` / `pipe(22)` / `fork(57)` / `dup2` /
+`accept` / `eventfd` / `inotify_init` / `signalfd` **同源**：Android zygote 给 App 进程
+装的 seccomp **只按号判、不看 IP**；handler 里没有 `case SYS_time`，于是落进
+「default 原样重发」→ 外层再拦 → 重入守卫给 guest `-EPERM`。
+`scripts/gen_bpf_tree.py` 的 `NEEDED` 与 `LEGACY_X86_64` 里都只有
+`utime`/`utimes`/`utimensat`，**201 从未进过 trap 树**。
+
+修法（`dsh_alpine.c` + `gen_bpf_tree.py`）：
+- handler 加 `if (nr == SYS_time)`（放在 select 块之后、`#endif` 之前），
+  翻译成 `clock_gettime(228, CLOCK_REALTIME=0)`，失败退回 `gettimeofday(96)`；
+  `if (r[0]) *(long *)r[0] = ts.tv_sec`（time 的 tloc 可为 NULL）。
+- `LEGACY_X86_64` 加 `"time"`。★**不能加在 `NEEDED` 里**：aarch64 通用 ABI
+  没有 `time` 这个号，两条架构都查会让生成器 `SystemExit`。
+- 重生成两棵 BPF 树原位替换（aarch64 161 条不变、x86_64 257→261 条）。
+
+修后实测：`time(201,&t)` → `rc=1795623635 errno=0`；
+`gpgv` → `Good signature from "Ubuntu Archive Automatic Signing Key (2018)"`。
+
+### 5. 真 bug 四：`dpkg-divert --rename` 报 EPERM（ldconfig shim 装不上）
+
+time 修好后失败点后移到 quirks 脚本：
+
+```
+/bin/sh /etc/dsh-glibc-quirks.sh failed rc=2:
+dpkg-divert: error: error checking '/usr/sbin/ldconfig.real': Operation not permitted
+```
+
+分层取证：
+- `dpkg-divert --add --rename` 的 `--rename` 分支会先做 realpath 校验；
+- 容器里 glibc 的 `realpath()` 对**带尾斜杠**的路径直接失败：
+  `libc.realpath("/etc")` → `/etc`；`libc.realpath("/etc/")` → **NULL errno=EPERM**。
+  同样 `readlink -f /etc` 成功、`readlink -f /etc/` 失败（**alpine 下两者都成功，
+  是纯 glibc 特性**）。
+- 脚本 `set -e` 于是立刻退出 → ldconfig shim 永远装不上 → libc-bin 的 postinst
+  在真 PIE 的 ldconfig 上段错误 → 后续 configure 连带失败 → 整批包停在 `iU`。
+
+二分实测：`dpkg-divert --add --no-rename` → `rc=0`；`mv <真文件> <divert目标>` → `rc=0`。
+两者组合与原 `--rename` 语义完全等价（登记 diversion + 挪走真文件 + 原位放 shim）。
+
+修法（`LinuxRootfsCatalog.glibcQuirksScript()`）：
+```
+dpkg-divert --add --no-rename --divert /usr/sbin/ldconfig.dshreal /usr/sbin/ldconfig.real
+mv -f /usr/sbin/ldconfig.real /usr/sbin/ldconfig.dshreal 2>/dev/null || true
+```
+
+### 6. 真 bug 五：一趟 `dpkg -i` 过不了 Pre-Depends
+
+```
+dpkg: regarding .../python3_3.12.3-0ubuntu2.1_amd64.deb containing python3,
+      pre-dependency problem:
+ python3 pre-depends on python3-minimal (= 3.12.3-0ubuntu2.1)
+  python3-minimal is unpacked, but has never been configured.
+dpkg: error processing archive ... (--install): pre-dependency problem - not installing python3
+```
+
+Pre-Depends 要求被依赖的包已 **configured**，而 `dpkg -i` 一批里只把它 unpack。
+于是 python3 元包根本没进数据库，python3-pip / setuptools / wheel 全卡 `iU` ——
+**与报告人①描述的现象逐字一致**。
+
+★**第一版修错**：以为「跑两趟 `dpkg -i` 就行」，实测仍红 —— 两趟之间没有 configure，
+`python3-minimal` 始终停在 unpacked。正确节奏必须是 **`i` → configure → `i` → configure**。
+
+修法（`LinuxEnvironmentManager.installPackagesAptLocked`）：
+```
+var missing = verifyAptInstalled(packages)
+while (missing.isNotEmpty() && rounds < 4) {
+    rounds++
+    step("dpkg -i (round $rounds)", "/bin/sh", listOf("-c", installShell))
+    configureOk = configureArgv.fold(true) { acc, argv -> step(...) && acc }
+    missing = verifyAptInstalled(packages)        // 每轮重核，不用退出码判
+    sb.append("round $rounds: missing=").append(...)
+}
+```
+- `installShell` **必须是单一个字面量**（拆成两段拼接会让
+  `_test_linux_pkg_distro.py` 的 C3b **真红** —— 它按字面量扫 `archives/*.deb` + `dpkg -i`）。
+- 上限 **4 轮**：真机实测全新 rootfs 装 python3+python3-pip 到**第 3 轮**才收敛；
+  上限 2 会让链路必失败。
+- 不做「按依赖拓扑排序 deb」：要解析每个包 Pre-Depends 再排图，而交替轮次是
+  最小、幂等、不会算错的成本（每轮对已装好的包是 no-op，几十毫秒）。
+
+### 7. 真机/模拟器终验（emulator-5556 / AVD dsh131 / x86_64 / Android 14）
+
+| 场景 | 结果 |
+|---|---|
+| 全新 ubuntu rootfs + `POST /ext/install {"id":"python"}` | `round 1: missing=python3,python3-pip` → `round 2: missing=python3,python3-pip` → **`round 3: missing=`** → `state=green` |
+| `dpkg -l` 半装态 | `iU` = **0**；`python3` / `python3-minimal` / `python3-pip` 全 **ii** |
+| python 可用性 | `python3 -V` = 3.12.3；`pip3 --version` = 24.0；`STDLIB_OK`（asyncio/json/ctypes/zipfile/shutil/tarfile/http/multiprocessing/unittest/sqlite3/venv 全可 import） |
+| 稳定性 | 隔 20s 复验两轮，`iU` 恒 0、状态恒 ii |
+| **通用性第二例** | 再装 `git`（全新包）→ **`round 1: missing=`** 一次收敛，`git version 2.43.0`，`iU`=0 |
+| 属主 #132 ② | 全新 rootfs `find /usr -user root` = 0、`find / -xdev -user root` = 0 → 不复现 |
+
+### 8. 新增探针 `scripts/probes/_test_linux_abi_and_time.py`
+
+六段 40+ 条：A ABI 分支（`IS_ARM64` 先声明 / `nodeTarball` 三处 / UBUNTU 四源 + interp 两架构）、
+B `aptSources` 按 ABI 选归档、C `time` 的 trap 与翻译（含**aarch64 树里不许有 `SYS_time`**）、
+D quirks 的 `--no-rename` + `mv`、E `i↔configure` 交替（含「上限 >= 3」）、F rootfs 自愈链未退化。
+
+★**探针自己的三类假红（都已修，记下来防退化）**：
+1. `strip_line_comments` 简单找 `//` 会把 `https://` 砍成 `"https:` → A2c/A2d
+   把「源码明明两分支都写了」判成缺失。修法：`//` 前一个字符是 `:` 就跳过。
+2. C 段误查 `cat`（catalog）而非 `ldr`（loader 源码）→ C1c/C1e/C2 三条假红。
+3. `time` 必须登记在 `LEGACY_X86_64` 而非 `NEEDED` —— 写了 NEEDED 会让生成器在
+   aarch64 分支 `SystemExit`；探针同时断言「NEEDED 里不许有 time」。
+
+另同步更新既有探针（**是语义变化，不是掩盖**）：
+- `_test_linux_rootfs_catalog.py`：新增 `_split_fields` 按**括号深度**切 `Option(...)`
+  参数（旧的单行正则会把 `compressedBytes = if (IS_ARM64) A else B,` 这种**跨行**
+  字段整个丢掉 → `get("UBUNTU","interpPath")` 拿到 None，报「interp 是 None」，
+  看起来像源码错了）。加 `if_abi_else` 取 x86_64 分支；sha256 断言改成
+  「两条 ABI 各一个、互不相同」；新增「ubuntu rootfs 必须两条 abi 的 sha256 都在」。
+- `_test_linux_pkg_distro.py`：未改判据，只把 `installShell` 合并成单字面量满足它。
+
+**变异验证（全部真红，恢复后 `cmp` 字节一致）**：
+
+| 变异 | 打红 |
+|---|---|
+| `nodeTarball` 三处 `if (IS_ARM64)` → `if (true)` | A2b |
+| UBUNTU `interpPath` 改回只留 arm64 | 「Ubuntu interp is glibc loader」+「node sha256 pinned」 |
+| `aptSources` 改回写死 `ubuntu-ports/` | B1b |
+| `gen_bpf_tree.py` 删 `"time"` | 3 条（C1 / C1b / C1c 系） |
+| `if (nr == SYS_time)` → `if (0 && ...)` | C2 |
+| quirks 改回 `--add --rename` | D1b + D1c + D1e |
+| `while` → `if`（只跑一轮） | E1c + E1c2 + E1e + E1f |
+
+### 9. 门禁
+
+| 检查 | 结果 |
+|---|---|
+| `check-i18n.py` | All i18n checks passed |
+| `check-ui-tokens.py` | All UI token checks passed |
+| `check-no-bulk-perms.py` | OK |
+| 全量已跟踪探针 | **PASS=157 / FAIL=5 / SKIP=14**（共 176）；5 个 FAIL **全部是基线既有**，在隔离树 `/e/tmp/wt-132`（detach HEAD `42d49aad`）上同样红：`_kstrip.py`（缺 argv）、`test_pick.py`（需引擎在跑）、三个 `_verify_*_backwards.py`（自身变异自检不通过） |
+| 新增探针 | `_test_linux_abi_and_time.py` 全绿 |
+| `:app:testDebugUnitTest` | tests=114 / failures=0 |
+| `run-a11y-jvm-test.sh` | **passed=2476 / failed=0** |
+| `assembleDebug -Pabi=x86_64 -Ppackage=noruntime` | BUILD SUCCESSFUL |
+
+### 10. 产物与文件
+
+| 文件 | 变化 |
+|---|---|
+| `app/src/main/cpp/dsh_alpine.c` | +159/−49 `if (nr == SYS_time)` 翻译块 + 两棵 BPF 树重生成 |
+| `app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt` | +46/−15（交替轮次循环） |
+| `app/src/main/java/app/dsh/mobile/engine/LinuxRootfsCatalog.kt` | +99/−26（ABI 分支 + amd64 源 + quirks 写法） |
+| `app/src/main/jniLibs/x86_64/libdsh_alpine.so` | 62,600 B / md5 `e2b0ac069f73745d73ae6fab23bff5a3` |
+| `app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so` | 43,016 B / md5 `2348ea8cbdf25d74a76688f1f3f313e6` |
+| `scripts/gen_bpf_tree.py` | +16（`"time"` 进 `LEGACY_X86_64`） |
+| `.gitignore` | +7（探针白名单，第 251 行） |
+| `scripts/probes/_test_linux_abi_and_time.py` | 新建 |
+| `scripts/probes/_test_linux_rootfs_catalog.py` | +132/−12（解析器支持 ABI 三元） |
+
+★loader 重编必须 `unset MSYS_NO_PATHCONV`（否则 clang 收到 `/e/...` 报 no such file）。
+★**产物 mtime 必须晚于 `dsh_alpine.c`**，否则 `_test_dsh_alpine_source_sync.py`
+报「产物不早于源码」5 条红（重编即消除）。
+
+### 11. 尚未验证
+
+- **真机 PLZ110（arm64）未跑本轮 APK**：全程用 emulator-5556（x86_64）。本轮改动的
+  ABI 分支在 arm64 侧走的是**原有**分支（值未变），但 x86_64 新增分支只在模拟器验过；
+  arm64 真机上新部署的 Ubuntu 装包链路未实测。
+- **`dpkg -i` 轮次上限 4 只验到「3 轮收敛」这两例**（python、git）。依赖链更深或
+  镜像缺包时会不会吃满 4 轮后仍 missing，未构造。
+- **`dpkg-divert --no-rename` 后 diversion 的长期一致性**：`dpkg` 升级 libc-bin 时
+  会不会因为「diversion 登记的路径与实际文件名不同步」出问题，未测（当前 shim 逻辑
+  是 `if [ -e dshreal ]` 就重写 shim，幂等）。
+- **属主漂移只在全新 rootfs 上不复现**：报告人那种「被 root 身份跑过装包之后」的初态
+  没有复建验过（`RootfsModes` 的自愈链已有，但本轮没有从坏初态跑一遍）。
