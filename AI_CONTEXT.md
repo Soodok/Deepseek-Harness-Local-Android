@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-26 03:10 · `main` 代码提交 `42d49aad`（已推，远端=本地）· 本轮 **issue #132 Ubuntu 装包全链修复**：三个 ABI/时间缺陷（Ubuntu rootfs 与 node 只写死 arm64 → x86_64 必 SIGILL、apt 源写死 `ubuntu-ports`、`time(201)` 被 App 层 seccomp 拦导致 gpgv 拿不到时间） + 两处收尾缺陷（`dpkg-divert --rename` 的 realpath EPERM、一趟 `dpkg -i` 过不了 Pre-Depends）。模拟器全新 rootfs 产品链路实测 `POST /ext/install python` **第 3 轮收敛**、`iU`=0、`ii` 三包、`pip 24.0`、`STDLIB_OK`；第二例 `git` 一轮收敛。新增探针 `_test_linux_abi_and_time.py`（六段，七组变异全真红）。详见**第一百六十四章**。上一轮个性化滑块值域越界（进页面必崩）详见第一百六十三章；此前：扩展中心补 mono/.NET（第一六二章）· 23 条 open issue 盘点（第一六一章）· E 盘瘦身 232G→103G（第一六〇章）· Xvfb accept 被 seccomp 拦（第一五九章）· 灵动岛全透明僵死（第一五八章）。
+**最后更新**：2026-11-26 04:20 · `main` 代码提交 `8b988884`（已推，远端=本地）· **`v1.6.0-beta.36`（vC412）已打 tag 并发 prerelease**（CI 全绿 10m13s，14 个资产：8 个 APK + 2 runtime zip + 2 index + 2 sig）。本轮两笔：①**issue #132 Ubuntu 装包全链修复**（三个 ABI/时间缺陷 + 两处收尾缺陷，见第一百六十四章）；②**i18n-check 从 2026-11-22 起的长期假红**修掉（生成器无 NDK 时走入库编号表兜底，探针补到 156 checks，CI 转绿）。此前：个性化滑块值域越界（第一六三章）· 扩展中心补 mono/.NET（第一六二章）· 23 条 open issue 盘点（第一六一章）· E 盘瘦身 232G→103G（第一六〇章）· Xvfb accept 被 seccomp 拦（第一五九章）· 灵动岛全透明僵死（第一五八章）。
 > 上一轮：推送 10 个提交 + 关闭已合并 PR + 清掉 20 个本地分支 / 3 个远端分支 / 17 个 worktree（第一百三十四章）。
 > ✅ 凭据已于 11-14 晚换新并存入 GCM（`ls-remote` 可通），`v1.6.0-beta.14` 已于当晚打 tag 并发布 prerelease。
 > ✅ 本轮 `842230fa` 与 tag `v1.6.0-beta.18` 均已推送，CI 全绿，Release 已发布（`prerelease: true`）。
