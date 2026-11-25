@@ -188,27 +188,114 @@ DIRFD = {"openat", "newfstatat", "faccessat", "readlinkat", "statx",
 
 
 def find_ndk():
-    for root in (os.environ.get('ANDROID_NDK'),
-                 r'E:\Android\Sdk\ndk\28.2.13676358'):
-        if root and os.path.isdir(root):
+    """找一个可用的 NDK。找不到返回 None（不是 SystemExit —— 见 load_numbers）。
+
+    `DSH_NO_NDK=1` 强制走兜底编号表：探针用它在**任意机器**上确定性地验证
+    「没有 NDK 的环境（CI）也能生成逐行一致的树」——否则本地有 NDK 就永远
+    只测到一条路径，CI 缺 NDK 那条直到红了才发现（2026-11-22 的真实教训）。
+    """
+    if os.environ.get('DSH_NO_NDK'):
+        return None
+    cands = [os.environ.get('ANDROID_NDK'), os.environ.get('ANDROID_NDK_HOME')]
+    sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
+    if sdk:
+        cands.append(os.path.join(sdk, 'ndk'))
+        # SDK 里的 ndk/<version> 需要再展开一层
+        ndkdir = os.path.join(sdk, 'ndk')
+        if os.path.isdir(ndkdir):
+            subs = sorted(os.listdir(ndkdir))
+            if subs:
+                cands.append(os.path.join(ndkdir, subs[-1]))
+    cands.append(r'E:\Android\Sdk\ndk\28.2.13676358')
+
+    for root in cands:
+        if not root or not os.path.isdir(root):
+            continue
+        # 光有目录不算 —— CI 上 `ndk/` 可能存在但一个版本都没装。
+        if os.path.isdir(os.path.join(root, 'toolchains')):
             return root
-    raise SystemExit('找不到 NDK，请设 ANDROID_NDK')
+    return None
+
+
+# 编号兜底表：`scripts/syscall_numbers.json`（由 tools/dump-syscall-numbers.py
+# 从 NDK 头导出，随源码入库）。
+#
+# ★为什么需要它（2026-11-24 真实事故）：CI 的 `i18n-check` runner 上**没有 NDK**，
+#   而探针 `_test_dsh_alpine_source_sync.py` 要实跑本生成器来验「树里真的含
+#   SYS_xxx」。没有 NDK 时生成器以前直接 `SystemExit`，探针拿到的 stdout 是空的，
+#   于是 5~9 条「x86_64 生成的树里含 SYS_accept/epoll_create/eventfd/inotify_init/
+#   signalfd」全红 —— 从 2026-11-22 起 CI 一直是红的，而本地全绿。
+#
+#   兜底表让「没有 NDK」也能算出一棵**与入库内联树逐行一致**的树（编号是常量，
+#   不随宿主变），于是探针在 CI 上能真跑而不是假红。有 NDK 时仍然优先读头，
+#   这样「NDK 换了版本、编号表过期」能被发现（两者不一致会触发下面的 must 断言）。
+FALLBACK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'syscall_numbers.json')
+_fallback_cache = None
+
+
+def load_fallback(arch):
+    global _fallback_cache
+    if _fallback_cache is None:
+        if not os.path.isfile(FALLBACK_PATH):
+            return None
+        import json
+        with open(FALLBACK_PATH, encoding='utf-8') as f:
+            _fallback_cache = json.load(f)
+    tbl = _fallback_cache.get(arch)
+    return dict(tbl) if tbl else None
 
 
 def load_numbers(arch, verbose=False):
-    ndk = find_ndk()
-    sysroot = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt',
-                           'windows-x86_64', 'sysroot', 'usr', 'include')
+    global NR_NAMES
     cfg = ARCHS[arch]
-    cands = [
-        os.path.join(sysroot, cfg['header']),
-        os.path.join(sysroot, 'aarch64-linux-android', 'asm',
-                     os.path.basename(cfg['header'])),
-        os.path.join(sysroot, 'asm-generic', os.path.basename(cfg['header'])),
-    ]
-    path = next((p for p in cands if os.path.isfile(p)), None)
+    ndk = find_ndk()
+    path = None
+    sysroot = None
+    if ndk:
+        # prebuilt 目录名随宿主变（windows-x86_64 / linux-x86_64 / darwin-x86_64），
+        # 写死 windows-x86_64 会让 CI（linux）与本地共用代码却各找一个不存在的路径。
+        for pre in ('windows-x86_64', 'linux-x86_64', 'darwin-x86_64'):
+            cand = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt', pre,
+                                'sysroot', 'usr', 'include')
+            if os.path.isdir(cand):
+                sysroot = cand
+                break
+            # 有些发行版直接放 sysroot（没有 usr/include 层）
+            cand2 = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt', pre, 'sysroot')
+            if os.path.isdir(cand2):
+                sysroot = cand2
+                break
+    if sysroot:
+        cands = [
+            os.path.join(sysroot, cfg['header']),
+            os.path.join(sysroot, 'aarch64-linux-android', 'asm',
+                         os.path.basename(cfg['header'])),
+            os.path.join(sysroot, 'asm-generic', os.path.basename(cfg['header'])),
+            os.path.join(sysroot, 'usr', 'include', cfg['header']),
+        ]
+        path = next((p for p in cands if os.path.isfile(p)), None)
+
     if not path:
-        raise SystemExit('找不到 %s 的 unistd 头（试过 %s）' % (arch, cands))
+        # 没有 NDK（CI）或头文件缺失 → 用入库编号表。表里缺任何一个名字都算错，
+        # 静默跳过会让「加了名字却没编进树」永远发现不了。
+        tbl = load_fallback(arch)
+        if tbl:
+            wanted = list(NEEDED) + (list(LEGACY_X86_64) if arch == 'x86_64' else [])
+            missing = [n for n in wanted if n not in tbl]
+            if missing:
+                raise SystemExit(
+                    'syscall_numbers.json 缺 %s 的编号：%s（有 NDK 时请重跑 '
+                    'tools/dump-syscall-numbers.py 更新该表）' % (arch, missing))
+            out = {n: int(tbl[n]) for n in wanted}
+            NR_NAMES = out
+            if verbose:
+                sys.stderr.write('%s NR from syscall_numbers.json (no NDK)\n' % arch)
+            return out, cfg['audit']
+        raise SystemExit(
+            '找不到 NDK，也没有可用的 scripts/syscall_numbers.json —— '
+            '请设 ANDROID_NDK，或先跑 tools/dump-syscall-numbers.py 生成编号表。')
+
     txt = open(path, encoding='utf-8', errors='replace').read()
     # aarch64 的 asm-generic 对少数 syscall 用了不同的宏名，这里给出别名。
     # 例如：statfs 写作 __NR3264_statfs；newfstatat 在 asm-generic 里叫 fstatat。
@@ -236,7 +323,6 @@ def load_numbers(arch, verbose=False):
             raise SystemExit('%s 里没有 __NR_%s' % (path, name))
         out[name] = int(m.group(1))
     # 供 verify_bpf_semantics.py 复用同一份权威编号（不要再各写一份）
-    global NR_NAMES
     NR_NAMES = out
     if verbose:
         sys.stderr.write('%s NR from %s\n' % (arch, os.path.basename(path)))

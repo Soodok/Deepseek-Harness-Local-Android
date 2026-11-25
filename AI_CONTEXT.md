@@ -17915,3 +17915,55 @@ D quirks 的 `--no-rename` + `mv`、E `i↔configure` 交替（含「上限 >= 3
   是 `if [ -e dshreal ]` 就重写 shim，幂等）。
 - **属主漂移只在全新 rootfs 上不复现**：报告人那种「被 root 身份跑过装包之后」的初态
   没有复建验过（`RootfsModes` 的自愈链已有，但本轮没有从坏初态跑一遍）。
+
+### 12. 补充：CI 上的假红（2026-11-24 发现并修）
+
+**症状**：`i18n-check` 从 2026-11-22 起**一直是红的**，而本地全绿。红的只有
+`_test_dsh_alpine_source_sync.py` 里的 5 条：
+
+```
+FAIL x86_64 生成的树里含 SYS_accept（真拦得到）
+FAIL x86_64 生成的树里含 SYS_epoll_create（真拦得到）
+FAIL x86_64 生成的树里含 SYS_eventfd（真拦得到）
+FAIL x86_64 生成的树里含 SYS_inotify_init（真拦得到）
+FAIL x86_64 生成的树里含 SYS_signalfd（真拦得到）
+```
+
+`checks=148 failed=9`（另 4 条在 `tail -25` 之外没显示出来，属同一组）。
+
+**真因**：该探针要**实跑** `scripts/gen_bpf_tree.py` 来证明「树里真的有这些号」。
+而生成器要求 NDK 提供 syscall 编号；**CI 的 i18n-check runner 上没有 NDK**，
+生成器直接 `SystemExit('找不到 NDK，请设 ANDROID_NDK')` → 探针拿到的 stdout 是空的
+→ 这 5 条全红。本地有 NDK（`E:/Android/Sdk/ndk/28.2.13676358`），所以永远看不见。
+
+两个次生问题让情况更糟：
+1. `find_ndk()` 只认 `ANDROID_NDK` 与一条**写死的 Windows 路径**，`prebuilt` 目录名
+   也写死 `windows-x86_64` —— 在 Linux runner 上即使装了 NDK 也找不到。
+2. `load_numbers()` 里 `global NR_NAMES` 出现在赋值之后，Python 报
+   `name 'NR_NAMES' is assigned to before global declaration`（这轮改代码时才暴露）。
+
+**修法**：
+- `scripts/syscall_numbers.json`（新建，1662 字节）：`{arch: {name: nr}}` 全量编号表，
+  由 NDK 头导出（33 + 58 条）。编号是内核 ABI 常量，不随宿主变。
+- `scripts/tools/dump-syscall-numbers.py`（新建）：从 NDK 头重新导出该表，
+  **导出后自己重跑生成器与 `dsh_alpine.c` 的内联树逐行比对**，不一致就退非零。
+- `gen_bpf_tree.py`：`find_ndk()` 返回 `None` 而不是 `SystemExit`，并扩展到
+  `ANDROID_NDK_HOME` / `ANDROID_HOME/ndk` / `ANDROID_SDK_ROOT/ndk`；`prebuilt`
+  目录名按 `windows-x86_64`/`linux-x86_64`/`darwin-x86_64` 依次探测；
+  无 NDK 时走编号表兜底（表里缺任何名字就 `SystemExit`，不静默跳过）；
+  新增 `DSH_NO_NDK=1` 开关强制走兜底路径，供探针在**任意机器**上验证两条路径一致。
+- `_test_dsh_alpine_source_sync.py`：新增 5 条断言（148 → 156 checks）：
+  ① 无 NDK 路径退出 0；② 与有 NDK 生成的 x86_64 树**逐字节一致**（14,033 字符）；
+  ③ aarch64 同样两条路径一致（9,118 字符）；④ `syscall_numbers.json` 存在且条目数 ≥ 33；
+  ⑤ 编号表覆盖 `NEEDED + LEGACY_X86_64` 的**全部名字**。
+  并把 `_gen_tree()` 的 stdout/stderr 兜 `or ""`（探针自己崩会把真实失败藏起来）。
+
+**实测（模拟 CI：`env -u ANDROID_NDK -u ANDROID_NDK_HOME`，跑 CI 同款循环）**：
+`PASS=169 / FAIL=0 / SKIP=1`。两组变异各打红自己那条：
+- 表里删 `accept` → 3 条红（含「覆盖全部名字：缺 ['accept']」）；
+- 把 `accept` 编号改成 44（真值 43）→ 「逐字节一致」红（长度相同但内容不同）。
+
+★**教训**：本地全绿的断言，只要它依赖「本机才有的资源」（NDK、Windows 路径、
+特定 shell），在 CI 上就可能是**长期红着的假红**。这类红最危险 —— 它让整条
+CI 链路失去意义（真回归混在假红里看不出来）。判据要写成「两条路径都必须一致」，
+而不是「本机这条路径能跑通」。

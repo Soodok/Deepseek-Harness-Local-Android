@@ -450,19 +450,75 @@ ok("'pipe'" in _gen_code or '"pipe"' in _gen_code,
    "生成器的 must 断言里登记了 pipe（漏了就是「加了不生效、生成器照样退出 0」）")
 
 # 实跑生成器验双向：x86_64 必须拦 pipe，aarch64 必须**没有** SYS_pipe。
-def _gen_tree(arch):
+def _gen_tree(arch, no_ndk=False):
+    env = dict(os.environ)
+    if no_ndk:
+        env["DSH_NO_NDK"] = "1"
     r = subprocess.run([sys.executable,
                         os.path.join(ROOT, "scripts/gen_bpf_tree.py"), arch],
-                       capture_output=True, text=True)
-    return r.returncode, r.stdout, r.stderr
+                       capture_output=True, text=True, env=env)
+    # capture_output=True 时 stdout/stderr 必然是 str；但生成器若被别人的
+    # 同名变量覆盖过（历史上踩过），这里仍兜一层空串，避免「探针自己崩」
+    # 把真实失败藏起来 —— 探针崩了等于什么都没验。
+    return r.returncode, (r.stdout or ""), (r.stderr or "")
 
 _rc_x, _out_x, _err_x = _gen_tree("x86_64")
 ok(_rc_x == 0, "生成器 x86_64 退出 0（stderr: %s）" % _err_x.strip()[:80])
 ok("SYS_pipe," in _out_x, "x86_64 树里含 SYS_pipe（真拦得到）")
+
+# ★**有 NDK 与无 NDK 两条路径必须产出逐字节一致的树**（2026-11-24 补）。
+#
+#   CI 的 i18n-check runner 上没有 NDK。生成器原来在这种情况下直接 SystemExit，
+#   探针拿到的 stdout 是空的 → 5 条「树里含 SYS_accept/epoll_create/eventfd/
+#   inotify_init/signalfd」从 2026-11-22 起**一直红着**，而本地（有 NDK）全绿。
+#   这是最典型的「只在 CI 才暴露」——本地跑一万遍也看不见。
+#   修法是给生成器一份入库的编号表（scripts/syscall_numbers.json）兜底，
+#   再在这里把两条路径的输出**逐字节对比**：本地有 NDK 也能证明兜底路径是对的。
+_rc_xn, _out_xn, _err_xn = _gen_tree("x86_64", no_ndk=True)
+ok(_rc_xn == 0,
+   "生成器 x86_64 在「无 NDK」路径也退出 0（stderr: %s）" % _err_xn.strip()[:80])
+ok(_out_xn.strip() == _out_x.strip(),
+   "无 NDK（编号表兜底）与有 NDK 生成的 x86_64 树逐字节一致（%d vs %d 字符）"
+   % (len(_out_xn.strip()), len(_out_x.strip())))
+if _out_xn.strip() != _out_x.strip():
+    _a = _out_xn.split(chr(10))
+    _b = _out_x.split(chr(10))
+    for _i in range(min(len(_a), len(_b))):
+        if _a[_i] != _b[_i]:
+            print("      首个差异行 %d" % _i)
+            print("        兜底: %r" % _a[_i][:70])
+            print("        NDK : %r" % _b[_i][:70])
+            break
+
 _rc_a, _out_a, _err_a = _gen_tree("aarch64")
 ok(_rc_a == 0, "生成器 aarch64 退出 0（stderr: %s）" % _err_a.strip()[:80])
 ok("SYS_pipe," not in _out_a,
    "aarch64 树里没有 SYS_pipe（通用 ABI 无该宏，泄漏进去会编不过）")
+_rc_an, _out_an, _err_an = _gen_tree("aarch64", no_ndk=True)
+ok(_rc_an == 0,
+   "生成器 aarch64 在「无 NDK」路径也退出 0（stderr: %s）" % _err_an.strip()[:80])
+ok(_out_an.strip() == _out_a.strip(),
+   "无 NDK 与有 NDK 生成的 aarch64 树逐字节一致（%d vs %d 字符）"
+   % (len(_out_an.strip()), len(_out_a.strip())))
+
+# 编号表本身必须覆盖定义里登记的全部名字 —— 缺一个就说明「加了 syscall 却没更新表」，
+# 而兜底路径会在 CI 上直接 SystemExit（症状是「探针红了但看不出为什么」）。
+_NRJSON = os.path.join(ROOT, "scripts", "syscall_numbers.json")
+ok(os.path.isfile(_NRJSON), "scripts/syscall_numbers.json 存在（无 NDK 环境的编号来源）")
+if os.path.isfile(_NRJSON):
+    import json as _json
+    _tbl = _json.load(open(_NRJSON, encoding="utf-8"))
+    for _arch in ("aarch64", "x86_64"):
+        _names = _tbl.get(_arch, {})
+        ok(len(_names) >= 33,
+           "%s 编号表条目数 >= 33（实有 %d 条）" % (_arch, len(_names)))
+    # 真正要命的一条：兜底表必须覆盖「定义里登记的全部名字」。
+    # 缺一个 → 无 NDK 环境直接 SystemExit → CI 上探针红但看不出为什么。
+    _want_base = set(re.findall(r'^    "([a-z0-9_]+)",', _gen, re.M))
+    _miss = [n for n in _want_base if n not in _tbl.get("x86_64", {})]
+    ok(not _miss,
+       "编号表覆盖 NEEDED+LEGACY_X86_64 的全部名字（缺：%s）" % _miss)
+
 
 # 内联树与生成器必须逐行一致 —— 这条是「改了生成器忘了重插内联」的守门人。
 def _inline_x86(text):
