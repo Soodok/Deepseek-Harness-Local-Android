@@ -279,7 +279,7 @@ print("[5c] 容器内默认 PATH 必须含 /eng/bin（v1.7.8 真机：dev linux 
 # 早先 4 处硬编码都不含 /eng/bin，于是容器里 `scr` / `dev` 全部 not found ——
 # 而 /eng/bin 里 87 个门脚本一个不少，症状看起来像「文件没部署」。
 _src_nc = strip_c_comments(src)
-m_path = re.search(r'#define\s+DSH_DEFAULT_PATH\s+"(/eng/bin:[^"]+)"', _src_nc)
+m_path = re.search(r'#define\s+DSH_DEFAULT_PATH\s+"(/eng/linux-bin:/opt/node/bin:[^"]+)"', _src_nc)
 ok(m_path is not None, "源码里定义了 DSH_DEFAULT_PATH 且以 /eng/bin 开头")
 if m_path:
     ok("/usr/bin" in m_path.group(1), "DSH_DEFAULT_PATH 仍含 /usr/bin（发行版命令不能被挤掉）")
@@ -289,8 +289,8 @@ if m_path:
        "不再残留写死的老 PATH 字面量（漏一处就有一半路径走回旧值）")
 
 print("[5d] loader .so 里真的带着新 PATH（编译期字符串，必须是重编过的产物）")
-ok(b"/eng/bin:/usr/local/sbin" in so_raw,
-   "产物含 PATH=/eng/bin:… 字符串（没有就说明 .so 没重编）")
+ok(b"/eng/linux-bin:/opt/node/bin:/usr/local/sbin" in so_raw,
+   "产物含 PATH=/eng/linux-bin:/opt/node/bin:… 字符串（没有就说明 .so 没重编）")
 
 print("[5e] bind 目录下的路径必须真探测存在性（v1.7.16 真机）")
 # 根因：resolve_guest_path 命中 bind 前缀后直接 return 0 并清 g_resolve_missing，
@@ -396,8 +396,8 @@ if os.path.isfile(SO_X86):
     ok(b"/system/bin/linker64" not in x86_raw,
        "x86_64 产物：无 PT_INTERP（x86_64 的 ndk 默认也会塞 interp，必须显式关掉）")
     ok(b"libc.so" not in x86_raw, "x86_64 产物：不引用 libc.so（freestanding）")
-    ok(b"/eng/bin:/usr/local/sbin" in x86_raw,
-       "x86_64 产物：含 PATH=/eng/bin:… 字符串（缺了就是没重编）")
+    ok(b"/eng/linux-bin:/opt/node/bin:/usr/local/sbin" in x86_raw,
+       "x86_64 产物：含 PATH=/eng/linux-bin:/opt/node/bin:… 字符串（缺了就是没重编）")
     ok(len(x86_raw) > 20000, "x86_64 产物体积合理（%d 字节）" % len(x86_raw))
     ok(b"[HIT]" not in x86_raw and b"[DIAG" not in x86_raw and b"[SENDTO]" not in x86_raw,
        "x86_64 产物：无 [HIT]/[DIAG]/[SENDTO] 调试残留")

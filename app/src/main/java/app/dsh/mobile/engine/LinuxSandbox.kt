@@ -192,7 +192,7 @@ object ChrootArgv {
      * 未挂载时该目录不存在，shell 解析 PATH 会静默跳过，不影响其它命令。
      */
     const val CONTAINER_PATH =
-        "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        "/eng/linux-bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     /**
      * POSIX sh 单引号转义。

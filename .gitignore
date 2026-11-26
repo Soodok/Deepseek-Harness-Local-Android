@@ -101,6 +101,13 @@ scripts/probes/*.bin
 !/scripts/probes/_test_android_api_floor.py
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+!/scripts/probes/_test_linux_bash_execution.py
+# issue #134：宿主 PYTHONHOME / PYTHONPATH 泄漏进容器 → python3 找不到 encodings
+# → dpkg postinst 失败 → 整批包停在 iU（且每轮撞同一堵墙，不会「多跑几轮收敛」）。
+# 现场表现是「装了 python3-pip 之后标准库缺一半」，极易误判成装包链路问题；
+# 而 `python3 -V` 仍然正常（-V 不加载 encodings），常规冒烟测试抓不到。
+!/scripts/probes/_test_linux_python_env_leak.py
+!/scripts/probes/linux-bash-device.cjs
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py
 # v1.6.0-beta.18：本轮四条 issue 的守卫探针（各有负对照，误删即失去回归网）

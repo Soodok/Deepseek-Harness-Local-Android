@@ -1277,7 +1277,10 @@ object EngineConfig {
     fun engineHeapFlag(ctx: android.content.Context): String =
         "--max-old-space-size=" + engineHeapMb(ctx)
 
-    fun ensureAndroidOverlay(ctx: android.content.Context): File {
+    fun ensureAndroidOverlay(
+        ctx: android.content.Context,
+        mode: EngineModeSelector.Mode = EngineModeSelector.lastMode,
+    ): File {
         val f = File(engineRoot(ctx), "android-overlay.yml")
         // NOTE: keep this file free of CJK text — the i18n gate scans Kotlin string
         // literals and would flag it (explanations live in the Kotlin comments below).
@@ -1302,14 +1305,11 @@ object EngineConfig {
         // <home>/workspaces, while the gate scripts live in <engine>/bin. A wrong
         // command fails as a silent spawn error (failOnStartupError defaults to
         // false) and the tool just never appears -- measured on device.
-        // ★Linux 容器模式优先用 **guest 路径** `/eng/bin/mcp`：`/eng` 是 launcher
-        //   必挂的别名，容器里任何通道都成立；宿主绝对路径则依赖「容器挂了 /data」
-        //   这一前提（v1.7.6 真机踩过：/data 这级不存在时整条链报 ENOENT）。
-        //   注意：overlay 有可能在 EngineModeSelector.resolve 之前写出，此时
-        //   lastMode 还是 NATIVE → 仍写宿主路径。两种写法在容器里都能跑，这里
-        //   只是让「模式已知时」走更稳的那条。
-        val mcpGate = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {
-            "/eng/bin/mcp"
+        // Use the resolved mode for this launch, not a stale lastMode from the
+        // previous engine. Linux gates have a separate directory and shebang;
+        // the native path is not an interchangeable fallback inside a container.
+        val mcpGate = if (mode == EngineModeSelector.Mode.LINUX) {
+            "/eng/linux-bin/mcp"
         } else {
             File(engineRoot(ctx), "bin/mcp").absolutePath
         }
@@ -1498,6 +1498,8 @@ object EngineConfig {
             |    # the device capabilities it is meant to have (found in review).
             |    - id: android-bridge-token
             |      name: ./android-plugins/bridge-token.mjs
+            |    - id: android-container-env
+            |      name: ./android-plugins/container-env.mjs
             |
             |# Settings -> "open configuration file" (v1.4.0, issue #25). Upstream
             |# hands the profile patch path to a *desktop* text editor (macOS
@@ -1645,6 +1647,7 @@ object EngineConfig {
             listOf(
                 "priv-mode.mjs",
                 "bridge-token.mjs",
+                "container-env.mjs",
                 "fast-mode.mjs",
                 "ask-bridge.mjs",
                 "device-tools.mjs",
@@ -1996,8 +1999,8 @@ object EngineConfig {
      *   覆盖系统 /system/bin/su。已 root 且投过权也不放行（符合「只有切 Root 才允许」）。
      * - Root：删除遮罩，让 AI 走系统真 su（引擎整体已以 root 启动）。
      */
-    private fun applySuGate(root: File, mode: PrivMode) {
-        val bindir = File(root, "bin").apply { mkdirs() }
+    private fun applySuGate(root: File, mode: PrivMode, guestView: Boolean = false) {
+        val bindir = File(root, if (guestView) "linux-bin" else "bin").apply { mkdirs() }
         val suShim = File(bindir, "su")
         if (mode == PrivMode.ROOT) {
             if (suShim.exists()) {
@@ -2008,7 +2011,7 @@ object EngineConfig {
         }
         // 非 Root：写拒绝遮罩（幂等，总是覆盖成正确内容）
         try {
-            suShim.writeText("#!/system/bin/sh\n" +
+            suShim.writeText((if (guestView) "#!/bin/sh\n" else "#!/system/bin/sh\n") +
                 "# [dsh-android] su gate: priv mode != ROOT, deny su.\n" +
                 "echo 'su: Permission denied (dsh-android: run as Root mode to gain su)' >&2\n" +
                 "exit 1\n")
@@ -2086,8 +2089,12 @@ object EngineConfig {
      * 见 LinuxEnvironmentManager.BOOTSTRAP_PACKAGES）。
      */
     fun deployLinuxAgentGates(ctx: android.content.Context) {
+        val root = engineRoot(ctx)
+        // Linux PATH deliberately uses a gate-only directory first; the shared
+        // engine/bin contains bionic bash/node and must never shadow guest tools.
+        applySuGate(root, Privilege.getMode(ctx), guestView = true)
         applyAgentGates(
-            ctx, engineRoot(ctx),
+            ctx, root,
             bashPath = "/bin/bash", libDir = "/usr/lib",
             guestView = true,
         )
@@ -2100,7 +2107,7 @@ object EngineConfig {
         libDir: String = File(root, "lib").absolutePath,
         guestView: Boolean = false,
     ) {
-        val bindir = File(root, "bin").apply { mkdirs() }
+        val bindir = File(root, if (guestView) "linux-bin" else "bin").apply { mkdirs() }
         try {
             // ── 门脚本：从 assets/gates 部署（v1.2.50）─────────────────────────
             // 此前 notify/scr/say 内嵌在 Kotlin 字符串里，每次调用 `exec node -e fetch`

@@ -32,7 +32,7 @@ NEEDED = [
     "getcwd", "mknodat", "mkdirat", "unlinkat", "symlinkat", "linkat",
     "renameat", "statfs", "fstatfs", "faccessat", "chdir", "fchmodat",
     "fchownat", "openat", "readlinkat", "newfstatat", "utimensat",
-    "rt_sigaction", "rt_sigprocmask", "clone", "execve", "renameat2",
+    "rt_sigaction", "rt_sigprocmask", "clone", "clone3", "execve", "renameat2",
     "execveat", "statx", "sendto", "sendmsg", "recvfrom", "recvmsg",
     "connect", "openat2", "faccessat2",
     # ★inotify_add_watch(fd, pathname, mask) —— pathname 在 a1，没有 *at 变体。
@@ -75,6 +75,8 @@ LEGACY_X86_64 = [
     "open", "stat", "lstat", "access", "unlink", "rmdir", "mkdir",
     "rename", "link", "symlink", "chmod", "chown", "truncate", "utime",
     "readlink",
+    # Bash calls getpgrp during even non-interactive startup; Android permits getpgid(0).
+    "getpgrp",
     # ★2026-11-07 补三条 apt/dpkg 在 Ubuntu 上必经的老式 syscall。
     #
     #   lchown(path, uid, gid) —— dpkg 建完符号链接后要给**链接本身**改属主
@@ -387,7 +389,12 @@ def main():
         ('label', 'ARCH_OK'),
         # ★这条不能少：放行 loader 自己的裸 syscall 桩（见 pitfalls #27）
         ('stmt', 'BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4)'),
-        ('jmp', ('JEQ', 'BASEHI', 'ALLOW', 'NOTSTUB')),
+        # sock_filter.jt/jf are u8; jump directly to the far ALLOW label overflows
+        # once the x86 tree grows beyond 255 instructions. Use a short conditional
+        # branch followed by a 32-bit JA trampoline instead.
+        ('jmp', ('JEQ', 'BASEHI', 'BASE_ALLOW', 'NOTSTUB')),
+        ('label', 'BASE_ALLOW'),
+        ('ja', 'ALLOW'),
         ('label', 'NOTSTUB'),
         ('stmt', 'BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr))'),
     ]
@@ -417,8 +424,13 @@ def main():
                 kx = kk
             else:
                 kx = 'SYS_' + kk
+            jt = pos[t] - i - 1
+            jf = pos[f] - i - 1
+            if not (0 <= jt <= 255 and 0 <= jf <= 255):
+                raise SystemExit('%s conditional jump at %d overflows sock_filter u8: jt=%d jf=%d' %
+                                 (arch, i, jt, jf))
             lines.append('        BPF_JUMP(BPF_JMP|BPF_%s|BPF_K, %s, %d, %d),'
-                         % (op, kx, pos[t] - i - 1, pos[f] - i - 1))
+                         % (op, kx, jt, jf))
     text = '\n'.join(lines)
     print(text)
     sys.stderr.write('%s INSTR=%d (NR from %s)\n' % (arch, len(body), arch))

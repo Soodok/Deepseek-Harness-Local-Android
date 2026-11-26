@@ -144,7 +144,13 @@ check("patchPaths 容量与层数一致（3 层）",
       "容量写小只是性能细节，但写错说明有人改层数没同步这里")
 i_ssh = sup.find("ensureBundledSshPlugin(ctx)?.absolutePath")
 i_chat = sup.find("ensureChatImportLayer(ctx)?.absolutePath")
-i_overlay = sup.find("ensureAndroidOverlay(ctx).absolutePath")
+# ★签名放宽成正则：`ensureAndroidOverlay` 现在接受可选的 `mode` 参数
+#   （v1.6.0-beta.36 之后的 Linux Bash 修复里加，用于按实际 launch mode 选 overlay）。
+#   原来写死 `ensureAndroidOverlay(ctx)`，加参数后 needle 变 -1，两条顺序断言假红。
+i_overlay = -1
+for m in re.finditer(r"ensureAndroidOverlay\(ctx(?:, *[A-Za-z_][A-Za-z0-9_.]*)?\)\.absolutePath", sup):
+    i_overlay = m.start()
+    break
 check("先后顺序：ssh 层 → chat-import 层 → Android 适配层",
       -1 < i_ssh < i_chat < i_overlay,
       "i_ssh=%d i_chat=%d i_overlay=%d" % (i_ssh, i_chat, i_overlay))

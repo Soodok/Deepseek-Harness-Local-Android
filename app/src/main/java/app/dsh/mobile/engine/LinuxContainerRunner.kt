@@ -223,6 +223,36 @@ class LinuxContainerRunner(private val ctx: Context) {
         e.remove("ANDROID_ROOT")
         e.remove("LD_PRELOAD")
         e.remove("LD_LIBRARY_PATH")
+        // ★PYTHONHOME / PYTHONPATH：宿主 python 扩展的路径，容器里的 python3
+        //   拿到它会去找**不属于自己**的标准库（issue #134 的第二根因）。
+        //
+        //   背景：`EngineConfig.buildEnv` 为扩展中心的 python 扩展设了
+        //   `PYTHONHOME=<engineRoot>/extensions/python`（Termux 编译的 3.14，
+        //   编译期 prefix 硬编码成 Termux 路径，必须显式指）。这个变量随引擎
+        //   进程环境一路继承；容器里的 `/usr/bin/python3` 是**发行版自己的**
+        //   3.12/3.13，读到它就去扩展目录找 `encodings`，找不到即：
+        //       ModuleNotFoundError: No module named 'encodings'
+        //       Fatal Python error: init_fs_encoding: failed to get the Python
+        //       codec of the filesystem encoding
+        //   于是**所有走 import 的标准库全废**（asyncio/json/ctypes/zipfile/
+        //   shutil/tarfile/http…），而 `python3 -V` 仍然正常打印版本
+        //   （-V 不加载 encodings —— 这也是这条最难被常规冒烟测试抓到的原因）。
+        //
+        //   后果：python3-minimal 的 postinst（内部 `python3 -m compileall`）
+        //   只要一次 import 失败就以非 0 退出 → `dpkg --configure -a` 报
+        //   post-installation script error → 整批包停在 iU，且**每轮都撞同一
+        //   堵墙**，所以「多跑几轮就收敛」根本不会发生。
+        //
+        //   两条入口都要覆盖：本类走 `ProcessBuilder`（继承 App 进程环境），
+        //   loader 走 `dsh_alpine.c` 的 `env_drop_host()`；漏任一条就漏一半场景。
+        //
+        //   ★按**值**判定，不是无条件 remove：第一版按名字一律摘，实测把用户
+        //   在容器内自己 `export PYTHONHOME=/tmp/mine` 也吃掉了（内层 sh 拿到
+        //   空值）—— 那是合法用法。真正要丢的那一份值必然以宿主前缀开头
+        //   （`activeRoots` 返回的是宿主 File，即 `/data/user/0/…`）。
+        listOf("PYTHONHOME", "PYTHONPATH").forEach { k ->
+            e[k]?.let { v -> if (looksLikeAndroidHostPath(v)) e.remove(k) }
+        }
         // ★DNS 免 root 桥接：容器内 musl 把 DNS 端口硬编码成 53，而 53 是特权
         //   端口（App uid 绑不上），所以由 loader 双向改写端口（见 dsh_alpine.c
         //   的 sendto/recvfrom 分支），端口号从这里读。
@@ -445,7 +475,29 @@ class LinuxContainerRunner(private val ctx: Context) {
          * 不影响其它命令解析。
          */
         private const val CONTAINER_PATH =
-            "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            "/eng/linux-bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+        /**
+         * 这个环境变量的值是不是**宿主的** Android 路径。
+         *
+         * 与 `dsh_alpine.c` 的 `looks_like_host_path()` 同源（两边都要有，因为它们
+         * 覆盖两条独立的容器入口：本类走 `ProcessBuilder` 继承 App 进程环境，
+         * loader 走引擎/终端的 exec）。
+         *
+         * 用途：决定 `PYTHONHOME` / `PYTHONPATH` 要不要从容器环境里摘掉。
+         * **只看值、不看名字**：宿主那份必然以 `/data/`、`/system/` 等前缀开头；
+         * 用户在容器内自己 `export PYTHONHOME=/tmp/mine` 时值是别的形状，
+         * 不该被误伤（第一版按名字无条件 remove 就踩了这个坑，实测内层 sh
+         * 拿到空值）。
+         */
+        private fun looksLikeAndroidHostPath(v: String?): Boolean {
+            if (v.isNullOrEmpty()) return false
+            val pfx = listOf(
+                "/data/", "/system/", "/system_ext/", "/product/", "/odm/",
+                "/vendor/", "/apex/", "/storage/emulated/", "/mnt/",
+            )
+            return pfx.any { v.startsWith(it) }
+        }
 
         private val SEM = Semaphore(3)
 

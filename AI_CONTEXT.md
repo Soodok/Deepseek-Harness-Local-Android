@@ -1,8 +1,33 @@
 # DSH Android · 交接文档
 
+## 2026-11-26 issue #134：宿主 PYTHONHOME 泄漏进容器（代码已落地，未提交未推送）
+
+- **验证环境（务必带上）**：`emulator-5554` / **x86_64** / **Android 14** / 全新 `ubuntu` rootfs（24.04 base，glibc 2.39，apt 2.8.3）。**不是 arm64 真机**。
+- **结论**：上一轮（第一百六十四章）认定的四条真因（ABI 写死 arm64 / apt 源写死 ubuntu-ports / `time(201)` 被拦 / `divert --rename` realpath 尾斜杠）**全部是 x86_64 专属**，在 arm64 上不成立（#134 复测逐条否证）。真正跨架构活着的是两条：**Pre-Depends 需多轮 `i → configure`**（已修）+ **宿主 `PYTHONHOME` 泄漏进容器**（本轮修）。
+- **机制**：宿主 `EngineConfig.buildEnv`（`EngineConfig.kt:1960`）给扩展中心 python 设 `PYTHONHOME=<宿主机扩展根>`（Termux 3.14）；容器内 `/usr/bin/python3` 是发行版 3.12，读到它去扩展目录找 `encodings` → `ModuleNotFoundError` + `Fatal Python error: init_fs_encoding` → `python3-minimal` postinst（`python3 -m compileall`）非 0 → `dpkg --configure -a` 失败 → 整批 `iU` 卡死，**每轮撞同一堵墙**。`python3 -V` 仍然正常（`-V` 不加载 encodings），所以常规冒烟测试抓不到。
+- **两条入口都要改**（都实测覆盖）：`LinuxContainerRunner.kt:253`（路径 A：`ProcessBuilder` 继承 App 进程环境，`/dev/linux/exec`、`/ext/install` 走这条）+ `dsh_alpine.c:944` 的 `env_drop_host()`（路径 B：loader，引擎与终端走这条）。
+- **修法是按值判定，不是按名字砍**：并入 `ld[]` 走 `looks_like_host_path()`（`/data/` `/system/` `/apex/` 等前缀）。第一版按名字无条件丢，实测把容器内自己 `export PYTHONHOME=/tmp/mine` 也吃掉了（内层 sh 拿到空值）。
+- **设备实测三向**：旧 loader + 宿主真实值 → `HH=/data/user/0/…` + `No module named 'encodings'`；新 loader 同输入 → `HH=DROPPED` + `import json` = `OK`；新 loader + `/tmp/mine` → `HH=/tmp/mine` 保留、内层 exec 仍 `INNER=/tmp/mine`。
+- **产物**（工作区，含并发会话 clone3/getpgrp）：arm64 `ae10e5881ef39fe70e25c9bc5b404ad4` (42856 B)、x86_64 `dc496416271f9c1a8dcb022414140928` (62904 B)。纯本轮改动（不含并发会话）为 arm64 `86eda069…` (43040 B) / x86_64 `08590379…` (62648 B)。
+- **新探针** `scripts/probes/_test_linux_python_env_leak.py`（A runner / B loader / C 宿主设置仍在，三组变异真红）。
+- **门禁（隔离树 detach `16730472` + 只施加本轮 92 行补丁）**：全量探针 169/0/1、i18n passed、`compileDebugKotlin` 2m25s SUCCESS、`testDebugUnitTest` 114/0、`run-a11y-jvm-test.sh` 2476/0。
+- **未提交未推送**：改动与并发会话（Linux Bash 修复）混在同一批文件；补丁存 `/e/tmp/my134.patch`（92 行 / 3 hunk）。
+- 详情见文末**第一百六十五章**。
+
+## 2026-11-26 Linux Bash / 本地预览修复（代码与 App 域验证完成，未安装）
+
+- 基线：`main` `16730472`。保留进入任务时的四个已修改文件及 `docs/ui-preview/probe-opacity.mjs`；未提交、未推送、未安装 APK、未重启 App（PID 7591 全程未变）。
+- 已复现（Android 14 x86_64 模拟器，真实 App `POST /dev/linux/exec`）：Ubuntu `/bin/bash -c` 先报 `initialize_job_control: getpgrp failed`；裸 syscall `getpgrp=-1/EPERM` 而 `getpgid(0)` 成功；`clone3=-1/EPERM`；Python `threading.Thread.start()` 报 `can't start new thread`。这直接解释「Bash 起不了本地预览服务」。
+- 已落地修复：loader clone3→ENOSYS、x86 getpgrp→getpgid(0)、x86 VFORK 回退写回 syscall 号；Linux PATH 统一 `/eng/linux-bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`（bionic bash/node 不再遮蔽发行版）；gates 与 su 遮罩迁到 `linux-bin`；新增 `container-env.mjs` 只转发 7 个容器变量；Linux status 暴露 `interp`；MCP overlay 先 resolve 实际模式再选 gate，容器失败回退时重写 native gate。
+- BPF（P0）：生成器对 `sock_filter.jt/jf` 做 0..255 校验，loader IP 白名单从远跳改为近条件跳 + `BPF_JA` trampoline；旧 x86 树 `jt=262` 会被 u8 窄化为 6。双 ABI 已重编：aarch64 42856 bytes md5 `ae10e5881ef39fe70e25c9bc5b404ad4`，x86_64 62904 bytes md5 `dc496416271f9c1a8dcb022414140928`。
+- 静态回归：`_test_linux_bash_execution.py` 39/0（把生成宏编码成真实 sock_filter 再解释执行、源码-生成器-双 ABI 字节一致、旧窄化跳转负对照）；`_test_dsh_alpine_source_sync.py` 156/0；chroot 34/0（需 UTF-8 输出）；DNS/container/seccomp/jobs/terminal/startup 全过；i18n 过（保留既有 SyntaxWarning）；Kotlin `:app:compileDebugKotlin` exit 0。
+- 真实 App 域实测（emulator-5554，App 域 `Seccomp_filters=2`，用 `0x20f0000000` 高地址 execve trampoline 加载临时新 x86 loader，md5 与仓库产物一致）：`bash -c 'printf pipe_ok | tr a-z A-Z'` → `PIPE_OK` 且 stderr 空；`clone3` → `-1/ENOSYS(38)`；`getpgrp()==getpgid(0)`；Python 线程 + `ThreadingHTTPServer` 三次 GET 全返 `dsh_linux_preview_ok`；**发行版 node `v24.9.0` 起真实 HTTP 服务并取回 `node_preview_ok`**（端口 41987，stderr 空）——即「本地网页预览」链路在修复后成立。该证据叠加旧 runner 的 DSH filter，不等于「仅 zygote」。
+- 边界：已安装 APK 的 runner 仍是旧版（`files/linux/runner/dsh_alpine`，62600 bytes，md5 `200b7a8784ae8d846cfedececc1b43d4`）；旧 runner 直接把新固定基址 ET_EXEC 当 guest 装载会 segfault 139，故必须走上行 trampoline。用户可见修复需重新构建并安装 APK（本轮按用户要求未安装）。
+- 清理已完成并回读：`/data/local/tmp` 下本轮 loader/探针、app 私有 `files/engine/linux-bin/` 与 `files/probe-guest.py` 均已删除；未触碰历史遗留文件。
+- 下一步首项：构建并安装 APK（需用户授权），随后 `scripts/probes/linux-bash-device.cjs --app` 在安装态复验 AI Bash 整链与预览。
+
 > **只写当前有效的事实。** 历史流水已归档：`docs/history/AI_CONTEXT-archive-20261031.md`
 > （4070 行，含 2026-10-11 ~ 10-31 每轮交付细节）。本文超过 300 行就该把旧段归档。
->
 > 配套规范：[`COLLABORATION.md`](docs/COLLABORATION.md) 合并流程 ·
 > [`HYGIENE.md`](docs/HYGIENE.md) 仓库卫生与迭代节奏 ·
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
@@ -17967,3 +17992,191 @@ FAIL x86_64 生成的树里含 SYS_signalfd（真拦得到）
 特定 shell），在 CI 上就可能是**长期红着的假红**。这类红最危险 —— 它让整条
 CI 链路失去意义（真回归混在假红里看不出来）。判据要写成「两条路径都必须一致」，
 而不是「本机这条路径能跑通」。
+
+## 第一百六十五章（v1.7.x · 2026-11-26）issue #134：arm64 复测推翻了四条真因，只剩一条 —— 宿主 PYTHONHOME 泄漏
+
+> **本轮验证环境**：`emulator-5554` / **x86_64** / **Android 14** / 全新 `ubuntu` rootfs（`Ubuntu 24.04 base`，glibc 2.39，`apt 2.8.3`）。
+> 客户端 `app.dsh.mobile`，adb 已 root（`uid=0(root) context=u:r:su:s0`），走真实产品入口 `POST /dev/linux/exec` 与 `POST /ext/install`。
+> **不是 arm64 真机**（PLZ110 / PLQ110 这轮没接上）。凡是 x86_64 专属的结论都已在下方逐条标注。
+
+### 1. 对方复测推翻了什么
+
+#134（nuolinuoyi，2026-11-26T12:53Z，12662 字节）在 **arm64 真机**（PLQ110 / Android 16 SDK36 / KernelSU / uid 10373 / glibc 2.39 / Ubuntu 24.04.5）上复测，
+把我上一轮（第一百六十四章）认定的四条真因**逐条否证**：
+
+| 我上轮的真因 | arm64 上实测 | 判定 |
+|---|---|---|
+| A. rootfs 只写死 arm64 → x86_64 SIGILL | arm64 镜像本来就能跑，`apt-get update` 3 秒、`dpkg -l` 240 个 `ii` | **x86_64 专属**，arm64 不成立 |
+| B. apt 源写死 `ubuntu-ports` → 查不到 amd64 包 | `ubuntu-ports` **就是** arm64 归档，他 `rc=0` 无 GPG 警告 | **x86_64 专属** |
+| C. `time(201)` 被拦 → gpgv 拿不到当前时间 | 裸 syscall 确实 `EPERM/EBADF/ENOSYS`，但 **libc `time()` 走 vDSO** → 值正确 `1795696010`，`gpgv` 报 `Good signature` | **x86_64 专属**（x86_64 上 apt 走的是会被拦的那条） |
+| D. `dpkg-divert --rename` 的 realpath 尾斜杠 EPERM | 他跑那条命令 `rc=0`；精确测到 glibc `realpath("/etc/")` **OK**，只有 `/usr/sbin/ldconfig.real/`（**文件**带尾斜杠）返回 NULL，而 `--rename` 校验的是不带尾斜杠的路径 | **x86_64 专属** |
+| E. 一趟 `dpkg -i` 过不了 Pre-Depends | **完全成立**，是他 5~7 个 `iU` 的成因 | 成立 |
+
+★**教训（已按他请求写进本节标题与全文）**：上一轮我全程在 x86_64 模拟器上验证，
+却在 `AI_CONTEXT.md` 与回帖里写成了通用结论，导致他拿着「真因 C 是第一性成因」去 arm64 上查了两天。
+**结论必须绑定验证环境**（架构 / SDK / rootfs 发行版 / 真机型号），这一条以后每节都写。
+
+### 2. 他新发现的第四个独立根因：宿主 `PYTHONHOME` 泄漏进容器（★本轮核心）
+
+他的最小验证：同一条 `dpkg --configure -a`，`env -u PYTHONHOME` 之后**一轮就收敛**
+（`iU=0` / `ii=240` / `pip 24.0`）；不 unset 就每轮都撞同一堵墙。
+
+#### 2.1 机制（我已完整复现）
+
+1. 宿主 `EngineConfig.buildEnv` 为扩展中心的 python 扩展设了
+   `PYTHONHOME=<engineRoot>/extensions/python`（`EngineConfig.kt:1960`）。
+   那是 Termux 编译的 **3.14**，编译期 prefix 硬编码成 Termux 路径，必须显式指；
+   注释里还有一条历史警告：只认 `id=python` 精确匹配，不能按目录里有没有 `os.py` 猜
+   （imagemagick 的 `lib/` 里有完整 stdlib 副本会骗过判据）。
+2. 容器里 `/usr/bin/python3` 是**发行版自己的** 3.12/3.13。它读到这个 `PYTHONHOME`
+   就去扩展目录找 `encodings`，找不到即：
+   ```
+   ModuleNotFoundError: No module named 'encodings'
+   Fatal Python error: init_fs_encoding: failed to get the Python codec of the filesystem encoding
+   ```
+   于是**所有走 import 的标准库全废**（asyncio / json / ctypes / zipfile / shutil / tarfile / http …）。
+3. `python3-minimal` 的 postinst 内部跑 `python3 -m compileall`，一次 import 失败就以非 0 退出
+   → `dpkg --configure -a` 报 post-installation script error → 整批包停在 `iU`
+   → **每一轮配置都撞同一堵墙**，所以「多跑几轮收敛」在这个场景下根本不发生。
+
+★**判据陷阱（我第一版就栽在这里）**：`python3 -V` 在泄漏情况下**仍然正常打印版本**
+（`-V` 不加载 `encodings`）。我最初用 `-V` 做 A/B，得到「两边都 OK」，差点把它判成误报。
+必须用真正会 import 的东西（`python3 -c "import json"`）。
+
+#### 2.2 两条容器入口，环境来源完全不同（这是修法必须覆盖两处的原因）
+
+| 入口 | 谁启动 | 环境来源 | 原来有无过滤 |
+|---|---|---|---|
+| **A 产品链路**：`POST /dev/linux/exec`、`/ext/install`（apt） | `LinuxPackageManager` → `LinuxEnvironmentManager` → `LinuxContainerRunner.run()` | `ProcessBuilder.environment()` **继承 App(Kotlin) 进程** | 只 remove 6 项（TMP/TEMP/ANDROID_DATA/ANDROID_ROOT/LD_PRELOAD/LD_LIBRARY_PATH） |
+| **B 引擎/终端**：原生模式引擎 → node-pty 兼容层 → `dsh_pty_exec` → loader | node 进程 | `EngineConfig.buildEnv` **带** PYTHONHOME，继承给 loader | `dsh_alpine.c` 的 `env_drop_host()` 里**没有任何** PYTHON* 处理 |
+
+他查 main 说「`dsh_alpine.c` 里没有 PYTHONHOME/PYTHONPATH/clearenv/unsetenv 任何一处，
+`LinuxEnvironmentManager.kt` 也没有过滤逻辑」—— **这句完全正确**，两条入口都没有。
+
+#### 2.3 修法：按**值**判定，不按**名字**砍
+
+第一版我把两个变量名加进 `env_drop_host` 的 `bad[]` 名单（无条件丢弃），
+实测把**容器内自己** `export PYTHONHOME=/tmp/mine` 也吃掉了（内层 `sh` 拿到空值）—— 误伤合法用法。
+
+最终改成按值判定，与既有的 `LD_LIBRARY_PATH` / `LD_PRELOAD` 同一套语义：
+
+- `app/src/main/cpp/dsh_alpine.c:944` `env_drop_host()`：把 `PYTHONHOME` / `PYTHONPATH`
+  并入 `ld[]` 数组（`:978`），循环上界 2→4，走 `looks_like_host_path()`（判 `/data/`、`/system/`、
+  `/system_ext/`、`/product/`、`/odm/`、`/vendor/`、`/apex/`、`/storage/emulated/`、`/mnt/` 前缀）。
+- `app/src/main/java/app/dsh/mobile/engine/LinuxContainerRunner.kt:253`：同样逐项按值判定；
+  新增 `looksLikeAndroidHostPath()`（companion object，`:487` 附近）与 loader 侧同源。
+
+为什么这样能两全：
+- 要丢的那一份值必然以宿主前缀开头（`EngineConfig.buildEnv` 里 `extRoots` 给的是**宿主 File**，
+  即 `/data/user/0/app.dsh.mobile/files/engine/extensions/python`）→ 命中；
+- 容器内自己 `export PYTHONHOME=/tmp/mine` 的值是别的形状 → 保留；
+- 容器内 export 之后**再次 exec** 时，loader 重新收那份 envp，仍保留（实测 `INNER=/tmp/mine`）。
+
+#### 2.4 实测证据（模拟器 x86_64 / 全新 ubuntu rootfs / python3 已装好）
+
+直接调 loader（绕开 JS 与 Kotlin 层，把变量当进程环境传进去）：
+
+```
+# 旧 loader（62600 B / md5 e2b0ac069f73745d73ae6fab23bff5a3）+ 宿主真实值
+$ PYTHONHOME=/data/user/0/app.dsh.mobile/files/engine/extensions/python \
+    dsh_old <rootfs> <interp> /bin/sh -c '/usr/bin/python3 -c "import json"'
+HH=/data/user/0/...            ← 变量原样进容器
+Python path configuration:
+  PYTHONHOME = '/data/user/0/...'
+  stdlib dir = '/data/user/0/.../lib/python3.12'
+Fatal Python error: init_fs_encoding: failed to get the Python codec of the filesystem encoding
+ModuleNotFoundError: No module named 'encodings'
+
+# 新 loader（62648 B / md5 08590379e8b3ce7e91d24c74009ee8a7）+ 同一输入
+HH=DROPPED                     ← 变量被摘掉
+OK                             ← import json 正常
+
+# 新 loader + 容器内自己的值
+$ PYTHONHOME=/tmp/mine ...
+HH=/tmp/mine                   ← 保留，不误伤
+
+# 容器内 export 之后内层 exec
+INNER=/tmp/mine                ← 仍保留
+```
+
+组合版 loader（含并发会话的 clone3/getpgrp 修复，md5 `dc496416271f9c1a8dcb022414140928`）
+同一组三向验证也全通过，且 `/bin/bash -c 'printf pipe_ok | tr a-z A-Z'` → `PIPE_OK` 不冲突。
+
+#### 2.5 装 python 的完整链路复验（4 轮 `i → configure`）
+
+全新 rootfs、产品链路 `POST /ext/install {"id":"python"}`，手工在容器内跑 4 轮：
+
+```
+round 1 iU=7  →  round 2 iU=2  →  round 3 iU=2  →  round 4 iU=2
+```
+
+`python3` / `python3-minimal` / `python3-pip` 全部 **ii**、`python3 -V` = 3.12.3、`import json` OK。
+残留的 2 个 `iU` 是 **perl 系**（`libalgorithm-diff-xs-perl`、`libalgorithm-merge-perl`，
+都依赖 `libalgorithm-diff-perl` 没被拉到），**与 python 无关**，属 apt 依赖解析的另一个小问题，
+不在本轮范围内。
+
+### 3. 新建探针 `scripts/probes/_test_linux_python_env_leak.py`（全绿）
+
+三段：
+- **A 段 runner 侧**（产品链路）：真处理了两个变量名 / **不许**写无条件 `e.remove("PYTHONHOME")` /
+  用 `listOf("PYTHONHOME","PYTHONPATH")` 逐项 / 调用 `looksLikeAndroidHostPath` / 命中时 `e.remove(k)` /
+  辅助函数含 `/data/` 与 `/system/` 且用 `startsWith`（不是 `contains`）。
+- **B 段 loader 侧**：`env_drop_host` 里两个名字在 `ld[]` **不在** `bad[]` / 该分支按 `looks_like_host_path` /
+  `looks_like_host_path` 含 `/data/` / `env_drop_host(` 至少 3 处（定义 + 两个 exec 调用点）。
+- **C 段宿主设置侧仍在**：`EngineConfig` 仍设 `PYTHONHOME=` 且仍按 `firstOrNull { it.name == "python" }`
+  精确匹配 —— 防止「为了修泄漏把扩展的定位变量也删了」。
+
+**变异验证（全部真红、恢复后 `cmp` 字节一致）**：
+- M1 runner 改成无条件 `e.remove(...)` → A2 / A2b / A3 红（3 条）
+- M3 loader 把两个名字移进 `bad[]` → B1d / B1f 红（2 条）
+- M5 删 `EngineConfig` 的 `PYTHONHOME=` → C1 / C1b 红（2 条）
+
+`.gitignore` 加白名单 `!/scripts/probes/_test_linux_python_env_leak.py`（第 109 行，带 4 行注释说明
+「`python3 -V` 骗过冒烟测试」这个陷阱）。
+
+### 4. 门禁（隔离树 detach `16730472`，只施加本轮的 92 行补丁）
+
+| 项 | 结果 |
+|---|---|
+| 全量已跟踪探针 | **PASS=169 / FAIL=0 / SKIP=1** |
+| `_test_linux_python_env_leak.py` | All passed |
+| `_test_dsh_alpine_source_sync.py` | `checks=156 failed=0` |
+| `_test_deepseek_chat_import.py` | 42 / 0（★并发会话弄红的那条在干净树上绿） |
+| `_test_linux_pkg_distro.py` | 41 / 0 |
+| `_test_linux_rootfs_catalog.py` | `checks=67 failed=0` |
+| `_test_linux_abi_and_time.py` | All passed |
+| `check-i18n.py` | All i18n checks passed |
+| `:app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` | BUILD SUCCESSFUL 2m25s |
+| `:app:testDebugUnitTest` | tests=114 / failures=0 |
+| `run-a11y-jvm-test.sh` | passed=2476 / failed=0 |
+
+### 5. 产物
+
+| 架构 | 不含并发会话改动（纯本轮） | 工作区（含并发会话 clone3/getpgrp） |
+|---|---|---|
+| arm64-v8a | 43040 B / md5 `86eda069bb3d07883aeeb7b0af981174` | 42856 B / md5 `ae10e5881ef39fe70e25c9bc5b404ad4` |
+| x86_64 | 62648 B / md5 `08590379e8b3ce7e91d24c74009ee8a7` | 62904 B / md5 `dc496416271f9c1a8dcb022414140928` |
+
+重编必须 `unset MSYS_NO_PATHCONV`（否则 clang 收到 `/e/...` 报 no such file），
+且产物 mtime 必须晚于 `dsh_alpine.c`，否则 `_test_dsh_alpine_source_sync.py` 报
+「产物不早于源码」5 条红。
+
+### 6. 尚未验证
+
+1. **arm64 真机未验**：本轮全程 x86_64 模拟器。他那边是 arm64 + KernelSU，机制上
+   `looks_like_host_path()` 判的是值不是架构，应当同样生效，但没有实测。
+2. **原生模式（路径 B）未单独验**：我在 loader 层直接调验证了过滤，但没在「原生模式引擎
+   → node-pty → dsh_pty_exec → loader」这条完整链上发一次真实 apt 装包。
+3. **`PYTHONPATH` 只有静态断言**：实测只覆盖 `PYTHONHOME`（它是真实的泄漏源）。
+4. **perl 系那 2 个 `iU`** 与新问题无关，未修。
+5. **本轮未提交未推送**：改动与并发会话的（Linux Bash 修复）混在同一批文件里，
+   需等那批落地后再精确 `git add --`；补丁存 `/e/tmp/my134.patch`（92 行 / 3 hunk）。
+
+### 7. 给下一个 AI 的三条
+
+- **验证环境必须写进结论**：这轮我被 #134 抓到的核心失误就是「用 x86_64 的结论去描述通用行为」。
+  每节标题、回帖正文、提交信息都要带架构与 SDK。
+- **`-V` 不是 python 可用性判据**：只有 `python3 -c "import <stdlib>"` 才算。
+- **两条容器入口都要改**：`LinuxContainerRunner`（ProcessBuilder 继承 App 进程）与
+  `dsh_alpine.c` 的 `env_drop_host`（loader）。只改一处就漏一半场景，而且漏的那一半
+  （产品链路装包）正是用户最常走的那条。

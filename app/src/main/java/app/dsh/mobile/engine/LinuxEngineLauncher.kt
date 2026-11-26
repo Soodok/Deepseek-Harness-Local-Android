@@ -362,6 +362,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
             // （musl 的 ld 不认 bionic ELF，内核只报 ENOENT，看着像文件不存在），
             // 必须换成发行版自带的。原生模式不设这两个变量，门脚本行为完全不变。
             add("DSH_ANDROID_CONTAINER=1")
+            add("DSH_ANDROID_PRIV_MODE=${Privilege.getMode(ctx).name.lowercase()}")
             add("DSH_NODE=${nodePath(option)}")
             add("HOME=/dsh")
             add("TMPDIR=/tmp")
@@ -833,7 +834,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
          * 放在发行版目录之前：同名的 su/shz 遮罩也要优先命中引擎那份。
          */
         private const val CONTAINER_PATH =
-            "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            "/eng/linux-bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
         @Volatile
         private var instance: LinuxEngineLauncher? = null
