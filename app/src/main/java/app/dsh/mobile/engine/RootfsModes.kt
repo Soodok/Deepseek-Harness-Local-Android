@@ -203,6 +203,71 @@ internal object RootfsModes {
      * `lib/apk/db/installed` 的 `D:` 依赖行），只是一个便宜的启发式：
      * 装编译器时才值得多走一次特权通道。
      */
+    /**
+     * 把 bin 目录里的**绝对**符号链接改写成相对链接。
+     *
+     * ## 为什么必须做（2026-11-24 实测，模拟器 x86_64 / App uid）
+     *
+     * 容器没有 chroot：loader 把所有路径系统调用翻译成
+     * `openat(rootfs_fd, "usr/bin/xxx")`。路径翻译是对的，但**符号链接的目标
+     * 字符串是写进 inode 的原文**，内核解析它时按**宿主根**算 —— 于是
+     * 绝对目标 `/usr/lib/dotnet/dotnet` 被解析成宿主机的 `/usr/lib/...`
+     * （Android 上不存在）→ ENOENT → 表现为「命令 not found」。
+     *
+     * 实测（同一容器、同一时刻）：
+     *     /usr/bin/mono   -> mono-sgen（**相对**）      mono --version 正常
+     *     /usr/bin/dotnet -> /usr/lib/dotnet/dotnet（绝对）  dotnet 报 not found
+     *     而 /usr/lib/dotnet/dotnet --version → 8.0.134（文件本身是好的）
+     *
+     * 全 rootfs 扫一遍：369 条相对链接全部可跟随，绝对链接只有这 1 条，
+     * 且恰好只有它坏 —— 这条判据把「装包失败」与「链接形态」直接对上。
+     *
+     * `LinuxPackageManager` 里曾有一段注释断言「绝对链接也工作正常」，依据是
+     * 真机 aarch64 上 `go version` 通。那条结论对 `go` 成立但对 `dotnet` 不成立，
+     * 差别不在 ABI 而在**是否存在 App 那层 seccomp**：真机 App 域同样有，
+     * 但当时 `go` 的 6 条绝对链接可能已被别的路径改写。这里不再依赖任何
+     * 「应该没问题」的推断 —— 装包后统一把绝对链接改成相对，代价是几次
+     * `listFiles()` 与 N 次 `createSymbolicLink`。
+     *
+     * ## 判据必须窄
+     *
+     * 只改**目标确实落在 rootfs 内**的绝对链接（`File(rootfs, target)` 存在）。
+     * 指向宿主真实路径的绝对链接（如 `/proc/self/fd`、`/dev/null`）保持原样 ——
+     * 那些本来就应该走宿主，改了反而错。
+     *
+     * @return 实际改写的链接数
+     */
+    fun repairAbsoluteLinks(rootfs: File, limit: Int = 200): Int {
+        var fixed = 0
+        for (rel in BIN_DIRS) {
+            val dir = File(rootfs, rel)
+            if (!dir.isDirectory) continue
+            val files = dir.listFiles() ?: continue
+            for (f in files) {
+                if (fixed >= limit) return fixed
+                val target = runCatching {
+                    java.nio.file.Files.readSymbolicLink(f.toPath()).toString()
+                }.getOrNull() ?: continue
+                if (!target.startsWith("/")) continue
+                // 目标必须真实存在于 rootfs 内，否则是「本就该走宿主」的链接
+                val targetInRoot = File(rootfs, target.trimStart('/'))
+                if (!targetInRoot.exists()) continue
+                // 相对化：从链接所在目录走到目标
+                val relTarget = runCatching {
+                    dir.toPath().relativize(targetInRoot.toPath()).toString()
+                        .replace('\\', '/')
+                }.getOrNull() ?: continue
+                val ok = runCatching {
+                    java.nio.file.Files.delete(f.toPath())
+                    java.nio.file.Files.createSymbolicLink(f.toPath(), File(relTarget).toPath())
+                    true
+                }.getOrDefault(false)
+                if (ok) fixed += 1
+            }
+        }
+        return fixed
+    }
+
     fun wantsHeaders(packages: List<String>): Boolean {
         val markers = listOf("gcc", "g++", "build-base", "musl-dev", "clang", "cmake", "make", "linux-headers")
         return packages.any { p -> markers.any { m -> p.contains(m) } }

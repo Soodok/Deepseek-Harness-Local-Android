@@ -83,25 +83,129 @@ def read(path):
         return f.read()
 
 
+def _split_fields(body):
+    """把 `Option(...)` 的参数体按顶层逗号切成 {名: 表达式原文}。
+
+    ★必须按**括号/方括号深度**切，不能用 `^\\s+(\\w+)\\s*=\\s*(.+?),\\s*$` 这种
+    单行正则。issue #132 之后 interpPath / sha256 / urls / compressedBytes 都是
+
+        compressedBytes = if (IS_ARM64) 29_936_675L else 30_028_293L,
+
+    或
+
+        sha256 = if (IS_ARM64)
+            "a91d…f2"
+        else
+            "e77b…86",
+
+    这种**跨行**形态。单行正则会把这些字段整个**丢掉**（不是取错值，是直接
+    不存在），于是 `get("UBUNTU","interpPath")` 拿到 None，报「Ubuntu interp
+    is glibc loader - None」—— 看起来像源码写错了，实际是解析器跟不上。
+    """
+    fields = {}
+    depth = 0
+    cur = []          # 当前字段累积的文本行
+    key = None
+    in_str = False
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if in_str:
+            cur.append(ch)
+            if ch == '"' and body[i - 1] != chr(92):
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            cur.append(ch)
+            i += 1
+            continue
+        if ch == '/':
+            # 跳过行注释与块注释（注释里的逗号/括号不能参与深度计算）
+            if body.startswith('//', i):
+                j = body.find(chr(10), i)
+                i = n if j < 0 else j
+                continue
+            if body.startswith('/*', i):
+                j = body.find('*/', i + 2)
+                i = n if j < 0 else j + 2
+                continue
+        if ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            depth -= 1
+        if ch == ',' and depth == 0:
+            text = ''.join(cur)
+            if key is not None:
+                fields[key] = ' '.join(text.split())
+            cur, key = [], None
+            i += 1
+            continue
+        if ch == chr(10):
+            cur.append(' ')
+            i += 1
+            continue
+        cur.append(ch)
+        # 字段起点：行首（或上一个逗号之后）第一个 `name =`
+        joined = ''.join(cur)
+        if key is None and not joined.strip() == '':
+            m = re.match(r'\s*(\w+)\s*=\s*', joined)
+            if m:
+                key = m.group(1)
+                cur = [joined[m.end():]]
+        i += 1
+    tail = ''.join(cur)
+    if key is not None:
+        fields[key] = ' '.join(tail.split())
+    return fields
+
+
 def parse_options(src):
     """从 Kotlin 源码里抠出 `Option(...)` 条目。
 
     只取真实构造出来的条目（`Option(` 后跟命名参数），不取 data class 声明，
-    也不取注释里出现的样例。返回值是 [dict(name=value_str)]。
+    也不取注释里出现的样例。返回值是 [dict(name=表达式原文)]。
     """
     out = []
     for m in re.finditer(r"\n\s+Option\(\n(.*?)\n\s{8}\),", src, re.S):
-        body = m.group(1)
-        fields = {}
-        for fm in re.finditer(r"^\s+(\w+)\s*=\s*(.+?),\s*$", body, re.M):
-            fields[fm.group(1)] = fm.group(2).strip()
+        fields = _split_fields(m.group(1))
         if "family" in fields:
             out.append(fields)
     return out
 
 
+def if_abi_else(v):
+    """从 `if (IS_ARM64) "A" else "B"` 形态里取 x86_64 分支（B）。
+
+    为什么取 B：探针跑在开发机上，x86_64 是最常见的目标；而 arm64 是手机真机
+    长年唯一的 ABI。两条分支都写出来才算对，取值只是为了让「集合类断言」有个
+    具体字符串可比。★这个形态是 issue #132 引入的（原来 interpPath / sha256 /
+    rootfs URL 都写死 arm64，x86_64 设备必 SIGILL），所以解析器必须跟着会读。
+    """
+    m = re.search(r'if\s*\(\s*IS_ARM64\s*\)\s*\n\s*"(.*?)"\s*\n\s*else\s*\n\s*"(.*?)"',
+                  v, re.S)
+    if m:
+        return m.group(2)
+    # 单行形态：if (IS_ARM64) 29_936_675L else 30_028_293L（数字字段走这条）
+    m2 = re.search(r'if\s*\(\s*IS_ARM64\s*\)\s*(\S+)\s*\n?\s*else\s*(\S+)', v, re.S)
+    if m2:
+        # 单行形态的值可能带引号（interpPath 压成一行时就是），统一剥掉
+        return m2.group(2).strip().strip(chr(34))
+    return None
+
+
 def field_str(v):
-    """把 Kotlin 表达式还原成字符串值（取最内层 quoted 内容或枚举尾名）。"""
+    """把 Kotlin 表达式还原成字符串值（取最内层 quoted 内容或枚举尾名）。
+
+    ★先处理 `if (IS_ARM64) "…" else "…"` 三元（issue #132 之后 interpPath /
+    node 的 sha256 / rootfs URL 都是这个形态）。不先处理的话 `"([^"]*)"`
+    会抓到 arm64 那条，然后在集合断言里与 musl/glibc 的对应关系对不上。
+    """
+    t = if_abi_else(v)
+    if t is not None:
+        return t
     m = re.search(r'"([^"]*)"', v)
     if m:
         return m.group(1)
@@ -189,9 +293,13 @@ def main():
        get("UBUNTU", "nodeStrategy") == "OFFICIAL_TARBALL", str(get("UBUNTU", "nodeStrategy")))
     ok("Ubuntu needs glibc quirks", get("UBUNTU", "needsGlibcQuirks") == "true",
        str(get("UBUNTU", "needsGlibcQuirks")))
+    # ★interpPath 现在是 if (IS_ARM64) aarch64-loader else x86_64-loader 三元。
+    #   取出来的代表值（x86_64 分支）也必须**真的**是 glibc loader，否则
+    #   x86_64 模拟器上容器根本起不来（musl 程序拿 glibc loader 加载）。
+    _uinterp = get("UBUNTU", "interpPath") or ""
     ok("Ubuntu interp is glibc loader",
-       (get("UBUNTU", "interpPath") or "").startswith("/lib/aarch64-linux-gnu/ld-linux-"),
-       str(get("UBUNTU", "interpPath")))
+       _uinterp.startswith("/lib/x86_64-linux-gnu/ld-linux-"),
+       str(_uinterp))
 
     print("== C. interp consistency ==")
     # ★断言从「每个选项 interp 都不同」改成「interp 与 libc 一一对应」。
@@ -254,9 +362,18 @@ def main():
     # 下载器本身拒绝非 https（HttpDownloader.isSecureDownloadUrl），所以这里同口径
     bad_scheme = [u for u in urls if not u.startswith("https://")]
     ok("every rootfs URL is https", not bad_scheme, str(bad_scheme))
-    oci = re.findall(r'sha256 = "([0-9a-f]{64})"', opts_src)
-    ok("sha256 pins are 64 hex chars", len(oci) >= 1 and all(len(x) == 64 for x in oci),
-       str(oci))
+    # ★sha256 现在是 `sha256 = if (IS_ARM64) "…" else "…"`（issue #132 之前只有
+    #   arm64 一条，x86_64 设备下到的是 arm64 rootfs → 容器里每个程序 SIGILL）。
+    #   所以这里要收集「sha256 = 之后到下一个逗号/换行」的整块里的全部 64-hex。
+    # ★sha256 不是 Option 的顶层参数，它在 `source = RootfsSource.Remote(...)` 里面。
+    #   所以要从每个选项的 source 表达式正文里找（顶层 get("sha256") 恒为 None）。
+    pins = []
+    for o in opts:
+        pins.extend(re.findall(r'"([0-9a-f]{64})"', o.get("source", "") or ""))
+    ok("sha256 pins are 64 hex chars", len(pins) >= 1 and all(len(x) == 64 for x in pins),
+       str(pins))
+    ok("ubuntu rootfs has both abi pins", len(set(pins)) >= 2,
+       "amd64 与 arm64 两条 rootfs sha256 必须都在（实测 %d 条）" % len(set(pins)))
     ok("compressed size declared", opts_src.count("compressedBytes =") >= 1, "")
     ok("extracted size declared", opts_src.count("extractedBytes =") >= 1, "")
 
@@ -371,7 +488,10 @@ def main():
     if nt:
         body = nt.group(1)
         ok("node version pinned", re.search(r'version = "\d+\.\d+\.\d+"', body) is not None, "")
-        ok("node sha256 pinned", re.search(r'sha256 = "[0-9a-f]{64}"', body) is not None, "")
+        # ★node 的 sha256 也是 ABI 三元（x64 与 arm64 各一条，两条互不相同）
+        _nshas = re.findall(r'"([0-9a-f]{64})"', body)
+        ok("node sha256 pinned", len(_nshas) >= 2 and _nshas[0] != _nshas[1],
+           "两条 ABI 各一个 sha256（实测 %d 条）" % len(_nshas))
         ok("node tarball urls are https",
            all(u.startswith("https://") for u in re.findall(r'"(https://[^"]+)"', body)),
            "")

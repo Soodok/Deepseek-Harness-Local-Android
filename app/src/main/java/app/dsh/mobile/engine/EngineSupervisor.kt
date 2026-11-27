@@ -1528,21 +1528,18 @@ class EngineSupervisor(private val ctx: Context) {
         //    真带了 @deepseek-ai/dsh-deepseek-chat-import 时才加。它的 insert 行不钉
         //    任何 host 行，纯粹是「多挂一个可选插件」，所以排在适配层之前 ——
         //    Android 适配层始终最后应用（后应用者生效），不依赖这一层是否存在。
+        // Resolve before writing mode-specific gate paths in the overlay.
+        // Readiness failures still use NATIVE_FALLBACK and native gate scripts.
+        val engineMode = EngineModeSelector.resolve(ctx)
+        sp("mode-resolve")
         val patchPaths = ArrayList<String>(3)
         runCatching { EngineConfig.ensureBundledSshPlugin(ctx)?.absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }
         runCatching { EngineConfig.ensureChatImportLayer(ctx)?.absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }
-        runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }
+        runCatching { EngineConfig.ensureAndroidOverlay(ctx, engineMode).absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }
         sp("patches")
-        // ==================== 运行模式选择 ====================
-        // 用户可选让引擎跑在 Linux 容器里（完整 Alpine 用户态，可 apk 装软件、
-        // 跑完整编译链）。环境未就绪时**回退原生**而不是拒绝启动 —— 但回退会
-        // 记进 EngineModeSelector.lastMode/lastReason，UI 必须显示「兼容模式」，
-        // 不允许静默降级（否则用户以为在用完整 Linux，装了 gcc 却发现编不了）。
-        val engineMode = EngineModeSelector.resolve(ctx)
-        sp("mode-resolve")
         if (engineMode == EngineModeSelector.Mode.LINUX) {
             runCatching {
                 val launcher = LinuxEngineLauncher.get(ctx)
@@ -1585,6 +1582,9 @@ class EngineSupervisor(private val ctx: Context) {
                 Log.e(TAG, "linux container spawn failed, falling back to native: ${e.message}", e)
                 EngineModeSelector.setLinuxEnabled(ctx, EngineModeSelector.isLinuxEnabled(ctx))
                 lastLinuxFailure = "container spawn failed: ${e.message}"
+                // The same patch path is reused by the native spawn below.
+                runCatching { EngineConfig.ensureAndroidOverlay(ctx, EngineModeSelector.Mode.NATIVE_FALLBACK) }
+                    .onFailure { Log.w(TAG, "native fallback overlay update failed: ${it.message}") }
             }
         }
         // 原生模式的编译缓存刷盘器（v1.5.2）。

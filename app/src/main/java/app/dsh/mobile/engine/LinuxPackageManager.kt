@@ -318,7 +318,30 @@ class LinuxPackageManager(private val ctx: Context) {
                     " (files were 0644, gcc/as/ld would report 'not found')",
             )
         }
-        // ② 头文件目录属主 —— 只在装编译链相关包时试
+        // ② 绝对符号链接改成相对 —— 纯 App 域操作，无条件做。
+        //
+        //    ★这条是 v1.7.x 新增（issue #131 暴露）。原注释断言「绝对链接也工作
+        //      正常」，依据是真机 aarch64 上 `go version` 通；但 2026-11-24 模拟器
+        //      实测推翻了这个普适结论：
+        //        /usr/bin/mono   -> mono-sgen（相对）           mono --version 正常
+        //        /usr/bin/dotnet -> /usr/lib/dotnet/dotnet（绝对） dotnet 报 not found
+        //      而 /usr/lib/dotnet/dotnet --version → 8.0.134（文件本身是好的）。
+        //      全 rootfs 只有这 1 条绝对链接，且恰好只有它坏。
+        //      机制：容器无 chroot，链接目标字符串按**宿主根**解析 → ENOENT。
+        //      改成相对后同一容器同一时刻 `dotnet --version` 立即返回 8.0.134。
+        //
+        //   判据见 RootfsModes.repairAbsoluteLinks：只改「目标确实落在 rootfs 内」
+        //   的绝对链接，指向宿主真实路径的（/proc、/dev）保持原样。
+        val relinked = runCatching { RootfsModes.repairAbsoluteLinks(root) }.getOrDefault(0)
+        if (relinked > 0) {
+            Log.w(
+                TAG,
+                "relinked $relinked absolute symlink(s) to relative after apk add " +
+                    packages.joinToString(",") +
+                    " (container has no chroot, absolute targets resolve against the host root)",
+            )
+        }
+        // ③ 头文件目录属主 —— 只在装编译链相关包时试
         if (!RootfsModes.wantsHeaders(packages)) return
         val include = java.io.File(root, "usr/include")
         if (!include.isDirectory) return

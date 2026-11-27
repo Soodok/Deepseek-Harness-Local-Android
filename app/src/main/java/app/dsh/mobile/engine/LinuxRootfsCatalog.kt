@@ -273,7 +273,7 @@ object LinuxRootfsCatalog {
         Flavor.GUI, Flavor.BASE, Flavor.DEV -> true
     }
 
-    /** Node 官方预编译 tarball 的元数据（glibc, arm64） */
+    /** Node 官方预编译 tarball 的元数据（glibc；架构随设备） */
     data class NodeTarball(
         val version: String,
         val urls: List<String>,
@@ -281,30 +281,6 @@ object LinuxRootfsCatalog {
         val bytes: Long,
         val installDir: String,
     )
-
-    /**
-     * Node 官方预编译 tarball（glibc, arm64）。大小与 sha256 实测取自官方 SHASUMS256.txt。
-     *
-     * ⚠️ 版本必须 ≥ 24.9.0，这是引擎自己的硬要求（`@deepseek-ai/dsh/package.json`
-     * 的 `engines.node`）。真机实测：装 22.14.0 时 `node bin.js --help` **静默退出**
-     * （exit=0、无任何输出），App 侧只看到 "engine exited: status=0 signal=0 exit=0"，
-     * 极难定位；换 24.9.0 立刻正常打印 usage。Alpine 侧的 musl node 是 22.23.4 却
-     * 能跑 —— 说明引擎并非在所有版本上都硬校验，但 22.14.0 确实不行，别再降级。
-     */
-    val nodeTarball = NodeTarball(
-        version = "24.9.0",
-        urls = listOf(
-            "https://cdn.npmmirror.com/binaries/node/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
-            "https://registry.npmmirror.com/-/binary/node/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
-            "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
-        ),
-        sha256 = "5a5b1dc4906e891a655d2f0689db664879724f2d9e63309486fd588172a052bc",
-        bytes = 31_085_180L,
-        installDir = "/opt/node",
-    )
-
-    /** In-container path of the glibc node binary (derived from [NodeTarball.installDir]) */
-    const val GLIBC_NODE_PATH = "/opt/node/bin/node"
 
     /**
      * 设备主 ABI 是否是 arm64。
@@ -322,6 +298,47 @@ object LinuxRootfsCatalog {
         val abi = runCatching { android.os.Build.SUPPORTED_ABIS.firstOrNull() }.getOrNull()
         abi == null || abi == "arm64-v8a" || abi == "aarch64"
     }
+
+    /**
+     * Node 官方预编译 tarball（glibc, arm64）。大小与 sha256 实测取自官方 SHASUMS256.txt。
+     *
+     * ⚠️ 版本必须 ≥ 24.9.0，这是引擎自己的硬要求（`@deepseek-ai/dsh/package.json`
+     * 的 `engines.node`）。真机实测：装 22.14.0 时 `node bin.js --help` **静默退出**
+     * （exit=0、无任何输出），App 侧只看到 "engine exited: status=0 signal=0 exit=0"，
+     * 极难定位；换 24.9.0 立刻正常打印 usage。Alpine 侧的 musl node 是 22.23.4 却
+     * 能跑 —— 说明引擎并非在所有版本上都硬校验，但 22.14.0 确实不行，别再降级。
+     */
+    val nodeTarball = NodeTarball(
+        version = "24.9.0",
+        urls = if (IS_ARM64) listOf(
+            "https://cdn.npmmirror.com/binaries/node/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
+            "https://registry.npmmirror.com/-/binary/node/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
+            "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
+        ) else listOf(
+            "https://cdn.npmmirror.com/binaries/node/v24.9.0/node-v24.9.0-linux-x64.tar.xz",
+            "https://registry.npmmirror.com/-/binary/node/v24.9.0/node-v24.9.0-linux-x64.tar.xz",
+            "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.xz",
+        ),
+        // 两条均取自官方 SHASUMS256.txt（2026-11-25 核，逐字）：
+        //   arm64 5a5b1dc4906e891a655d2f0689db664879724f2d9e63309486fd588172a052bc
+        //   x64   f52ec50e959d72d5c680d9731420b2661cd2a8070e94c7369b6ddfcd8b7278be
+        //
+        // ★x64 这条是 issue #132 暴露的缺口：原先只写死 arm64，x86_64 设备/模拟器
+        //   装 Ubuntu 时下到的是 arm64 版 node，落到容器里连解释器都起不来 ——
+        //   与 rootfs 本身 SIGILL（rc=132）是同一个病根的第二个症状。
+        sha256 = if (IS_ARM64)
+            "5a5b1dc4906e891a655d2f0689db664879724f2d9e63309486fd588172a052bc"
+        else
+            "f52ec50e959d72d5c680d9731420b2661cd2a8070e94c7369b6ddfcd8b7278be",
+        // x64 版实测 Content-Length 32,131,120 B（2026-11-25 HEAD 取）；
+        // 该值只用于下载前估算/进度，真值由 sha256 校验。
+        bytes = if (IS_ARM64) 31_085_180L else 32_131_120L,
+        installDir = "/opt/node",
+    )
+
+    /** In-container path of the glibc node binary (derived from [NodeTarball.installDir]) */
+    const val GLIBC_NODE_PATH = "/opt/node/bin/node"
+
 
     /** Alpine 的 musl 动态链接器（架构随设备） */
     private val ALPINE_INTERP: String =
@@ -362,18 +379,45 @@ object LinuxRootfsCatalog {
             source = RootfsSource.Remote(
                 // Three CN mirrors plus the official origin. sha256 cross-checked
                 // against ubuntu-cdimage/.../24.04/release/SHA256SUMS.
-                urls = listOf(
+                //
+                // ★v1.7.x（issue #132）：**必须按设备 ABI 选源**。
+                //
+                //   原先四个 URL 全写死 arm64。在 x86_64 设备/模拟器上部署虽然会成功
+                //   （tar 解包不看架构），但容器里每个程序都是 aarch64 ELF —— 内核
+                //   拒绝执行 → SIGILL(4) → rc=128+4=**132**。现场表现是「Ubuntu 装包
+                //   全失败、报 exit 132 且没有任何输出」，极易被误判成权限或镜像源问题。
+                //   实测（模拟器 x86_64 / Android 14，2026-11-25）：
+                //     apt-get update       → [exit 132]
+                //     apt-get -d install   → [exit 132]
+                //     而 alpine（本身按 ABI 选源）同一台机器一切正常。
+                //   因此这不是「Ubuntu 专属缺陷」，是「Ubuntu 漏了 ABI 分支」。
+                urls = if (IS_ARM64) listOf(
                     "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
                     "https://mirrors.aliyun.com/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
                     "https://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
                     "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+                ) else listOf(
+                    // amd64 四条 2026-11-25 实测全 200
+                    "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
+                    "https://mirrors.aliyun.com/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
+                    "https://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
+                    "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
                 ),
-                sha256 = "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2",
-                compressedBytes = 29_936_675L,
+                // 两条都逐字取自同一份官方 SHA256SUMS（2026-11-25）：
+                //   arm64 a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2
+                //   amd64 e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86
+                sha256 = if (IS_ARM64)
+                    "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2"
+                else
+                    "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86",
+                compressedBytes = if (IS_ARM64) 29_936_675L else 30_028_293L,
                 extractedBytes = 100_784_109L,
                 format = ArchiveFormat.TAR_GZ,
             ),
-            interpPath = "/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+            interpPath = if (IS_ARM64)
+                "/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+            else
+                "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
             installCommand = "apt-get install",
             nodeStrategy = NodeStrategy.OFFICIAL_TARBALL,
             needsGlibcQuirks = true,
@@ -616,9 +660,20 @@ object LinuxRootfsCatalog {
         // apt-get update 总耗时 32~37 秒，占满 Ubuntu 冷启 63 秒的大半。
         // 双源本来是「一家挂了还有另一家」的冗余，代价是每次冷启多等 30 秒，
         // 不值得 —— 一家不可用时用户会直接看到报错，比默默慢 30 秒好。
+        //
+        // ★路径必须按 ABI 分开（v1.7.x，issue #132 的第三个症状）：
+        //   `ubuntu-ports` 只收录 **非 amd64** 架构（arm64/armhf/ppc64el…），
+        //   `ubuntu` 才是 amd64 的主归档。写死 ports 时 x86_64 容器里
+        //   `apt-get update` 会报
+        //       W: GPG error: ... The following signatures couldn't be verified
+        //       E: Unable to locate package python3
+        //   —— 索引下下来了，但里面**一个 amd64 包都没有**，于是「装包失败」
+        //   看起来像源挂了或签名坏了，实际是拿到了另一套架构的索引。
+        //   两个 URL 都实测 200（2026-11-25），换词不改可用性。
         Family.UBUNTU -> listOf(
             "Types: deb",
-            "URIs: http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/",
+            "URIs: http://mirrors.tuna.tsinghua.edu.cn/" +
+                (if (IS_ARM64) "ubuntu-ports" else "ubuntu") + "/",
             "Suites: noble noble-updates",
             "Components: main universe",
             "Trusted: yes",
@@ -685,7 +740,25 @@ object LinuxRootfsCatalog {
         appendLine("if [ -e /usr/sbin/ldconfig.dshreal ] || [ ! -e /usr/sbin/ldconfig.real ]; then")
         appendLine("  :")
         appendLine("else")
-        appendLine("  dpkg-divert --add --rename --divert /usr/sbin/ldconfig.dshreal /usr/sbin/ldconfig.real")
+        // ★不能用 `dpkg-divert --add --rename`（v1.7.x，issue #132）。
+        //
+        //   `--rename` 分支会先对路径做 realpath 校验，而容器里 glibc 的
+        //   realpath() 对「带尾斜杠」的路径会直接失败（实测：
+        //       libc.realpath("/etc")  → "/etc"
+        //       libc.realpath("/etc/") → NULL, errno=EPERM
+        //   同一容器里 readlink -f /etc 成功、readlink -f /etc/ 失败）。
+        //   于是 dpkg-divert 报
+        //       dpkg-divert: error: error checking '/usr/sbin/ldconfig.real': Operation not permitted
+        //   rc=2，脚本 `set -e` 立刻退出 → ldconfig shim 永远装不上 →
+        //   libc-bin 的 postinst 在真 PIE 的 ldconfig 上段错误 → 后续
+        //   dpkg --configure -a 连带失败，整批包停在 iU（半装态）。
+        //   这正是报告人在 #132 里看到的「iU 半装 + 标准库缺失」。
+        //
+        //   正解：登记 diversion 用 `--no-rename`（不触发那次校验，实测 rc=0），
+        //   真正的改名自己 `mv`（实测同容器里 mv 成功）。语义完全相同：
+        //   divert 记录在案 + 真文件挪走 + 原位放 shim。
+        appendLine("  dpkg-divert --add --no-rename --divert /usr/sbin/ldconfig.dshreal /usr/sbin/ldconfig.real")
+        appendLine("  mv -f /usr/sbin/ldconfig.real /usr/sbin/ldconfig.dshreal 2>/dev/null || true")
         appendLine("  printf '#!/bin/sh\nexit 0\n' > /usr/sbin/ldconfig.real")
         appendLine("  chmod 755 /usr/sbin/ldconfig.real")
         appendLine("fi")

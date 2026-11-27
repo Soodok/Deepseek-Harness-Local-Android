@@ -102,6 +102,13 @@ scripts/probes/*.bin
 !/scripts/probes/_test_android_api_floor.py
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+!/scripts/probes/_test_linux_bash_execution.py
+# issue #134：宿主 PYTHONHOME / PYTHONPATH 泄漏进容器 → python3 找不到 encodings
+# → dpkg postinst 失败 → 整批包停在 iU（且每轮撞同一堵墙，不会「多跑几轮收敛」）。
+# 现场表现是「装了 python3-pip 之后标准库缺一半」，极易误判成装包链路问题；
+# 而 `python3 -V` 仍然正常（-V 不加载 encodings），常规冒烟测试抓不到。
+!/scripts/probes/_test_linux_python_env_leak.py
+!/scripts/probes/linux-bash-device.cjs
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py
 # v1.6.0-beta.18：本轮四条 issue 的守卫探针（各有负对照，误删即失去回归网）
@@ -234,6 +241,22 @@ scripts/probes/*.bin
 # 「哪张图对应哪一步」与三类静默失败（取帧过期、队列吞账、清空后晚到帧重建目录）——
 # 全都不会崩，只会悄悄少一张图或错一步，事后无法归因。
 !/scripts/probes/_test_a11y_step_shots.py
+# 容器扩展装包的三处「装完就不能用」（issue #131，v1.7.x）：镜像源速度、
+# x86_64 老式 syscall 被 App 层 seccomp 二次拦、绝对符号链接无 chroot 解析。
+# 三处都不会让编译或别的探针变红 —— 现场表现只是「装了十分钟后报 Install failed」
+# 或「dotnet 报 not found 而二进制明明是好的」，所以必须进 CI。
+!/scripts/probes/_test_linux_symlink_heal.py
+# 滑块值域守卫（v1.7.x）：`Slider.valueTo` 必须覆盖它承载的那个量的语义上限。
+# 判据错的后果不是编译失败，而是**进页面必崩**（BaseSlider 在第一次 onSizeChanged
+# 才校验），现场表现成「点一下选项应用就重启」——极易被误判成路由没到位。
+!/scripts/probes/_test_slider_range_guard.py
+# issue #132 的三处「装包必失败」（v1.7.x）：Ubuntu rootfs 与 node 只写死 arm64、
+# apt 源写死 ubuntu-ports（非 amd64 归档）、`time(201)` 被 App 层 seccomp 拦
+# 导致 gpgv 拿不到当前时间。三处都不会让编译或其他探针变红 —— 现场表现分别是
+# 「apt 报 [exit 132] 且无输出」「Unable to locate package」「GPG error 签名无效」，
+# 全都极易被误判成镜像源或网络问题。另有两条收尾缺陷（dpkg-divert --rename 的
+# realpath EPERM、一趟 dpkg -i 过不了 Pre-Depends）同样只在真装包时暴露。
+!/scripts/probes/_test_linux_abi_and_time.py
 tasks/
 _bench/
 

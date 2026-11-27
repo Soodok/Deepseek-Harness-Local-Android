@@ -32,7 +32,7 @@ NEEDED = [
     "getcwd", "mknodat", "mkdirat", "unlinkat", "symlinkat", "linkat",
     "renameat", "statfs", "fstatfs", "faccessat", "chdir", "fchmodat",
     "fchownat", "openat", "readlinkat", "newfstatat", "utimensat",
-    "rt_sigaction", "rt_sigprocmask", "clone", "execve", "renameat2",
+    "rt_sigaction", "rt_sigprocmask", "clone", "clone3", "execve", "renameat2",
     "execveat", "statx", "sendto", "sendmsg", "recvfrom", "recvmsg",
     "connect", "openat2", "faccessat2",
     # ★inotify_add_watch(fd, pathname, mask) —— pathname 在 a1，没有 *at 变体。
@@ -75,6 +75,8 @@ LEGACY_X86_64 = [
     "open", "stat", "lstat", "access", "unlink", "rmdir", "mkdir",
     "rename", "link", "symlink", "chmod", "chown", "truncate", "utime",
     "readlink",
+    # Bash calls getpgrp during even non-interactive startup; Android permits getpgid(0).
+    "getpgrp",
     # ★2026-11-07 补三条 apt/dpkg 在 Ubuntu 上必经的老式 syscall。
     #
     #   lchown(path, uid, gid) —— dpkg 建完符号链接后要给**链接本身**改属主
@@ -91,6 +93,22 @@ LEGACY_X86_64 = [
     "lchown",
     "utimes",
     "mknod",
+    # ★2026-11-25 补：time（issue #132 的第一性成因）。
+    #
+    #   Android 的 zygote seccomp 拦 time(201)、放行 clock_gettime(228)：
+    #   容器内裸 syscall 实测（python ctypes，模拟器 x86_64 / Android 14）
+    #       time(201, &t)                        rc=-1 errno=1  EPERM
+    #       clock_gettime(228, CLOCK_REALTIME)   rc=0  sec 正确
+    #       gettimeofday(96)                     rc=0  sec 正确
+    #   不拦它的后果不是「少个功能」，而是**整个 apt 装不了包**：
+    #   gpgv 判定签名是否在有效期内要拿当前时间，拿不到就退化成 0（1970），
+    #   于是每个 Release 都被判成「未来」——
+    #       E: Release file ... is not valid yet (invalid for another 19838d ...)
+    #   而 19838 天恰好等于该 Release 的 Date 距 epoch 的天数，差一天都不差。
+    #   gpgv 自己也会直说 `Fatal: time() failed`。
+    #   用户看到的是「GPG error / Unable to locate package」，极易误判成
+    #   镜像源或签名坏了 —— 实际是容器里没有可信的当前时间。
+    "time",
     # ★2026-11-22 补：pipe。
     #
     #   Android 给 App 装的那层 seccomp 放行 pipe2(293)、**拦 pipe(22)**，
@@ -172,27 +190,114 @@ DIRFD = {"openat", "newfstatat", "faccessat", "readlinkat", "statx",
 
 
 def find_ndk():
-    for root in (os.environ.get('ANDROID_NDK'),
-                 r'E:\Android\Sdk\ndk\28.2.13676358'):
-        if root and os.path.isdir(root):
+    """找一个可用的 NDK。找不到返回 None（不是 SystemExit —— 见 load_numbers）。
+
+    `DSH_NO_NDK=1` 强制走兜底编号表：探针用它在**任意机器**上确定性地验证
+    「没有 NDK 的环境（CI）也能生成逐行一致的树」——否则本地有 NDK 就永远
+    只测到一条路径，CI 缺 NDK 那条直到红了才发现（2026-11-22 的真实教训）。
+    """
+    if os.environ.get('DSH_NO_NDK'):
+        return None
+    cands = [os.environ.get('ANDROID_NDK'), os.environ.get('ANDROID_NDK_HOME')]
+    sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
+    if sdk:
+        cands.append(os.path.join(sdk, 'ndk'))
+        # SDK 里的 ndk/<version> 需要再展开一层
+        ndkdir = os.path.join(sdk, 'ndk')
+        if os.path.isdir(ndkdir):
+            subs = sorted(os.listdir(ndkdir))
+            if subs:
+                cands.append(os.path.join(ndkdir, subs[-1]))
+    cands.append(r'E:\Android\Sdk\ndk\28.2.13676358')
+
+    for root in cands:
+        if not root or not os.path.isdir(root):
+            continue
+        # 光有目录不算 —— CI 上 `ndk/` 可能存在但一个版本都没装。
+        if os.path.isdir(os.path.join(root, 'toolchains')):
             return root
-    raise SystemExit('找不到 NDK，请设 ANDROID_NDK')
+    return None
+
+
+# 编号兜底表：`scripts/syscall_numbers.json`（由 tools/dump-syscall-numbers.py
+# 从 NDK 头导出，随源码入库）。
+#
+# ★为什么需要它（2026-11-24 真实事故）：CI 的 `i18n-check` runner 上**没有 NDK**，
+#   而探针 `_test_dsh_alpine_source_sync.py` 要实跑本生成器来验「树里真的含
+#   SYS_xxx」。没有 NDK 时生成器以前直接 `SystemExit`，探针拿到的 stdout 是空的，
+#   于是 5~9 条「x86_64 生成的树里含 SYS_accept/epoll_create/eventfd/inotify_init/
+#   signalfd」全红 —— 从 2026-11-22 起 CI 一直是红的，而本地全绿。
+#
+#   兜底表让「没有 NDK」也能算出一棵**与入库内联树逐行一致**的树（编号是常量，
+#   不随宿主变），于是探针在 CI 上能真跑而不是假红。有 NDK 时仍然优先读头，
+#   这样「NDK 换了版本、编号表过期」能被发现（两者不一致会触发下面的 must 断言）。
+FALLBACK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'syscall_numbers.json')
+_fallback_cache = None
+
+
+def load_fallback(arch):
+    global _fallback_cache
+    if _fallback_cache is None:
+        if not os.path.isfile(FALLBACK_PATH):
+            return None
+        import json
+        with open(FALLBACK_PATH, encoding='utf-8') as f:
+            _fallback_cache = json.load(f)
+    tbl = _fallback_cache.get(arch)
+    return dict(tbl) if tbl else None
 
 
 def load_numbers(arch, verbose=False):
-    ndk = find_ndk()
-    sysroot = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt',
-                           'windows-x86_64', 'sysroot', 'usr', 'include')
+    global NR_NAMES
     cfg = ARCHS[arch]
-    cands = [
-        os.path.join(sysroot, cfg['header']),
-        os.path.join(sysroot, 'aarch64-linux-android', 'asm',
-                     os.path.basename(cfg['header'])),
-        os.path.join(sysroot, 'asm-generic', os.path.basename(cfg['header'])),
-    ]
-    path = next((p for p in cands if os.path.isfile(p)), None)
+    ndk = find_ndk()
+    path = None
+    sysroot = None
+    if ndk:
+        # prebuilt 目录名随宿主变（windows-x86_64 / linux-x86_64 / darwin-x86_64），
+        # 写死 windows-x86_64 会让 CI（linux）与本地共用代码却各找一个不存在的路径。
+        for pre in ('windows-x86_64', 'linux-x86_64', 'darwin-x86_64'):
+            cand = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt', pre,
+                                'sysroot', 'usr', 'include')
+            if os.path.isdir(cand):
+                sysroot = cand
+                break
+            # 有些发行版直接放 sysroot（没有 usr/include 层）
+            cand2 = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt', pre, 'sysroot')
+            if os.path.isdir(cand2):
+                sysroot = cand2
+                break
+    if sysroot:
+        cands = [
+            os.path.join(sysroot, cfg['header']),
+            os.path.join(sysroot, 'aarch64-linux-android', 'asm',
+                         os.path.basename(cfg['header'])),
+            os.path.join(sysroot, 'asm-generic', os.path.basename(cfg['header'])),
+            os.path.join(sysroot, 'usr', 'include', cfg['header']),
+        ]
+        path = next((p for p in cands if os.path.isfile(p)), None)
+
     if not path:
-        raise SystemExit('找不到 %s 的 unistd 头（试过 %s）' % (arch, cands))
+        # 没有 NDK（CI）或头文件缺失 → 用入库编号表。表里缺任何一个名字都算错，
+        # 静默跳过会让「加了名字却没编进树」永远发现不了。
+        tbl = load_fallback(arch)
+        if tbl:
+            wanted = list(NEEDED) + (list(LEGACY_X86_64) if arch == 'x86_64' else [])
+            missing = [n for n in wanted if n not in tbl]
+            if missing:
+                raise SystemExit(
+                    'syscall_numbers.json 缺 %s 的编号：%s（有 NDK 时请重跑 '
+                    'tools/dump-syscall-numbers.py 更新该表）' % (arch, missing))
+            out = {n: int(tbl[n]) for n in wanted}
+            NR_NAMES = out
+            if verbose:
+                sys.stderr.write('%s NR from syscall_numbers.json (no NDK)\n' % arch)
+            return out, cfg['audit']
+        raise SystemExit(
+            '找不到 NDK，也没有可用的 scripts/syscall_numbers.json —— '
+            '请设 ANDROID_NDK，或先跑 tools/dump-syscall-numbers.py 生成编号表。')
+
     txt = open(path, encoding='utf-8', errors='replace').read()
     # aarch64 的 asm-generic 对少数 syscall 用了不同的宏名，这里给出别名。
     # 例如：statfs 写作 __NR3264_statfs；newfstatat 在 asm-generic 里叫 fstatat。
@@ -220,7 +325,6 @@ def load_numbers(arch, verbose=False):
             raise SystemExit('%s 里没有 __NR_%s' % (path, name))
         out[name] = int(m.group(1))
     # 供 verify_bpf_semantics.py 复用同一份权威编号（不要再各写一份）
-    global NR_NAMES
     NR_NAMES = out
     if verbose:
         sys.stderr.write('%s NR from %s\n' % (arch, os.path.basename(path)))
@@ -285,7 +389,12 @@ def main():
         ('label', 'ARCH_OK'),
         # ★这条不能少：放行 loader 自己的裸 syscall 桩（见 pitfalls #27）
         ('stmt', 'BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4)'),
-        ('jmp', ('JEQ', 'BASEHI', 'ALLOW', 'NOTSTUB')),
+        # sock_filter.jt/jf are u8; jump directly to the far ALLOW label overflows
+        # once the x86 tree grows beyond 255 instructions. Use a short conditional
+        # branch followed by a 32-bit JA trampoline instead.
+        ('jmp', ('JEQ', 'BASEHI', 'BASE_ALLOW', 'NOTSTUB')),
+        ('label', 'BASE_ALLOW'),
+        ('ja', 'ALLOW'),
         ('label', 'NOTSTUB'),
         ('stmt', 'BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr))'),
     ]
@@ -315,8 +424,13 @@ def main():
                 kx = kk
             else:
                 kx = 'SYS_' + kk
+            jt = pos[t] - i - 1
+            jf = pos[f] - i - 1
+            if not (0 <= jt <= 255 and 0 <= jf <= 255):
+                raise SystemExit('%s conditional jump at %d overflows sock_filter u8: jt=%d jf=%d' %
+                                 (arch, i, jt, jf))
             lines.append('        BPF_JUMP(BPF_JMP|BPF_%s|BPF_K, %s, %d, %d),'
-                         % (op, kx, pos[t] - i - 1, pos[f] - i - 1))
+                         % (op, kx, jt, jf))
     text = '\n'.join(lines)
     print(text)
     sys.stderr.write('%s INSTR=%d (NR from %s)\n' % (arch, len(body), arch))

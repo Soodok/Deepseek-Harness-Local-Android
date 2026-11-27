@@ -143,6 +143,7 @@ object LinuxCap {
             .put("node_present", nodePresent)
             .put("packages_installed", pkgCount)
             .put("rootfs_host_path", root.absolutePath)
+            .put("interp", opt.interpPath)
             .put("rootfs_guest_path", "/")
             .put("free_bytes", root.absoluteFile.parentFile?.usableSpace ?: 0L)
             .put(

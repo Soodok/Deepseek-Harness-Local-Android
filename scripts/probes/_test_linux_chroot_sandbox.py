@@ -126,7 +126,7 @@ def main():
     # 断言同时要求「/eng/bin 在前」与「发行版目录仍在」——只查前者的实现
     # 会把 /usr/bin 弄丢（uname/cat 又全 not found）。
     ok(
-        re.search(r'CONTAINER_PATH\s*=\s*"\s*/eng/bin:/usr/local/sbin', sb_code)
+        re.search(r'CONTAINER_PATH\s*=\s*"\s*/eng/linux-bin:/opt/node/bin:/usr/local/sbin', sb_code)
         is not None,
         "D1 CONTAINER_PATH 以 /eng/bin 开头、且紧跟 /usr/local/sbin",
     )

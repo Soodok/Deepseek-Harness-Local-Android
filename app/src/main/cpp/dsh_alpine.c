@@ -844,7 +844,7 @@ static int  g_force_container_path;
 // PATH 一律替换成这里的默认值 —— 早先这 4 处硬编码都不含 /eng/bin，于是
 // `dev linux exec` 的容器里 `echo $PATH` 只有发行版目录、`scr` / `dev` 全部
 // not found（真机实测：/eng/bin 里 87 个门脚本都在，就是 PATH 指不到）。
-#define DSH_DEFAULT_PATH "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+#define DSH_DEFAULT_PATH "/eng/linux-bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 /**
  * 判断一个 PATH 值是不是「Android 宿主那套」。
@@ -942,10 +942,41 @@ static int looks_like_host_path(const char *v) {
 }
 
 static int env_drop_host(const char *e) {
-    // LD_LIBRARY_PATH / LD_PRELOAD：按值判断（见上）
+    // LD_LIBRARY_PATH / LD_PRELOAD / PYTHONHOME / PYTHONPATH：**按值判断**。
+    //
+    // ★PYTHONHOME / PYTHONPATH 加在这里（而不是上面的 bad 名单）是一次实测纠错。
+    //
+    //   问题（issue #134 的第二根因）：宿主引擎的 `EngineConfig.buildEnv` 为
+    //   扩展中心装的 python 扩展设了
+    //       PYTHONHOME=<engineRoot>/extensions/python
+    //   （Termux 编译的 3.14，编译期 prefix 硬编码成 Termux 路径，必须显式指）。
+    //   这个变量随引擎进程环境一路继承；容器里的 `/usr/bin/python3` 是发行版
+    //   自己的 3.12/3.13，读到它会去扩展目录找 `encodings`，找不到就：
+    //       ModuleNotFoundError: No module named 'encodings'
+    //       Fatal Python error: init_fs_encoding: failed to get the Python codec
+    //   于是**所有走 import 的标准库全废**（asyncio/json/ctypes/zipfile/shutil/
+    //   tarfile/http…），而 `python3 -V` 仍然正常（-V 不加载 encodings —— 这也
+    //   是这条最难被常规冒烟测试抓到的原因）。
+    //
+    //   dpkg 的 postinst（python3-minimal 里的 `python3 -m compileall`）只要一次
+    //   import 失败就以非 0 退出 → `dpkg --configure -a` 报 post-installation
+    //   script error → 整批包停在 iU，而且**每轮都撞同一堵墙**，所以「多跑几轮
+    //   收敛」根本不会发生（实测 4 轮后 python3 系列仍是 iU）。
+    //
+    //   实测对照（模拟器 x86_64 / 全新 ubuntu rootfs / python3 已装好）：
+    //     旧 loader + PYTHONHOME=/eng/extensions/python
+    //         → Python path configuration … Fatal Python error … No 'encodings'
+    //     新 loader + 同样输入 → `import json` 正常（打印 ABC）
+    //
+    //   为什么是「按值」而不是「按名字一律砍」：第一版按名字无条件丢，实测把
+    //   **容器内自己 `export PYTHONHOME=/tmp/mine`** 也吃掉了（内层 sh 拿到空值），
+    //   属于误伤合法用法。而真正要丢的那一份，值必然是宿主的 `/data/user/0/…`
+    //   （`activeRoots` 返回的是宿主 File）—— `looks_like_host_path()` 正好命中。
+    //   这样既堵住泄漏，又保留「容器内自己设的照常传下去」，与 LD_* 同一套语义。
     {
-        static const char *ld[] = { "LD_LIBRARY_PATH", "LD_PRELOAD" };
-        for (unsigned i = 0; i < 2; i++) {
+        static const char *ld[] = { "LD_LIBRARY_PATH", "LD_PRELOAD",
+                                    "PYTHONHOME", "PYTHONPATH" };
+        for (unsigned i = 0; i < 4; i++) {
             const char *b = ld[i];
             unsigned k = 0;
             while (b[k] && e[k] == b[k]) k++;
@@ -1806,6 +1837,7 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
     (void)s;
     ucontext_t *u = (ucontext_t *)uc;
     greg_t *g = u->uc_mcontext.gregs;
+    unsigned long resume_ip = (unsigned long)g[REG_RIP];
     unsigned long long r[9];
     r[0] = (unsigned long long)g[REG_RDI];
     r[1] = (unsigned long long)g[REG_RSI];
@@ -1833,7 +1865,90 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
     g[REG_R10] = (greg_t)r[3];
     g[REG_R8]  = (greg_t)r[4];
     g[REG_R9]  = (greg_t)r[5];
-    g[REG_RAX] = (greg_t)r[0];
+    // A rewound clone must retry with its syscall number, not its new flags.
+    g[REG_RAX] = (greg_t)(g[REG_RIP] < (greg_t)resume_ip ? r[8] : r[0]);
+}
+#endif
+
+#if defined(DSH_ARCH_X86_64)
+// 把「老式无 dirfd 路径 syscall」翻译成等价 *at 号（dirfd 原样传，路径不翻译）。
+//
+// ## 为什么必须翻译，不能原样重发
+//
+// Android 的 zygote 给每个 App 进程额外装了一层 seccomp：它**只按 syscall 号
+// 判**，不看调用者 IP。我们自己的过滤器按 IP 白名单放行 loader 段的重发，
+// 于是第一次 trap 进来的老式号（stat=4 / lstat=6 / access=21 / open=2 …）
+// 在 handler 里 raw6 重发同一个号 —— 指令地址在 loader 段被我们放行，但
+// Android 那层照样按号拦 → SIGSYS 再投递 → 重入守卫（sigsys_impl 开头）
+// 看到 RIP 在 loader 段，直接给 guest 返回 -EPERM。
+//
+// 实测（2026-11-24，模拟器 x86_64 / Android 14 / App uid 10192）：
+//   os.stat ("/proc")  OK    ← fstatat(262) 是 *at 号，Android 放行
+//   os.lstat("/proc") EPERM  ← lstat(6) 被二次拦 → 守卫给 EPERM
+//   os.stat ("/etc")  OK
+//   os.lstat("/etc")  OK    ← 非透传，翻 rootfs 走 newfstatat
+// 同一现象命中 /dev、/sys；连 `ln -s`、`rm /tmp/x` 都 EPERM。
+//
+// 而 aarch64 的通用 ABI **根本没有**老式号（只有 *at 变体），所以整段
+// 只在 x86_64 编译。
+//
+// 返回 1 = 已调用 *at 版本并把结果写进 out；0 = 该号没有 *at 等价物。
+// 参数编号与老式语义严格对应：stat(path,buf)→a1=buf、open(path,fl,md)→a1=fl/a2=md、
+// access(path,md)→a1=md、chown(path,u,g)→a1=u/a2=g、readlink(path,buf,n)→a1=buf/a2=n。
+// ★unlink/rmdir 的老式形式**没有**第二个参数 —— a1 是无意义寄存器，
+//   unlinkat 的 flags 必须写死（实测拿垃圾值当 AT_* 会 EINVAL）。
+static int legacy_path_to_at(long nr, long dirfd, const char *p,
+                             long a1, long a2, unsigned long long *out,
+                             long a3) {
+    (void)a3;
+    switch (nr) {
+    case SYS_stat:
+        *out = (unsigned long long)raw6(SYS_newfstatat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_lstat:
+        *out = (unsigned long long)raw6(SYS_newfstatat, dirfd, (long)p, a1,
+                                        0x100 /*AT_SYMLINK_NOFOLLOW*/, 0, 0);
+        return 1;
+    case SYS_access:
+        *out = (unsigned long long)raw6(SYS_faccessat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_open:
+        *out = (unsigned long long)raw6(SYS_openat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    case SYS_unlink:
+        *out = (unsigned long long)raw6(SYS_unlinkat, dirfd, (long)p, 0, 0, 0, 0);
+        return 1;
+    case SYS_rmdir:
+        *out = (unsigned long long)raw6(SYS_unlinkat, dirfd, (long)p,
+                                        0x200 /*AT_REMOVEDIR*/, 0, 0, 0);
+        return 1;
+    case SYS_mkdir:
+        *out = (unsigned long long)raw6(SYS_mkdirat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_chmod:
+        *out = (unsigned long long)raw6(SYS_fchmodat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_chown:
+        *out = (unsigned long long)raw6(SYS_fchownat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    case SYS_lchown:
+        *out = (unsigned long long)raw6(SYS_fchownat, dirfd, (long)p, a1, a2,
+                                        0x100 /*AT_SYMLINK_NOFOLLOW*/, 0);
+        return 1;
+    case SYS_utime:
+    case SYS_utimes:
+        // utimes 的 timeval→timespec 不换算（见老式分支里的说明：只是亚秒偏差）
+        *out = (unsigned long long)raw6(SYS_utimensat, dirfd, (long)p, a1, 0, 0, 0);
+        return 1;
+    case SYS_readlink:
+        *out = (unsigned long long)raw6(SYS_readlinkat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    case SYS_mknod:
+        *out = (unsigned long long)raw6(SYS_mknodat, dirfd, (long)p, a1, a2, 0, 0);
+        return 1;
+    default:
+        return 0;
+    }
 }
 #endif
 
@@ -1885,6 +2000,20 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         r[0] = (unsigned long long)(long)-EPERM;
         return;
     }
+    // Android denies clone3 in the app domain. glibc retries legacy clone only
+    // on ENOSYS; reissuing clone3 would instead hit the guard and return EPERM.
+    if (nr == SYS_clone3) {
+        r[0] = (unsigned long long)(long)-ENOSYS;
+        return;
+    }
+#if defined(DSH_ARCH_X86_64)
+    // getpgrp is an old x86 syscall rejected by Android; getpgid(0) is identical.
+    // Bash calls it even for noninteractive `bash -c`, before running any command.
+    if (nr == SYS_getpgrp) {
+        r[0] = (unsigned long long)raw6(SYS_getpgid, 0, 0, 0, 0, 0, 0);
+        return;
+    }
+#endif
     // ★poll → ppoll（v1.6.17，必须放在最前面；仅 x86_64）。
     //
     //   Android 给 App 装的那层 seccomp 策略在 x86_64 上允许 ppoll(271)、
@@ -1963,6 +2092,63 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             else { tv->tv_sec = ts.tv_sec; tv->tv_usec = ts.tv_nsec / 1000L; }
         }
         r[0] = (unsigned long long)sel_r;
+        return;
+    }
+    // ★time → clock_gettime（v1.7.x；仅 x86_64，与 poll/select/fork 同源问题）。
+    //
+    //   ★★这是 issue #132「Ubuntu 装包全失败」的**第一性成因**：
+    //
+    //   现象链（三层证据互相印证，2026-11-25 模拟器 x86_64 / Android 14）：
+    //     ① 手工跑 gpgv 校验 InRelease，它自己直说：
+    //          gpgv: Signature made Thu Apr 25 15:11:21 2024 UTC
+    //          gpgv: Fatal: time() failed
+    //     ② apt 报「Release file ... is not valid yet
+    //          (invalid for another 19838d 15h 10min 24s)」
+    //        而 19838 天**恰好**等于那个 Release 的 Date 字段
+    //        （Thu, 25 Apr 2024 15:10:33 UTC）距 epoch 0 的天数
+    //        ！ 差一天都不差 —— 说明 apt 拿到的时间是 **0**，不是当前时间。
+    //     ③ 容器内裸 syscall（python ctypes，注意 228 的 a0 是 clk_id 不是指针，
+    //        第一版把指针传给 a0，得到 errno=22 EINVAL，误判成「228 也被拦」）：
+    //          time(201, &t)                        rc=-1 errno=1 EPERM  ← 真被拦
+    //          clock_gettime(228, CLOCK_REALTIME)   rc=0  sec 正确        ← 放行
+    //          gettimeofday(96)                     rc=0  sec 正确
+    //          clock_gettime64(403)                 rc=-1 errno=1 EPERM
+    //          date +%s                             正确（走 vDSO，不落 syscall）
+    //
+    //   机制：Android 给 App 进程装的那层 zygote seccomp **按号拦、不看 IP**，
+    //   它挡 time(201)。我们 handler 里没有 case SYS_time → 落到函数末尾
+    //   default 原样重发 201 → 外层再拦 → 重入守卫给 guest -EPERM。
+    //   gpgv 的判定逻辑是「签名时间 > 当前时间 ⇒ 未来」，拿不到时间时它会
+    //   退化成 0，于是**每一个** Release 都被判成「19838 天后才生效」。
+    //   用户看到的是「GPG error: At least one invalid signature was
+    //   encountered」+「Unable to locate package」，极易误判成镜像源或
+    //   签名坏了，实际是**容器里没有可信的当前时间**。
+    //
+    //   修法：time(201) 翻译成 clock_gettime(228, CLOCK_REALTIME=0)。
+    //   选 228 而不是 96 的理由：228 是「精确到纳秒的当前墙上时间」的原生接口，
+    //   与 time() 语义一一对应；96 只是兼容入口。两者在 App 域都放行（第 ③ 条实测），
+    //   所以 96 留作 228 失败时的兜底。
+    //   time(tloc) 的语义：返回值写入 tloc（可为 NULL），同时返回秒数。
+    if (nr == SYS_time) {
+        struct dsh_ts_time { long tv_sec; long tv_nsec; };
+        struct dsh_ts_time ts;
+        long tg_r = raw6(SYS_clock_gettime, 0 /*CLOCK_REALTIME*/, (long)&ts, 0, 0, 0, 0);
+        if (tg_r < 0) {
+            // clock_gettime 也失败时退回 gettimeofday（它不在拦截名单里，
+            // 上面第 ③ 条实测 rc=0），保证 time() 不会连「1970」都给不出。
+            struct dsh_tv_time { long tv_sec; long tv_usec; };
+            struct dsh_tv_time tv;
+            if (raw6(SYS_gettimeofday, (long)&tv, 0, 0, 0, 0, 0) == 0) {
+                ts.tv_sec = tv.tv_sec;
+                tg_r = 0;
+            }
+        }
+        if (tg_r >= 0) {
+            if (r[0]) *(long *)(unsigned long long)r[0] = ts.tv_sec;
+            r[0] = (unsigned long long)ts.tv_sec;
+        } else {
+            r[0] = (unsigned long long)(long)-EPERM;
+        }
         return;
     }
 #endif
@@ -2474,11 +2660,20 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     case SYS_lchown: case SYS_utimes: case SYS_mknod: {
         const char *lp = (const char *)r[0];
         if (!lp || lp[0] != '/') {
-            // 相对路径（由内核按 cwd 或 dirfd 解析）——原样转发。
+            // 相对路径（由内核按 cwd 解析）——**不能原样重发老式号**。
             // ★这里同样必须就地转发，不能 `break`：
             //   break 会落到函数末尾 default，而那里用的是
             //   a0 = (long)(int)(unsigned int)r[0]，指针被截断成 32 位。
             //   实测症状：容器内 `cd /tmp && cat rel` 报 Bad address。
+            //
+            // ★★而「原样重发」在 App 进程里会被 Android 的 zygote seccomp
+            //   二次拦截（只按号判），重入守卫给 EPERM —— 实测相对路径也中：
+            //     cd /etc && python3 -c 'os.lstat("hostname")'  → EPERM
+            //     cd /etc && python3 -c 'os.stat("hostname")'   → OK
+            //   所以相对路径走同一张翻译表（dirfd=AT_FDCWD，路径不翻译）。
+            //   guest 的 cwd 与宿主 cwd 是同一个（chdir 在本层做过翻译），
+            //   因此 AT_FDCWD 对相对路径在语义上与原调用完全等价。
+            if (legacy_path_to_at(nr, -100, lp, a1, a2, &r[0], a3)) return;
             r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
             return;
         }
@@ -2534,8 +2729,44 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   都会这样（只是恰好只有透传路径才走 break）。
             //
             //   注意要用**原始 r[0]**（64 位），不是 a0。
-            r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
-            return;
+            //
+            // ★★但「原样重发老式号」在 App 进程里**必然被二次拦截**
+            //   （2026-11-24 实测，模拟器 x86_64 / Android 14 / App uid）：
+            //
+            //   Android 的 zygote 给每个 App 进程额外装了一层 seccomp，它只按
+            //   syscall **号**判、不看调用者 IP。我们自己的过滤器按 IP 白名单放
+            //   行 loader 段（0x2xxxxxxx）的重发，于是第一次 trap 进来的 e.g.
+            //   lstat(6) 在 handler 里 raw6 重发 6 —— 指令地址在 loader 段被我们
+            //   放行，但 Android 那层照样按号拦 → SIGSYS 再投递 → 重入守卫（见
+            //   sigsys_impl 开头）判定 RIP 在 loader 段，直接给 guest 返回 -EPERM。
+            //
+            //   实测矩阵（python os.* / 直接 syscall 两条路径都验证过）：
+            //     os.stat ("/proc")  OK    ← fstatat(262) 是 *at 号，Android 放行
+            //     os.lstat("/proc") EPERM  ← lstat(6) 被二次拦 → 守卫给 EPERM
+            //     os.stat ("/etc")  OK
+            //     os.lstat("/etc")  OK    ← 非 passthrough，翻 rootfs 走 newfstatat
+            //   同一现象也命中 /dev、/sys；连 `ln -s`、`rm /tmp/x` 都 EPERM。
+            //
+            //   后果不是「少个工具」，而是**绝对符号链接全部失效**：
+            //   容器里 369 个相对链接（→ ../../bin/busybox）能跟随，只有 1 个
+            //   绝对链接 /usr/bin/dotnet → /usr/lib/dotnet/dotnet 跟不动，
+            //   于是 `dotnet` 报 "not found" 而 /usr/lib/dotnet/dotnet --version
+            //   正常返回 8.0.134 —— 极易被误判成「包没装好」。
+            //   mono 的 /usr/bin/mono → mono-sgen 是相对的，所以它没暴露。
+            //
+            //   正解：透传路径**必须翻译成 *at 号**再发，不能原样重发老式号。
+            //   翻译表与下面 switch 里对 rootfs 路径用的完全同一套（语义等价
+            //   且已被大量实测覆盖），只是 dirfd 用 AT_FDCWD、路径不翻译。
+            {
+                // ★透传路径也**必须翻译成 *at 号**：原样重发老式号会被
+                //   Android 的 zygote seccomp 二次拦截 → 重入守卫给 EPERM。
+                //   完整实测与机制见 legacy_path_to_at 的注释。
+                if (legacy_path_to_at(nr, -100, lp, a1, a2, &r[0], a3)) return;
+                // 没有 *at 等价物的（如 truncate）保留原样重发；
+                // 这类号若是 App 进程不拦的，保留原样语义最安全。
+                r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
+                return;
+            }
         }
         char lbuf[PATH_MAX];
         long lfd = -100;
@@ -2626,7 +2857,17 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         const char *np = (const char *)r[1];
         if (!op || op[0] != '/' || !np || np[0] != '/') {
             // 同上面那条：必须就地转发，`break` 会落到 default 用截断的 a0。
-            r[0] = (unsigned long long)raw6(nr, (long)op, (long)np, a2, a3, a4, a5);
+            //
+            // ★且必须翻成 *at 号：老式 rename(82)/link(86) 在 App 进程里会被
+            //   Android 的 zygote seccomp 二次拦（只按号判），重入守卫给 EPERM。
+            //   实测 `ln -s` / `rm /tmp/x` 全 EPERM 就是这个原因。
+            if (nr == SYS_rename) {
+                r[0] = (unsigned long long)raw6(SYS_renameat, -100, (long)op,
+                                                -100, (long)np, 0, 0);
+            } else {
+                r[0] = (unsigned long long)raw6(SYS_linkat, -100, (long)op,
+                                                -100, (long)np, 0, 0);
+            }
             return;
         }
         char ob[PATH_MAX], nb[PATH_MAX];
@@ -2679,7 +2920,9 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         const char *np = (const char *)r[1];
         // linkpath 必须是绝对的才需要翻译；相对 linkpath 由内核按 cwd 解析。
         if (!np || np[0] != '/') {
-            r[0] = (unsigned long long)raw6(nr, (long)tp, (long)np, a2, a3, a4, a5);
+            // 同上：relative linkpath 也必须走 symlinkat，老式 symlink(88)
+            // 会被 Android 的 seccomp 二次拦 → 重入守卫 EPERM。
+            r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)tp, -100, (long)np, 0, 0, 0);
             return;
         }
         char nb[PATH_MAX];
@@ -3597,60 +3840,65 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_AARCH64, 1, 0),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 154, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 0, 1),
+        BPF_STMT(BPF_JMP|BPF_JA, 158),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr)),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 71),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 75),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 150, 149),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 37),
-        BPF_STMT(BPF_JMP|BPF_JA, 147),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 21),
-        BPF_STMT(BPF_JMP|BPF_JA, 144),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 13),
-        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 140, 139),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 154, 153),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 37),
+        BPF_STMT(BPF_JMP|BPF_JA, 151),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 21),
+        BPF_STMT(BPF_JMP|BPF_JA, 148),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone3, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone3, 0, 12),
+        BPF_STMT(BPF_JMP|BPF_JA, 145),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat2, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 136, 135),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 141, 140),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat2, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 132, 131),
-        BPF_STMT(BPF_JMP|BPF_JA, 130),
-        BPF_STMT(BPF_JMP|BPF_JA, 129),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 137, 136),
+        BPF_STMT(BPF_JMP|BPF_JA, 135),
+        BPF_STMT(BPF_JMP|BPF_JA, 134),
+        BPF_STMT(BPF_JMP|BPF_JA, 133),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 130, 129),
         BPF_STMT(BPF_JMP|BPF_JA, 128),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 126),
-        BPF_STMT(BPF_JMP|BPF_JA, 124),
-        BPF_STMT(BPF_JMP|BPF_JA, 123),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 113),
+        BPF_STMT(BPF_JMP|BPF_JA, 127),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execve, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 118),
-        BPF_STMT(BPF_JMP|BPF_JA, 116),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 125),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 122),
+        BPF_STMT(BPF_JMP|BPF_JA, 120),
+        BPF_STMT(BPF_JMP|BPF_JA, 119),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 109),
         BPF_STMT(BPF_JMP|BPF_JA, 115),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 113),
-        BPF_STMT(BPF_JMP|BPF_JA, 111),
-        BPF_STMT(BPF_JMP|BPF_JA, 110),
+        BPF_STMT(BPF_JMP|BPF_JA, 114),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_bind, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_bind, 0, 14),
-        BPF_STMT(BPF_JMP|BPF_JA, 108),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_bind, 0, 18),
+        BPF_STMT(BPF_JMP|BPF_JA, 112),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 105),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 109),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 102),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 106),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 103),
+        BPF_STMT(BPF_JMP|BPF_JA, 101),
         BPF_STMT(BPF_JMP|BPF_JA, 100),
         BPF_STMT(BPF_JMP|BPF_JA, 99),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
@@ -3759,223 +4007,236 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_X86_64, 1, 0),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 250, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 0, 1),
+        BPF_STMT(BPF_JMP|BPF_JA, 262),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr)),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_lchown, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lchown, 0, 127),
-        BPF_STMT(BPF_JMP|BPF_JA, 247),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_getpgrp, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_getpgrp, 0, 135),
+        BPF_STMT(BPF_JMP|BPF_JA, 259),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlinkat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 66),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 70),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 243, 242),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimensat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 34),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 255, 254),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_signalfd, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_signalfd, 0, 33),
+        BPF_STMT(BPF_JMP|BPF_JA, 252),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 17),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 239, 238),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 17),
-        BPF_STMT(BPF_JMP|BPF_JA, 236),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 248, 247),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat2, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 232, 231),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 244, 243),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat2, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 228, 227),
-        BPF_STMT(BPF_JMP|BPF_JA, 226),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 240, 239),
+        BPF_STMT(BPF_JMP|BPF_JA, 238),
+        BPF_STMT(BPF_JMP|BPF_JA, 237),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone3, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone3, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 235),
+        BPF_STMT(BPF_JMP|BPF_JA, 233),
+        BPF_STMT(BPF_JMP|BPF_JA, 232),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 230),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 227),
         BPF_STMT(BPF_JMP|BPF_JA, 225),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 3),
-        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 222, 221),
+        BPF_STMT(BPF_JMP|BPF_JA, 224),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_eventfd, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_eventfd, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 222),
         BPF_STMT(BPF_JMP|BPF_JA, 220),
         BPF_STMT(BPF_JMP|BPF_JA, 219),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_eventfd, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_eventfd, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 217),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 214),
-        BPF_STMT(BPF_JMP|BPF_JA, 212),
-        BPF_STMT(BPF_JMP|BPF_JA, 211),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_signalfd, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_signalfd, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 209),
-        BPF_STMT(BPF_JMP|BPF_JA, 207),
-        BPF_STMT(BPF_JMP|BPF_JA, 206),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 17),
-        BPF_STMT(BPF_JMP|BPF_JA, 204),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 8),
-        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 200, 199),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 3),
-        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 196, 195),
-        BPF_STMT(BPF_JMP|BPF_JA, 194),
-        BPF_STMT(BPF_JMP|BPF_JA, 193),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlinkat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 3),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 18),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 190, 189),
-        BPF_STMT(BPF_JMP|BPF_JA, 188),
-        BPF_STMT(BPF_JMP|BPF_JA, 187),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 185),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 216, 215),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 8),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 212, 211),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimensat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 208, 207),
+        BPF_STMT(BPF_JMP|BPF_JA, 206),
+        BPF_STMT(BPF_JMP|BPF_JA, 205),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 202, 201),
+        BPF_STMT(BPF_JMP|BPF_JA, 200),
+        BPF_STMT(BPF_JMP|BPF_JA, 199),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_linkat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 182),
-        BPF_STMT(BPF_JMP|BPF_JA, 180),
-        BPF_STMT(BPF_JMP|BPF_JA, 179),
-        BPF_STMT(BPF_JMP|BPF_JA, 178),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_init, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_init, 0, 31),
-        BPF_STMT(BPF_JMP|BPF_JA, 176),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 197),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 194),
+        BPF_STMT(BPF_JMP|BPF_JA, 192),
+        BPF_STMT(BPF_JMP|BPF_JA, 191),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 189),
+        BPF_STMT(BPF_JMP|BPF_JA, 187),
+        BPF_STMT(BPF_JMP|BPF_JA, 186),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimes, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimes, 0, 35),
+        BPF_STMT(BPF_JMP|BPF_JA, 184),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdirat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdirat, 0, 18),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 172, 171),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 180, 179),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchownat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchownat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 168, 167),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 176, 175),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 164, 163),
-        BPF_STMT(BPF_JMP|BPF_JA, 162),
-        BPF_STMT(BPF_JMP|BPF_JA, 161),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 172, 171),
+        BPF_STMT(BPF_JMP|BPF_JA, 170),
+        BPF_STMT(BPF_JMP|BPF_JA, 169),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknodat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknodat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 158, 157),
-        BPF_STMT(BPF_JMP|BPF_JA, 156),
-        BPF_STMT(BPF_JMP|BPF_JA, 155),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 166, 165),
+        BPF_STMT(BPF_JMP|BPF_JA, 164),
+        BPF_STMT(BPF_JMP|BPF_JA, 163),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_add_watch, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_add_watch, 0, 7),
-        BPF_STMT(BPF_JMP|BPF_JA, 153),
+        BPF_STMT(BPF_JMP|BPF_JA, 161),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 149, 148),
-        BPF_STMT(BPF_JMP|BPF_JA, 147),
-        BPF_STMT(BPF_JMP|BPF_JA, 146),
-        BPF_STMT(BPF_JMP|BPF_JA, 145),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 157, 156),
+        BPF_STMT(BPF_JMP|BPF_JA, 155),
+        BPF_STMT(BPF_JMP|BPF_JA, 154),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_init, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_init, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 152),
+        BPF_STMT(BPF_JMP|BPF_JA, 150),
+        BPF_STMT(BPF_JMP|BPF_JA, 149),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statfs, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 14),
-        BPF_STMT(BPF_JMP|BPF_JA, 143),
+        BPF_STMT(BPF_JMP|BPF_JA, 147),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_time, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_time, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 144),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_epoll_create, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_epoll_create, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 140),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimes, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimes, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 137),
-        BPF_STMT(BPF_JMP|BPF_JA, 135),
-        BPF_STMT(BPF_JMP|BPF_JA, 134),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_epoll_create, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 141),
+        BPF_STMT(BPF_JMP|BPF_JA, 139),
+        BPF_STMT(BPF_JMP|BPF_JA, 138),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fstatfs, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fstatfs, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 132),
-        BPF_STMT(BPF_JMP|BPF_JA, 130),
-        BPF_STMT(BPF_JMP|BPF_JA, 129),
+        BPF_STMT(BPF_JMP|BPF_JA, 136),
+        BPF_STMT(BPF_JMP|BPF_JA, 134),
+        BPF_STMT(BPF_JMP|BPF_JA, 133),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utime, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utime, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 127),
+        BPF_STMT(BPF_JMP|BPF_JA, 131),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknod, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknod, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 128),
+        BPF_STMT(BPF_JMP|BPF_JA, 126),
+        BPF_STMT(BPF_JMP|BPF_JA, 125),
         BPF_STMT(BPF_JMP|BPF_JA, 124),
-        BPF_STMT(BPF_JMP|BPF_JA, 122),
-        BPF_STMT(BPF_JMP|BPF_JA, 121),
-        BPF_STMT(BPF_JMP|BPF_JA, 120),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_bind, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_bind, 0, 58),
-        BPF_STMT(BPF_JMP|BPF_JA, 118),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdir, 0, 30),
-        BPF_STMT(BPF_JMP|BPF_JA, 115),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlink, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlink, 0, 14),
-        BPF_STMT(BPF_JMP|BPF_JA, 112),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chmod, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chmod, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 109),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chown, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chown, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 106),
-        BPF_STMT(BPF_JMP|BPF_JA, 104),
-        BPF_STMT(BPF_JMP|BPF_JA, 103),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlink, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlink, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 101),
-        BPF_STMT(BPF_JMP|BPF_JA, 99),
-        BPF_STMT(BPF_JMP|BPF_JA, 98),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_link, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_link, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 96),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlink, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlink, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 93),
-        BPF_STMT(BPF_JMP|BPF_JA, 91),
-        BPF_STMT(BPF_JMP|BPF_JA, 90),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rmdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rmdir, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 88),
-        BPF_STMT(BPF_JMP|BPF_JA, 86),
-        BPF_STMT(BPF_JMP|BPF_JA, 85),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_truncate, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_truncate, 0, 14),
-        BPF_STMT(BPF_JMP|BPF_JA, 83),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 80),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rename, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rename, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 77),
-        BPF_STMT(BPF_JMP|BPF_JA, 75),
-        BPF_STMT(BPF_JMP|BPF_JA, 74),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_getcwd, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_getcwd, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 72),
-        BPF_STMT(BPF_JMP|BPF_JA, 70),
-        BPF_STMT(BPF_JMP|BPF_JA, 69),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 59),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 58),
+        BPF_STMT(BPF_JMP|BPF_JA, 114),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rmdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rmdir, 0, 30),
+        BPF_STMT(BPF_JMP|BPF_JA, 119),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlink, 0, 14),
+        BPF_STMT(BPF_JMP|BPF_JA, 116),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chown, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chown, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 113),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_lchown, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lchown, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 110),
+        BPF_STMT(BPF_JMP|BPF_JA, 108),
+        BPF_STMT(BPF_JMP|BPF_JA, 107),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chmod, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chmod, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 105),
+        BPF_STMT(BPF_JMP|BPF_JA, 103),
+        BPF_STMT(BPF_JMP|BPF_JA, 102),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlink, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 100),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlink, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 97),
+        BPF_STMT(BPF_JMP|BPF_JA, 95),
+        BPF_STMT(BPF_JMP|BPF_JA, 94),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_link, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_link, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 92),
+        BPF_STMT(BPF_JMP|BPF_JA, 90),
+        BPF_STMT(BPF_JMP|BPF_JA, 89),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_getcwd, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_getcwd, 0, 14),
+        BPF_STMT(BPF_JMP|BPF_JA, 87),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rename, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rename, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 84),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdir, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 81),
+        BPF_STMT(BPF_JMP|BPF_JA, 79),
+        BPF_STMT(BPF_JMP|BPF_JA, 78),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 76),
+        BPF_STMT(BPF_JMP|BPF_JA, 74),
+        BPF_STMT(BPF_JMP|BPF_JA, 73),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execve, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 71),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_truncate, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_truncate, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 68),
+        BPF_STMT(BPF_JMP|BPF_JA, 66),
+        BPF_STMT(BPF_JMP|BPF_JA, 65),
         BPF_STMT(BPF_JMP|BPF_JA, 64),
-        BPF_STMT(BPF_JMP|BPF_JA, 62),
-        BPF_STMT(BPF_JMP|BPF_JA, 61),
-        BPF_STMT(BPF_JMP|BPF_JA, 60),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_pipe, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_pipe, 0, 26),
-        BPF_STMT(BPF_JMP|BPF_JA, 58),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 14),
-        BPF_STMT(BPF_JMP|BPF_JA, 55),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 52),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 49),
-        BPF_STMT(BPF_JMP|BPF_JA, 47),
-        BPF_STMT(BPF_JMP|BPF_JA, 46),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_pipe, 0, 30),
+        BPF_STMT(BPF_JMP|BPF_JA, 62),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 44),
-        BPF_STMT(BPF_JMP|BPF_JA, 42),
-        BPF_STMT(BPF_JMP|BPF_JA, 41),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 39),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 14),
+        BPF_STMT(BPF_JMP|BPF_JA, 59),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 56),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_bind, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_bind, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 53),
+        BPF_STMT(BPF_JMP|BPF_JA, 51),
+        BPF_STMT(BPF_JMP|BPF_JA, 50),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 48),
+        BPF_STMT(BPF_JMP|BPF_JA, 46),
+        BPF_STMT(BPF_JMP|BPF_JA, 45),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_accept, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_accept, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 36),
-        BPF_STMT(BPF_JMP|BPF_JA, 34),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_accept, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 43),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 40),
+        BPF_STMT(BPF_JMP|BPF_JA, 38),
+        BPF_STMT(BPF_JMP|BPF_JA, 37),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 35),
         BPF_STMT(BPF_JMP|BPF_JA, 33),
         BPF_STMT(BPF_JMP|BPF_JA, 32),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_lstat, 2, 0),

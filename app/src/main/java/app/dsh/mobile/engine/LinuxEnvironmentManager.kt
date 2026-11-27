@@ -1691,29 +1691,62 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         //   出来的真 PIE，④ 的 quirks 还没来得及 divert 它），但 deb 已解包完毕，
         //   ④/⑤ 能把半配置的包收尾成功。真机时序实证（2026-11-13）：fresh rootfs
         //   首装报 libc-bin 139，quirks + configure 之后 Setting up 成功、无残留报错。
-        step(
-            "dpkg -i",
-            "/bin/sh",
-            listOf(
-                "-c",
-                "set -- /var/cache/apt/archives/*.deb; [ -e \"\$1\" ] && dpkg --force-not-root -i \"\$@\" || true",
-            ),
-        )
-
-        // ④/⑤ 收尾：quirks（ldconfig shim 就位）→ configure（幂等）。
-        // 整体成败以这一步为准：救得回来才算成功，救不回来（非 0）如实报失败，
-        // 输出里已带真实原因。
-        val configureOk = LinuxRootfsCatalog.postInstallArgv(option)
-            .fold(true) { acc, argv ->
+        // ★「dpkg -i + configure」要**交替最多 3 轮**（v1.7.x，issue #132）。
+        //
+        //   dpkg -i 在一个批次里按**参数顺序**解包，而 Pre-Depends 要求被依赖的
+        //   包**已经 configured**，不只是 unpacked。实测（全新 ubuntu-base、
+        //   python3 + python3-pip、cache 里 156 个 deb）：
+        //       python3 pre-depends on python3-minimal (= 3.12.3-0ubuntu2.1)
+        //         python3-minimal is unpacked, but has never been configured.
+        //       dpkg: error processing python3_...deb (--install):
+        //        pre-dependency problem - not installing python3
+        //   → python3 元包根本没进 dpkg 数据库，python3-pip / setuptools /
+        //   wheel 全卡在 iU —— 正是报告人 #132 ① 描述的现象。
+        //
+        //   ★关键：**光跑两趟 dpkg -i 没用**（第一版就是这么改的，实测仍红）。
+        //   python3-minimal 在第 1 趟里只是 unpacked，必须由 configure 把它推到
+        //   installed，第 2 趟的 python3 才能过 pre-depends 检查。所以节奏必须是
+        //       i → configure → i → configure → (i)
+        //   实测（同一容器、同一批 deb）：交替 2 轮后 `dpkg -l | grep -c iU` = 0，
+        //   python3 / python3-pip 都是 ii，`python3 -V` = 3.12.3，
+        //   `pip3 --version` = 24.0，标准库 asyncio/json/ctypes/zipfile/shutil/
+        //   tarfile/http/multiprocessing/unittest/sqlite3/venv 全可 import。
+        //
+        //   上限 4 轮：真机实测「全新 ubuntu-base 装 python3+python3-pip」在
+        //   **第 3 轮**才收敛（round 1/2 都还 missing），4 轮是给依赖链多留一层
+        //   余量的经验值 —— 每轮对已装好的包是 no-op（几十毫秒），代价可忽略。
+        //   再多轮不会有新收益：都装不上的包是另一个问题，交给末尾的 verify
+        //   如实报缺，不许靠加轮次把它"等"出来。
+        //   不做「按依赖拓扑排序参数」：要解析每个 deb 的 Pre-Depends 再排图，
+        //   而交替轮次是最小、幂等、且不会算错的成本。
+        val configureArgv = LinuxRootfsCatalog.postInstallArgv(option)
+        // ★必须写成**一个**字符串字面量（不是两段拼接）。
+        //   `_test_linux_pkg_distro.py` 的 C3b 判据是「同一个字面量里既有
+        //   /var/cache/apt/archives/*.deb 又有 dpkg -i」—— 它断言的是语义，
+        //   但实现上按字面量扫；拆成两段会让这条**真的**变红（不是假红）。
+        val installShell =
+            "set -- /var/cache/apt/archives/*.deb; [ -e \"\$1\" ] || exit 0; dpkg --force-not-root -i \"\$@\" || true"
+        var configureOk = false
+        var rounds = 0
+        var missing = verifyAptInstalled(packages)
+        while (missing.isNotEmpty() && rounds < 4) {
+            rounds++
+            // ① 解包（rc 不作判据：libc-bin postinst 会在真 PIE 的 ldconfig 上
+            //    段错误，但 deb 已解包，后续 quirks + configure 能收尾）
+            step("dpkg -i (round $rounds)", "/bin/sh", listOf("-c", installShell))
+            // ② 收尾：quirks（ldconfig shim 就位）→ configure（把 unpacked 推到 installed）
+            configureOk = configureArgv.fold(true) { acc, argv ->
                 step(argv.joinToString(" "), argv.first(), argv.drop(1)) && acc
             }
+            missing = verifyAptInstalled(packages)
+            sb.append("round $rounds: missing=").append(missing.joinToString(",")).append('\n')
+        }
         // ⑥ 最后核对：请求的包**真的**进了 dpkg 数据库没有（v1.7.14）。
         //
         // 少了这一步就是假绿：③ 的 dpkg -i 明文「rc 不作判据」，而 configure 对
         // 未解包的包不报错、返回 0 —— 两者叠加，解包全失败也会被判成装成功。
         // 真机实证（2026-11-13）：cache 里 28 个 deb 齐、status 有 92 个包，
         // 但 `grep ^Package: curl` 是 0，界面却写了成功标记，之后永不重试。
-        val missing = verifyAptInstalled(packages)
         if (missing.isNotEmpty()) {
             sb.append("still missing after install: ").append(missing.joinToString(",")).append('\n')
             Log.w(TAG, "apt install reported success but these are not installed: " + missing.joinToString(","))
@@ -2356,9 +2389,22 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                         "Add it to APK_MIRROR_VERSION — falling back silently would install " +
                         "packages from the wrong Alpine release (see 8e91833f)."
                 )
+            // ★镜像源必须换快的那家（2026-11-24 实测，模拟器 x86_64 / 同一容器 /
+            //   同一 8 秒窗口 / 同一个 mono-6.14.1-r0.apk）：
+            //     http://mirrors.aliyun.com          2,595,682 B → 324 KB/s
+            //     https://mirrors.tuna.tsinghua.edu.cn  29,114,010 B → 3.6 MB/s
+            //   差 11 倍。后果不是「慢一点」，而是**大包必然装不上**：
+            //   LinuxPackageManager.install 的默认 timeoutMs 是 600_000，
+            //   mono 84MB 在 324KB/s 下要 4.3 分钟（刚好擦边），dotnet8-sdk
+            //   闭包 522MB 要 27 分钟 —— 实测两次都在 600s 被砍，
+            //   日志只有一句 `apk add X: rc-ok=false verified=false`，
+            //   而中途已下载的部分留在 rootfs 里，用户重试又是从头开始。
+            //   现场表现是「扩展中心点安装，等十分钟，报 Install failed」。
+            //   清华源同时是 https，少一层明文风险。阿里云的 /etc/hosts 旧账
+            //   与本条无关（那说的是 DNS 不能用时写死 IP，早已改成真 DNS）。
             return listOf(
-                "http://mirrors.aliyun.com/alpine/$v/main",
-                "http://mirrors.aliyun.com/alpine/$v/community",
+                "https://mirrors.tuna.tsinghua.edu.cn/alpine/$v/main",
+                "https://mirrors.tuna.tsinghua.edu.cn/alpine/$v/community",
             )
         }
 

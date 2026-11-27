@@ -52,11 +52,31 @@ class SettingsBgActivity : ThemedActivity() {
         seekAlpha = findViewById(R.id.seekBgAlpha)
         seekBlur = findViewById(R.id.seekBgBlur)
         seekControlAlpha = findViewById(R.id.seekControlAlpha)
-        listOf(seekAlpha, seekBlur, seekControlAlpha).forEach {
-            it.valueFrom = 0f
-            it.valueTo = 75f
-            it.stepSize = 1f
-        }
+        // ★三个滑块的**语义上限不同**，不能共用一个 valueTo（2026-11-24 修）。
+        //
+        //   原来三个都设 0..75，而：
+        //     seekBgAlpha        ← settingsBgAlpha()        coerceIn(0, 100)，默认 **100**
+        //     seekBlur           ← settingsBgBlur()         coerceIn(0, 75)，默认 0
+        //     seekControlAlpha   ← settingsBgControlAlpha() coerceIn(0, 100)，默认 **90**
+        //
+        //   于是首次进页必然崩在给 value 赋值之后、第一次 onSizeChanged 时：
+        //     java.lang.IllegalStateException: Slider value(100.0) must be
+        //     greater or equal to valueFrom(0.0), and lower or equal to valueTo(75.0)
+        //         at BaseSlider.validateValues(BaseSlider.java:746)
+        //         at BaseSlider.validateConfigurationIfDirty(...)
+        //         at BaseSlider.updateTrackWidth(...)
+        //         at BaseSlider.onSizeChanged(...)
+        //   实测（模拟器 / Android 14 / 默认偏好，未改过任何设置）：一进「设置外观 →
+        //   背景图」就 FATAL，进程被系统重启 —— 用户看到的就是「点选项直接应用重启」。
+        //   而 blur 的 75 是**对的**（模糊档位百分比 0/25/50/75，见 BG_BLUR_PRESETS），
+        //   所以只有 alpha 与 controlAlpha 需要放到 100。
+        //
+        //   为什么不是「把读取侧的 coerce 改成 100 以下」：100% 不透明是用户真想要的
+        //   合法值（默认就是满不透明），语义上限本就该是 100；把用户的选择改小才是错的。
+        seekAlpha.valueFrom = 0f; seekAlpha.valueTo = 100f; seekAlpha.stepSize = 1f
+        seekBlur.valueFrom = 0f; seekBlur.valueTo = 75f; seekBlur.stepSize = 1f
+        seekControlAlpha.valueFrom = 0f; seekControlAlpha.valueTo = 100f
+        seekControlAlpha.stepSize = 1f
         valAlpha = findViewById(R.id.valBgAlpha)
         valControlAlpha = findViewById(R.id.valControlAlpha)
         editBlur = findViewById(R.id.editBgBlur)
