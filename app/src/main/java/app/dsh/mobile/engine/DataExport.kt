@@ -368,9 +368,79 @@ object DataExport {
         }
         current.put("tables", tables)
 
+        // ★「同一个 path 被两个 workspace 认领」必须在**写入前**就并掉。
+        //
+        // 这不是可选的美化：上游 `dsh-workspace` 的 `validateStoredState` 把
+        // 「一个 path 只能一个 workspace」当硬约束，违反直接 throw 在 cordis.init
+        // 里 —— 于是 workspace / storage-domain / session-persistence 三个服务全
+        // failed，session-controller / workspace-controller / ui-deliverables 连带
+        // pending，用户看到「恢复成功但会话全没了」。
+        // 磁盘上 128 个会话文件一个都没少，坏的只是这张表。
+        //
+        // 污点正是本函数的合并口径造成的：按 workspaceIds 取并集 + tables 里
+        // 「缺失才加」，于是「本机的 workspace A」与「备份里的 workspace B」
+        // 即使 path 完全相同也会两条都留。恢复当时看不出来，下次启动才炸。
+        val deduped = runCatching {
+            dedupeMergedRegistry(current, tables, globalIn = current.optJSONObject("global"))
+        }.onFailure { log(ctx, "registry dedupe failed: ${it.message}") }.getOrDefault(0)
+        if (deduped > 0) log(ctx, "registry dedupe: merged $deduped duplicate path(s)")
+
         targetFile.parentFile?.mkdirs()
         targetFile.writeText(current.toString())
         log(ctx, "registry merged: ${mergedIds.size} workspace id(s)")
+    }
+
+    /**
+     * 合并恢复进来的注册表后，把「同 path 多认领」就地并掉。
+     *
+     * 规则全部在 [WorkspaceDedupe]（纯函数、JVM 可断言）；这里只搬 JSON。
+     * @return 实际合并掉的条目数（0 = 本来就干净）
+     */
+    private fun dedupeMergedRegistry(
+        root: JSONObject,
+        tables: JSONObject,
+        globalIn: JSONObject?,
+    ): Int {
+        val orderArr = globalIn?.optJSONArray("workspaceIds")
+        val order = if (orderArr == null) {
+            emptyList()
+        } else {
+            (0 until orderArr.length()).mapNotNull { orderArr.optString(it).takeIf(String::isNotBlank) }
+        }
+        val records = ArrayList<WorkspaceDedupe.Record>(tables.length())
+        for (id in tables.keys().asSequence().toList()) {
+            val ws = tables.optJSONObject(id) ?: continue
+            val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
+            records += WorkspaceDedupe.Record(
+                id = id,
+                path = path,
+                title = ws.optString("title"),
+                sessionIds = buildList {
+                    ws.optJSONArray("sessionIds")?.let { arr ->
+                        for (i in 0 until arr.length()) {
+                            arr.optString(i).takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }
+                },
+                createdAt = ws.optString("createdAt"),
+                updatedAt = ws.optString("updatedAt"),
+            )
+        }
+        if (records.size < 2) return 0
+        val plan = WorkspaceDedupe.plan(order, records)
+        if (!plan.changed) return 0
+
+        for (m in plan.merges) tables.remove(m.loser)
+        for (r in plan.keep) {
+            val ws = tables.optJSONObject(r.id) ?: JSONObject().also { tables.put(r.id, it) }
+            ws.put("path", r.path)
+            ws.put("title", r.title)
+            ws.put("sessionIds", JSONArray().apply { r.sessionIds.forEach { put(it) } })
+            if (r.createdAt.isNotBlank()) ws.put("createdAt", r.createdAt)
+            if (r.updatedAt.isNotBlank()) ws.put("updatedAt", r.updatedAt)
+        }
+        globalIn?.put("workspaceIds", JSONArray().apply { plan.order.forEach { put(it) } })
+        return plan.merges.size
     }
 
     /**

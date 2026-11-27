@@ -873,7 +873,22 @@ object EngineConfig {
         val tables = root.optJSONObject("tables")?.optJSONObject("workspaces") ?: return
         val wsRoot = File(dshHome(ctx), "workspaces")
 
-        var changed = 0
+        // ★v1.7.x：先做「同 path 多认领」合并，再修路径。
+        //
+        // 顺序很关键：合并可能删掉一条记录，而后面按 basename 兜底那次改写是按
+        // id 找 path 的 —— 先合并能让「已删掉的 id」不再被兜底逻辑摸到。
+        //
+        // 为什么非做不可：上游 `validateStoredState` 遇到同 path 直接 throw，而它
+        // 抛在 `[cordis.init]` 里 → workspace / storage-domain / session-persistence
+        // 全 failed → workspaceRegistry 缺失 → session-controller / workspace-controller
+        // / ui-deliverables 全部 pending → 用户看到「会话全没了、选工作区 unavailable」。
+        // 磁盘上的会话文件一个都没少，坏的只是这张登记表。
+        // 详见 [WorkspaceDedupe] 的注释与真机日志。
+        val dedupeChanged = runCatching { dedupeWorkspaceRegistry(root, tables) }
+            .onFailure { Log.w(TAG, "workspace dedupe failed: ${it.message}") }
+            .getOrDefault(0)
+
+        var changed = dedupeChanged
         for (id in tables.keys().asSequence().toList()) {
             val ws = tables.optJSONObject(id) ?: continue
             val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
@@ -924,6 +939,77 @@ object EngineConfig {
             runCatching { tmp.delete() }
             throw e
         }
+    }
+
+    /**
+     * 把「同一个 path 被多个 workspace 认领」的表合并掉。
+     *
+     * 只改内存里的 [root]/[tables]，不写文件 —— 写与备份由调用方统一做（它已经
+     * 有一次原子写，不要写两遍）。返回改动条数（0 = 本来干净）。
+     *
+     * 合并规则全部在 [WorkspaceDedupe] 里（纯函数，宿主 JVM 可断言）。这里只做
+     * JSON ↔ 数据类的搬运，任何一条记录读不出来就原样跳过 —— 损坏的字段不能
+     * 变成「删掉用户的工作区」。
+     */
+    private fun dedupeWorkspaceRegistry(
+        root: org.json.JSONObject,
+        tables: org.json.JSONObject,
+    ): Int {
+        val global = root.optJSONObject("global")
+        val orderArr = global?.optJSONArray("workspaceIds")
+        val order = if (orderArr == null) {
+            emptyList()
+        } else {
+            (0 until orderArr.length()).mapNotNull { orderArr.optString(it).takeIf(String::isNotBlank) }
+        }
+
+        val records = ArrayList<WorkspaceDedupe.Record>(tables.length())
+        for (id in tables.keys().asSequence().toList()) {
+            val ws = tables.optJSONObject(id) ?: continue
+            val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
+            records += WorkspaceDedupe.Record(
+                id = id,
+                path = path,
+                title = ws.optString("title"),
+                sessionIds = buildList {
+                    ws.optJSONArray("sessionIds")?.let { arr ->
+                        for (i in 0 until arr.length()) {
+                            arr.optString(i).takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }
+                },
+                createdAt = ws.optString("createdAt"),
+                updatedAt = ws.optString("updatedAt"),
+            )
+        }
+        if (records.size < 2) return 0
+
+        val plan = WorkspaceDedupe.plan(order, records)
+        if (!plan.changed) return 0
+
+        // ① 删掉被并掉的 id（表与顺序表都删）
+        for (m in plan.merges) {
+            tables.remove(m.loser)
+            Log.w(TAG, "workspace ${m.loser} merged into ${m.winner} (same path '${m.path}')")
+        }
+        // ② 赢家记录用合并后的内容覆盖（会话取并集、时间戳取极值）
+        for (r in plan.keep) {
+            val ws = tables.optJSONObject(r.id) ?: org.json.JSONObject().also { tables.put(r.id, it) }
+            ws.put("path", r.path)
+            ws.put("title", r.title)
+            ws.put(
+                "sessionIds",
+                org.json.JSONArray().apply { r.sessionIds.forEach { put(it) } },
+            )
+            if (r.createdAt.isNotBlank()) ws.put("createdAt", r.createdAt)
+            if (r.updatedAt.isNotBlank()) ws.put("updatedAt", r.updatedAt)
+        }
+        // ③ 顺序表按计划重写（原来没有 global/workspaceIds 时补上）
+        if (global != null) {
+            val arr = org.json.JSONArray().apply { plan.order.forEach { put(it) } }
+            global.put("workspaceIds", arr)
+        }
+        return plan.merges.size
     }
 
     /** $DSH_HOME（凭证、会话、配置）—— 保持私有；sessions/ 由 ensureUserDataExternal 外置 */

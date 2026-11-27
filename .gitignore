@@ -107,6 +107,12 @@ scripts/probes/*.bin
 # 现场表现是「装了 python3-pip 之后标准库缺一半」，极易误判成装包链路问题；
 # 而 `python3 -V` 仍然正常（-V 不加载 encodings），常规冒烟测试抓不到。
 !/scripts/probes/_test_linux_python_env_leak.py
+# 工作区注册表「同一个 path 被两个 workspace 认领」（真机事故 2026-11-27）：
+# 上游 validateStoredState 直接 throw 在 cordis.init 里 → workspace/storage-domain/
+# session-persistence 全 failed → session-controller/workspace-controller 连带 pending
+# → 用户看到「会话全没了」，而磁盘上 128 个会话文件一个都没少。
+# 污点来自 DataExport.mergeRegistry 的并集口径 + ChatRecovery.recover 的 canonicalPath 判据。
+!/scripts/probes/_test_workspace_registry_dedupe.py
 !/scripts/probes/linux-bash-device.cjs
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py

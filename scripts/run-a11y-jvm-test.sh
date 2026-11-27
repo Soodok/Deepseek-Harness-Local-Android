@@ -161,6 +161,9 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryIndex.kt" "$WORK/src/"
 # GuestPaths.kt 纯 java.io.File 逻辑（容器视角 /dsh/... → 宿主路径），无 Android 依赖。
 # 它修的是「Linux 模式记下的工作区路径让原生模式会话恢复失败」，错一个字就白屏。
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/GuestPaths.kt" "$WORK/src/"
+# 工作区注册表「同 path 多认领」的合并计划（v1.7.x 真机事故）。
+# 错了不会崩，只会静默少登记会话或打乱用户的显示顺序 —— 必须能算一遍。
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/WorkspaceDedupe.kt" "$WORK/src/"
 # 局域网地址判据（v1.7.12）：scoreOf/order 是纯函数，虚拟网卡抢占 wlan0 的那次 bug 靠它防回归
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/LanAddress.kt" "$WORK/src/"
 # ExtensionVersionPlan.kt：扩展中心多版本「哪一版装着」的纯逻辑（v1.7.12）。
@@ -202,7 +205,7 @@ echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
   -cp "$(win "$STD")$sep$(win "$ANDROID_JAR")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/IslandChrome.kt")" "$(win "$WORK/src/ContrastColor.kt")" "$(win "$WORK/src/LinuxWorkbenchUiState.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/StepShotLayout.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/GuestPaths.kt")" "$(win "$WORK/src/LanAddress.kt")" "$(win "$WORK/src/ExtensionVersionPlan.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/IslandChrome.kt")" "$(win "$WORK/src/ContrastColor.kt")" "$(win "$WORK/src/LinuxWorkbenchUiState.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/StepShotLayout.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/GuestPaths.kt")" "$(win "$WORK/src/WorkspaceDedupe.kt")" "$(win "$WORK/src/LanAddress.kt")" "$(win "$WORK/src/ExtensionVersionPlan.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="
