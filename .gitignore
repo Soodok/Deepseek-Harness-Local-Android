@@ -113,6 +113,11 @@ scripts/probes/*.bin
 # → 用户看到「会话全没了」，而磁盘上 128 个会话文件一个都没少。
 # 污点来自 DataExport.mergeRegistry 的并集口径 + ChatRecovery.recover 的 canonicalPath 判据。
 !/scripts/probes/_test_workspace_registry_dedupe.py
+# 属主自愈判据自己抛异常被 runCatching 吞成 false（真机事故 2026-11-27）：
+# dsh-home/storages/workspace.json 被 root 跑过变成 root:root 600，App 读不动，
+# 而 home-owner-check 报 0ms / 无告警 —— 整段属主自愈永远不会执行。
+# 根因是 hasUnreadableEntries 用 roots[1] 而唯一调用点只传 listOf(home)（长度 1）。
+!/scripts/probes/_test_privilege_ownership_probe.py
 !/scripts/probes/linux-bash-device.cjs
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py

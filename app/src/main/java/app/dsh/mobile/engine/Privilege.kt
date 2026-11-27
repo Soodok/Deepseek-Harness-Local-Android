@@ -690,14 +690,32 @@ object Privilege {
      * 只查**关键文件与目录本身**（够覆盖真实故障面：版本戳、插件、配置、guardian 元数据）。
      */
     private fun hasUnreadableEntries(ctx: Context, roots: List<java.io.File>): Boolean {
+        if (roots.isEmpty()) return false
+        val home = roots[0]
         val probes = mutableListOf<java.io.File>()
         for (root in roots) {
             if (!root.exists()) continue
             probes += root
         }
-        // 关键文件（被启动链路直接读取的）
-        probes += java.io.File(roots[1], ".runtime-version")          // engine/.runtime-version
-        probes += java.io.File(roots[0], "AGENTS.md")                // dsh-home/AGENTS.md
+        // ★engine 目录必须从 home 的**兄弟位置**推导，不能写 roots[1]。
+        //
+        // v1.8.x 真机事故：唯一调用点传的是 `listOf(home)`（长度 1），而这里原本读
+        // `roots[1]` → 必抛 IndexOutOfBoundsException。异常被
+        // `dshHomeNeedsOwnershipFix` 外层的 `runCatching{}.getOrDefault(false)`
+        // 吞掉，于是那个函数**恒返回 false**，整段属主自愈（自读探测 + 特权 find +
+        // pnpm 现场探针）永远不会执行。
+        //
+        // 现场证据（PLZ110 / 2026-11-27）：`dsh-home/storages/workspace.json` 被
+        // root 跑过之后变成 `root:root 600`，App（u0_a501/10501）`cat` 直接
+        // Permission denied，但启动流程里「home-owner-check 0 ms」一声不响地跳过
+        // —— 插件/工作区/会话全部卡在这份读不出来的注册表上。手工
+        // `chown u0_a501:u0_a501` 之后重启即恢复。
+        //
+        // 这类「判据自己先抛异常、被外层 runCatching 吃成 false」是最难发现的假绿：
+        // 日志上它跟「检查通过」完全一样。判据里不许出现任何可能抛的下标访问。
+        val engine = java.io.File(home.parentFile, "engine")
+        probes += java.io.File(engine, ".runtime-version")            // engine/.runtime-version
+        probes += java.io.File(home, "AGENTS.md")                    // dsh-home/AGENTS.md
         probes += java.io.File(ctx.filesDir, "profile-guardian.meta") // guardian 元数据
         // v1.4.70：插件安装现场。pnpm 以 root 跑过一次就会被改成 root:600，
         // 而上面几项关键文件可能全都正常 —— 用户看到的是「装插件报 EACCES」
@@ -705,11 +723,29 @@ object Privilege {
         //   package.json.lock        —— EACCES, open '.../package.json.lock'
         //   node_modules/.bin        —— Failed to remove .../node_modules/.bin
         //   node_modules 与 profiles/web 本身 —— 两个报错的直接宿主
-        val webProfile = java.io.File(roots[0], "profiles/web")
+        val webProfile = java.io.File(home, "profiles/web")
         probes += webProfile
         probes += java.io.File(webProfile, "package.json")
         probes += java.io.File(webProfile, "node_modules")
         probes += java.io.File(webProfile, "node_modules/.bin")
+        // ★v1.8.x：storages/ 与它下面**所有** json 必须单独探。
+        //
+        // 注册表 `storages/workspace.json` 就是上面那次事故的直接受害者：它读不出来
+        // 时 `dsh-workspace` 的 validateStoredState 拿不到表 → 整条依赖链塌掉
+        // （workspace / storage-domain / session-persistence 全 failed，会话列表空白）。
+        // 而 storages 这个目录本身属主是好的（所以老版按目录判读照样「通过」）。
+        //
+        // 逐个文件探而不是只探目录：`listFiles()` 能列出 root 属主的文件（目录有
+        // r/x 位就行），真正读不动的是**文件内容**。
+        val storages = java.io.File(home, "storages")
+        if (storages.isDirectory) {
+            probes += storages
+            runCatching {
+                storages.listFiles()?.forEach { f ->
+                    if (f.isFile && f.name.endsWith(".json")) probes += f
+                }
+            }
+        }
         for (p in probes) {
             if (!p.exists()) continue
             val ok = runCatching {
