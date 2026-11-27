@@ -54,6 +54,10 @@ jobs:
       # _test_corepack_hardlink.py 例外：它读 app/src/main/assets/runtime.zip，
       # 而该文件已按 PR #48 架构移到构建产物目录（不在仓库里）。探针待更新，
       # 这里显式跳过，避免长期红着掩盖真正的回归。
+      #
+      # _test_steer_patch*.py 也依赖构建产物 `_runtime_bak/rt-*.zip`（被 .gitignore 挡在仓库外）。
+      # 它们的判据在**本地有 zip 时是真红**（2026-11-27 实测改前 8 红 / 14 红），但在 CI 上
+      # 只会报 "FAIL runtime zip missing" 造成长期假红 —— 与 corepack 同类，显式跳过并注明「本地必须跑」。
       - name: Run regression probes
         run: |
           set -uo pipefail
@@ -61,6 +65,7 @@ jobs:
           for f in scripts/probes/_test_*.py; do
             case "$f" in
               *corepack_hardlink*) echo "SKIP  $f (pending update, see comments)"; continue;;
+              *steer_patch*) echo "SKIP  $f (needs _runtime_bak/rt-*.zip, run locally)"; continue;;
             esac
             if out=$(python3 "$f" 2>&1); then
               echo "PASS  $f"
