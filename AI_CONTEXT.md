@@ -173,6 +173,21 @@ adb -s emulator-5554 shell 'am force-stop app.dsh.mobile; am start -n app.dsh.mo
 - `cdp-served-plugin.cjs` 被 `cdp-served-exact.cjs` 取代（前者要人手拼 `rev`，实测会 404/挂起），已删除，不留两份近似探针。
 - CI（`i18n-check.yml`）显式跳过 `*steer_patch*`：这两个探针读 `_runtime_bak/rt-*.zip`（构建产物，不在仓库），CI 上只能报 `FAIL runtime zip missing` 长期假红；判据在**本地有 zip 时是真红**（改前 8 红 / 14 红），已在注释里写明「本地必须跑」。
 
+**实际落库（2026-11-28 00:1x，已推送 origin/main）**：
+
+```
+7c6c57ab docs(context): 2026-11-27 私人反馈库两条 bug 的修复全过程与验收证据
+7408f471 feat(steer): 运行中插话被引擎自己的守卫挡死 —— 补丁器 + 构建接线 + 设备下发字节验证
+5d3b5cc4 fix(overlay): 悬浮窗提问从未出现在折叠态 + /overlay 的 op 参数被静默忽略
+```
+
+推送前后各跑一次 `scripts/git-hygiene.py`：`✓ 本地与远端一致 (7c6c57abcb)`、无 CRLF 污染、probes 未误加。
+只剩 `docs/ui-preview/probe-opacity.mjs` 一个**未跟踪**文件——那是 2026-11-13 就存在的旧产物（`ls` 时间戳可查），
+不是本轮改动，**不代提交**。
+
+注意：`git-hygiene.py` 在 GBK 控制台会因 `✓` 抛 UnicodeEncodeError（看起来像脚本坏了，其实只是输出编码），
+跑法用 `PYTHONIOENCODING=utf-8 python3 scripts/git-hygiene.py`。
+
 ### 三·补2 仍未覆盖的部分（明确列出，不要当成已完成）
 
 - **`ask-bridge.mjs` 在真实引擎里的端到端**：本轮只验证到桥 API 与卡片显示，没跑"模型发起 `ask_user_question` → 插件接管 → 返回值过 `validateJsonSchemaValue`"这一整条。原因：需要真会话 + 真模型回合，模拟器里没有可用的 API key 会话。
