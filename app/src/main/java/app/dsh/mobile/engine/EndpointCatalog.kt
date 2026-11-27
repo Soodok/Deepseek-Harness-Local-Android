@@ -1353,14 +1353,14 @@ object EndpointCatalog {
                 ),
                 e(
                     "overlay", "POST", "/overlay",
-                    "控制悬浮状态窗：改状态文案 / 当前动作 / 完成闪烁 / 隐藏",
+                    "控制悬浮状态窗：改文案 / 当前动作 / 完成闪烁 / 隐藏 / 显式展开收起",
                     perm = "悬浮窗权限（SYSTEM_ALERT_WINDOW）",
-                    params = "status=<状态文案>；action=<当前动作>；complete=true 闪一下完成；hide=true 隐藏",
+                    params = "op=expand|show|collapse；status=<状态文案>；action=<当前动作>；complete=true 闪一下完成；hide=true 隐藏",
                     body = "{\"status\":\"正在读消息\",\"action\":\"scroll\"}",
                     examples = listOf(
                         "dev api POST /overlay '{\"status\":\"正在执行\"}'",
                     ),
-                    limits = "① 纯展示层，FLAG_NOT_TOUCHABLE，永不吃触摸事件。\n② 用户可能在设置里关掉悬浮窗，此时 available=false。",
+                    limits = "① 纯展示层，FLAG_NOT_TOUCHABLE，永不吃触摸事件。\n② 用户可能在设置里关掉悬浮窗，此时 available=false。\n③ op=expand 展开到看得见提问的档位（AI 要等人回答时用）；op=show 只把窗口叫回来不改档位；响应里的 state 带真实档位与可见性，用它判断是否生效。",
                 ),
                 e(
                     "notify", "POST", "/notify",

@@ -441,3 +441,11 @@ docs/ui-preview/.preview-server.json
 # 设置页「行内展开」探针（issue #111）：语言与运行时代理改在行下方就地铺开，
 # 同意类（远程访问/局域网 WebUI）仍保留弹窗 —— 断言要能分辨这两类，不能一刀切。
 !/scripts/probes/_test_settings_inline_panels.py
+
+# v1.8.x：ask 接管 + 插话补丁的守卫探针（各有负对照 / 真实校验器 / 设备下发字节三层）
+!/scripts/probes/_test_ask_overlay_autoraise.py
+!/scripts/probes/_test_ask_schema_real.mjs
+!/scripts/probes/_test_steer_patch.py
+!/scripts/probes/_test_steer_patch_behavior.py
+!/scripts/probes/_fetch_runtime_js.py
+!/scripts/probes/cdp-served-exact.cjs

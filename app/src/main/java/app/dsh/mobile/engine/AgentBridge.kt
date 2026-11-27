@@ -3960,17 +3960,54 @@ document.getElementById('api').textContent = checks.map(function(c){
      */
     private fun overlay(body: String): Pair<Int, String> {
         return try {
-            val obj = JSONObject(body)
+            val obj = JSONObject(body.ifBlank { "{}" })
+            // ⚠️ 2026-11-26 用户反馈 65261bd4 问题三：
+            //   POST /overlay {"op":"expand"} → {"ok":true,"available":true}
+            //   但窗口尺寸、可见性**零变化** —— 因为这端点原来根本不看 "op"。
+            // 「看起来成功、其实什么都没做」最容易被调用方当成已生效。
+            // 现在每个 op 都落到 StatusOverlay 的真实动作上，并把真实状态回给调用方。
             if (obj.optBoolean("hide", false)) {
                 StatusOverlay.hide(DshAccessibilityService.instance)
-                return 200 to """{"ok":true,"visible":false}"""
+                return 200 to JSONObject()
+                    .put("ok", true)
+                    .put("op", "hide")
+                    .put("available", StatusOverlay.isAvailable())
+                    .put("state", StatusOverlay.settledSnapshot())
+                    .toString()
+            }
+
+            val op = obj.optString("op", "").trim().lowercase()
+            when (op) {
+                // 展开到「看得见问题」的档位；show 顺带确保窗口存在（被自动收起后要能拉回来）
+                "expand", "raise" -> {
+                    StatusOverlay.showForWork(DshAccessibilityService.instance)
+                    StatusOverlay.raiseForAsk()
+                }
+                // 只保证窗口在：不改档位，用于「模型要提问，先把球叫回来」
+                "show" -> StatusOverlay.showForWork(DshAccessibilityService.instance)
+                // 收回到球（不改 hidden 语义，用户没关掉它）
+                "collapse" -> StatusOverlay.collapse()
+                "" -> Unit
+                else -> return 400 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "unknown op '$op'")
+                    .put("ops", JSONArray().put("expand").put("show").put("collapse").put("hide"))
+                    .toString()
             }
             obj.optString("status").takeIf { it.isNotBlank() }?.let { StatusOverlay.setStatus(it) }
             obj.optString("action").takeIf { it.isNotBlank() }?.let { StatusOverlay.setAction(it) }
             if (obj.optBoolean("complete", false)) StatusOverlay.flashCompleteDefault()
-            200 to """{"ok":true,"available":${StatusOverlay.isAvailable()}}"""
+            // 用 settledSnapshot 而不是 snapshot：上面的 op 都是 post 到主线程的，
+            // 当场读会拿到动作前的值（实测 POST expand 回 level:0、2 秒后才变 1，
+            // 调用方会以为又是空实现）。等主线程队列排水后再读，才是真实结果。
+            200 to JSONObject()
+                .put("ok", true)
+                .put("available", StatusOverlay.isAvailable())
+                .put("op", op)
+                .put("state", StatusOverlay.settledSnapshot())
+                .toString()
         } catch (e: Exception) {
-            500 to """{"ok":false,"error":"${e.message}"}"""
+            500 to JSONObject().put("ok", false).put("error", e.message ?: "overlay failed").toString()
         }
     }
 

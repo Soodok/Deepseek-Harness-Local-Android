@@ -210,7 +210,11 @@ object StatusOverlay {
                 w.addView(view, p)
 
                 view.post {
-                    expandLevel = 0
+                    // 初次挂载默认折叠；但若这期间已经有人要求「抬到看得见问题」
+                    // （raiseForAsk 在 show 之前/同时被调用，见 raisePending 的说明），
+                    // 复位就要让位，否则刚抬起来的一档会被这一句压回去（真机实测）。
+                    if (!raisePending) expandLevel = 0
+                    raisePending = false
                     applyExpandLevel(view)
                 }
 
@@ -292,6 +296,8 @@ object StatusOverlay {
     /** 收起回折叠球（展开态点面板空白处的语义） */
     private fun collapseToBall() {
         autoExpanded = false
+        // 用户主动收起时，若屏上正有提问卡片，记下来 —— 别让轮询 6 秒后又把它弹开。
+        suppressCurrentAsk()
         if (expandLevel == 0) return
         expandLevel = 0
         applyExpandLevel()
@@ -398,6 +404,7 @@ object StatusOverlay {
     private fun cycleExpandLevel() {
         autoExpanded = false   // 用户自己动的档位 → 不再自动收回
         expandLevel = (expandLevel + 1) % 3
+        if (expandLevel == 0) suppressCurrentAsk()
         applyExpandLevel()
         if (expandLevel == 2) refreshSessionList()
     }
@@ -501,15 +508,17 @@ object StatusOverlay {
             } else {
                 cancelAllowPoll()
             }
-            // 提问区从档位 1 就生效。
-            // 它不是「详情」，而是「需要你做事」——藏在档位 2 里等于没问。
-            if (expandLevel >= 1) {
-                ensureAskArea(ctx)
-            } else {
-                cancelAskPoll()
+            // 提问区与档位**解耦**（2026-11-26 用户反馈 65261bd4）：
+            // 它不是「详情」，而是「需要你做事」——藏在档位 2 里等于没问；
+            // 更关键的是**折叠态也必须轮询**，否则用户得先猜「点一下球」才看得到问题。
+            // 实测原文：折叠 91x91 时卡片永不出现，展开 784x248 约 2s 才出现。
+            ensureAskArea(ctx)
+            if (expandLevel < 1) {
+                // 只藏起来，**不清 askShownId**：清了等于「忘掉屏幕上还有个待答问题」，
+                // 下一次轮询会把同一道题当新问题再弹一次，跟用户的收起动作打架；
+                // 真正的清理由 renderAsk(!pending) 负责。
                 askBox?.visibility = View.GONE
                 askDivider?.visibility = View.GONE
-                askShownId = -1L
             }
 
             // ⚠️ 必须请求重新布局：改 visibility 不会自动重新测量，
@@ -758,6 +767,18 @@ object StatusOverlay {
     @Volatile private var askPoll: Runnable? = null
     /** 当前展示的提问 id，避免同一问题反复重建视图。 */
     @Volatile private var askShownId: Long = -1L
+    /** 用户主动收起过的那道题（同一题不再自动弹开，见 [raiseForAsk]）。 */
+    @Volatile private var askSuppressedFor: Long = -1L
+    /**
+     * 「本次显示立刻就要抬档」的请求（2026-11-27 真机实测发现）。
+     *
+     * [show] 的 view.post 里有 `expandLevel = 0`（初次挂载复位），而 [raiseForAsk]
+     * 的 main{} 排在它**前面**执行 —— 顺序是：show 的块设 root → raise 的块抬到 1
+     * → 最后 show 的 view.post 又压回 0。实测就是「POST /overlay {op:expand} 之后
+     * state.visible 变 true 但 level 仍是 0」，卡片照样看不见。
+     * 这个标记让初次复位让位于「刚被要求抬档」的情况。
+     */
+    @Volatile private var raisePending = false
 
     private fun ensureAskArea(ctx: Context) {
         val v = root ?: return
@@ -799,6 +820,85 @@ object StatusOverlay {
         }
     }
 
+    /**
+     * 把悬浮窗抬到「能看见问题」的档位（2026-11-26 用户反馈 65261bd4）。
+     *
+     * 为什么必须有这个入口：提问不是「详情」，而是「需要你做事」。
+     * 旧实现只在档位 >= 1 时轮询 /ask，折叠球（91x91）永远看不到卡片，
+     * 用户得先猜「点一下球」——实测就是「AI 问了，屏幕上什么都没有」。
+     *
+     * 标记 autoExpanded：这是**我们**自己展开的，用户答完之后允许 setIdle 收回。
+     * 用户手动展开的档位绝不这样改。
+     */
+    fun raiseForAsk(force: Boolean = false) {
+        // 窗口还没挂上时也要把这个意图记下来：show 建完窗口后的复位会看它。
+        raisePending = true
+        main {
+            if (root == null || hidden) return@main
+            if (expandLevel >= 1) return@main
+            // 用户刚刚**自己**把这张卡片收起了 → 不要每轮轮询都把它弹开。
+            // 只有「换了一道题」或调用方显式 force（AI 主动 expand）才重新弹。
+            if (!force && askShownId != -1L && askSuppressedFor == askShownId) return@main
+            expandLevel = 1
+            autoExpanded = true
+            applyExpandLevel()
+        }
+    }
+
+    /** 记录用户主动收起了哪一道题的卡片（见 [raiseForAsk]）。 */
+    private fun suppressCurrentAsk() {
+        if (askShownId != -1L) askSuppressedFor = askShownId
+    }
+
+    /**
+     * 对桥暴露的真实状态（2026-11-26：`POST /overlay` 之前恒回 available:true，
+     * 调用方无法判断 expand/show 到底有没有生效 —— 空实现最容易被误判成成功）。
+     */
+    fun snapshot(): org.json.JSONObject {
+        val o = org.json.JSONObject()
+        o.put("visible", isShown())
+        o.put("hidden", hidden)
+        o.put("level", expandLevel)
+        o.put("asking", askShownId != -1L)
+        return o
+    }
+    /**
+     * 动作**之后**的真实状态（2026-11-27 真机实测倒逼）。
+     *
+     * 为什么单开一个：`show`/`raiseForAsk`/`collapse` 全部 post 到主线程，桥线程
+     * 紧接着读 [snapshot] 拿到的是**动作前**的值 —— 实测 POST /overlay {op:expand}
+     * 当场回 level:0、2 秒后才变 1。调用方看到「ok 但档位没动」会以为又是空实现，
+     * 这种「响应撒谎」和空实现一样坏。
+     *
+     * 做法：往主线程投一个空任务，等它跑完（最多 timeoutMs）再读 snapshot。
+     * 主线程队列是 FIFO，排在我们前面的动作一定已经执行完。
+     * 超时就返回当前值并带上 settled=false，让调用方知道这是「没等到」而不是「没生效」。
+     */
+    fun settledSnapshot(timeoutMs: Long = 250L): org.json.JSONObject {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        if (!mainHandler.post { latch.countDown() }) return snapshot().put("settled", false)
+        val settled = runCatching { latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) }
+            .getOrDefault(false)
+        if (!settled) return snapshot().put("settled", false)
+        return snapshot().put("settled", true)
+    }
+
+    /**
+     * 收回到折叠球（供桥的 collapse 动作调用）。
+     *
+     * 与用户手动收起同语义：顺手记下当前这道题，否则 6 秒后的轮询又会把它弹回来，
+     * 调用方看到的就是「collapse 了但球又自己开了」。
+     */
+    fun collapse() {
+        main {
+            suppressCurrentAsk()
+            if (expandLevel == 0) return@main
+            autoExpanded = false
+            expandLevel = 0
+            applyExpandLevel()
+        }
+    }
+
     private fun cancelAskPoll() {
         askPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
         askPoll = null
@@ -809,19 +909,25 @@ object StatusOverlay {
         cancelAskPoll()
         val r = Runnable {
             askPoll = null
-            if (expandLevel < 1) return@Runnable
+            // 停摆条件只看「窗口在不在」：折叠态一样要发现待答问题
+            // （2026-11-26 反馈 65261bd4 —— 之前以档位 < 1 直接 return，
+            //  折叠球永远收不到提问，用户必须手动点开才看到卡片）。
+            if (root == null || hidden) return@Runnable
             runCatching {
                 daemonPollExec.execute {
                     val body = runCatching { getBridge("/ask") }.getOrNull()
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        if (expandLevel >= 1) renderAsk(body)
-                        if (expandLevel >= 1) scheduleAskPoll()
+                        if (root == null || hidden) return@post
+                        renderAsk(body)
+                        scheduleAskPoll()
                     }
                 }
             }
         }
         askPoll = r
-        mainHandler.postDelayed(r, 2_000L)
+        // 折叠态只是「发现有没有人问」，没必要 2 秒一次：没人在答时它是最闲的状态，
+        // 却要一直打本机桥。展开态保持 2 秒（用户正盯着那张卡片）。
+        mainHandler.postDelayed(r, if (expandLevel >= 1) 2_000L else 6_000L)
     }
 
     /** 画一个问题（没有就清空）。 */
@@ -836,6 +942,7 @@ object StatusOverlay {
                 box.visibility = View.GONE
                 askDivider?.visibility = View.GONE
                 askShownId = -1L
+                askSuppressedFor = -1L
                 // 问题结束了 → 回空闲档，否则状态行会一直停在「等你回答」。
                 applyState(OverlayState.Kind.IDLE)
                 (root)?.requestLayout()
@@ -843,8 +950,16 @@ object StatusOverlay {
             return
         }
         val id = o!!.optLong("id", -1L)
-        if (id == askShownId) return   // 同一问题不重建，避免每 2 秒闪一下
+        if (id == askShownId) {
+            // 同一问题不重建，避免每 2 秒闪一下；但**必须确保它真的在屏幕上**——
+            // 用户手动收起球之后，轮询继续发现同一道题，这里要把档位再抬起来，
+            // 否则「有问必答」就退化成「球上什么提示都没有」。
+            raiseForAsk()
+            return
+        }
         askShownId = id
+        askSuppressedFor = -1L   // 换了一道题：前一道的「收起过」不适用
+        raiseForAsk(force = true)
         box.removeAllViews()
         box.visibility = View.VISIBLE
         askDivider?.visibility = View.VISIBLE
