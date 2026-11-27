@@ -105,16 +105,21 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(tester.takeException(), isNull);
+      // 断链不再要求用户先找到「重试」按钮：横幅立刻出现，后台退避重连
+      // 成功后自己消失。这里两条都验——先是横幅可见可点，再是不点它也会恢复。
       for (final fault in [f.emitError, f.emitDisconnect]) {
         fault();
-        for (var i = 0; i < 6; i++) {
+        for (var i = 0; i < 2; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(tester.takeException(), isNull);
-        expect(
-          find.byKey(const ValueKey('connection-retry')).hitTestable(),
-          findsOneWidget,
-        );
+        expect(find.byKey(const ValueKey('connection-retry')), findsNothing);
+        for (var i = 0; i < 24; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const ValueKey('connection-retry')), findsNothing);
+        expect(c.state.status, ChatStatus.ready);
       }
       await tester.ensureVisible(find.byKey(const ValueKey('composer-send')));
       for (var i = 0; i < 6; i++) {

@@ -66,6 +66,34 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
       ToolStatus.cancelled => '已取消',
     };
     final edits = content?.edits ?? const <CodeEdit>[];
+    final compactStatus = widget.compact
+        ? Tooltip(
+            message:
+                statusLabel +
+                (tool.elapsedMs == null
+                    ? ''
+                    : ' · ' +
+                          (tool.elapsedMs!.clamp(0, 1 << 53) / 1000)
+                              .toStringAsFixed(1) +
+                          ' 秒'),
+            child: running
+                ? Semantics(
+                    label: statusLabel,
+                    child: _RunningMark(color: statusColor),
+                  )
+                : Icon(
+                    switch (tool.status) {
+                      ToolStatus.running => Icons.sync_rounded,
+                      ToolStatus.complete => Icons.check_rounded,
+                      ToolStatus.failed => Icons.close_rounded,
+                      ToolStatus.cancelled => Icons.stop_rounded,
+                    },
+                    size: 15,
+                    color: statusColor,
+                    semanticLabel: statusLabel,
+                  ),
+          )
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -115,26 +143,36 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
               ],
             ),
           ),
-        if (content != null && content.reasoning.isNotEmpty)
+        if (content != null &&
+            content.reasoning.isNotEmpty &&
+            (!widget.compact || command == null))
           _ProcessSection(
             key: ValueKey('thought-' + tool.id),
             headerKey: ValueKey('process-reasoning-' + tool.id),
-            label: '思考',
-            summary: _expanded.contains('reasoning')
+            label: widget.compact ? tool.name : '思考',
+            summary: widget.compact || _expanded.contains('reasoning')
                 ? ''
                 : _summary(content.reasoning),
-            icon: Icons.auto_awesome_outlined,
-            accent: DshPalette.of(context).thought,
+            icon: widget.compact
+                ? Icons.build_outlined
+                : Icons.auto_awesome_outlined,
+            accent: widget.compact
+                ? DshPalette.of(context).terminal
+                : DshPalette.of(context).thought,
             expanded: _expanded.contains('reasoning'),
-            trailing: running
+            trailing: widget.compact
+                ? compactStatus
+                : running
                 ? _RunningMark(color: DshPalette.of(context).thought)
                 : null,
             onToggle: () => _toggle('reasoning'),
             body: () => _TextOutput(
               id: tool.id + '-reasoning',
-              label: '思考过程',
+              label: widget.compact ? '参数与结果' : '思考过程',
               text: content.reasoning,
-              accent: DshPalette.of(context).thought,
+              accent: widget.compact
+                  ? DshPalette.of(context).terminal
+                  : DshPalette.of(context).thought,
               monospace: false,
             ),
           ),
@@ -147,17 +185,23 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
             icon: Icons.terminal_rounded,
             accent: DshPalette.of(context).terminal,
             expanded: _expanded.contains('command'),
-            trailing: command.exitCode != null
-                ? Text(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ?compactStatus,
+                if (command.exitCode != null) ...[
+                  if (compactStatus != null) const SizedBox(width: 6),
+                  Text(
                     '退出码 ' + command.exitCode.toString(),
                     style: TextStyle(
                       color: DshPalette.of(context).inkSoft,
                       fontSize: 12.5,
                     ),
-                  )
-                : running
-                ? _RunningMark(color: DshPalette.of(context).terminal)
-                : null,
+                  ),
+                ] else if (!widget.compact && running)
+                  _RunningMark(color: DshPalette.of(context).terminal),
+              ],
+            ),
             onToggle: () => _toggle('command'),
             body: () => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -194,22 +238,31 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Text('暂无输出', style: _bodyStyle(context)),
                   ),
+                // Projection reasoning retains raw parameters/results. Keep it
+                // readable and copyable without a second collapsed tool row.
+                if (widget.compact && content!.reasoning.isNotEmpty)
+                  _TextOutput(
+                    id: tool.id + '-reasoning',
+                    label: '参数与结果',
+                    text: content.reasoning,
+                    accent: DshPalette.of(context).terminal,
+                    monospace: false,
+                  ),
               ],
             ),
           ),
-        for (var i = 0; i < edits.length; i++)
+        for (final entry in _editEntries(edits))
           _EditSection(
-            key: ValueKey(
-              tool.id + '-edit-' + i.toString() + '-' + edits[i].path,
+            // Keep disclosure and parsed diffs with their path when earlier
+            // files are inserted; repeated paths get separate ordinals.
+            key: ValueKey(tool.id + '-edit-' + entry.stableId),
+            id: tool.id + '-' + entry.index.toString(),
+            headerKey: ValueKey(
+              'process-diff-' + tool.id + '-' + entry.index.toString(),
             ),
-            id: tool.id + '-' + i.toString(),
-            headerKey: ValueKey('process-diff-' + tool.id + '-' + i.toString()),
-            edit: edits[i],
-            expanded: _expanded.contains(
-              'edit-' + i.toString() + '-' + edits[i].path,
-            ),
-            onToggle: () =>
-                _toggle('edit-' + i.toString() + '-' + edits[i].path),
+            edit: entry.edit,
+            expanded: _expanded.contains('edit-' + entry.stableId),
+            onToggle: () => _toggle('edit-' + entry.stableId),
           ),
       ],
     );
@@ -219,6 +272,27 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
 String _summary(String text) {
   final end = text.length < 160 ? text.length : 160;
   return text.substring(0, _safeEnd(text, end)).split('\n').first.trim();
+}
+
+typedef _EditEntry = ({CodeEdit edit, int index, String stableId});
+
+List<_EditEntry> _editEntries(List<CodeEdit> edits) {
+  final occurrences = <String, int>{};
+  return [
+    for (var index = 0; index < edits.length; index++)
+      (
+        edit: edits[index],
+        index: index,
+        stableId:
+            edits[index].path +
+            '-' +
+            (occurrences.update(
+              edits[index].path,
+              (value) => value + 1,
+              ifAbsent: () => 0,
+            )).toString(),
+      ),
+  ];
 }
 
 class _RunningMark extends StatelessWidget {
@@ -396,10 +470,13 @@ class _TextOutput extends StatelessWidget {
               _CopyAction(id: id, text: text),
             ],
           ),
-          SelectableText(
-            preview,
-            key: ValueKey('process-output-' + id),
-            style: monospace ? _codeStyle(context) : _bodyStyle(context),
+          RepaintBoundary(
+            key: ValueKey('process-preview-boundary-' + id),
+            child: SelectableText(
+              preview,
+              key: ValueKey('process-output-' + id),
+              style: monospace ? _codeStyle(context) : _bodyStyle(context),
+            ),
           ),
           if (preview.length < text.length) ...[
             Padding(
@@ -597,6 +674,9 @@ class _FullTextPageState extends State<_FullTextPage> {
                 itemCount: _slices.ranges.length,
                 itemBuilder: (context, index) => Text(
                   _slices.at(index),
+                  key: ValueKey(
+                    'process-full-line-' + widget.id + '-' + index.toString(),
+                  ),
                   style: widget.monospace
                       ? _codeStyle(context)
                       : _bodyStyle(context),
@@ -635,7 +715,13 @@ class _EditSectionState extends State<_EditSection> {
   @override
   void didUpdateWidget(covariant _EditSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.edit, widget.edit)) _document = null;
+    final previous = oldWidget.edit;
+    final current = widget.edit;
+    if (previous.before != current.before ||
+        previous.after != current.after ||
+        previous.unifiedDiff != current.unifiedDiff) {
+      _document = null;
+    }
   }
 
   @override
@@ -690,10 +776,13 @@ class _EditSectionState extends State<_EditSection> {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Text(edit.language, style: _bodyStyle(context)),
               ),
-            SelectionArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [for (final line in preview) _DiffRow(line: line)],
+            RepaintBoundary(
+              key: ValueKey('process-diff-preview-boundary-' + widget.id),
+              child: SelectionArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [for (final line in preview) _DiffRow(line: line)],
+                ),
               ),
             ),
             if (truncated) ...[
@@ -891,7 +980,7 @@ List<String> _sourceLines(String text) {
 }
 
 class _DiffRow extends StatelessWidget {
-  const _DiffRow({required this.line});
+  const _DiffRow({super.key, required this.line});
   final _DiffLine line;
 
   @override
@@ -1022,8 +1111,15 @@ class _FullDiffPageState extends State<_FullDiffPage> {
                 controller: _scroll,
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                 itemCount: widget.document.lines.length,
-                itemBuilder: (context, index) =>
-                    _DiffRow(line: widget.document.lines[index]),
+                itemBuilder: (context, index) => _DiffRow(
+                  key: ValueKey(
+                    'process-full-diff-line-' +
+                        widget.id +
+                        '-' +
+                        index.toString(),
+                  ),
+                  line: widget.document.lines[index],
+                ),
               ),
             ),
           ),

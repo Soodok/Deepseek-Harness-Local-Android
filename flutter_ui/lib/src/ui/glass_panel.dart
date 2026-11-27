@@ -48,6 +48,9 @@ class DshGlassStyle {
     final light = Theme.of(context).brightness == Brightness.light;
     final ink = light ? const Color(0xFF1D2320) : const Color(0xFF000000);
     if (composer) {
+      // The composer floats over the transcript rather than sitting in its own
+      // band, so it needs the lift that separation used to give it: one soft
+      // shadow, no second hairline ring.
       return DshGlassStyle(
         fill: palette.surface.withValues(alpha: .34),
         fallbackFill: palette.surface.withValues(alpha: .97),
@@ -55,7 +58,13 @@ class DshGlassStyle {
         rim: Colors.transparent,
         blurSigma: 8 * scale,
         saturation: 1,
-        shadows: const [],
+        shadows: [
+          BoxShadow(
+            color: ink.withValues(alpha: light ? .10 : .34),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
       );
     }
     return light

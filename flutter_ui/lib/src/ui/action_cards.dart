@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../model/chat_model.dart';
 import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
+import 'chat_strings.dart';
 
 class ApprovalCard extends StatelessWidget {
   const ApprovalCard({
@@ -10,12 +11,14 @@ class ApprovalCard extends StatelessWidget {
     required this.request,
     required this.onApprove,
     required this.onStop,
+    this.onReject,
     this.busy = false,
   });
 
   final ActionRequest request;
   final VoidCallback onApprove;
   final VoidCallback onStop;
+  final VoidCallback? onReject;
   final bool busy;
 
   @override
@@ -32,7 +35,7 @@ class ApprovalCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '需要你确认',
+            DshChatStrings.of(context).approvalTitle,
             style: TextStyle(
               color: DshPalette.of(context).ice,
               fontSize: 12,
@@ -72,15 +75,28 @@ class ApprovalCard extends StatelessWidget {
                   minimumSize: DshDisplayScope.targetSize(context),
                 ),
                 onPressed: busy ? null : onApprove,
-                child: const Text('允许继续'),
+                child: Text(
+                  onReject == null
+                      ? DshChatStrings.of(context).allowContinue
+                      : DshChatStrings.of(context).allowOnce,
+                ),
               ),
+              if (onReject != null)
+                OutlinedButton(
+                  key: const ValueKey('approval-reject'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: DshDisplayScope.targetSize(context),
+                  ),
+                  onPressed: busy ? null : onReject,
+                  child: Text(DshChatStrings.of(context).rejectOnce),
+                ),
               OutlinedButton(
                 key: const ValueKey('approval-stop'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: DshDisplayScope.targetSize(context),
                 ),
                 onPressed: busy ? null : onStop,
-                child: const Text('停止'),
+                child: Text(DshChatStrings.of(context).stop),
               ),
             ],
           ),
@@ -205,6 +221,11 @@ class _QuestionCardState extends State<QuestionCard>
     } else {
       widget.onSubmit(answer);
     }
+  }
+
+  void _skip() {
+    if (widget.busy) return;
+    widget.onStructuredSubmit?.call(QuestionAnswer());
   }
 
   Widget _choice(int index) {
@@ -359,6 +380,18 @@ class _QuestionCardState extends State<QuestionCard>
               ),
             ],
           ),
+          if (widget.onStructuredSubmit != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                key: const ValueKey('question-skip'),
+                style: TextButton.styleFrom(
+                  minimumSize: DshDisplayScope.targetSize(context),
+                ),
+                onPressed: widget.busy ? null : _skip,
+                child: const Text('跳过'),
+              ),
+            ),
         ],
       ),
     );

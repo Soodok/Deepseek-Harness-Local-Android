@@ -44,10 +44,12 @@ class OpenBridge(private val ctx: Context) {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                         or Intent.FLAG_ACTIVITY_NEW_TASK,
                 )
+            intent.clipData = android.content.ClipData.newRawUri(file.name, uri)
             if (action == Intent.ACTION_SEND) intent.putExtra(Intent.EXTRA_STREAM, uri)
-            // 无默认程序时 VIEW 抛 ActivityNotFoundException → false（插件侧回落分享），
-            // SEND 用系统选择器，不会抛。
-            ctx.startActivity(intent)
+            val dispatch = if (action == Intent.ACTION_SEND) {
+                Intent.createChooser(intent, "分享文件").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            } else intent
+            ctx.startActivity(dispatch)
             true
         } catch (_: ActivityNotFoundException) {
             false

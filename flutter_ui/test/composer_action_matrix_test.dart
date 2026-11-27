@@ -7,6 +7,7 @@ import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 import 'package:dsh_native_chat/src/transport/dsh_transport.dart';
 import 'package:dsh_native_chat/src/ui/chat_shell.dart';
 import 'package:dsh_native_chat/src/ui/composer_surface.dart';
+import 'package:dsh_native_chat/src/ui/permission_icon.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -237,7 +238,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.textContaining('cancel rejected'), findsOneWidget);
-    expect(find.byKey(const ValueKey('connection-retry')), findsOneWidget);
+    expect(find.byKey(const ValueKey('connection-retry')), findsNothing);
     // The turn never ended, so the stop is offered again for a retry.
     expect(_stop, findsOneWidget);
     expect(tester.widget<IconButton>(_stop).onPressed, isNotNull);
@@ -258,6 +259,39 @@ void main() {
     expect(target.height, greaterThanOrEqualTo(48));
     expect(tester.getSize(_send).height, greaterThanOrEqualTo(48));
     expect(surface.height, lessThan(tester.getSize(_send).height));
+
+    final sendCircle = find
+        .descendant(of: _send, matching: find.byType(Container))
+        .first;
+    expect(tester.getSize(sendCircle), const Size(40, 40));
+    final sendGlyph = tester.widget<Icon>(
+      find.descendant(of: _send, matching: find.byType(Icon)).first,
+    );
+    expect(sendGlyph.size, 21);
+
+    transport.startTurn('尺寸断言回合');
+    await tester.pump();
+    await tester.pump();
+    final stopCircle = find
+        .descendant(of: _stop, matching: find.byType(Container))
+        .first;
+    expect(tester.getSize(stopCircle), const Size(40, 40));
+    final stopGlyph = tester.widget<Icon>(
+      find.descendant(of: _stop, matching: find.byType(Icon)).first,
+    );
+    expect(stopGlyph.size, 21);
+
+    final permission = find.byKey(const ValueKey('composer-permission'));
+    expect(tester.getSize(permission).width, greaterThanOrEqualTo(48));
+    final permissionCircle = find
+        .descendant(of: permission, matching: find.byType(Container))
+        .first;
+    expect(tester.getSize(permissionCircle), const Size(38, 38));
+    final permissionGlyph = find.descendant(
+      of: permission,
+      matching: find.byType(DshPermissionIcon),
+    );
+    expect(tester.getSize(permissionGlyph), const Size(20, 20));
     controller.dispose();
   });
 

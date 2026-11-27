@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import '../model/chat_model.dart';
 import '../model/composer_model.dart';
+import '../model/engine_session.dart';
 import '../model/subagent_model.dart';
 import 'dsh_rpc_connection.dart';
 import 'dsh_session_projection.dart';
@@ -15,15 +16,19 @@ import 'native_interactions.dart';
 class NativeSessionTransport
     implements
         DshTransport,
+        ApprovalRejectionTransport,
         SubagentTransport,
         ComposerTransport,
         ComposerCapabilities,
         SessionComposerTransport,
+        SessionPermissionTransport,
         StructuredQuestionTransport {
   NativeSessionTransport({
     required this.rpc,
     required this.sessionId,
     this.enableInteractions = false,
+    this.activateBlankSession = false,
+    this.onAgentPresetState,
   }) : _subagents = NativeSubagentTransport(rpc) {
     if (sessionId.trim().isEmpty)
       throw const DshRpcException(
@@ -35,6 +40,8 @@ class NativeSessionTransport
   final DshRpcConnection rpc;
   final String sessionId;
   final bool enableInteractions;
+  final bool activateBlankSession;
+  final void Function(String? presetId, bool started)? onAgentPresetState;
   NativeInteractions? _interactions;
   StreamSubscription<NativeInteractionsState>? _interactionUpdates;
   String? _interactionError;
@@ -48,6 +55,8 @@ class NativeSessionTransport
   Future<void>? _catalogRead;
   Future<void>? _stateRead;
   Future<void>? _configurationRead;
+  Future<void>? _permissionWrite;
+  String? _permissionWritePreset;
   int _configurationRevision = 0;
   int _modelConfigurationCut = -2;
   int _permissionConfigurationCut = -2;
@@ -180,7 +189,11 @@ class NativeSessionTransport
     _following = true;
     _follow = rpc
         .follow('session/follow', {
-          'request': {..._window, 'assistantStream': true},
+          'request': {
+            ..._window,
+            'assistantStream': true,
+            if (activateBlankSession) 'activate': true,
+          },
         })
         .listen(
           (frame) {
@@ -189,6 +202,7 @@ class NativeSessionTransport
               final before = projection.cursor;
               final events = projection.accept(frame);
               _acceptConfigurationFrame(frame, before: before);
+              _acceptAgentPresetFrame(frame, before: before);
               _emit(events);
               _syncInteractions();
               if (projection.opened && !opened.isCompleted) opened.complete();
@@ -236,6 +250,36 @@ class NativeSessionTransport
     } on Object catch (error) {
       if (_current(generation) && _following) _fail(generation, error, opened);
       rethrow;
+    }
+  }
+
+  void _acceptAgentPresetFrame(
+    Map<String, Object?> frame, {
+    required int before,
+  }) {
+    final publish = onAgentPresetState;
+    if (publish == null) return;
+    bool started(Object? event) =>
+        event is Map &&
+        (event['type'] == 'turn/start' || event['type'] == 'turn/end');
+    if (frame['type'] == 'snapshot') {
+      final projections = frame['projections'];
+      final values = _map(_map(projections)?['values']);
+      final records = frame['records'];
+      publish(
+        EngineSession.readAgentPreset(projections),
+        (records is List && records.any(started)) ||
+            _map(values?['sessionListMetadata'])?['blank'] == false,
+      );
+    } else if (frame['type'] == 'event') {
+      final event = _map(frame['event']);
+      final seq = event?['seq'];
+      if (seq is! int || seq <= before) return;
+      if (started(event)) publish(null, true);
+      if (event?['type'] == 'agent-preset/selected') {
+        final preset = _text(_map(event?['data'])?['agentPreset']);
+        if (preset != null) publish(preset, false);
+      }
     }
   }
 
@@ -572,9 +616,167 @@ class NativeSessionTransport
     if (value?['accepted'] != true) throw _invalid;
   }
 
+  /// Writes the bound session's permission now, without a prompt or a turn.
+  ///
+  /// The composer's draft selection keeps its own lifecycle; this path exists
+  /// for the settings page, where choosing a value is the whole action. It
+  /// refuses presets the Host never advertised, never addresses another
+  /// session, writes at most once per requested value, and only resolves after
+  /// the Host reads the same preset back.
+  @override
+  Future<void> applySessionPermission(ComposerPermission mode) {
+    _checkOpen();
+    final preset = mode.wireValue;
+    final running = _permissionWrite;
+    if (running != null) {
+      // Repeating the same value joins the write in flight; a different one is
+      // refused instead of queued behind it.
+      if (_permissionWritePreset == preset) return running;
+      return Future.error(
+        const SessionPermissionException(
+          'permission/busy',
+          '另一个权限写入尚未完成，请等它结束后再改。',
+        ),
+      );
+    }
+    // Register the in-flight write before the first await runs, so two taps in
+    // the same frame cannot both start a command.
+    final completer = Completer<void>();
+    final operation = completer.future;
+    _permissionWrite = operation;
+    _permissionWritePreset = preset;
+    unawaited(
+      _prepareSessionPermission(preset).then<void>(
+        (_) => completer.complete(),
+        onError: (Object error, StackTrace stack) =>
+            completer.completeError(error, stack),
+      ),
+    );
+    unawaited(
+      operation.then<void>(
+        (_) => _clearPermissionWrite(operation),
+        onError: (Object _, StackTrace _) => _clearPermissionWrite(operation),
+      ),
+    );
+    return operation;
+  }
+
+  @override
+  Future<void> refreshSessionPermission() {
+    _checkOpen();
+    return refreshConfiguration();
+  }
+
+  Future<void> _prepareSessionPermission(String preset) async {
+    // The advertised catalog decides what exists; an empty catalog is read
+    // fresh instead of being treated as "nothing supported".
+    if (_permissions.isEmpty) await refreshCapabilities();
+    _checkOpen();
+    if (!_permissions.contains(preset))
+      throw SessionPermissionException(
+        'permission/unavailable',
+        '当前引擎未提供 ' + preset + ' 模式，请使用 Web 版查看。',
+      );
+    if (_configuration.permissionPreset == preset) return;
+    await _writeSessionPermission(preset);
+  }
+
+  void _clearPermissionWrite(Future<void> operation) {
+    if (!identical(_permissionWrite, operation)) return;
+    _permissionWrite = null;
+    _permissionWritePreset = null;
+  }
+
+  Future<void> _writeSessionPermission(String preset) async {
+    if (_submissionBusy)
+      throw const SessionPermissionException(
+        'permission/busy',
+        '正在发送消息，权限写入请稍后重试。',
+      );
+    var generation = -1;
+    try {
+      await connect();
+      generation = _generation;
+      final execution = _map(
+        await rpc.call('commands/execute', {
+          'agentId': sessionId,
+          'line': '/permission ' + preset,
+          'submittedAttachments': <Object?>[],
+        }),
+      );
+      _check(generation);
+      final result = _map(execution?['result']);
+      if (execution == null ||
+          _text(execution['commandId']) == null ||
+          result == null)
+        throw const SessionPermissionException(
+          'permission/unsupported',
+          '宿主没有可用的 /permission 命令。',
+        );
+      if (result['kind'] != 'success')
+        throw SessionPermissionException(
+          'permission/rejected',
+          _text(result['text']) ?? '宿主拒绝了这个权限模式。',
+        );
+      // The receipt only says the command ran. Read the exact value back from
+      // the Host; a receipt alone would let a refused write look applied.
+      final read = _map(
+        await rpc.call('session/projections', {
+          'request': {'sessionId': sessionId},
+        }),
+      );
+      _check(generation);
+      final cut = read?['asOfSeq'], values = _map(read?['values']);
+      if (read?['kind'] != 'sequenced' ||
+          cut is! int ||
+          cut < -1 ||
+          values == null)
+        throw _invalid;
+      // Publish what the Host reports, never the value we asked for. The cut
+      // only moves forward, so an older follow frame cannot undo the read-back.
+      ++_configurationRevision;
+      if (cut > _permissionConfigurationCut) _permissionConfigurationCut = cut;
+      final current = _text(_map(values['permissions'])?['currentValue']);
+      _publishConfiguration(
+        ComposerConfiguration(
+          modelId: _configuration.modelId,
+          modelLabel: _configuration.modelLabel,
+          permissionPreset: current ?? _configuration.permissionPreset,
+        ),
+      );
+      if (current != preset)
+        throw SessionPermissionException(
+          'permission/unconfirmed',
+          '宿主回读的权限是 ' + (current ?? '未知') + '，不是 ' + preset + '。',
+        );
+    } on SessionPermissionException {
+      rethrow;
+    } on Object catch (error) {
+      if (generation >= 0 && generation != _generation)
+        throw const SessionPermissionException(
+          'permission/stale',
+          '连接已更换，这次权限写入不能视为已生效。',
+        );
+      if (error is DshRpcException && error.code == 'session/closed')
+        throw const SessionPermissionException(
+          'permission/stale',
+          '连接已关闭，这次权限写入不能视为已生效。',
+        );
+      throw SessionPermissionException(
+        'permission/failed',
+        '权限写入没有完成：' + error.toString(),
+      );
+    }
+  }
+
   @override
   Future<void> sendSubmission(PromptSubmission submission) async {
     _checkOpen();
+    if (_permissionWrite != null)
+      throw const DshRpcException(
+        'session/permission-write-busy',
+        'A permission write is still in progress',
+      );
     // Validate every option before the first mutation; no unsupported input is discarded.
     if (submission.attachments.isNotEmpty)
       throw _unsupported(
@@ -692,6 +894,16 @@ class NativeSessionTransport
     if (service == null)
       throw _unsupported('Approval replies require the DSH Web interface');
     await service.approve(requestId);
+  }
+
+  @override
+  Future<void> rejectApproval(String requestId) async {
+    _checkOpen();
+    final service = _interactions;
+    if (service == null) {
+      throw _unsupported('Approval replies require the DSH Web interface');
+    }
+    await service.decideApproval(requestId, NativeApprovalDecision.reject);
   }
 
   @override

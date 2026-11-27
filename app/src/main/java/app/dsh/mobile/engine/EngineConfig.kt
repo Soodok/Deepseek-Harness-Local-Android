@@ -1529,6 +1529,10 @@ object EngineConfig {
             |    - id: android-ask-bridge
             |      name: ./android-plugins/ask-bridge.mjs
             |
+            |- insert:
+            |    - id: android-cli-approval
+            |      name: ./android-plugins/cli-approval.mjs
+            |
             |# Screen as a picture (v1.7.2). Until now the only way to look at the phone
             |# was `scr shot`, which prints the PNG as base64 TEXT: a few hundred KB of
             |# context that still does not show the model the picture, so it had to save
@@ -1649,6 +1653,7 @@ object EngineConfig {
                 "bridge-token.mjs",
                 "fast-mode.mjs",
                 "ask-bridge.mjs",
+                "cli-approval.mjs",
                 "device-tools.mjs",
                 "plugin-health.mjs",
                 "open-file.mjs",
@@ -1686,6 +1691,31 @@ object EngineConfig {
             File(f.parentFile, "android-plugins/mobile-layout").deleteRecursively()
         }
         return f
+    }
+
+    /** Write or withdraw the optional chat import overlay for the current runtime. */
+    fun ensureChatImportLayer(ctx: android.content.Context): File? {
+        val layer = File(engineRoot(ctx), ChatImportLayer.LAYER_FILE_NAME)
+        fun withdraw(reason: String) {
+            runCatching { if (layer.isFile) layer.delete() }
+                .onFailure { Log.w(TAG, "cannot remove chat import layer: ${it.message}") }
+            Log.i(TAG, "chat import layer not provided: $reason")
+        }
+        val present = File(engineRoot(ctx), ChatImportLayer.PLUGIN_ENTRY).isFile
+        if (!ChatImportLayer.shouldProvide(app.dsh.mobile.DshApp.chatImportEnabled(ctx), present)) {
+            withdraw(if (present) "switched off" else "plugin missing in this runtime")
+            return null
+        }
+        val body = ChatImportLayer.body()
+        runCatching {
+            if (!layer.isFile || layer.readText() != body) layer.writeText(body)
+            layer.setReadable(true, false)
+        }.onFailure {
+            Log.w(TAG, "chat import layer write failed: ${it::class.simpleName}: ${it.message}")
+            return null
+        }
+        Log.i(TAG, "chat import layer ready: ${layer.absolutePath}")
+        return layer
     }
 
     /**

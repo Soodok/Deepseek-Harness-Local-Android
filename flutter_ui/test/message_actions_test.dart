@@ -4,6 +4,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dsh_native_chat/src/model/chat_model.dart';
 import 'package:dsh_native_chat/src/state/chat_controller.dart';
+import 'package:dsh_native_chat/src/state/chat_reducer.dart';
+import 'package:dsh_native_chat/src/transport/dsh_session_projection.dart';
+import 'package:dsh_native_chat/src/state/chat_state.dart';
 import 'package:dsh_native_chat/src/state/composer_draft.dart';
 import 'package:dsh_native_chat/src/state/conversation_actions.dart';
 import 'package:dsh_native_chat/src/state/message_actions.dart';
@@ -18,17 +21,16 @@ import 'package:dsh_native_chat/src/ui/conversation_flow.dart';
 import 'package:dsh_native_chat/src/ui/retract_dialog.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 
-TurnChangeSummary _turn(int turn, int startSeq, int files) =>
-    TurnChangeSummary(
-      turn: turn,
-      startSeq: startSeq,
-      files: files,
-      created: files,
-      modified: 0,
-      deleted: 0,
-      incomplete: false,
-      truncated: false,
-    );
+TurnChangeSummary _turn(int turn, int startSeq, int files) => TurnChangeSummary(
+  turn: turn,
+  startSeq: startSeq,
+  files: files,
+  created: files,
+  modified: 0,
+  deleted: 0,
+  incomplete: false,
+  truncated: false,
+);
 
 ChatMessage _user(String id, String text, {int? seq}) =>
     ChatMessage(id: id, role: ChatRole.user, text: text, seq: seq);
@@ -46,6 +48,7 @@ ChatMessage _answer(
   isStreaming: streaming,
   seq: seq,
   messageId: messageId,
+  isFinalAnswer: messageId != null && !streaming,
 );
 
 const _rewound = RewindOutcome(
@@ -83,7 +86,6 @@ class _Harness {
   late final MessageActions actions;
 }
 
-
 /// A backend whose rewind only completes when the test lets it.
 class _GateActions extends StaticConversationActions {
   _GateActions();
@@ -97,12 +99,20 @@ class _GateActions extends StaticConversationActions {
     required String requestId,
     bool force = false,
   }) {
-    rewinds.add((seq: seq, includeFiles: includeFiles, requestId: requestId, force: force));
+    rewinds.add((
+      seq: seq,
+      includeFiles: includeFiles,
+      requestId: requestId,
+      force: force,
+    ));
     return gate.future;
   }
 }
 
-Widget _app(Widget child) => MaterialApp(theme: DshTheme.light(), home: Scaffold(body: child));
+Widget _app(Widget child) => MaterialApp(
+  theme: DshTheme.light(),
+  home: Scaffold(body: child),
+);
 
 /// Row callbacks shaped exactly like the ones ChatShell builds, so the widgets
 /// under test act through the production contract rather than a stub.
@@ -116,7 +126,8 @@ MessageActionBindings _bindings(
     harness.actions.retract(message, includeFiles: false, replaceDraft: true),
   ),
   edit: harness.actions.beginEdit,
-  like: (message) => unawaitedAction(harness.actions.rate(message.messageId!, true)),
+  like: (message) =>
+      unawaitedAction(harness.actions.rate(message.messageId!, true)),
   dislike: (message) =>
       unawaitedAction(harness.actions.rate(message.messageId!, false)),
   regenerate: null,
@@ -142,55 +153,247 @@ void _disposeControllers() {}
 Future<RetractChoice?> _openDialog(BuildContext context, TurnPlan plan) =>
     showRetractDialog(context, plan: plan, hasDraft: true);
 
+class _HistoricalEditController extends ChatController {
+  _HistoricalEditController() : super(FixtureTransport());
+  int ordinarySends = 0;
+
+  @override
+  ChatState get state => ChatState.empty().copyWith(
+    status: ChatStatus.ready,
+    messages: [_user('historical', 'Original question', seq: 7)],
+  );
+
+  @override
+  bool get canSend => true;
+
+  @override
+  Future<bool> sendPrompt(String text) async {
+    ordinarySends++;
+    return true;
+  }
+}
+
 void main() {
-  testWidgets('an answered turn shows all five actions and a question shows two', (
+  testWidgets(
+    'editing sends from the original sequence, never as a new prompt',
+    (tester) async {
+      final controller = _HistoricalEditController();
+      final backend = StaticConversationActions(
+        changes: [_turn(0, 1, 0)],
+        rewindResult: _rewound,
+      );
+      final opened = <(String, String)>[];
+      final writes = <String>[];
+      final draft = ComposerDraft(
+        initialText: 'Unsent draft',
+        onTextChanged: writes.add,
+      );
+      addTearDown(draft.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: ChatShell(
+            controller: controller,
+            actions: backend,
+            draft: draft,
+            onOpenForkSession: (id, prompt) async {
+              opened.add((id, prompt));
+              return true;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      final bubble = find.byKey(const ValueKey('message-bubble-historical'));
+      expect(
+        find.descendant(of: bubble, matching: find.byType(SelectableText)),
+        findsNothing,
+      );
+      await tester.tap(bubble);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('edit-dimmed-chrome')), findsOneWidget);
+      final input = tester.widget<TextField>(
+        find.byKey(const ValueKey('composer-input')),
+      );
+      expect(input.focusNode!.hasFocus, isTrue);
+      await tester.enterText(
+        find.byKey(const ValueKey('composer-input')),
+        'Edited question',
+      );
+      await tester.tap(find.byKey(const ValueKey('composer-send')));
+      await tester.pumpAndSettle();
+      expect(controller.ordinarySends, 0);
+      await tester.tap(find.byKey(const ValueKey('retract-confirm')));
+      await tester.pumpAndSettle();
+      expect(backend.rewinds.single.seq, 7);
+      expect(opened, [('fork-1', 'Edited question')]);
+      expect(draft.text, 'Unsent draft');
+      expect(writes, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'an answered turn shows all five actions and a question shows two',
+    (tester) async {
+      final harness = _Harness();
+      await tester.pumpWidget(
+        _app(
+          ConversationFlow(
+            conversationIdentity: 'test',
+            messages: [
+              _user('u1', '你好', seq: 1),
+              _answer('a1', '在', seq: 2, messageId: 'm-1'),
+            ],
+            actions: _bindings(harness),
+          ),
+        ),
+      );
+      for (final key in [
+        'answer-like',
+        'answer-dislike',
+        'answer-copy',
+        'answer-regenerate',
+        'answer-share',
+      ]) {
+        expect(find.byKey(ValueKey(key + '-a1')), findsOneWidget, reason: key);
+      }
+      expect(find.byKey(const ValueKey('message-copy-u1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('message-retract-u1')), findsOneWidget);
+    },
+  );
+
+  testWidgets('only the final assistant reply gets actions after a durable turn end', (
     tester,
   ) async {
     final harness = _Harness();
-    await tester.pumpWidget(
-      _app(
-        ConversationFlow(
-          conversationIdentity: 'test',
-          messages: [
-            _user('u1', '你好', seq: 1),
-            _answer('a1', '在', seq: 2, messageId: 'm-1'),
-          ],
-          actions: _bindings(harness),
-        ),
+    final projection = DshSessionProjection(sessionId: 'parent', generation: 1);
+    var state = ChatState.empty();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 1400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    var seq = -1;
+    final records = <Map<String, Object?>>[];
+    Map<String, Object?> record(String type, Map<String, Object?> data) {
+      final frame = <String, Object?>{
+        'type': 'event',
+        'event': {'seq': ++seq, 'time': seq, 'type': type, 'data': data},
+      };
+      records.add(frame);
+      return frame;
+    }
+    Map<String, Object?> reply(int turn, int step, String text) =>
+        record('assistant/message', {
+          'turn': turn,
+          'step': step,
+          'message': {
+            'id': 'assistant-$turn-$step',
+            'content': [{'type': 'text', 'text': text}],
+          },
+          'stream': [],
+        });
+    Map<String, Object?> end(int turn) => record('turn/end', {
+      'turn': turn,
+      'reason': {'kind': 'completed'},
+    });
+    void accept(Map<String, Object?> frame) {
+      for (final event in projection.accept(frame)) {
+        state = ChatReducer.apply(state, event);
+      }
+    }
+    Future<void> render() => tester.pumpWidget(_app(ConversationFlow(
+      conversationIdentity: 'parent',
+      messages: state.messages,
+      actions: _bindings(harness),
+    )));
+    Finder replyAction(String text) => find.descendant(
+      of: find.byWidgetPredicate(
+        (w) => w is ConversationMessage && w.message.text == text,
+      ),
+      matching: find.byWidgetPredicate(
+        (w) => w is IconButton &&
+            (w.key as ValueKey?)?.value.toString().startsWith('answer-like-') == true,
       ),
     );
-    for (final key in [
-      'answer-like',
-      'answer-dislike',
-      'answer-copy',
-      'answer-regenerate',
-      'answer-share',
-    ]) {
-      expect(find.byKey(ValueKey(key + '-a1')), findsOneWidget, reason: key);
+
+    void rebaseline() => accept({
+      'type': 'snapshot',
+      'header': {'id': 'parent'},
+      'cursor': seq,
+      'records': records,
+      'hasMore': false,
+      'projections': {'asOfSeq': seq, 'values': <String, Object?>{}},
+    });
+    reply(1, 1, 'previous answer');
+    end(1);
+    rebaseline();
+    await render();
+    expect(replyAction('previous answer'), findsOneWidget);
+
+    accept(record('turn/start', {'turn': 2}));
+    for (final step in [1, 2]) {
+      accept(reply(2, step, 'intermediate $step'));
+      final call = 'read-$step';
+      accept(record('tool/call', {
+        'turn': 2, 'step': step, 'callId': call,
+        'name': 'read', 'arguments': '{}',
+      }));
+      accept(record('tool/result', {
+        'turn': 2, 'step': step,
+        'message': {
+          'source': {'kind': 'tool', 'callId': call},
+          'content': [{'type': 'text', 'text': 'read complete'}],
+        },
+      }));
+      accept(record('step/end', {'turn': 2, 'step': step}));
     }
-    expect(find.byKey(const ValueKey('message-copy-u1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('message-retract-u1')), findsOneWidget);
+    // Reload while the third step is pending. Both committed rows must be
+    // visible, but neither can act as the completed answer.
+    accept(record('step/start', {'turn': 2, 'step': 3}));
+    rebaseline();
+    await render();
+    expect(state.status, ChatStatus.streaming);
+    expect(replyAction('previous answer'), findsOneWidget);
+    expect(find.text('intermediate 1', findRichText: true), findsOneWidget);
+    expect(find.text('intermediate 2', findRichText: true), findsOneWidget);
+    expect(replyAction('intermediate 1'), findsNothing);
+    expect(replyAction('intermediate 2'), findsNothing);
+
+    accept(reply(2, 3, 'final answer'));
+    await render();
+    expect(replyAction('final answer'), findsNothing);
+    accept(end(2));
+    await render();
+    expect(state.status, ChatStatus.ready);
+    expect(replyAction('previous answer'), findsOneWidget);
+    expect(replyAction('intermediate 1'), findsNothing);
+    expect(replyAction('intermediate 2'), findsNothing);
+    expect(replyAction('final answer'), findsOneWidget);
   });
 
-  testWidgets('a streaming answer offers no action that would act on part of it', (
-    tester,
-  ) async {
-    final harness = _Harness();
-    await tester.pumpWidget(
-      _app(
-        ConversationFlow(
-          conversationIdentity: 'test',
-          messages: [
-            _answer('a1', '正在', seq: 2, messageId: 'm-1', streaming: true),
-          ],
-          actions: _bindings(harness),
+  testWidgets(
+    'a streaming answer offers no action that would act on part of it',
+    (tester) async {
+      final harness = _Harness();
+      await tester.pumpWidget(
+        _app(
+          ConversationFlow(
+            conversationIdentity: 'test',
+            messages: [
+              _answer('a1', '正在', seq: 2, messageId: 'm-1', streaming: true),
+            ],
+            actions: _bindings(harness),
+          ),
         ),
-      ),
-    );
-    expect(find.byKey(const ValueKey('answer-copy-a1')), findsNothing);
-    expect(find.byKey(const ValueKey('answer-like-a1')), findsNothing);
-    expect(find.byKey(const ValueKey('answer-regenerate-a1')), findsNothing);
-  });
+      );
+      expect(find.byKey(const ValueKey('answer-copy-a1')), findsNothing);
+      expect(find.byKey(const ValueKey('answer-like-a1')), findsNothing);
+      expect(find.byKey(const ValueKey('answer-regenerate-a1')), findsNothing);
+    },
+  );
 
   testWidgets('a message the Host never recorded keeps copy but not retract', (
     tester,
@@ -231,7 +434,8 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('message-bubble-u1')));
     await tester.pump();
-    expect(harness.draft.text, '原来的问题');
+    expect(harness.actions.editingText, '原来的问题');
+    expect(harness.draft.text, '没写完的草稿');
     expect(harness.actions.editing?.messageId, 'u1');
   });
 
@@ -263,31 +467,36 @@ void main() {
     expect(harness.actions.editing, isNull);
   });
 
-  testWidgets('a Host conflict touches no file and names the conflicting paths', (
-    tester,
-  ) async {
-    final notices = <String>[];
-    final harness = _Harness(
-      backend: StaticConversationActions(
-        changes: [_turn(0, 1, 2)],
-        rewindResult: const RewindOutcome(
-          status: 'conflict',
-          conflicts: ['lib/a.dart', 'lib/b.dart'],
+  testWidgets(
+    'a Host conflict touches no file and names the conflicting paths',
+    (tester) async {
+      final notices = <String>[];
+      final harness = _Harness(
+        backend: StaticConversationActions(
+          changes: [_turn(0, 1, 2)],
+          rewindResult: const RewindOutcome(
+            status: 'conflict',
+            conflicts: ['lib/a.dart', 'lib/b.dart'],
+          ),
         ),
-      ),
-      onNotice: notices.add,
-    );
-    await harness.actions.retract(
-      _user('u1', '改了两个文件', seq: 3),
-      includeFiles: true,
-      replaceDraft: true,
-    );
-    expect(notices.single.startsWith('!'), isTrue);
-    expect(notices.single.contains('lib/a.dart'), isTrue);
-    expect(harness.backend.rewinds.single.includeFiles, isTrue);
-    expect(harness.draft.text, isEmpty, reason: 'a refused retract keeps no text');
-    expect(harness.backend.opened, isEmpty);
-  });
+        onNotice: notices.add,
+      );
+      await harness.actions.retract(
+        _user('u1', '改了两个文件', seq: 3),
+        includeFiles: true,
+        replaceDraft: true,
+      );
+      expect(notices.single.startsWith('!'), isTrue);
+      expect(notices.single.contains('lib/a.dart'), isTrue);
+      expect(harness.backend.rewinds.single.includeFiles, isTrue);
+      expect(
+        harness.draft.text,
+        isEmpty,
+        reason: 'a refused retract keeps no text',
+      );
+      expect(harness.backend.opened, isEmpty);
+    },
+  );
 
   testWidgets('a successful retract refills the composer and opens the fork', (
     tester,
@@ -334,36 +543,38 @@ void main() {
   ) async {
     final harness = _Harness(draft: '写到一半的草稿');
     harness.actions.beginEdit(_user('u1', '要改的句子', seq: 4));
-    expect(harness.draft.text, '要改的句子');
+    expect(harness.actions.editingText, '要改的句子');
+    expect(harness.draft.text, '写到一半的草稿');
     harness.actions.cancelEdit();
     expect(harness.draft.text, '写到一半的草稿');
     expect(harness.actions.isEditing, isFalse);
     expect(harness.backend.rewinds, isEmpty);
   });
 
-  testWidgets('sending an edit rewinds its own turn and forwards the new text', (
-    tester,
-  ) async {
-    final harness = _Harness(
-      backend: StaticConversationActions(
-        changes: [_turn(0, 1, 1), _turn(1, 6, 0)],
-        rewindResult: const RewindOutcome(
-          status: 'rewound',
-          childSessionId: 'fork-3',
-          turn: 1,
+  testWidgets(
+    'sending an edit rewinds its own turn and forwards the new text',
+    (tester) async {
+      final harness = _Harness(
+        backend: StaticConversationActions(
+          changes: [_turn(0, 1, 1), _turn(1, 6, 0)],
+          rewindResult: const RewindOutcome(
+            status: 'rewound',
+            childSessionId: 'fork-3',
+            turn: 1,
+          ),
         ),
-      ),
-    );
-    harness.actions.beginEdit(_user('u1', '原来的问法', seq: 7));
-    harness.draft.replace('改过的问法');
-    await harness.actions.submitEdit(includeFiles: true, replaceDraft: true);
-    expect(harness.backend.rewinds.single.seq, 7);
-    expect(harness.backend.rewinds.single.includeFiles, isTrue);
-    expect(harness.opened.single.sessionId, 'fork-3');
-    expect(harness.opened.single.prompt, '改过的问法');
-    expect(harness.actions.isEditing, isFalse);
-    expect(harness.draft.text, isEmpty);
-  });
+      );
+      harness.actions.beginEdit(_user('u1', '原来的问法', seq: 7));
+      harness.actions.recordEditText('改过的问法');
+      await harness.actions.submitEdit(includeFiles: true, replaceDraft: true);
+      expect(harness.backend.rewinds.single.seq, 7);
+      expect(harness.backend.rewinds.single.includeFiles, isTrue);
+      expect(harness.opened.single.sessionId, 'fork-3');
+      expect(harness.opened.single.prompt, '改过的问法');
+      expect(harness.actions.isEditing, isFalse);
+      expect(harness.draft.text, isEmpty);
+    },
+  );
 
   testWidgets('a failed edit send keeps the text so it can be retried', (
     tester,
@@ -372,11 +583,12 @@ void main() {
       backend: StaticConversationActions(changes: [_turn(0, 1, 0)]),
     );
     harness.actions.beginEdit(_user('u1', '原来的问法', seq: 3));
-    harness.draft.replace('改过的问法');
+    harness.actions.recordEditText('改过的问法');
     harness.backend.rewindResult = const RewindOutcome(status: 'busy');
     await harness.actions.submitEdit(includeFiles: false, replaceDraft: true);
     expect(harness.actions.isEditing, isTrue);
-    expect(harness.draft.text, '改过的问法');
+    expect(harness.actions.editingText, '改过的问法');
+    expect(harness.draft.text, isEmpty);
     expect(harness.opened, isEmpty);
   });
 
@@ -504,7 +716,9 @@ void main() {
     expect(harness.opened, isEmpty);
   });
 
-  testWidgets('a thumbs up is recorded once and can be withdrawn', (tester) async {
+  testWidgets('a thumbs up is recorded once and can be withdrawn', (
+    tester,
+  ) async {
     final harness = _Harness();
     await harness.actions.rate('m-9', true);
     expect(harness.backend.ratingCalls.single.positive, isTrue);
@@ -536,41 +750,42 @@ void main() {
     expect((like.icon as Icon).icon, Icons.thumb_up_rounded);
   });
 
-  testWidgets('the retract dialog states the file outcome and cancels cleanly', (
-    tester,
-  ) async {
-    RetractChoice? choice;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: DshTheme.light(),
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: TextButton(
-                onPressed: () async {
-                  choice = await _openDialog(
-                    context,
-                    const TurnPlan(turn: 0, files: 3, incomplete: false),
-                  );
-                },
-                child: const Text('open'),
+  testWidgets(
+    'the retract dialog states the file outcome and cancels cleanly',
+    (tester) async {
+      RetractChoice? choice;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () async {
+                    choice = await _openDialog(
+                      context,
+                      const TurnPlan(turn: 0, files: 3, incomplete: false),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('retract-summary'))).data,
-      '将回滚 3 个文件的改动',
-    );
-    expect(find.byKey(const ValueKey('retract-draft-keep')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('retract-cancel')));
-    await tester.pumpAndSettle();
-    expect(choice, isNull);
-  });
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('retract-summary'))).data,
+        '将回滚 3 个文件的改动',
+      );
+      expect(find.byKey(const ValueKey('retract-draft-keep')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('retract-cancel')));
+      await tester.pumpAndSettle();
+      expect(choice, isNull);
+    },
+  );
 
   testWidgets('confirming reports the chosen file and draft behaviour', (
     tester,
@@ -671,34 +886,35 @@ void main() {
     _disposeControllers();
   });
 
-  testWidgets('typing after an action keeps the new text, not the action text', (
-    tester,
-  ) async {
-    final harness = _Harness();
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: DshTheme.light(),
-        home: Scaffold(
-          body: Composer(controller: _controller, draft: harness.draft),
+  testWidgets(
+    'typing after an action keeps the new text, not the action text',
+    (tester) async {
+      final harness = _Harness();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: Scaffold(
+            body: Composer(controller: _controller, draft: harness.draft),
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    harness.draft.replace('动作写入的一段');
-    await tester.pump();
-    await tester.enterText(
-      find.byKey(const ValueKey('composer-input')),
-      '动作写入的一段，又补了几个字',
-    );
-    await tester.pump();
-    // A late write from an older revision cannot erase the newer typing.
-    expect(harness.draft.text, '动作写入的一段，又补了几个字');
-    final field = tester.widget<TextField>(
-      find.byKey(const ValueKey('composer-input')),
-    );
-    expect(field.controller!.text, '动作写入的一段，又补了几个字');
-    _disposeControllers();
-  });
+      );
+      await tester.pump();
+      harness.draft.replace('动作写入的一段');
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('composer-input')),
+        '动作写入的一段，又补了几个字',
+      );
+      await tester.pump();
+      // A late write from an older revision cannot erase the newer typing.
+      expect(harness.draft.text, '动作写入的一段，又补了几个字');
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('composer-input')),
+      );
+      expect(field.controller!.text, '动作写入的一段，又补了几个字');
+      _disposeControllers();
+    },
+  );
 
   testWidgets('the edit state is visible and offers a way out', (tester) async {
     final harness = _Harness(draft: '正在改的内容');
@@ -719,8 +935,11 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey('composer-editing')), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byKey(const ValueKey('composer-input'))).decoration!.hintText,
-      '修改这条消息',
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('composer-input')))
+          .decoration!
+          .hintText,
+      '修改这条历史消息',
     );
     await tester.tap(find.byKey(const ValueKey('composer-cancel-edit')));
     await tester.pump();
@@ -748,17 +967,24 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('a retraction confirmed after the screen is gone changes nothing', (
-    tester,
-  ) async {
-    final harness = _Harness(backend: StaticConversationActions(changes: [_turn(0, 1, 0)]));
-    harness.actions.dispose();
-    // The engine restart replaced the page while the confirm dialog was open on
-    // the root navigator; confirming must not reach the Host nor throw.
-    await harness.actions.retract(_user('u1', '问一句', seq: 3), includeFiles: false, replaceDraft: true);
-    expect(harness.backend.rewinds, isEmpty);
-    expect(harness.opened, isEmpty);
-  });
+  testWidgets(
+    'a retraction confirmed after the screen is gone changes nothing',
+    (tester) async {
+      final harness = _Harness(
+        backend: StaticConversationActions(changes: [_turn(0, 1, 0)]),
+      );
+      harness.actions.dispose();
+      // The engine restart replaced the page while the confirm dialog was open on
+      // the root navigator; confirming must not reach the Host nor throw.
+      await harness.actions.retract(
+        _user('u1', '问一句', seq: 3),
+        includeFiles: false,
+        replaceDraft: true,
+      );
+      expect(harness.backend.rewinds, isEmpty);
+      expect(harness.opened, isEmpty);
+    },
+  );
 
   testWidgets('a rewind that lands after the screen is gone does not throw', (
     tester,
@@ -772,7 +998,9 @@ void main() {
     );
     await tester.pump();
     harness.actions.dispose();
-    backend.gate.complete(const RewindOutcome(status: 'rewound', childSessionId: 'fork-9', turn: 0));
+    backend.gate.complete(
+      const RewindOutcome(status: 'rewound', childSessionId: 'fork-9', turn: 0),
+    );
     await pending;
     expect(harness.opened, isEmpty);
     expect(harness.draft.text, isEmpty);
@@ -793,7 +1021,10 @@ void main() {
     shared.replace('撤回回来的原文');
     await tester.pump();
     expect(
-      tester.widget<TextField>(find.byKey(const ValueKey('composer-input'))).controller!.text,
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('composer-input')))
+          .controller!
+          .text,
       '撤回回来的原文',
     );
     // Opening the Session a rewind produced replaces the shell; the filled text
@@ -802,58 +1033,73 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: DshTheme.light(),
-        home: ChatShell(key: ObjectKey(second), controller: second, draft: shared),
+        home: ChatShell(
+          key: ObjectKey(second),
+          controller: second,
+          draft: shared,
+        ),
       ),
     );
     await tester.pump();
     expect(
-      tester.widget<TextField>(find.byKey(const ValueKey('composer-input'))).controller!.text,
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('composer-input')))
+          .controller!
+          .text,
       '撤回回来的原文',
     );
     first.dispose();
     second.dispose();
     shared.dispose();
   });
-  testWidgets('a busy Session says so in words, never as a bare session-busy code', (
-    tester,
-  ) async {
-    final notices = <String>[];
-    final harness = _Harness(
-      backend: StaticConversationActions(
-        changes: [_turn(0, 1, 1)],
-        rewindError: const DshRpcException('rewind/session-busy', 'session-busy'),
-      ),
-      onNotice: notices.add,
-    );
-    await harness.actions.retract(
-      _user('u1', '这一轮还在跑', seq: 3),
-      includeFiles: false,
-      replaceDraft: true,
-    );
-    final line = notices.single.substring(1);
-    expect(line.contains('session-busy'), isFalse);
-    expect(line.contains('DshRpcException'), isFalse);
-    expect(line.contains('还在进行'), isTrue);
-    expect(harness.draft.text, isEmpty);
-    expect(harness.backend.opened, isEmpty);
-  });
+  testWidgets(
+    'a busy Session says so in words, never as a bare session-busy code',
+    (tester) async {
+      final notices = <String>[];
+      final harness = _Harness(
+        backend: StaticConversationActions(
+          changes: [_turn(0, 1, 1)],
+          rewindError: const DshRpcException(
+            'rewind/session-busy',
+            'session-busy',
+          ),
+        ),
+        onNotice: notices.add,
+      );
+      await harness.actions.retract(
+        _user('u1', '这一轮还在跑', seq: 3),
+        includeFiles: false,
+        replaceDraft: true,
+      );
+      final line = notices.single.substring(1);
+      expect(line.contains('session-busy'), isFalse);
+      expect(line.contains('DshRpcException'), isFalse);
+      expect(line.contains('还在进行'), isTrue);
+      expect(harness.draft.text, isEmpty);
+      expect(harness.backend.opened, isEmpty);
+    },
+  );
 
-  testWidgets('an unknown failure keeps its raw text instead of inventing a reason', (
-    tester,
-  ) async {
-    final notices = <String>[];
-    final harness = _Harness(
-      backend: StaticConversationActions(
-        changes: [_turn(0, 1, 1)],
-        rewindError: const DshRpcException('rewind/weird-failure', 'weird-failure'),
-      ),
-      onNotice: notices.add,
-    );
-    await harness.actions.retract(
-      _user('u1', '未知失败', seq: 3),
-      includeFiles: false,
-      replaceDraft: true,
-    );
-    expect(notices.single.contains('weird-failure'), isTrue);
-  });
+  testWidgets(
+    'an unknown failure keeps its raw text instead of inventing a reason',
+    (tester) async {
+      final notices = <String>[];
+      final harness = _Harness(
+        backend: StaticConversationActions(
+          changes: [_turn(0, 1, 1)],
+          rewindError: const DshRpcException(
+            'rewind/weird-failure',
+            'weird-failure',
+          ),
+        ),
+        onNotice: notices.add,
+      );
+      await harness.actions.retract(
+        _user('u1', '未知失败', seq: 3),
+        includeFiles: false,
+        replaceDraft: true,
+      );
+      expect(notices.single.contains('weird-failure'), isTrue);
+    },
+  );
 }

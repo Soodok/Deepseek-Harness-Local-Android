@@ -89,6 +89,13 @@ class DshAccessibilityService : AccessibilityService() {
             if (app.dsh.mobile.PhoneTask.shared().snapshot().active) {
                 StatusOverlay.showForWork(this)
             }
+            // 服务被系统销毁再重连时，悬浮窗随旧服务一起没了。若此刻还有问题在等回答，
+            // 必须把窗口重新拉起来 —— 否则问题只留在桥里，用户屏幕上什么都看不到
+            //（实测 beta.135：服务反复销毁重建，抽屉画出来几秒后就消失）。
+            if (StatusOverlay.hasPendingAsk()) {
+                Log.i("DshA11y", "service reconnected with a pending question → re-showing ask panel")
+                StatusOverlay.showAskPanel(this)
+            }
             // ⛔ v1.5.0-beta.8：**流式悬浮条整体移除**（用户 2026-11-01 决定不做这个功能）。
             // 完整移除链路：TickerBar.kt / SessionTail.kt / ticker_bar.xml /
             // DshAccessibilityService 的 tickerBar() 工厂与全部调用点。
@@ -728,6 +735,8 @@ class DshAccessibilityService : AccessibilityService() {
         runCatching { voicePanel?.dispose() }   // v1.2.188：同步移除，不等 180ms 动画
         voicePanel = null
         runCatching { StatusOverlay.hide(this) }
+        // 服务销毁 = 它的悬浮窗已被系统摘除：引用必须放掉，否则提问期间 rebuild 判据失效。
+        runCatching { StatusOverlay.onServiceDestroyed() }
         // v1.7.12：changeThread 是常驻 HandlerThread（事件流去重线程），服务销毁时
         // 不 quit 就会留着一条线程与它的 Looper —— 无障碍被反复开关时线程会累积，
         // 每条都还挂着 Handler 与消息队列。用 quitSafely() 而不是 quit()：

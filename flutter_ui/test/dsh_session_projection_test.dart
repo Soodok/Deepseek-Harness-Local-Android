@@ -12,11 +12,14 @@ Map<String, Object?> record(
   String type,
   Map<String, Object?> data, {
   Object surfaceOp = 'append',
+  int? time,
 }) => {
   'type': 'event',
   'event': {
     'seq': seq,
-    'time': seq * 10,
+    // A real envelope carries the engine's clock; retry windows compare it
+    // against the device clock, so a test may state it explicitly.
+    'time': time ?? seq * 10,
     'type': type,
     'data': data,
     'surfaceOp': surfaceOp,
@@ -270,7 +273,8 @@ void main() {
     );
     expect(state.messages.last.text, contains('hello'));
     expect(state.messages.last.text, contains('print(1);'));
-    expect(state.messages.last.text, contains('think'));
+    expect(state.messages.last.text, isNot(contains('think')));
+    expect(state.messages.last.reasoning, 'think');
     expect(state.messages.last.isStreaming, isTrue);
     final appended = projection.accept(
       liveFrame({
@@ -657,6 +661,180 @@ void main() {
       ),
       throwsUnsupportedError,
     );
+  });
+
+  test('a human echo inside a live turn never reads as the turn finishing', () {
+    // Real journal shape: the prompt is spliced into the inbox, then echoed
+    // onto the surface as its own user row while the turn keeps running.
+    apply(
+      projection.accept(
+        snapshot(5, [
+          assistant(0, 'first answer'),
+          record(1, 'step/end', {'turn': 3, 'step': 1}),
+          record(2, 'turn/end', {
+            'turn': 3,
+            'reason': {'kind': 'completed'},
+          }),
+          user(3, 'second prompt'),
+          record(4, 'turn/start', {'turn': 4}),
+          record(5, 'step/start', {'turn': 4, 'step': 1}),
+        ]),
+      ),
+    );
+    expect(state.status, ChatStatus.streaming);
+    // The prompt is echoed onto the surface as a closed user row while the
+    // turn keeps running; its delta must not state "the turn is over".
+    apply(projection.accept(user(6, 'second prompt')));
+    expect(
+      state.status,
+      ChatStatus.streaming,
+      reason: 'a closed user row must not state "the turn is over"',
+    );
+    expect(state.messages.any((m) => m.isStreaming), isTrue);
+    expect(seen.where((e) => e.kind == ChatEventKind.turnComplete), isEmpty);
+    // Only the durable ending closes it; no retry or completion is invented.
+    apply(
+      projection.accept(
+        record(7, 'turn/end', {
+          'turn': 4,
+          'reason': {
+            'kind': 'aborted',
+            'reason': {'kind': 'user'},
+          },
+        }),
+      ),
+    );
+    expect(state.status, ChatStatus.ready);
+    expect(state.messages.every((m) => !m.isStreaming), isTrue);
+    expect(seen.where((e) => e.kind == ChatEventKind.turnComplete), isEmpty);
+  });
+
+  test(
+    'a scheduled model retry keeps the turn running through a stale idle read',
+    () {
+      apply(
+        projection.accept(
+          snapshot(3, [
+            user(0, 'run it'),
+            record(1, 'turn/start', {'turn': 5}),
+            record(2, 'step/start', {'turn': 5, 'step': 1}),
+            record(3, 'assistant/attempt', {
+              'turn': 5,
+              'step': 1,
+              'stream': [
+                {
+                  'type': 'chunk',
+                  'time': 1,
+                  'chunk': {
+                    'type': 'finish',
+                    'reason': {
+                      'kind': 'error',
+                      'failure': {
+                        'message': 'stream idle timeout',
+                        'code': 'TIMEOUT',
+                      },
+                    },
+                  },
+                },
+              ],
+            }),
+          ]),
+        ),
+      );
+      expect(state.status, ChatStatus.streaming);
+      final announced = DateTime.now().millisecondsSinceEpoch;
+      apply(
+        projection.accept(
+          record(4, 'llm/retry', {
+            'retryId': 'r1',
+            'turn': 5,
+            'step': 1,
+            'provider': 'p',
+            'mode': 'normal',
+            'retry': 1,
+            'maxRetries': 5,
+            'delayMs': 491.5,
+            'failure': {'message': 'stream idle timeout', 'code': 'TIMEOUT'},
+          }, time: announced),
+        ),
+      );
+      expect(state.status, ChatStatus.streaming);
+      // The retry is durable progress and must be readable, not swallowed: the
+      // person sees that the model request failed and is being retried.
+      final retryRow = state.messages.singleWhere(
+        (m) => m.text.startsWith('模型请求失败，正在重试'),
+      );
+      expect(retryRow.role, ChatRole.system);
+      expect(retryRow.text, contains('1/5'));
+      expect(retryRow.text, contains('stream idle timeout'));
+      // A state read that says "not running" cannot settle a turn the engine is
+      // about to retry: the retry window must stay visibly live.
+      apply(projection.idle(throughSeq: 4));
+      expect(state.status, ChatStatus.streaming);
+      expect(state.messages.any((m) => m.isStreaming), isTrue);
+      expect(seen.where((e) => e.kind == ChatEventKind.turnComplete), isEmpty);
+      apply(
+        projection.accept(
+          record(5, 'llm/retry-started', {
+            'retryId': 'r1',
+            'turn': 5,
+            'step': 1,
+            'retry': 1,
+          }),
+        ),
+      );
+      expect(state.status, ChatStatus.streaming);
+      apply(
+        projection.accept(
+          record(6, 'turn/end', {
+            'turn': 5,
+            'reason': {'kind': 'completed'},
+          }),
+        ),
+      );
+      expect(state.status, ChatStatus.ready);
+      expect(
+        seen.where((e) => e.kind == ChatEventKind.turnComplete),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('an old retry window cannot hold a dead turn open forever', () {
+    // Negative control for the retry guard: once the announced delay has long
+    // passed with no progress, a not-running state read must be trusted, so an
+    // engine that died mid-retry still returns the conversation to ready.
+    final stale = DateTime.now().millisecondsSinceEpoch - 120000;
+    apply(
+      projection.accept(
+        snapshot(4, [
+          user(0, 'run it'),
+          record(1, 'turn/start', {'turn': 5}),
+          record(2, 'step/start', {'turn': 5, 'step': 1}),
+          record(3, 'assistant/attempt', {
+            'turn': 5,
+            'step': 1,
+            'stream': <Object?>[],
+          }),
+          record(4, 'llm/retry', {
+            'retryId': 'r1',
+            'turn': 5,
+            'step': 1,
+            'provider': 'p',
+            'mode': 'normal',
+            'retry': 1,
+            'maxRetries': 5,
+            'delayMs': 500,
+            'failure': {'message': 'boom', 'code': 'SERVER'},
+          }, time: stale),
+        ]),
+      ),
+    );
+    expect(state.status, ChatStatus.streaming);
+    apply(projection.idle(throughSeq: 4));
+    expect(state.status, ChatStatus.ready);
+    expect(state.messages.every((m) => !m.isStreaming), isTrue);
+    expect(seen.where((e) => e.kind == ChatEventKind.turnComplete), isEmpty);
   });
 
   test(

@@ -9,6 +9,8 @@ import 'package:dsh_native_chat/src/transport/fixture_transport.dart';
 import 'package:dsh_native_chat/src/transport/dsh_transport.dart';
 import 'package:dsh_native_chat/src/model/composer_model.dart';
 import 'package:dsh_native_chat/src/ui/chat_shell.dart';
+import 'package:dsh_native_chat/src/ui/composer.dart';
+import 'package:dsh_native_chat/src/ui/composer_surface.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 
 class Picker extends FileSelectorPlatform {
@@ -37,7 +39,123 @@ class FailingOnceFixture extends FixtureTransport {
   }
 }
 
+/// 顶栏标题溢出时 OverflowTitle 会持续平移，pumpAndSettle 永远等不到静止；
+/// 这里只推进固定帧数，让弹层动画走完就断言。
+Future<void> frames(WidgetTester tester, [int count = 8]) async {
+  for (var i = 0; i < count; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 void main() {
+  testWidgets('long draft scrolls inside a complete glass panel with IME', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 720);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 230);
+    addTearDown(tester.view.reset);
+    final controller = ChatController(FixtureTransport());
+    await tester.pumpWidget(
+      MaterialApp(home: ChatShell(controller: controller)),
+    );
+    await tester.pump();
+    final input = find.byKey(const ValueKey('composer-input'));
+    await tester.enterText(input, List.filled(20, '连续输入的草稿').join('\n'));
+    await tester.pump();
+    await tester.pump();
+    final glass = find.descendant(
+      of: find.byType(ComposerSurface),
+      matching: find.byKey(const ValueKey('glass-panel')),
+    );
+    expect(
+      tester.getTopLeft(glass).dy,
+      greaterThanOrEqualTo(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('floating-composer-extent')))
+            .dy,
+      ),
+    );
+    expect(tester.widget<TextField>(input).maxLines, lessThan(6));
+    expect(
+      find.byKey(const ValueKey('composer-send')).hitTestable(),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('editing is inline without growing the composer', (tester) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = ChatController(FixtureTransport());
+    var editing = false;
+    var cancelled = 0;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.light(),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return Align(
+                alignment: Alignment.bottomCenter,
+                child: Composer(
+                  controller: controller,
+                  editing: editing,
+                  onCancelEdit: () => setState(() {
+                    editing = false;
+                    cancelled++;
+                  }),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final surface = find.byType(ComposerSurface);
+    final initial = tester.getRect(surface);
+    final send = tester.getRect(find.byKey(const ValueKey('composer-send')));
+    final attach = tester.getRect(
+      find.byKey(const ValueKey('composer-attach')),
+    );
+    final model = tester.getRect(find.byKey(const ValueKey('composer-model')));
+    final permission = tester.getRect(
+      find.byKey(const ValueKey('composer-permission')),
+    );
+    update(() => editing = true);
+    await tester.pump();
+    expect(find.text('正在编辑这条消息，发送会从这里继续'), findsNothing);
+    expect(tester.getRect(surface).height, closeTo(initial.height, .01));
+    expect(initial.height, lessThanOrEqualTo(110));
+    expect(attach.left - initial.left, closeTo(12, .01));
+    expect(tester.getRect(find.byKey(const ValueKey('composer-attach'))).center, attach.center);
+    expect(model.left - attach.right, lessThanOrEqualTo(4));
+    expect(send.left - permission.right, closeTo(0, .01));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('composer-send'))).center,
+      send.center,
+    );
+    expect(
+      find.byKey(const ValueKey('composer-cancel-edit')).hitTestable(),
+      findsOneWidget,
+    );
+    final cancel = tester.getRect(
+      find.byKey(const ValueKey('composer-cancel-edit')),
+    );
+    expect(cancel.size.width, greaterThanOrEqualTo(48));
+    expect(cancel.size.height, greaterThanOrEqualTo(48));
+    await tester.tapAt(cancel.topCenter + const Offset(0, 2));
+    await tester.pump();
+    expect(cancelled, 1);
+    expect(find.byKey(const ValueKey('composer-editing')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
   testWidgets(
     'failed send keeps editable draft and files through reconnect retry',
     (tester) async {
@@ -68,7 +186,7 @@ void main() {
       expect(tester.widget<TextField>(input).enabled, isTrue);
       await tester.enterText(input, '修改后的草稿');
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('connection-retry')));
+      await tester.pump(const Duration(seconds: 1));
       await tester.pump();
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('composer-send')));
@@ -142,19 +260,19 @@ void main() {
           expect(tester.getSize(finder).width, greaterThanOrEqualTo(48));
         }
         await tester.tap(find.byKey(const ValueKey('composer-model')));
-        await tester.pumpAndSettle();
+        await frames(tester);
         await tester.tap(
           find.byKey(const ValueKey('model-option-fixture-fast')),
         );
-        await tester.pumpAndSettle();
+        await frames(tester);
         expect(controller.selectedModelId, 'fixture-fast');
         expect(find.text('快速 · 演示'), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('composer-permission')));
-        await tester.pumpAndSettle();
+        await frames(tester);
         await tester.tap(
           find.byKey(const ValueKey('permission-option-readOnly')),
         );
-        await tester.pumpAndSettle();
+        await frames(tester);
         expect(controller.permission, ComposerPermission.readOnly);
         // Cancellation leaves the draft unchanged.
         await tester.enterText(
@@ -162,7 +280,7 @@ void main() {
           '保留草稿',
         );
         await tester.tap(find.byKey(const ValueKey('composer-attach')));
-        await tester.pumpAndSettle();
+        await frames(tester);
         expect(controller.attachments, isEmpty);
         expect(find.text('保留草稿'), findsOneWidget);
         picker.result = [
@@ -173,24 +291,24 @@ void main() {
           ),
         ];
         await tester.tap(find.byKey(const ValueKey('composer-attach')));
-        await tester.pumpAndSettle();
+        await frames(tester);
         expect(find.text('需求.txt'), findsOneWidget);
         expect(picker.calls, 2);
         final remove = find.byKey(
           ValueKey('attachment-remove-' + controller.attachments.single.id),
         );
         await tester.tap(remove);
-        await tester.pumpAndSettle();
+        await frames(tester);
         expect(controller.attachments, isEmpty);
         await tester.tap(find.byKey(const ValueKey('composer-attach')));
-        await tester.pumpAndSettle();
+        await frames(tester);
         await tester.enterText(
           find.byKey(const ValueKey('composer-input')),
           '',
         );
         await tester.pump();
         await tester.tap(find.byKey(const ValueKey('composer-send')));
-        await tester.pumpAndSettle();
+        await frames(tester);
         expect(transport.submissions.single.attachments.single.bytes, [
           3,
           4,

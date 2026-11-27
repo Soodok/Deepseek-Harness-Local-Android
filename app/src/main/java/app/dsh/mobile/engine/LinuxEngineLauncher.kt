@@ -318,6 +318,11 @@ class LinuxEngineLauncher(private val ctx: Context) {
 
         // bind 表：别名 + 宿主路径同名挂载（详见 buildBinds 的注释）
         val binds = buildBinds()
+        val workspaceDomain = runCatching {
+            binds.firstOrNull { it.guest == "/dsh" }?.let { home ->
+                NativeWorkspaceScope.domain("linux-posix:" + rootfs.canonicalPath, home.host, binds.map { it.guest to it.host })
+            }
+        }.getOrNull()
 
         val argv = buildList {
             add(File(runner, RUNNER_NAME).absolutePath)
@@ -499,6 +504,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
                     env = envForChroot,
                     cwd = workspaces,
                     guestCwd = "/ws",
+                    nativeWorkspaceDomain = workspaceDomain,
                 )
             }
             Log.w(TAG, "chroot engine argv unavailable — falling back to seccomp")
@@ -510,6 +516,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
             env = envVars,
             cwd = workspaces,
             guestCwd = "/ws",
+            nativeWorkspaceDomain = workspaceDomain,
         )
     }
 
@@ -519,6 +526,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
         val env: List<String>,
         val cwd: File,
         val guestCwd: String,
+        val nativeWorkspaceDomain: String? = null,
     )
 
     /**

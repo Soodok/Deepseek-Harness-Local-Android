@@ -1,5 +1,678 @@
 # DSH Android · 交接文档
 
+## beta.120 冷入口淡入计时修复（2026-11-26）
+
+- beta.119 已就绪正常入口样本：录屏中 Web/原生参与混合的首个明显编码帧 PTS 为 82.403278 秒，原生占比达到约 99% 的帧为 84.380389 秒，间隔 1.977 秒；用上一张纯 Web 帧作为外边界则为 2.170 秒。该结果是编码帧量测，不把视频 PTS 当 Flutter tick，也不证明未编码间隔。原实现对所有帧间隔限步 83.334 ms。 [原始录屏](<D:/dsh-native-chat-validation/beta119-device-recovery.nKTdZW/transition/display.mp4>) · [帧时间](<D:/dsh-native-chat-validation/beta119-device-recovery.nKTdZW/transition/entry-frames.log#L108>)。
+- beta.120：连续前台帧按实耗时间推进约 1 秒；间隔至少 500 ms 或离开前台后的首帧仍限一步，丢弃停顿期间的超额时间，保留三重握手、减弱动效和失败超时。新增两条红测分别得到 0.916666（预期 0.86、0.8），修后淡入专项 14 项通过；全量 Flutter 737 通过、1 跳过，analyze 无问题。 [红测](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/flutter-red.log#L9>) · [专项](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/flutter-green.log>) · [全量](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/flutter-full.log#L822>) · [分析](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/flutter-analyze.log#L2>)。
+- x86_64 Full Debug `1.6.0-beta.120 / 495`，252,767,541 字节，SHA-256 `c486c8d6fac315f2eaf3492d862a700caa1dd30dcba51963a8f2dfecaad34e1e`；v2 验签与 beta.119 同签名。已有 Android XML 198 项零失败（本轮相同输入的 Gradle 单测任务为 UP-TO-DATE）；离线打包成功。逐项核对 151 个非 Flutter 资源没有变化，运行时清单仅外层构建时间不同。淡入时长与桌宠入口仍需以 beta.120 实装补证。 [APK](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/dsh-native-chat-beta120-x86_64.apk>) · [签包收据](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/artifact.json>) · [构建日志](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/gradle.log#L178>)。
+- Ask：beta.119 在 Web 实际发送一次、测试模型返回一次工具调用。未取得 Host 同轮问答终态、桥接待答或实际桌面悬浮 UI；六域设置恢复另有回读，不能替代 `turn/end`。既有真实 Host 日志已反证夹具对 `user/message` 来源计数及 `turn/start` 顺序的假设。下一步固定原 QA SID 和 callId，只读归约 Host 记录，不重发、不调用取消与消费接口。 [发送收据](<D:/dsh-native-chat-validation/beta119-ask-live-workspace.zFteme/ask-device-receipt.json#L59>) · [真实历史顺序对照](<D:/dsh-native-chat-validation/beta115-ask-phone-route.tjIm4JwH/native-ask-72dbbb392d-device.json#L439>)。
+- 2026-11-27 夹具契约已修正并通过离线自测：`adapter.host_evidence` 只把 `source.kind=user` 计为真人、其余 `user/message` 计为上下文（新增 `contextCount`）；`hooks.cancel_own` 改为只要一条真人 prompt、真人必须在 `turn/start` 之后，取消仅按 `session/cancel` 与真实 `turn/end` 判定，不把空闲读成完成并保留目标前驱注入日志。`adapter.py --self-test` 20 项、`hooks.py --self-test` 22 项均退出 0。该修正只覆盖离线契约，真实同轮 Ask 仍未重跑。 [夹具修正](<D:/dsh-native-chat-validation/beta119-ask-live-workspace.zFteme/adapter.py#L514>) · [取消自证](<D:/dsh-native-chat-validation/beta119-ask-live-workspace.zFteme/hooks.py#L522>)
+## beta.121 提问接管门禁与悬浮面板取证（2026-11-27）
+
+- 根因（已证实）：无障碍服务关闭时，`ask-bridge.mjs` 只看 `GET /task/allow`（默认 true）就接管提问，把问题塞进根本没画出来的悬浮抽屉；模型等 5 分钟，用户什么也看不到。beta.120 真实 Ask 收据里 `route=phone-pending`、`answered=0` 正是这个状态，截图也确认屏上只有对话流。
+- 修复：新增只读桥路由 `GET /overlay/available`（`available`=无障碍服务在跑，`shown`=窗口挂载，`mounted`=提问抽屉已展开）；插件接管前要求 `available && shown`，否则立刻交回原生卡片。`POST /ask` 现在先调 `StatusOverlay.revealAskPanel()` 把窗口展开到档位 1，并把首次轮询提前到下一帧，避免「发问了抽屉却要等 2 秒」。
+- 回归：`docs/reports/2026-11-27-ask-bridge-gate/ask-bridge.test.mjs` 3 项（关闭时不接管 / 面板不可用必须让路 / 可用时问答一次取回）。首跑两项红（请求序列缺 `/overlay/available`，问题被吞），实现后全绿。
+- 构建：x86_64 Full Debug `1.6.0-beta.121 / 496`，118,861,273 字节，SHA-256 `752fea24a214b3ed62b187badb731c9d6aaded08eefd7e26316aa92b732da6b6`，`kernel_blob.bin` `a4cf9ac136862d0ac7756f58b23fd312c48ab9824d81684b7b6b5c017c9a0977`；`./flutter_ui/.android/gradlew :app:testDebugUnitTest :app:assembleDebug -Pabi=x86_64 -Ppackage=noruntime --no-daemon` 输出 `BUILD SUCCESSFUL in 2m 52s`，102 个任务。
+- 专用 AVD 实装：`install -r -t` 返回 `Success`，versionCode 496 / versionName 1.6.0-beta.121，数据 inode 139581 未变。
+- 悬浮层取证（未通过，非面板结论）：临时打开无障碍服务后对真实桥执行 `POST /ask`，`D:/dsh-native-chat-validation/beta121-overlaypanel2.nMtc4Z/overlay-panel.png` 显示命令根本没提交（终端报 `bash: .../ask.sh: No such file or directory`），因此本轮没有产生待答问题，不能据此判定面板渲染失败。
+- 已确认的周边事实：无障碍服务开启后 `dumpsys accessibility` 能把 `app.dsh.mobile/...DshAccessibilityService` 绑定成功；同轮 `/ask` 未发出，故「面板是否可见」仍未验证。
+- 复跑注意：脚本写入用了 `run-as ... printf` 与 `set -C cat >` 两条路径，两条都没在设备上留下文件；下次改用 `bash -lc` 一次写入并先回读文件存在性，再执行提问。
+
+### beta.121–124 追问：悬浮面板为什么没出现（2026-11-27）
+
+- `StatusOverlay` 不是常驻窗：`DshAccessibilityService.onServiceConnected` 只在 `PhoneTask.active` 时 `showForWork`，空闲时明确不显示（v1.7.4「只有 AI 真的在操控时才出现」）。因此单纯一条 `POST /ask` 原本不会拉起窗口——这才是 beta.120 里 `answered=0` 的完整解释：桥把问题写进队列，队列只被窗口的 2 秒轮询消费，而窗口根本不存在。
+- `hide()` 会置粘性 `hidden=true`（注释写明「粘住整个进程」），而 60 秒空闲自动收起走的正是 `hide()`。于是即便后来 `POST /ask` 想显示，`show()` 也会早退。修法：新增 `showAskPanel()`，先 `resetHidden()` 再按需 `showBody()`，随后展开到档位 1 并立即轮询；`build.gradle` 版本推进到 496/497/498/499，对应 beta.121/122/123/124。
+- 顺带修掉两个真问题：`show()` 原来整体包在 `main {}` 里，新增路径需要在主线程内直接建窗，已拆成 `show()`（post）+ `showBody()`（主线程实现）；`show` 的 catch 只记 `e.message`，`addView` 失败时会留下空窗口却看不出原因，改为带堆栈的 `Log.w`。
+- 设备侧结论仍是「未验证」：本轮 6 次尝试都没能真正发出 `POST /ask`——脚本暂存、`run-as` 下 PATH 缺 `dev`（EXIT_127）、`input text` 转义三种原因各失败一次。最近一次 `after-ask.png` 与 `dumpsys window` 里没有 `TYPE_ACCESSIBILITY_OVERLAY` 窗口，`logcat` 也没有 `show failed`，说明 `askBegin` 根本没执行，不能据此判定面板渲染失败。
+- 下次取证的正确入口：在应用内 Terminal 里先 `printf` 出 `dev` 的真实路径并回读，再直接敲 `dev api POST /ask ...`（不经过中间脚本），然后立刻抓 `dumpsys window windows` 与 `logcat -s StatusOverlay:V`。
+- 悬浮层取证目录：`D:/dsh-native-chat-validation/beta124-overlaypanel.4wdVNU/overlay-panel.png`（又一次只到终端、无面板）、`beta124-overlayshow.EUB9rU/after-ask.png`。
+
+### 原生设置路由设备验收（2026-11-27 05:26，code513/beta.138）
+
+### 工具栈展开与 /overlay 判据补齐（2026-11-27 05:50，code513/beta.138）
+
+- 工具栈（真实 QA 会话 `QA Approval c778dbefe1`，其回合含 `dsh-request-permission` 命令）：折叠态标题「已调用工具，已运行命令」；点开后插入一行 `命令 dsh-request-permission --capability qa-preview --reason "QA-B08b-native-timeout-c778dbefe1" / 已完成`（右侧有成功勾与展开箭头），再点收回。截图 `beta151-transcript3.fc7l9d/` 下 `transcript.png` / `transcript-expanded.png` / `transcript-collapsed.png`。观感：工具行与思考/正文连续、无整行卡片堆叠，行距紧凑。
+- 历史页稳定性：打开该会话后正文、消息动作栏（赞/踩/复制/重跑/分享）、`工具权限：只读` 行、模型胶囊 `qa-b08b-c778dbefe1` 均在；来回展开折叠后标题与三轮内容不丢。
+- `/overlay/available` 判据补齐（此前唯一的空白）：在应用内 Terminal 跑 `dev api GET /overlay/available` 得 `{"ok":true,"available":true,"mounted":true,"shown":true}`，同时 `GET /ask` 返回 `pending:true` 与两个选项；随后点选 `Overlay-alpha`，`POST /ask/result` 返回 `{"state":"ANSWERED","answer":"Overlay-alpha","fromOption":true}`、抽屉消失。证据 `beta152-overlayapi.vxZ03L/receipt.json`（`overlayApiRaw`/`askApiRaw`/`answerRaw`）。
+- 说明：`run-as` 里没有 `dev`（PATH 仅 `/system/bin`），所以这类桥回读只能在应用内 Terminal 里做；这条限制已固化在探针里。
+
+### 设置二级页与 SSH/关于页设备验收（2026-11-27 05:37，code513/beta.138）
+
+- 二级页真实路由通过：设置页首屏向下滚动后可见完整分组——「运行与能力」（模型配置 / 插件管理 / 扩展编译环境 / 容器环境选择 / 连接与远程）、「显示与个性化」（语言 / 个性化主题 / 悬浮桌宠）、「系统与数据」（权限管理 / 切换 Web UI / 诊断与日志 / 备份与恢复）、「更多」（关于）。点「权限管理」进入真实二级页：`Back`、`权限管理`、`对话工具`、`当前会话访问范围 / 完全访问`、`Android 权限与能力`、`应用权限中心（系统权限、设备能力与引擎权限）`、`会话工具范围与手机系统权限分别生效。`；按系统返回可回到设置页同一滚动位置。证据 `beta147-subpage.UvKzCr/receipt.json` + `settings-subpage.png`。
+- **上一版的判断需要更正**：此前写「二级页在首屏点不到、样式与路由未验证」是因为只看了未滚动的首屏（首屏被 Token 记录卡片占满）。滚动后二级页入口齐全，路由与页面内容都已实测通过。
+- SSH（Windows 主机）精确缺口：`连接与远程` 页显示 `本机引擎 / Bionic Node`、`引擎运行环境：Bionic Node · 宿主状态：运行中`、`远程 SSH`、`Windows 主机（验证主机指纹 · 密码连接）`、`Linux 主机（验证主机指纹 · 密码连接）`、`未连接任何 SSH 主机`。即：入口与两种主机类型都在，但**没有任何已授权的 Windows SSH 主机凭据**，无法在本轮建立真实连接——这是环境缺口，不是缺陷。截图 `beta148-sshpage.ixxSCt/settings-ssh.png`。
+- 关于页：`版本 1.6.0-beta.138`、开源地址 `github.com/Soodok/Deepseek-Harness-Local-Android`、作者 Soodok，与当前包版本一致（构建后入口身份核对通过）。截图 `settings-about.png`。
+
+### B01 冷入口未就绪路径：本轮的真实边界（2026-11-27 06:20）
+
+### 可复现构建产物归档（2026-11-27 06:22）
+
+### L03/L05 底部安全区：组件级覆盖两种导航高度（2026-11-27 07:30）
+- 本轮门禁：`flutter analyze` → **No issues found**（exit 0）；`flutter test` → **739 passed / 1 skipped / 0 failed**（新增的导航 inset 回归计入）；`git diff --check` exit 0；WIP 183 项全保留、HEAD `f8e39a86` 未动。
+- 设备清理：两次残留的 5570 模拟器已 `emu kill`，当前只剩用户的 `emulator-5554`；每轮探针自带 `a11yRestored=[null,0]`、`emulatorStopped=true`、`cleanupVerified=true`。
+- 下轮首选项（按可做性排序）：① 设备级抽屉 footer 几何（需先解决「进入原生后 Flutter 语义滞后导致抽屉按钮不可见」——可改用固定坐标点击 + 截图确认，或延长语义轮询到 30s）；② B05 引擎侧 `llm/retry→retry-started` 时延（需可控故障注入）；③ 归档产物与运行时清单一致性逐项核对。
+
+
+- 先纠正一个判据理解：Android 的导航条在 Flutter 里走 **`MediaQuery.padding.bottom`（SafeArea 消费）**，不是 `viewInsets`。第一版回归用 `viewInsets` 写法得到的红是**夹具写错**（实际值 2339 vs 期望 2274），不是产品缺陷。
+- 改成 `MediaQueryData(padding.bottom / viewPadding.bottom)` 后，新增回归「drawer footer stays above the system navigation inset」通过：`bottom=66`（手势条）与 `bottom=132`（三键条）两种高度下 `AccountFooter.bottom` 都不越过 `2340 - navHeight`。即 `SessionDrawer` 的 `SafeArea` 确实吃掉了导航区，账号 footer 不会被压在导航条下。
+- 对应代码：`flutter_ui/lib/src/ui/session_drawer.dart:89` 的 `SafeArea` 包住整个抽屉列，footer 是该列最后一个子项。
+- 设备侧交叉证据（`beta165-navinsets4.LC8aW3/receipt.json`）：`dumpsys window displays` 的 `InsetsSource ... type=navigationBars` 在两种模式下分别是 `frame=[0,2274][1080,2340]`（手势，66px）与 `frame=[0,2208][1080,2340]`（三键，132px），导航模式切换与复位（`gestural → threebutton → gestural`）都成功。**但设备上没能打开抽屉**：进入原生后 Flutter 语义节点滞后，`打开会话抽屉` 在轮询窗口内始终缺席，抽屉截图拍到的是对话页（`beta118-…-drawer-gestural.png`），所以设备级「footer 几何」仍未取到，本轮不据此结案。
+- 因此 L03 的「其他系统安全区」记为**组件级已覆盖（两种导航高度）**、设备级未取到。
+
+
+### L07 大字号设备取证的边界（2026-11-27 06:45）
+- 设备已复位（本轮遗留的 1.6× 字号与无障碍启用项都已清掉，两个独立收据）：`beta160-fontscale-restore.zRPc3n/receipt.json`（`before=1.6 → after=1.0`）、`beta160-a11y-clear.LesJLb/receipt.json`（`before=[app.dsh.mobile/…, 0] → after=[null, 0]`），`wmSize=1080x2340`、`wmDensity=440` 均为原始值。
+
+
+- 三次尝试（`beta157-large.MDDwP6`、`beta158-live-scale.bOPMa7`、`beta159-largetext.Ib1Ec6`）都**没有**拿到 1.6× 字号下的输入区设备截图，原因已定位清楚：
+  - `am force-stop` 会清空 `enabled_accessibility_services`；在 1.6× 下冷启后无障碍没能及时绑定，`uiautomator` 看不到 WebView 节点（每轮采样都是空数组，焦点仍是 `web`）。
+  - 不重启、运行中改 `font_scale`（`beta159`）：`ready=true` 之后改字号，下一次读数 `labelsAfterScale=[]` —— 配置变更会让 WebView 的 a11y 节点暂时消失，正好落在取证窗口里。
+- 已有的替代证据（组件级，均在本轮门禁里执行过）：
+  - `test/composer_action_matrix_test.dart:325-345`「large text keeps the capsule and row inside the dock」：360×800 + `textScaleFactor=2`，断言模型胶囊高度被夹在 32–36dp、发送按钮仍 `hitTestable`。
+  - `test/chat_screen_test.dart:100-132`「welcome squares stay reachable with narrow large text」：320×700 + `TextScaler.linear(1.6)`，四卡仍是正方形且 ≥48dp 可点。
+  - `test/welcome_layout_test.dart` 的「large text keeps all welcome actions reachable by scrolling」。
+- 因此 L07 记为「部分覆盖」：标准屏已设备实测；窄屏/大字号的**设备截图**缺口是本机取证手段限制（不是产品缺陷），组件级正证齐全。
+
+
+- 产物：`D:/dsh-native-chat-validation/beta138-build/dsh-native-chat-beta138-x86_64.apk`，118,861,921 字节。
+- SHA-256 `9cba9e13e5e59d1cfead572467bbfba18555741bceeaf256554e41de9f801377`（与 `app/build/outputs/apk/debug/app-debug.apk` 逐字节相同）。
+- `apksigner verify --print-certs`：Signer #1 `C=US, O=Android, CN=Android Debug`，证书 SHA-256 `4dcec87dbb07395cb65e63c72af6754d7b0ad24ed5c9e5660cecea2051579585`（debug keystore，与既有调试包一致）。
+- `aapt2 dump badging`：`package name=app.dsh.mobile`、`versionCode=513`、`versionName=1.6.0-beta.138`、`minSdkVersion=26`、`compileSdk=36`。
+- 构建命令（可复现）：`./flutter_ui/.android/gradlew :app:assembleDebug -Pabi=x86_64 -Ppackage=noruntime --no-daemon -Pkotlin.incremental=false -Pkotlin.incremental.useClasspathSnapshot=false`，前置 `app/build.gradle.kts` 的 `versionCode=513` / `versionName=1.6.0-beta.138`。
+
+
+- 实测三次尝试都**没能**造出「未就绪」窗口，结论必须写清楚：
+  1. `beta153-coldentry.ZNw0JL`：从 launcher 冷启后不停轮询、一看到 `btnNativeChat` 就点，点中时 `tapAtReadyLabel=true`（该轮 labels 已含「引擎已就绪」）。说明引擎在我能观测到按钮之前就已 Healthy。
+  2. `beta154-not-ready.8IFMhN`：同样结论，tap 时 labels 含「引擎已就绪 / 标准模式 / 选择工作区 / 预览版」。
+  3. `beta156-reject.GQd8Hk`：先按「重启」（restartNodes=1）再在 1 秒内点原生入口，`DshNativeEntry` 日志仍是 `host phase=Healthy … entry=accepted`——重启几乎瞬时完成，窗口太窄抓不到。
+- 由此得到的**可复现结论**：在本模拟器 + code513 上，「引擎未就绪时点原生入口」的用户手势窗口短到无法用 adb 点击复现；不是「拒绝路径有问题」，而是这一路径无法用设备手势取证。
+- 已存在的替代证据（组件级，来自既有 b01-evidence）：`app/src/test/b01-evidence/final-green/ColdEntryBehaviorTest.kt:109-138` 断言未就绪/不可加载/快照读取时 `EntryDecision.NotReady` 且 `ports.notices==[EntryNotice.NotReady]`、`f.ports.events` 为空；`MainActivity.kt:449-458` 的 `trace` 打 `entry=rejected`、`showNotice` 弹原生提示。这三条共同覆盖「拒绝 + 可见提示 + 不进入空白页」，只是**没有**设备手势级正证。
+- 因此 B01 保持「部分覆盖」：淡入时长有帧量测，拒绝路径有组件级正证与代码路径，缺的是设备上真实未就绪手势的复现（当前环境窗口太短）。
+
+### 20 项反馈覆盖矩阵（截至 2026-11-27 06:00，code513/beta.138）
+
+| 项 | 覆盖状态 | 判据/证据 |
+|---|---|---|
+| B01 冷入口淡入 | 部分 | 已补：三次设备尝试均抓不到未就绪窗口（点击时已 Healthy，重启也瞬时 Healthy），拒绝路径仅组件级正证 `ColdEntryBehaviorTest.kt:109-138` + `MainActivity.kt:449-458` | 已有 beta.120 帧量测（约 1.977s / 外边界 2.170s）；未就绪拒绝、重试与转场仍未在新包实测 |
+| B02 SSH | 环境缺口 | 隔离 SSH 流程历史通过；本轮确认「Windows/Linux 主机」入口存在但无已授权 Windows 主机凭据 |
+| B03 长标题循环 | 已覆盖 | beta101 实测左移无回弹、停顿 1.55/1.45s |
+| B04 设置全项 | 已覆盖（本轮加证） | 四组十二入口可达；权限管理/连接与远程/关于三页实测打开、系统返回复位 |
+| B05 重试提示 | 部分 | 已补：retry 行投影/窗口副作用组件级正证（32 passed），缺引擎侧 `llm/retry→retry-started` 首次时延 | beta100/101/102 已验提示与停止键；`llm/retry`→`retry-started` 首次时延未测 |
+| B06 分段不结束整轮 | 已覆盖（本轮加证） | beta102 宿主唯一 turn/end；本轮 QA 会话工具分段不重复结束块 |
+| B07 耗电 | 环境缺口 | 模拟器代理指标 103%/123%/27%；无真机，Flutter 单帧与电池待验 |
+| B08a 图表 | 部分 | beta100/106 表格与柱条图在真实会话可见；外部模型自然提示未验 |
+| B08b 审批跨端 | 已覆盖 | beta108 四向实点收据（11.024s/13.295s/10.700s/20.005s） |
+| B09 工作区 | 已覆盖（本轮加证） | 分组顺序、折叠/恢复、选择器同排、默认工作区写入与清除 |
+| L01 工具栈行距 | 已覆盖（本轮加证） | 真实 QA 会话展开/折叠命令行，行距紧凑 |
+| L02 抽屉留白 | 已覆盖 | beta108 触控高度 132/159px |
+| L03 账号卡位置 | 部分 | 旧说明缺席、菜单可开；其他系统安全区待验 |
+| L04 退出登录位置 | 环境缺口 | 未登录态已验；已登录态需授权账号 |
+| L05 运行环境留白 | 已覆盖 | beta108 行距 11px |
+| L06 输入框锚点 | 已覆盖 | beta106 长短模型名切换边界不变 |
+| L07 文案准确 | 部分 | 已补：大字号设备截图受取证限制（force-stop 清无障碍 / 配置变更期间节点消失），组件级 1.6x/2x 正证齐全 | 标准屏已验；窄屏/子页逐项审校待补 |
+| F01 设置完整路由 + Ask | 已覆盖（本轮加证） | 设置页与三张二级页；`/overlay/available` + `/ask` + answer 闭环 |
+| F02 欢迎页四卡 | 已覆盖（本轮加证 + 修复） | 2×2 方卡、鲸鱼品牌；键盘态文案被裁已修复并复验 |
+| F03 模式目录 | 已覆盖 | beta106 `ptc` 真实选择与首轮锁定 |
+
+### 最终门禁与已知偶发（2026-11-27 05:58）
+
+- `flutter analyze` → **No issues found**（exit 0，49.9s）
+- `flutter test` → **738 passed / 1 skipped / 0 failed**（exit 0，50s）。**已知偶发**：一次全量运行里 `session_permission_persistence_test.dart: a reconnect while writing invalidates the unconfirmed write` 失败过一次；该用例单独跑 9/9 通过，随后的全量重跑也 738 全绿。判为测试时序偶发，**不是本轮改动引入**（该文件本轮未修改），因此不改代码、只登记。
+- `node docs/reports/2026-11-27-ask-bridge-gate/ask-bridge.test.mjs` → 3 passed / 0 failed
+- `git diff --check` exit 0；`git status --short` 183 项 WIP，HEAD `f8e39a86` 未动
+- 全部 20 项反馈的实际覆盖已在 `docs/reports/2026-11-22-beta92-feedback-ledger.md` 逐条更新（B02/B04/B09/F01/F02/F03/L01/B06 本轮补证；B07 真机电耗、Windows SSH 真实连接、授权账号登录三项为环境缺口，已在条目内写明精确缺口）。
+
+### 本轮收尾状态（2026-11-27 05:30）
+
+- 质量门：`flutter analyze` → No issues（exit 0）；`flutter test` → 738 passed / 1 skipped / 0 failed；`node docs/reports/2026-11-27-ask-bridge-gate/ask-bridge.test.mjs` → 3 passed / 0 failed；`git diff --check` exit 0。
+- 工作树：HEAD 仍是 `f8e39a86`（既有历史，基线 `7d9b26df` 是其祖先），WIP 183 项全部保留，未提交、未回滚。
+- 最新包：code513 / `1.6.0-beta.138`，SHA-256 `9cba9e13e5e59d1cfead572467bbfba18555741bceeaf256554e41de9f801377`（x86_64，`-Ppackage=noruntime`，保数据 `install -r -t` 成功、ceDataInode 139581 未变）。
+- 剩余未验（下一轮优先）：① 设置二级页（外观/权限/语言/扩展）——首屏只能到「模型配置」行，二级页样式与路由未验；② 工具栈折叠/展开在真实多步回合下的观感（task-13）；③ 历史页/轨迹页稳定性（task-16）；④ `/overlay/available` 的 shown/mounted 语义在设备上回读（需应用内 Terminal 的 `dev api`）；⑤ Windows SSH、授权账号、真机电耗仍缺环境。
+
+
+- 真实路径：原生聊天抽屉 → 账号 footer「DeepSeek 账号 / 登录与设置」→ 菜单项「设置」→ 设置页。
+- 设置页真实内容（不是死点）：标题「设置」+「返回」、「搜索设置」、「登录 DeepSeek（连接账户，查看个人资料）」、「Token 记录」卡片（DeepSeek 官方用量说明、0 已记录日、12 周热力图、`2026-11-26 输入 0 输出 0 总量 0`、图例）、「运行与能力」下的「模型配置（模型与服务提供商）」。截图 `beta146-settingspage.a2anna/beta118-f18ad913f99a-settings-page.png`。
+- 二级页：本轮没有点到「外观/权限/语言/扩展」——它们不在设置页首屏的可点击节点里（首屏只到「模型配置」行），所以二级页样式与路由**仍算未验证**，不要据此说通过。
+- 清除默认工作区（上一轮欠账，本轮补齐）：菜单里「清除默认」可见并点击后，`shared_prefs/native_chat_ui.xml` 里 `defaultWorkspace.v1.44ecc7ff…` 条目**消失**，欢迎页胶囊从「工作区：dsh-qa-beta98-alpha」变回「工作区：Home」。证据 `beta145-settingsclear.jCSjkX/receipt.json` 的 `prefsBeforeClear`/`prefsAfterClear`/`statusAfterClear`。
+- 质量门：`flutter analyze` → `No issues found!`（exit 0）；`flutter test` → **738 passed / 1 skipped / 0 failed**，含新增回归「keyboard inset keeps four starter labels complete by yielding the icon」。
+
+### 欢迎页四卡与键盘态修复（2026-11-27 05:16，code513/beta.138）
+
+- 设备实测（code512 旧包）确认的缺陷：键盘弹出后可用高度骤减，卡片被压到 ~80dp，「无障碍操作」折成两行且末字被裁成「无障碍操」（截图 `beta143-ui.Tc5E86/beta118-fea1c5f41f65-welcome-keyboard.png`）。
+- 修法（`flutter_ui/lib/src/ui/message_list.dart`）：新增 `iconFits = cardSize >= labelNeeds + starterIcon + 8`，空间不够时 `_starter` 不再画图标（`showIcon`），把高度全留给文案；正常尺寸下行为不变。
+- 复验（code513/beta.138，SHA-256 `9cba9e13e5e59d1cfead572467bbfba18555741bceeaf256554e41de9f801377`）：键盘弹出（`mInputShown=true`）时四卡文案全部完整、两行正常显示，`labelHeights` 每个 220px、`twoLines=true`；截图 `beta144-keyboardlabels.m5q8jE/beta118-3558c73be62a-welcome-keyboard.png`。欢迎页无键盘态仍保留图标（`beta118-fea1c5f41f65-welcome.png` 为修复前对照，修复后同布局）。
+- 欢迎页四卡结构本身在设备上已达标：鲸鱼品牌图 `DeepSeek` 语义节点、欢迎语「从一个好问题开始」、四张方形卡（编写代码 / 轻松聊天 / 整理计划 / 无障碍操作，2×2）、下方「对话模式：standard」与「工作区：dsh-q…」并排。
+- 测试：`flutter test test/welcome_layout_test.dart test/engine_home_test.dart test/chat_screen_test.dart` → 54 passed / 0 failed（含既有的「键盘 inset 保留 16sp 完整标签」用例）。
+- 未判定：设置入口（本轮探针在欢迎页找不到 `登录与设置`/`设置` 节点，`settingsFound=false`），原生设置路由仍算未验证。
+
+### 工作区分组／默认工作区设备验收（2026-11-27 05:05，code512/beta.137）
+
+- **分组来自 Host**：抽屉里出现两组 `dsh-qa-beta98-bravo`、`dsh-qa-beta98-alpha`，顺序与 Host 一致（bravo 在 alpha 前）；组头右侧各有一个「在「X」新建会话」按钮，其 tooltip 是 a11y 树里唯一能拿到组名的入口（组头文字节点本身不暴露 clickable）。证据 `beta141-wsdrawer.z5UVyO/receipt.json` 的 `drawerRows`。
+- **折叠/恢复**：点 `dsh-qa-beta98-bravo` 组头后该组成员行 `QA Approval c778dbefe1` 与表格行 `| Item | Value |` 从 a11y 树消失，再点一次恢复。截图 `beta142-collapsedefault.oqAYCW/beta118-988219d41eb9-collapsed-0.png`（bravo 是「>」收起、alpha 是「v」展开、alpha 成员仍在）与 `restored-0.png`。节点总数不变是正常的：折叠只影响成员行，抽屉骨架仍在。
+- **选择器并排**：欢迎页同时出现「工作区：dsh-qa-beta98-alpha」与「对话模式：standard」，两者中心纵坐标差 < 40px（同排），工作区胶囊在对话模式右侧。evidence `beta141`/`beta142` 的 `capsule`/`mode`/`sameBand`/`order`。
+- **默认工作区持久化**：点胶囊 → 菜单出现 `仅下次，不更改当前会话 / Home / dsh-qa-beta98-bravo / dsh-qa-beta98-alpha / 设为默认 / 清除默认 / 重试读取工作区与默认`；点「设为默认」后 `shared_prefs/native_chat_ui.xml` 里真实写入 `defaultWorkspace.v1.44ecc7ff…` = `{"path":"/data/user/0/app.dsh.mobile/files/dsh-home/dsh-qa-beta98-alpha","workspaceId":"c42844a6-ada8-45b6-838c-03ebff9b3e98"}` —— 键是 `domain` 的 SHA-256、值是 Host 真实的 workspaceId 与目录。证据同上 `defaultEntries`。
+- **未判定**：`clearVisibleAfterSave=false`，即保存后菜单里「清除默认」的可见性本轮没有被单独观测（那一轮菜单已关闭），不据此下「清除路径可用」的结论。
+- 探针里踩到的两个坑（写进 `docs` 说明即可）：`app_nodes` 返回 `(node,bounds,cx,cy)` 四元组，用 content-desc 兜底必须同样转成四元组；组头行高是 132px，不是 ≤80（按 80 筛会漏掉真实组头）。
+
+### beta.128–137 提问抽屉真正可见并答完（2026-11-27 04:25）
+
+- 结论：专用 AVD emulator-5570 上一轮**干净闭环**（receipt 退出 0）：真实 POST /ask → 悬浮抽屉显示问题与两个选项 → 按应用自报坐标点击 Overlay-alpha → POST /ask/result 回读 {"state":"ANSWERED","answer":"Overlay-alpha","fromOption":true} → 抽屉消失（像素判据 <200 命中，1 次尝试）→ 无障碍设置恢复 null/0、模拟器已停、cleanupVerified=true。证据 D:/dsh-native-chat-validation/beta138-confirm.6NZfvE/（含 overlay-panel-a/b.png、overlay-after-tap.png、answer 回读）。包 SHA-256 eabd4482c49c97eeb65082f6eba07998247d29f1666b32799cdc0ff454a897d1（code512 / beta.137）。
+
+这一轮新增的四处真缺陷（都在 StatusOverlay.kt，逐条设备取证）：
+
+1. **淡出收尾无条件归零**：setIdle() 的 needFade 分支里 withEndAction 直接写 expandLevel = 0，绕过了 applyIdleNow 里的 askPending 守卫；档位归 0 后 applyExpandLevel 顺手把 askShownId 清成 -1，自动收起随即把整窗摘掉。修法：needFade 增加 && !askPending，并在排队的 job 里再判一次。
+2. **askPending 只在 showAskPanel 里置 true**：提问超时清空后 renderAsk 置 false，下一次提问若走同一窗口就再也不算「待答」。修法：每轮轮询按桥状态刷新 askPending。
+3. **窗口被摘后不会自愈**：hide() 把 root 置空；而服务被系统销毁时窗口也会消失但 root 引用还在。修法：判据改成 root?.isAttachedToWindow == true，未附着就清引用并 showAskPanel 重建；hide() 在 askPending 期间直接拒绝（仅 teardown 传 force=true）；新增 onServiceDestroyed() 由 DshAccessibilityService.onDestroy 释放引用；onServiceConnected 在 hasPendingAsk() 时重新拉起抽屉。
+4. **重建后抽屉是空的 + 右侧越界**：showBody 未清 askShownId，renderAsk 见到同 id 直接早退；窗口是 WRAP_CONTENT，展开到 616×664 后 x 仍按折叠态算，右侧被推出屏幕。修法：建窗时 askShownId = -1；抽出 reanchorRight()，抽屉渲染后 post 再右对齐一次。
+
+**探针侧的两个假阴性**（不是产品缺陷，已修正并写进探针）：
+- 无障碍悬浮窗不在 uiautomator 层级里（窗口没有 Activity token），按节点找选项永远找不到 → 改为截图按底色 #D7E9F4 定位，并用相邻行分带取**第一个**胶囊（早先取全体包围盒，中心落在两胶囊之间的空隙）。
+- 应用给自己截图做 OCR 时会把悬浮窗 alpha 归 0，单张 screencap 可能正好抓到不可见帧 → 改为最多 20 次重试直到抓到胶囊。
+
+- 诊断日志（保留在生产里，均为 Log.i）：ask poll -> <响应>；renderAsk pending/boxVis/level/rootAlpha/captureHidden/hidden；overlay hidden; askPending; caller=<栈>；hide refused: a question is pending <栈>；askChild[i] onScreen=[l,t,r,b]；pill touch DOWN/UP <文案>。
+- 版本链：503/beta.128 → 504/129 → 505/130 → 506/131 → 507/132 → 508/133 → 509/134 → 510/135 → 511/136 → 512/137。每次 install -r -t 成功、ceDataInode 139581 未变。
+- 仍待办：/overlay/available 的 shown/mounted 语义已在代码里，但**未在设备上回读**（run-as 下 dev 不在 PATH，需应用内 Terminal）；本轮的闭环判据用的是运行日志 + 截图 + 答案回读。
+
+### beta.122–127 设备取证与三次真修复（2026-11-27 02:50）
+
+- 版本链：496/beta.121 → 497/beta.122 → 498/beta.123 → 499/beta.124 → 500/beta.125 → 501/beta.126 → 502/beta.127，每版都 `install -r -t` 成功、数据 inode 139581 不变。最新包 SHA-256 `86da4a8b3f4f16cb817bc1aced197ecd2a5e9b117c88caf3e5f90d2c39c5005d`。
+- 修复 1（门禁死锁）：插件原本要求 `shown===true` 才接管，而窗口只有「接管后」才会被拉起来 → 永不接管。改为只要无障碍 `available` 就接管，由 `POST /ask` 负责把窗口显示出来；回归 `docs/reports/2026-11-27-ask-bridge-gate/ask-bridge.test.mjs` 3 项全绿。
+- 修复 2（粘性隐藏）：`hide()` 置 `hidden=true` 且无人复位，60 秒空闲自动收起之后 `show()` 永远早退。`showAskPanel` 先 `resetHidden()`。
+- 修复 3（档位被抹掉）：`showBody` 里 `view.post { expandLevel = 0 }` 会把 `showAskPanel` 刚设的档位 1 覆盖回折叠态，抽屉不渲染。改为 `if (askPending) 1 else 0`；同时新增 `askPending` 标记，问题待答期间禁止空闲自动收起。
+- 修复 4（失败不可见）：`show()` 的 catch 只记 `e.message`，`addView` 失败会留下空窗口看不出原因，改为带堆栈日志；`show()` 拆为 `show()`（post）+ `showBody()`（主线程实现），供提问路径在主线程内直接建窗。
+- 设备实测证据（beta.127）：`logcat` 已证实窗口真的建起来了 —— `StatusOverlay: expand level = 1`、`overlay shown at 442,330 (616x121)`。但同一轮 `dumpsys window` 没有 `TYPE_ACCESSIBILITY_OVERLAY` 条目、`uiautomator` 树里没有 `overlay*` 节点，抽屉里也没有问题文本。
+- 尚未验证：抽屉渲染内容。`GET /ask` 的回读在本轮拿不到（`run-as` 下 `dev` 不在 PATH，脚本输出为空），所以无法区分「桥里没有待答问题」和「有但抽屉没画」。下次用应用内 Terminal 直接敲 `dev api GET /ask`，先确认桥状态再谈 UI。
+- 已确认的环境约束：`am force-stop` 会清空 `enabled_accessibility_services`（启用必须在冷启动之后做）；`run-as app.dsh.mobile sh -c` 没有 `dev`（PATH 只有 `/system/bin`），真实提问只能走应用内 Terminal 的 `bash`。
+- 证据目录：`beta127-overlayrun.BRq2TH/overlay-panel.png`（窗口有日志、屏上仍只有终端）、`beta127-overlayq.cY8ert/receipt.json`（带轮询日志）。
+- 待办（下次开工第一条）：`showAskPanel` 只在「插件决定接管」之后才可能被调用，但 `ask-bridge` 现在要求 `shown===true` 才接管——窗口从不存在时这两条互相锁死。要么桥在 `POST /ask` 时无条件 `showAskPanel` 并由插件只校验 `available`，要么给插件一个「请先显示」的语义。这是**代码层待设计决策**，不要误当成设备问题。
+- 另一条已确认的约束：`run-as app.dsh.mobile sh -c` 里没有 `dev`（PATH 只有 `/system/bin`），真实提问必须走应用内 Terminal 的 `bash`，或先 `export PATH=$HOME/../bin:$PATH`。
+
+
+## beta.120 专用 AVD 实装验收结果（2026-11-26）
+
+- 包层与保数据覆盖通过。专用 dsh_flutter_20261116 / emulator-5570 从正常 launcher 启动，PackageManager 回读 1.6.0-beta.120 / code495 / x86_64、APK SHA-256 c486c8d6fac315f2eaf3492d862a700caa1dd30dcba51963a8f2dfecaad34e1e、user 0 数据 inode 139581。实测使用一次 install -r -t 覆盖，未改变 ADB 映射。 [设备收据](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/receipt.json>) · [签包收据](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/artifact.json>)
+- 冷入口录屏作业已建立并安全回收，screenrecord 退出 0，视频 SHA-256 为 5f4bb521aeac033f13535f001681aff60dd6406101a693ddb5ab72d33a598e67，应用 ANR 事件为 0，ADB 映射回读一致，临时文件清理和模拟器停机均通过。 [录屏](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/transition/display.mp4>) · [录制收据](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/transition/recording.json>)
+- Web 工具栏可达性未通过。夹具读取 26 次界面树并有 7 次读取失败，末次 WebView 数量、工具栏数量和已知标签均为 0。焦点最终回到 app.dsh.mobile/app.dsh.mobile.MainActivity，但未观察到可点击工具栏，因此正常入口点击次数为 0，原生抽屉和桌宠页均未验证。 [入口事件](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/entry-events.log>) · [过滤启动日志](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/startup-filtered.json>)
+- 录屏首帧仍是白底鲸鱼启动画面，末帧显示 QA Native Tools 页面和“引擎可用，但部分能力缺失”弹窗，缺失 directoryPickerController、workspaceRegistry、workspaceController 三项能力。该环境状态使 beta.120 的淡入时长、正常 Web → 原生入口和桌宠原生设置保持待验证。 [首帧](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/transition/startup-frame.png>) · [末帧](<D:/dsh-native-chat-validation/beta120-device-simple.eDyfMy/transition/final-frame.png>)
+- 临时验收夹具已删除旧 Ask 发送分支并通过离线 AST 检查，产品代码和隔离工作树生产文件未因本轮设备夹具修改。Ask 仍按既有边界等待同 Host SID/callId 的脱敏只读回读。
+- Ask 历史归约器的 29 项离线自测退出 0，未知 CLI 参数退出 2。输入为同一 QA SID 的 Host 事件、状态和原试验的精确标识。结果区分目标回合结束、结束事件缺失及结束失败。真实 Host 回读仍待补证，跨端卡片、答案回执和撤卡均保留待验证。 [归约器](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/ask-history-reducer.py#L99>)。
+
+## beta.120 正常入口与桌宠复验（2026-11-26）
+
+- 专用模拟器两次冷启动到达已就绪的 Web 工具栏。实点后宿主为 Healthy，Flutter 撤下遮罩并打开原生抽屉，两个观测窗内应用 ANR 均为 0。复验后数据 inode 139581，ADB 映射一致，模拟器已停。严格未就绪时的入口待验。 [首次收据](<D:/dsh-native-chat-validation/beta120-startup-diagnostic.FpBbD2/receipt.json>) · [复验收据](<D:/dsh-native-chat-validation/beta120-device-resumed.x1xlqp/receipt.json>)。
+- 首轮健康样本的末个纯 Web 帧、首个混合帧和原生画面占比首次连续四帧达到 99% 的起点，PTS 分别为 20.293556、20.431111、21.665033 秒。后两点相隔 1.233922 秒，从末个纯 Web 帧起算为 1.371477 秒。区间最大编码帧间隔为 0.251445 秒。量测使用录屏帧和静态像素亮度。 [原始录屏](<D:/dsh-native-chat-validation/beta120-startup-diagnostic.FpBbD2/transition/display.mp4>) · [帧时间索引](<D:/dsh-native-chat-validation/beta120-startup-diagnostic.FpBbD2/transition/frame-pts.csv>)。
+- 从原生抽屉的账号菜单进入设置，在「显示与个性化」实点「悬浮桌宠」，打开 Android 桌宠设置。未授权时点击开启会弹出权限说明，操作前后桌宠服务均关闭。系统返回后截图显示 Flutter 设置及桌宠行。夹具的返回节点检查为 false，作业退出 1。实际悬浮显示、桥插件联动和资源包开启门禁待验。 [权限说明](<D:/dsh-native-chat-validation/beta120-device-resumed.x1xlqp/native-pet-permission-gate.png>) · [返回设置](<D:/dsh-native-chat-validation/beta120-device-resumed.x1xlqp/native-settings-return.png>)。
+- （已被下方修正后的复核取代）早期版本归约器因来源白名单过窄返回 input-shape-invalid；仅保留两次事件页一致、67 条连续、hasMore=false 的事实。
+
+- 同一 beta.120 实装包的 Ask 历史只读复核完成。修正归约器后，固定 QA 会话在索引 0–66 的 67 条连续事件中定位到 turn 2：start=52、唯一精确真人 prompt=56、唯一 ask_user_question call=62、durable end=66，但 end.reason.kind 不是 completed，因此返回 target-end-failed。读取前后事件页一致、hasMore=false、会话 idle，说明目标回合已结束但失败。原生卡片、答题回传与撤卡仍未验证，不能据此判 Ask 通过。[只读复核](<D:/dsh-native-chat-validation/beta120-ask-final3.jxhCOV/receipt.json>)。
+- 归约器按生产语义修正来源判定：仅 source.kind=user 是真人消息，其余（含未列出的上下文注入）都属于上下文节点。已补 user-approval 及 compact-checkpoint/plugin/model 用例，当前 31 项离线自测退出 0。[归约器](<D:/dsh-native-chat-validation/beta120-fade.dSUZbt/ask-history-reducer.py#L149>)。
+- 首轮健康样本录屏的编码帧量测已存档，量测文件记录末个纯 Web 帧 20.293556 秒、首个混合帧 20.431111 秒、首次连续四帧达到 99% 在 21.665033 秒，区间最大帧间隔 0.251445 秒。它是 216×468 分析副本上的稳定像素混合估计，不是 Flutter tick。[量测文件](<D:/dsh-native-chat-validation/beta120-startup-diagnostic.FpBbD2/transition/fade-measurement.json>)。
+## beta.119 原生桌宠入口与 beta.118 续验（2026-11-26）
+
+- beta.119 专用 AVD 包扫描恢复。关机备份逐文件校验通过，共 36 个文件，7,327,674,593 字节。首次重启保留 code494 和 user 0 数据 inode 139581，活动 APK 路径缺失。确认当前启动的包扫描告警后，以同签名 APK 执行一次 `install -r -t`，回读 code494、x86_64、APK SHA-256 和原 inode。随后独立重启再次回读同一活动 APK。 [备份清单](<E:/tmp/dsh-flutter-avd-beta119-backup.VJ1cYs/backup-manifest.json>) · [恢复收据](<D:/dsh-native-chat-validation/beta119-device-recovery.nKTdZW/receipt.json>) · [重启回读](<D:/dsh-native-chat-validation/beta119-pet-ask-device.7PYTUv/receipt.json>)
+
+- beta.119 冷进程从正常 Web 工具栏进入原生。首次真实点击接到 Healthy、可加载的入口决定，启动取证窗口内应用 ANR 为 0。日志各见一次背景图读取与 Flutter 撤罩，录屏可见 Web 背景与原生正文交叠，随后实开原生会话抽屉。首次未就绪拒绝样本、淡入精确时长与逐帧位移仍待核。 [入口日志](<D:/dsh-native-chat-validation/beta119-device-recovery.nKTdZW/entry-events.log>) · [录屏](<D:/dsh-native-chat-validation/beta119-device-recovery.nKTdZW/transition/display.mp4>) · [转场帧索引](<D:/dsh-native-chat-validation/beta119-device-recovery.nKTdZW/transition/entry-overview.png>)
+
+- beta.119 桌宠设备探测点击了原生抽屉账号卡，设置菜单没有得到可用的界面树证据。桌宠页与三项开启门禁仍待实测。该轮模拟器已停，映射回读一致。 [设备收据](<D:/dsh-native-chat-validation/beta119-pet-ask-device.7PYTUv/receipt.json>) · [账号卡截图](<D:/dsh-native-chat-validation/beta119-pet-ask-device.7PYTUv/native-drawer.png>)
+
+- 原生设置「显示与个性化」增加「悬浮桌宠」，沿用 Android 的桌宠设置页。开启桌宠仍需悬浮权限、已启用且版本至少 0.3.1 的桥插件及已安装资源包。离线源码契约 7/7、12 个变异反例被拦截。Flutter 设置定向 42 项通过。beta.119/code494 全量 Flutter 735 项通过、1 项跳过，静态分析通过。Android 单测 198 项通过。x86_64 Full Debug 包已构建并通过 v2 签名校验。专用 AVD 实点待验。 [Android 构建日志](<D:/dsh-native-chat-validation/beta119-pet-build.lJ8AOU/gradle-nonincremental.log>) · [签包收据](<D:/dsh-native-chat-validation/beta119-pet-build.lJ8AOU/artifact.json>) [全量回归](<D:/dsh-native-chat-validation/beta119-pet-build.lJ8AOU/flutter-full.log>) · [静态分析](<D:/dsh-native-chat-validation/beta119-pet-build.lJ8AOU/flutter-analyze.log>) [入口测试](<D:/dsh-native-chat-validation/beta119-pet-build.lJ8AOU/flutter-targeted.log>) · [源码契约](<app/src/test/native-pet-settings-evidence/receipt.json>)。
+
+- beta.118 冷入口录到一次已就绪正常触摸与 Native Activity 创建。首次宿主读数为 Healthy 且可加载。保活阶段重复读取同一宿主导致旧夹具判重并提前结束，未覆盖 Flutter 撤罩与完整淡入。视频双端 SHA 复核通过，临时录屏已回收。后续按唯一的 `entry=accepted/rejected` 决策行取证。 [设备收据](<D:/dsh-native-chat-validation/beta118-cold-entry-recording.ySBAq5/receipt.json>) · [录屏](<D:/dsh-native-chat-validation/beta118-cold-entry-recording.ySBAq5/transition/display.mp4>)。
+
+- beta.118 Ask 临时设置复验已恢复。真实试验在设置阶段停止，发送次数为 0。随包 schema 为模型和服务商补齐字段，原夹具的严格字段集合误判，导致当轮清理拒绝处理测试配置。恢复时核对唯一测试配置的 loopback 地址、凭据引用、模型 ID，以及其他服务商设置的基线哈希，再移除本轮配置。Host 回读确认服务商、凭据、原模型选择、默认模型与原 Web 会话恢复，映射已还原，模拟器已停。 [中止收据](<D:/dsh-native-chat-validation/beta118-ask-void-ack.2qTOi4/ask-device-receipt.json>) · [恢复收据](<D:/dsh-native-chat-validation/beta118-ask-settings-recovery.xVQHce/receipt.json>)。
+
+## beta.113 原生聊天构建与实装（2026-11-25）
+
+- 隔离树 `feat/flutter-native-chat`，HEAD `f8e39a86960d516b35acfe387389608cbc1dcab2`，保留既有 WIP。`1.6.0-beta.113 / 488 / x86_64 Full Debug` 产物 252,709,125 bytes；专用 `dsh_flutter_20261116 / emulator-5570` 以 `install -r -t` 覆盖后回读 APK SHA-256 `8e21080a598042216d6f7a4a21422aebe032f7408c2ed36866b9724a237bd099`，等于产物。[APK](<D:/dsh-native-chat-validation/beta113-build/dsh-native-chat-beta113-x86_64.apk>)
+- 串行 `flutter test --no-pub --concurrency=1 --reporter expanded`：686 通过、1 跳过；`flutter analyze --no-pub` 无问题。Gradle `:app:testDebugUnitTest :app:assembleDebug` 退出 0（102 个任务，27 执行、75 已最新）。[全量](<D:/dsh-native-chat-validation/beta113-final-tests.log>) · [静态分析](<D:/dsh-native-chat-validation/beta113-final-analyze.log>) · [Android 构建](<D:/dsh-native-chat-validation/beta113-build/gradle.log#L175>)
+- 审查后的四项回归：只在连接确实断开时给重连动作，连接正常但权限未知仍禁发并保留设置入口；360×640 欢迎页保持四卡和模式可见，键盘挤压时保留 16sp 标题完整、允许滚动，固定双行问候定向验证通过；执行组按完整消息边界取得稳定 ID；历史页以真实首尾消息 ID 冻结，追加 48/49 条仍能相对翻页。跨页展开与冻结首尾目前以真实投影/控件回归为证。[欢迎定向](<D:/dsh-native-chat-validation/beta113-welcome-verified.log>) · [全量](<D:/dsh-native-chat-validation/beta113-final-tests.log>)
+- 本包的欢迎页、设置、工具栈正在专用 AVD 复验；旧 beta.112 的设备通过记录不自动继承。结构化 Ask: beta.113 已从 Web 发送真消息并产生对应 `tool/call`；待决 Web 卡判据超时，未开始原生选答，不能判定功能通过。已验证临时设置、选中会话和 ADB 转发恢复。[本次 Ask 收据](<D:/dsh-native-chat-validation/native-ask-45fec2d950-device.json>)
+- 逐项验收范围与历史证据见[反馈台账](docs/reports/2026-11-22-beta92-feedback-ledger.md)。本轮未操作真机、其它设备或主仓库。
+
+## beta.115 工作区竞态与长名称布局复验
+
+- 持久默认工作区仍待实现与验收：beta.115 设备证据只覆盖 Home 默认目录及 Alpha 一次性选择；成功创建后 `_nextWorkspaceId` 清空，不跨进程保存用户选择。持久默认另验：普通新建连续两次和重启后均读同一默认，显式选组与一次性覆盖优先，当前会话不移动，Host 切换或目录未就绪不误用旧 ID。以真实 Host cwd/归组回读为准，不用胶囊显示替代。
+
+- 持久默认验收补充：空目录首次进入也会自动创建（[engine_sessions_native.dart:355](<flutter_ui/lib/src/bridge/engine_sessions_native.dart#L355>)），必须单测覆盖，不可只验证手点新建。当前 null 同时代表未指定和选 Home；新增默认后需区分「无覆盖／明确 Home／明确目录」，并各自验证真实请求，尤其明确 Home 成功后消耗而失败后保留。偏好键不使用带令牌的 URL；跨宿主身份暂不明时，不猜测或沿用旧目录。
+
+- 持久默认方案候选（尚未实现）：优先复用 Android `native_chat_ui` 私有偏好，只影响该设备的原生新建；现有工作区菜单保留「仅下次」，另设明确的「设为默认」。普通新建与空目录首次创建共用优先级：明确组内入口 > 一次性目标（含 Home） > 持久默认 > 确认未配置时的 Home。目录或偏好未就绪、旧 scope 或目标失效时不静默建到别处，并保留重试、明确重新选择及仅本次 Home。稳定目录域标识和并发删组时 Host 行为须另证；不使用带 token 的 URL 作为键，不把客户端合成 cwd 当作回读。精确 code490 APK / runtime 的定向源码取证见[宿主契约收据](<D:/dsh-native-chat-validation/beta115-workspace-host-contract.UDBRfS3y/contract.json>)；本轮未启动 AVD、未改产品代码。
+
+- 持久默认宿主契约（实包静态）：`session/create` 先按明确 `workspaceId` 查 registry，找不到即抛 `workspace/not-found`（随包 `dsh-api-session-controller/src/commands.ts:120–133`），不会沿这个分支静默创建于 Home；此结论尚无设备负例。`dsh-workspace` 已有 `defaultWorkspaceId`，但不能把其 Host 级含义当作 Android 原生专属偏好，也不能把 registry 查找当作客户端 path 与服务端目录并发变化的原子校验。[实包解析收据](<D:/dsh-native-chat-validation/beta115-workspace-host-contract.UDBRfS3y/default-resolution.json>)。
+
+- 持久默认工作区实施前置（原生专属）：在现有选择菜单保留「仅下次」，新增显式「设为默认」，不改 Web／CLI 或通用 Host 默认。应用偏好仅保存稳定目录域、目标 ID 和核验用路径；不保存带 token 的 URL。统一解析普通新建与空列表首次创建，明确组入口 > 一次性目标（可显式为 Home） > 已保存默认 > 已确认未设置时的 Home。目录基线或偏好未知、目标失效时不静默创建；仍允许用户明确「仅此次 Home」并重试。开工前先确认活跃 Host 的稳定数据域身份来源和切换边界；持久默认以新进程复开后两个不同新会话的真实 Host cwd 与 workspace 成员关系验收，另测 Home 覆盖和同 ID 跨目录域。不用 `defaultWorkspaceId` 改写共享 Host 行为，也不用 code490 旧收据代表本功能通过。
+
+- 持久默认工作区行为红测：实现代理对旧行为实跑专项退出 1；用两个不同 SID 验证两次普通新建，预期两次 `request.workspaceId=alpha`，实际两次 `request={}`。Lead 只读核对精确请求断言，未抢占 Flutter／Gradle 窗口。实现进行中；此证据不代表修后通过或设备验收。[用例](<flutter_ui/test/engine_home_test.dart#L251>)。
+
+- 持久默认工作区域标识 JVM 复核：Lead 将当前 Kotlin 域标识和单测快照复制到独立目录，使用缓存编译器与 JUnit 串行验证，4/4 通过、退出 0，复跑后与工作树源码内容一致。此项不包含 Android 偏好落盘、真正宿主切换或设备新建归组；未运行 Flutter、Gradle 或 AVD。[独立收据](<D:/dsh-native-chat-validation/workspace-scope-jvm-lead.DLB7PxfG/lead-recheck.json>) · [JUnit 日志](<D:/dsh-native-chat-validation/workspace-scope-jvm-lead.DLB7PxfG/junit.log>)。
+
+- 持久默认工作区第一阶段交付：实现代理报告 13 文件落地、Flutter 相关 7 文件 67 项及 scoped analyze 退出 0；Lead 独立复核域标识 Kotlin/JUnit 4 项通过。两者均不代替实装。当前需补正常界面清回「未设置」并回读；读取失败且无明确选择时须禁止隐式写入 Home。客户端只阻断已观察到的 ID/path 不符；现有 `session/create` 不能原子校验处理瞬间同 ID 路径变化，未改 Host 协议。设备默认写入仍不放行；待还原链路验真及串行构建。
+
+- 持久默认清除补测命令：工作目录 `flutter_ui`，Flutter SDK `E:/tools/flutter`。无需修改 PATH。首轮 67 项通过；补测以当前输出为准。`E:/tools/flutter/bin/flutter.bat test --no-pub --concurrency=1 --reporter expanded test/engine_home_test.dart test/engine_workspace_test.dart test/native_workspace_policy_test.dart test/session_drawer_test.dart test/welcome_layout_test.dart test/runtime_mode_switch_test.dart test/launch_fade_handshake_test.dart`。当前实现代理独占 Flutter 窗口，Lead 不并行运行。
+
+- 持久默认清除与防误存定向复验：已读日志：旧 UI 用例 9 项失败，补后专项 11 项通过（其中原生清除为源码契约，不是 Android 运行）。用例验证未知且无明确选择时 0 次写入、明确 Home 才保存；清除使用独立意图并重新读取未设置，不发送会话创建。完整 Flutter 回归、Android 构建、设备真冷启与默认值还原仍待确认。[旧行为](</e/tmp/wt-flutter-native-chat/flutter_ui/build/workspace-default-followup/red-ui.log>) · [定向通过](</e/tmp/wt-flutter-native-chat/flutter_ui/build/workspace-default-followup/green-ui-first.log>)。
+
+- 持久默认清除与防误存 7 文件回归：最终专项 83 项通过，定向 `flutter analyze` 未发现问题。未知偏好且未明确选目标时不写 Home；清除使用独立的本域移除并回读未设置。此处为 Flutter 回归和原生源码契约，不是 Android 实装证据。实现代理已交回窗口，Lead 全量结果见下一条；专用 AVD 单独验真正冷启、真实 Host cwd/归组和原值还原。同 ID 在创建处理瞬间换路径的原子校验仍缺 Host 协议支持。[最终专项日志](<E:/tmp/wt-flutter-native-chat/flutter_ui/build/workspace-default-followup/targeted-seven-final.log#L91>) · [定向静态检查](<E:/tmp/wt-flutter-native-chat/flutter_ui/build/workspace-default-followup/scoped-analyze.log#L2>)。
+
+- 持久默认工作区 Lead 全量 Flutter 复验：独占窗口已交回；Lead 串行执行完整 `flutter test --no-pub --concurrency=1 --reporter expanded`，726 项通过、1 项跳过，完整 `flutter analyze --no-pub` 无问题；两命令退出 0，目标 9 文件前后指纹一致。未执行 Gradle/打包/设备，实际落盘、冷启、Host cwd/归组与还原仍待验；同 ID 换路径的 Host 原子性不在此验证范围。[全量测试](</d/dsh-native-chat-validation/workspace-default-flutter-lead.7WGpQCGL/all-flutter-tests.log#L810>) · [全量静态检查](</d/dsh-native-chat-validation/workspace-default-flutter-lead.7WGpQCGL/flutter-analyze.log#L2>) · [独立收据](</d/dsh-native-chat-validation/workspace-default-flutter-lead.7WGpQCGL/lead-recheck.json>)。
+
+- 持久默认工作区实装验收顺序（待实施交付后执行）：实现代理独占 Flutter test/analyze 窗口；交回后再串行复跑定向／全量及 Android 构建。源码当前 code490，独立 AOT 诊断包已用 code491；下一正式测试包须大于 491、记录签名与 APK SHA，不混用诊断包。仅在专用 `dsh_flutter_20261116 / emulator-5570` 保数据实装，从正常工具栏进入。先回读原默认、稳定目录域及当前会话；只用既有 QA 组。保存 Alpha 默认后真正重启进程，留前后进程身份；两次普通新建分别核对唯一 SID、Host `session/list.cwd`、`workspace/follow` 成员。显式一次 Home 后下一次须回 Alpha；组内 Bravo 不消耗未使用的一次目标。若缺同 ID 跨域的可逆对照，明确标未验，不删或移动原有目录验证。结束用正常界面恢复原默认、回读并停 AVD；保留所有 QA 会话历史。暖入口不替代 B01 快速冷入口，Ask 本轮不启用。
+
+- 持久默认实装的精确还原门槛：预先区分「未设置」「明确默认 Home」「默认具体组」；前两者即使当前都建到 Home，也不是同一偏好。设备首次写入默认前，确认产品路径可清除默认（若原来未设置）或准确重设原值，并可从原生偏好权威回读。没有对应恢复路径则先不改该 AVD 的默认，不用「设 Home」冒充还原未设置；只读查看与隔离组件验证仍可做。验证跨进程后还原同一目录域的原记录，不重置或清除应用数据，不删除测试会话。
+
+- 持久默认设备取证步骤：新包通过 Android 回归并核对 SHA 后，仅在专用 AVD 先只读确认本域原偏好及目录 ID→路径；记录状态为缺键、明确 Home 或具体目标。若无法读到该域或无法通过正常菜单原样恢复，停止写入。用正常菜单设目标并回读，再以新 Android 进程和同一持久域验证默认仍在，分别记录两次新建的不同 SID，由 Host 独立回读 cwd 和实际分组，不能用客户端展示或构造的 cwd 替代。最后按原状态走清除或重设，复核同域的缺键或原目标；不写原始偏好文件，不清数据、不删会话。源码已见清除分支仅移除本域键并检查缺键，未执行设备步骤。[原生偏好桥](<E:/tmp/wt-flutter-native-chat/app/src/main/java/app/dsh/mobile/NativeChatActivity.kt#L290-L332>)。 域取证不能从磁盘键反推：以实装同次 Host 发布的 `workspaceDomain` 和 `workspaceGeneration` 为权威，或用该次实际启动输入按[目录域算法](</e/tmp/wt-flutter-native-chat/app/src/main/java/app/dsh/mobile/engine/NativeWorkspaceScope.kt>)独立核对。磁盘可能有其他宿主留下的键；文件不存在、恰好只有一个键、配置页所选模式或同一端口，都不能证明当前域的原状态。若不能证明当前域，继续只读，不改默认值。
+
+- 持久默认实装的离线偏好回读检查器：离线 13 项通过：对已独立核定的目录域，从完整 `native_chat_ui` XML 只读本域键，区分缺键、明确 Home 和具体工作区；空输出、坏 XML、重复键和错误类型均不冒充未设置。检查器不连接设备，也不证明目录域归属或还原成功；实装仍须经正常菜单修改及还原，并另验 Host cwd 与成员归组。[检查器](<D:/dsh-native-chat-validation/workspace-pref-readback-offline.1eE2Ln/check_pref.py>) · [离线日志](</d/dsh-native-chat-validation/workspace-pref-readback-offline.1eE2Ln/offline.log>)。
+
+- 持久默认 Host 归组的独立判据：随包 beta.115 `dsh-api-session-controller/src/commands.ts` 先解析 `cwd`，另调用 `workspace.attachSession`；`dsh-api-workspace-controller/src/feed.ts` 输出成员 `sessionIds`，控制器 `follow` 对快照和 upsert 均按访问范围过滤。新包要在同一授权宿主里，用 `session/list` 前后差锁定新 SID 并独立回读实际 `cwd`，再用只读 `workspace/follow` 的初始快照及后续帧核对目标组 `sessionIds` 包含同一 SID。目录正确不代表已归组；快照未到或视图受限时标未验证，不用原生抽屉高亮或客户端合成目录替代。旧夹具仅作 `session/list` 取证参考，不执行、不拿旧包收据替代持久默认冷启。[旧夹具读取](</d/dsh-native-chat-validation/beta115-device.LExK3EPV/workspace-device.py#L68-L79>)。
+
+- 持久默认 Host 原始分组帧校验：随包 `workspace/follow` 完整帧为 `baseline` 或 `replace`，成员在 `value.items[].sessionIds`；按 `workspaceId` 和 `path` 核对目标，另用 `session/list` 核对同一新 SID 的 `cwd`。Node 原始日志核对 12 项通过、0 失败；拒绝扁平 `snapshot`、`upsert`、不可见目标、错组、路径变化及重复项。这里只证明离线判据，不证明真实帧来源、访问范围、时序、设备归组或默认值还原。[收据](<D:/dsh-native-chat-validation/workspace-full-frame-lead.eYQ0o9/receipt.json>) · [测试日志](</d/dsh-native-chat-validation/workspace-full-frame-lead.eYQ0o9/offline.log#L15>)。
+
+- 持久默认与 B01 共享宿主代际复核：当前接线快照中，`nativeWorkspaceScope()` 分别读取进程、就绪状态和启动作用域，没有比对同一 `bootId`。可能的交错是先通过旧宿主就绪检查，暂停后读到新宿主已写入但尚未发布就绪的作用域；这是源码审查风险，未在设备观测到错误写入。接线交回时复核：若仍分读，用同一就绪快照绑定作用域与启动代际，并补「同端口换代、未就绪的新代际不返回作用域」反例。该检查不等于 SharedPreferences 跨代事务，也不解决 `session/create` 处理瞬间同 ID 换路径的问题。复核前不放行设备默认值写入。[作用域读取](<E:/tmp/wt-flutter-native-chat/app/src/main/java/app/dsh/mobile/engine/EngineSupervisor.kt#L207-L210>) · [冷入口快照](<E:/tmp/wt-flutter-native-chat/app/src/main/java/app/dsh/mobile/engine/EngineSupervisor.kt#L111>)。
+
+- 持久默认宿主换代的离线反例：将同一版 `nativeWorkspaceScope()` 方法体拷到隔离 Kotlin/JVM 夹具，注入旧宿主已就绪读取后切到新宿主启动中的交错：同域、跨域两个反例均精确复现「boot-A 就绪放行、却返回 boot-B」；原方法夹具 3 过 2 失败，使用同一就绪发布记录的对照 5/5。此证据只验证方法体在合成状态下的交错，不是 Android 错写实证或已修复。生产待所有者在接线交回后处理；设备默认写入仍不放行。[离线收据](</d/dsh-native-chat-validation/workspace-generation-read-lead.BCAwLu/receipt.json>)。
+
+- 持久默认宿主换代修复派工：实现由 `ccc86a64-106c-4cad-ba67-246e869e79d9` 独占 EngineSupervisor 作用域相关生产接线及对应回归。修前 Android 定向 36／未过滤 173 都通过，不能覆盖已复现的分读；修复交回后重跑相应用例和未过滤全量，再递增版本并构建。未放行设备默认写入，未启动 APK 构建或 AVD。[Android 基线](<D:/dsh-native-chat-validation/android-b01-nonincremental.ugDyFV/receipt.json>) · [换代反例](<D:/dsh-native-chat-validation/workspace-generation-read-lead.BCAwLu/receipt.json>)。
+
+- 持久默认宿主换代修复交付：代理 `ccc86a64-106c-4cad-ba67-246e869e79d9` 已释放源码和独立 JVM 窗口。Lead 核对当前 EngineSupervisor 与测试 SHA，并确认最终缓存 Kotlin/JVM 编译退出 0、17/17 通过。此前 Android 36/173 是修前基线，不能替代最终全量。工作区作用域读取与发布已共锁；`engineInfo` 的独立跨代分读尚待接线，设备偏好写入继续关闭。[最终换代收据](<E:/tmp/wt-flutter-native-chat/app/src/test/workspace-publication-evidence/delivery-green/receipt.json>)。
+
+- 持久默认真实访问器红测：缓存 Kotlin/JVM 编译完整修前 `EngineSupervisor`（编译退出 0），`NativeWorkspacePublicationTest` 直接调用生产访问器；测试退出 1，14 项中 7 项失败。原始断言确认同域切换中，读到旧一代的就绪后错误返回新一代 `boot-B` 的作用域。不同于前一份复制方法体的夹具；仍不是 Android 设备错写证据。修复尚在原代理的独占写窗口内，实装与默认值设备写入仍不放行。[原始收据](<E:/tmp/wt-flutter-native-chat/app/src/test/workspace-publication-evidence/red-read-interleaving/receipt.json>) · [错误作用域断言](</e/tmp/wt-flutter-native-chat/app/src/test/workspace-publication-evidence/red-read-interleaving/tests.log#L33>) · [测试计数](</e/tmp/wt-flutter-native-chat/app/src/test/workspace-publication-evidence/red-read-interleaving/tests.log#L51>)。
+
+- 持久默认宿主换代修复快照复核：Lead 已核对当前 `EngineSupervisor.kt` 与离线通过收据的 SHA 一致；缓存 Kotlin/JVM 完整编译该类并直接调用生产访问器，17/17 通过；12 个坏门禁对照均编译成功、执行失败。当前就绪、启动代际与作用域在同一发布锁内核验，旧 spawn 的清理也走归属检查。此为局部验证，不代表写窗已交回、Android 全量重跑或设备落盘通过。独立的 `engineInfo()` 地址与作用域分读仍见下一条；它和最终 Android/设备复验都不能用 17 项通过替代。[通过收据](<E:/tmp/wt-flutter-native-chat/app/src/test/workspace-publication-evidence/green-all-writes-guarded/receipt.json>) · [JUnit 日志](<E:/tmp/wt-flutter-native-chat/app/src/test/workspace-publication-evidence/green-all-writes-guarded/tests.log#L5>)。
+
+- 持久默认 engineInfo 跨代回读复核：与已交办的作用域访问器修复是两个边界：原生 `engineInfo()` 先读地址，再读已锁定的作用域与可用性。隔离 Kotlin/JVM 夹具按生产字段读取顺序注入换代，同域和跨域均能产生「A 地址 + B 代际」，转入启动也能产生旧地址与当前不可用标志的组合，旧投影 2 过 3 红、单快照对照 5/5。仅证明分读可合出不一致元数据，不证明 Android 接受过错误连接或写错默认值。下一步在工作区修复正式交回后核对该桥是否仍分读；若仍在，优先让 URL、可用性及工作区域标识来自同一次宿主发布，再测真实 MethodChannel；不改 Host 协议，不提前放行设备默认写入。[离线收据](</d/dsh-native-chat-validation/workspace-engine-info-lead.c2yEm4/receipt.json>) · [原生读取](</e/tmp/wt-flutter-native-chat/app/src/main/java/app/dsh/mobile/NativeChatActivity.kt#L579-L581>)。 接线约束：URL、可用性、对外 Host 状态和工作区域标识由 `EngineSupervisor` 同一次发布读出；持锁期间只取快照，不做 I/O 或调用 MethodChannel。作用域缺失不应阻断同代已就绪宿主的普通聊天，只让持久默认不可用；保留现有状态字串、设置字段及模式切换逻辑，并让本次 URL 驱动既有待生效判定。补实际快照调用及桥接回归：同域／跨域从 A 换 B、B 启动中、同代可用但缺作用域、Healthy／SafeMode，不能以拒绝所有连接取绿。不输出 URL 或令牌。
+
+- 持久默认 engineInfo 快照接线派工：已委派 `2aa1ee79-e2ae-43bd-be61-01e4442b89b6` 独占两处 Android 元数据接线和相关回归；工作区访问器代理已释放。Lead 保留最终 Android 全量、打包及专用 AVD，在窗口交回前不运行。
+
+- 持久默认 engineInfo 快照接线交付：代理 `2aa1ee79-e2ae-43bd-be61-01e4442b89b6` 已明确释放源码和 JVM 窗口。Lead 核对四个源码指纹与最终离线收据；编译、测试退出 0，44/44 通过。原生 `engineInfo` 现在以单份发布投影地址、可用性、状态和匹配代际的工作区域；无作用域不挡普通聊天。此证据不等于 Android MethodChannel 或设备通过，默认值设备写入仍关闭。[离线收据](<E:/tmp/wt-flutter-native-chat/app/src/test/engine-info-evidence/final-green/receipt.json>)。
+
+- 持久默认 engineInfo 接线后的 Android 复验：定向 61 项通过、0 项跳过（退出 0）；未过滤全量 198 项通过、0 项跳过（退出 0）。最终源码与编译及 JVM 测试收据相符。未构建、验签或安装新 APK；真实 MethodChannel、冷入口时序与持久默认实装仍分层待验。[本轮收据](</d/dsh-native-chat-validation/android-engine-info-lead.U4ipNR/receipt.json>)。
+
+- beta.117 验收包构建：隔离树将版本递增为 1.6.0-beta.117/code492（跳过 AOT 对照 code491）；使用同一已核验 runtime 和非增量离线 Gradle。构建退出 0，实际 APK 的包名、ABI、v2 签名、同一签名证书、运行时和 51 项所选资源均已核对。未安装、未启动 AVD；B01、持久默认实装、Ask 均不因本次打包结案。[构建收据](</d/dsh-native-chat-validation/beta117-build-lead.pZLxkX/receipt.json>)。
+
+- beta.117 专用 AVD 覆盖安装：仅在 dsh_flutter_20261116 / emulator-5570 确认 code492、x86_64、实装 APK SHA-256 与验签包一致；原用户 0 数据 inode 未变、ADB 映射未改、模拟器已停。 未打开应用、未读写默认偏好或创建会话，B01/持久默认/Ask 仍待各自设备验收。[安装收据](<D:/dsh-native-chat-validation/beta117-install-lead.JIQC6B/device-install.json>)。
+
+- beta.117 正常工具栏冷入口复验：专用 emulator-5570 跨重启复核已装指纹未通过。未取得完整正常冷入口证据（阶段：confirm-installed-code）。 此轮未取得严格未就绪拒绝样本；不关闭 B01。 映射未变、模拟器已停。 未改默认偏好、未新建会话、未发 Ask。[设备收据](<D:/dsh-native-chat-validation/beta117-cold-entry-device.UBpItC/receipt.json>)。
+
+- beta.117 冷启动包管理分段复验：包管理回读未通过：元数据匹配=false、active path 退出=1、base APK 数=0、正常启动入口=false、哈希检查退出=未到达；未启动应用或点击。 捕获到该包 missing scanned package 警告。 专用 AVD 已停，映射未改。 没有重装、清数据、改偏好或发 Ask；不关闭 B01。[分段收据](<D:/dsh-native-chat-validation/beta117-package-readback-lead.MZuV3A/receipt.json>)。
+
+- beta.117 包扫描恢复边界：code492 当场安装、版本和 SHA 回读已通过，故障出现在专用 AVD 下次启动的包扫描；四次包路径查询均退出 1，未发现正常 launcher，没有进入产品入口。本轮未证明扫描失败根因，也不把它归因于 B01。beta.115 有同类现象和保数据覆盖后跨重启通过的独立对照，但不外推 code492。下一轮先确认专用模拟器进程完全退出，检查空间并对当前 AVD 目录做离线备份及哈希回读；启动后只在已确认包扫描失效、仍能证明原数据身份的情况下，以同签名同 SHA 的 code492 做一次 `install -r -t`，绝不卸载或清数据。回读通过后优先在同一运行窗口取证，再单独检验重启；如原数据身份或恢复条件不成立，继续停止写入。[本次分段记录](<D:/dsh-native-chat-validation/beta117-package-readback-lead.MZuV3A/receipt.json>) · [历史恢复](<D:/dsh-native-chat-validation/beta115-package-recovery.8A2EKMRs/recovery.json>)。
+
+- beta.117 专用 AVD 恢复前备份：修正原脚本编码名后，关机离线复制当前专用 AVD，32 个文件、7120776717 字节逐文件 SHA-256 回读一致，另核对注册文件。复制前后确认专用进程及端口停机；未改原设备数据、未启动模拟器或安装 APK。仍须在下次开机证明包扫描失败及原数据身份，才允许一次同包保数据覆盖。[备份收据](<D:/dsh-native-chat-validation/beta117-avd-backup-retry.49yfXz/receipt.json>) · [备份清单](<E:/tmp/dsh-flutter-avd-beta117-backup.5uwlk45z/backup-manifest.json>)。
+
+- beta.117 包扫描同包恢复与入口复验：恢复守卫未绿，没有安装（当前保存版本 492、数据 inode 139581、路径退出 1）。 正常冷入口未通过或未到达（validate-package-recovery-guards）。 未取得严格未就绪拒绝证据。 映射未变，专用 AVD 已停。 未卸载、未清理应用数据、未写工作区偏好或发送 Ask；恢复跨重启仍待复验。[设备收据](<D:/dsh-native-chat-validation/beta117-preserving-recovery.os0Vmv/receipt.json>)。
+
+- beta.117 包扫描恢复分离身份与版本回读：离线守卫 14 项通过。恢复前 `versionName` 缺项不作为匹配或可运行证据；仅用同一专用 AVD、已验证备份、同次保留 code492/ABI/inode、三组扫描缺失及系统包正常作恢复门槛。恢复后仍强制完整版本名、精确 SHA 和正常 launcher。同 SHA code492 保数据覆盖一次，已回读精确版本名、活动 APK 哈希、启动入口与原 inode。 正常冷入口未取得通过证据。 未取得严格未就绪拒绝样本，B01 不结案。 映射未变、模拟器已停。 未清数据、未卸载、未显式更改偏好或发送 Ask；跨重启待查。[设备收据](<D:/dsh-native-chat-validation/beta117-recovery-identity.Oriapk/receipt.json>)。
+
+- beta.117 恢复后跨重启与焦点取证：焦点与工具栏 11 项离线守卫通过；设备使用上轮已验证的 `dumpsys window displays`，无单一焦点不猜测。跨重启确认活动 APK 的 code492、原数据 inode、正常 launcher 与 SHA 一致。 冷进程从正常工具栏到原生，观测窗内未见该应用 ANR。 未取得严格未就绪拒绝样本。 模拟器已停，ADB 映射未变。 不重装、不设默认、不创建会话或发 Ask；B01、持久默认仍未结案。[验证收据](<D:/dsh-native-chat-validation/beta117-reboot-focus-lead.vMYJWs/receipt.json>)。
+
+- beta.117 工作区默认写前只读取证：正常入口进原生后，以同轮宿主代际和实际进程目录独立核定当前域；完整 XML 确认原默认状态为 unset。 ADB 映射未变、专用模拟器已停。 未写偏好、未新建会话、未发送 Ask；B09 尚未实测归组和恢复。[只读收据](<D:/dsh-native-chat-validation/beta117-workspace-readonly.ijIsXw/receipt.json>)。
+
+- beta.117 工作区默认实装恢复入口预检：夹具主流程未执行 Host 或菜单预检，原收据不能判断该两项是否可用。 ADB 映射回读不变，模拟器已停。 未执行清除、未写默认、未创建会话；仍需取得同一 Host 的完整 workspace/follow 基线，才能做持久化和独立归组验证。[预检收据](<D:/dsh-native-chat-validation/beta117-workspace-restore-preflight.prkiu3/receipt.json>)。
+
+- beta.117 工作区默认恢复菜单与 Host 复验：旧夹具调用未进入主流程；离线对照已验证旧脚本失败、修正脚本通过。本轮未满足写前预检：inspect-live-restore-menu-and-host；Host session/list=true，正常清除控件=false。 ADB 映射未变、专用模拟器已停。 未执行清除或保存，未新建会话；尚未取得独立 `workspace/follow` 完整快照或持久默认归组证据。[复验收据](<D:/dsh-native-chat-validation/beta117-workspace-restore-recheck.oXB0Mx/receipt.json>)。
+
+- beta.117 原生首屏与工作区入口分层复验：宿主已就绪点击后，NativeChatActivity 获得焦点。 延后采样未见合格抽屉或工作区控件，不据 Activity 焦点判定 Flutter 首帧或转场通过。 同轮遮罩日志：附加 1、请求 PNG 0、Flutter 释放 0、失败事件 0；这些仅是日志计数。 正常菜单恢复前提尚未证实。 映射未变，专用模拟器已停。 未重装、未写默认、未创建会话、未发送 Ask；B01/B09 未结案。[收据](<D:/dsh-native-chat-validation/beta117-native-render-lead.ECWk5j/receipt.json>) · [延后截图](<D:/dsh-native-chat-validation/beta117-native-render-lead.ECWk5j/native-late.png>)。
+
+- beta.117 长窗口取证的入口遮挡。两轮冷启动均在工具栏触控前失去 Web 焦点。第二轮画面为 Android 的 “System UI isn't responding”，应用进程仍在，原生入口触控次数为 0。此前到达 Native 的样本在获得焦点后采到 39.498 秒，Android 源码的失效返回期限为 45 秒。包内比较确认 beta.115 与 beta.117 的 Flutter SDK 二进制和 isolate snapshot SHA 一致，Dart kernel 不同。 [入口受阻收据](<D:/dsh-native-chat-validation/beta117-first-frame-boundary.OskRiy/receipt.json>) · [系统弹窗](<D:/dsh-native-chat-validation/beta117-first-frame-boundary.OskRiy/toolbar-miss.png>)。
+
+- beta.117 Dart kernel 加载失败。专用 AVD 的已就绪工具栏点击后，Flutter 同 PID 报 `Invalid kernel binary: Indicated size is invalid`，根 isolate 创建失败。屏幕未出现 Flutter 控件，约 45 秒后返回 Web。APK、合并资产和 Flutter `app.dill` 的对应字节一致。code490、492 的 kernel 均通过 31 个组件的外部边界读取，且在 AOT 编译器对照中以相同错误退出。构建阶段将 code492 的单个生成缓存移到备份位置，强制重新执行 Flutter 编译，使用 code493 进行对照。 [同轮日志](<D:/dsh-native-chat-validation/beta117-system-ui-gated.G5Fvyl/startup-filtered.json:120>) · [离线对照](<D:/dsh-native-chat-validation/beta117-kernel-parser.3nApo7/receipt.json>)。
+
+- beta.118 冷进程 Flutter 首屏实装通过。code493 经同签名覆盖安装，用户 0 数据 inode 保持 139581，实装 APK SHA-256 为 `e0a591b1eb313e10378bee70a0b2f268a89aeda96eafa7aeafafd7b30fdd5734`。冷进程由正常工具栏进入已就绪宿主，Flutter 请求并释放遮罩各 1 次，原生抽屉控件出现。设备提取的 kernel 与签包 SHA 相同，采样窗内应用 ANR、kernel 错误和转场回退均为 0。专用 AVD 已停且 ADB 映射回读一致。严格未就绪重试、会话 SID 和工作区持久化继续验收。 [设备收据](<D:/dsh-native-chat-validation/beta118-native-startup-device.PhoctD/receipt.json>) · [原生首屏](<D:/dsh-native-chat-validation/beta118-native-startup-device.PhoctD/flutter-content.png>) · [构建收据](<D:/dsh-native-chat-validation/beta118-fresh-kernel-lead.wXV8nA/receipt.json>)。
+
+- beta.118 工作区实际 Host 首轮。`session/list` 和 `workspace/follow` 完整帧均已在专用 AVD 读取。当前域原偏好为缺键，一次正常新建的会话 `session-496f154b-1e87-4fb5-9a98-ba40244de6e5` 回读 cwd 为 Home 且未归入 Alpha。正常菜单捕获到保存、清除、Alpha，试点 Alpha 后缺少匹配期望文本的胶囊无障碍读数。夹具停在保存阶段之前。模拟器已停，ADB 映射一致。 [首轮收据](<D:/dsh-native-chat-validation/beta118-workspace-e2e.SlYBM9/receipt.json>)。
+
+- beta.118 持久默认工作区专用 AVD 验收通过。通过原生菜单将 Alpha 设为默认，并回读同域偏好中的工作区 ID 与路径。应用进程由 2759 换为 5389，Host 启动代际也已更换。重启前创建 1 条，重启后连续创建 2 条，`session/list` 回读了三个不同 SID 的 Alpha cwd，`workspace/follow` 完整帧确认三个 SID 均为 Alpha 成员。通过原生菜单清除默认后，复核同域偏好恢复为原有缺键状态。QA 空会话保留，ADB 映射已恢复，专用模拟器已停。显式 Home 覆盖和目录域切换仍待分别实装。 [验收收据](<D:/dsh-native-chat-validation/beta118-workspace-selection.tVkO5e/receipt.json>) · [原偏好回读](<D:/dsh-native-chat-validation/beta118-workspace-selection.tVkO5e/restoration.json>)。
+
+- beta.118 Ask 只读观察预检确认了 code493 实装身份。正常打开终端后，窗口在提交之前回到 Web，观察器没有启动，临时文件已回读清除。待答路由仍缺同轮 Bridge 数据。[复验收据](<D:/dsh-native-chat-validation/beta118-ask-passive-preflight.ohSw2l/receipt.json>) · [终端返回日志](<D:/dsh-native-chat-validation/beta118-ask-passive-preflight.ohSw2l/startup-filtered.json#L93>)。
+
+- beta.118 Ask 观察器复验通过。从正常终端入口点击 PTY 并确认控件获得输入焦点。返回 Web 后，既有认证通道连续 3 次完整读到 `GET /ask` 的 `pending=false` 和 `GET /task/allow` 的 `allowed=true`。本轮属于发送前观察器校验。观测进程已退出，临时文件和 ADB 映射已清理，专用 AVD 已停。 [设备收据](<D:/dsh-native-chat-validation/beta118-session-selected-baseline.bosljE/receipt.json>)。
+
+- beta.118 Ask 模型恢复预检。设备 Host 的 `session/modelCatalog` 回读可用服务商数为 0。已知空会话的 `modelSelection.next` 为 null，两个既有 QA 会话有明确模型选择。已找到满足恢复门槛的 QA 会话，预检期间模型设置无写入、消息发送次数为 0。已恢复 ADB 映射，专用模拟器已停。 [设备收据](<D:/dsh-native-chat-validation/beta118-ask-qa-model-preflight.p74Qmn/receipt.json>)。
+
+- beta.118 Web 到原生会话接续实测通过。两次从正常 Web 工具栏进入，Host 均为 Healthy，Web 原选中 `session-bb6945eb-b216-43e3-9e58-268b69db2b31`。Flutter 首次可读内容直接显示同一个 QA 正文标记。验收夹具没有识别出原生抽屉的无障碍控件，原生切换及 Web 回返仍待验证。原 Web 选中项、ADB 映射已回读，专用 AVD 已停。 [同轮收据](<D:/dsh-native-chat-validation/beta118-handoff-ready-predicate.sH2Pz8/receipt.json>) · [Flutter 首次会话截图](<D:/dsh-native-chat-validation/beta118-handoff-ready-predicate.sH2Pz8/web-native-a.png>)。
+
+- beta.118 系统返回键的会话接续通过。正常 Web 工具栏打开 A，原生抽屉切换到 B，按系统返回后原 WebView 显示 B 的准确 SID 与正文，A 正文已消失。CDP frame、loader 与页面时间原点一致。原 Web 选中项和 ADB 映射已恢复。[设备收据](<D:/dsh-native-chat-validation/beta118-handoff-drawer.soCXVh/receipt.json>) · [返回 Web 后的会话](<D:/dsh-native-chat-validation/beta118-handoff-drawer.soCXVh/back-web-b.png>)。
+
+- beta.118 显式「打开 Web 版」的会话接续通过。经正常工具栏打开 A，原生抽屉切换 B，实点运行面板中的「打开 Web 版」，原 WebView 显示相同的 B SID 和独有正文，A 正文消失。CDP frame、loader 与页面时间原点一致。原 Web 选择和 ADB 映射恢复，专用模拟器已停。 [设备收据](<D:/dsh-native-chat-validation/beta118-handoff-tap-visible-web.eHK0VK/receipt.json>) · [实点前的运行面板](<D:/dsh-native-chat-validation/beta118-handoff-tap-visible-web.eHK0VK/runtime-before-explicit-tap.png>) · [返回后显示 B](<D:/dsh-native-chat-validation/beta118-handoff-tap-visible-web.eHK0VK/web-web-b.png>)。
+
+- 持久默认原生偏好复核（实现中快照）：偏好未知且未明确点选时，保存入口可能把空显示值转成明确默认 Home（[保存入口](<flutter_ui/lib/src/bridge/engine_sessions_native.dart#L574>)）；应禁止隐式覆盖。补反例：读偏好失败、打开菜单但不点选目标，保存不调用写入；明确选 Home 后才允许存 Home。当前快照未找到「清除默认」从菜单到原生移除本域偏好键并回读未设置的完整链路；实装前必须复核，不能用保存 Home 代替还原。此处是源码复核，不是最终实现或设备结论。
+
+- 持久默认设备收据离线判据：12 项离线对照通过，包含真实 code490 一次性收据反例，以及错误指纹、同进程、重复 SID、仅有合成 cwd、归组缺失、一次 Home 未消费和错误恢复状态。只校验收据结构和相互印证，不能证明数据来自实际设备；不覆盖同 ID 跨目录域或组内入口，这两项仍须独立取证。尚未接入实装夹具，未启动 AVD／Flutter／Gradle。[离线日志](<D:/dsh-native-chat-validation/workspace-restart-evidence.vhJGPTaR/offline.tap>)。
+
+- 下一包的冷入口回归边界：隔离树仍保留 5 个 [NativeChatColdEntryTest](<app/src/test/java/app/dsh/mobile/NativeChatColdEntryTest.kt>) 用例；上次 [Gradle 专项日志](<D:/dsh-native-chat-validation/cold-entry-red.wa1HmPh0/gradle.log>) 是 5/5 失败，非本轮复跑。持久默认交付后，先单列复跑冷入口类，再判定 Android 全量回归；不得过滤这些用例后宣称全量通过。若仍失败，明确区分可否产出专项诊断包、B01 未修与全量未过。本次只核对测试和历史日志，未启动 Flutter、Gradle 或设备。
+
+- beta.115 设备续验：保数据装机且 code490/x86_64、实装 SHA-256 与产物一致。引擎就绪后经正常工具栏进入原生；Bravo 折叠和恢复、Home 默认目录、长名 Alpha 同排且位于输入框上方、Alpha 下一次新建归组及恢复 Home 均通过。竞态仍为组件级红绿证据，不冒充设备复现。 [收据](<D:/dsh-native-chat-validation/beta115-device.LExK3EPV/workspace-device.json>)。 [Alpha 实装布局](<D:/dsh-native-chat-validation/beta115-device.LExK3EPV/alpha-selected-same-row.png>)。 已确认专用 AVD 序列号消失、5570/5571 无监听。 快速冷入口 ANR、结构化 Ask、桌宠和真机不在本次通过范围。
+
+- `1.6.0-beta.115 / code490 / x86_64 Full Debug`；APK 252716261 bytes，SHA-256 `b5f6d214a62d9cd0a1130212718afe9c37474c8b5e024dc29e59bb28184a06d9`，v2 验签通过；Gradle Android 单测和打包均退出 0。[构建日志](<D:/dsh-native-chat-validation/beta115-build.bzZqalif/gradle.log>) · [产物指纹](<D:/dsh-native-chat-validation/beta115-build.bzZqalif/sha256.txt>)。
+- 创建竞态：同 Host 成功回执先消费本次选择，再检查过期导航，失败不消费。长工作区名称：标准宽度两选择器同排、省略显示，菜单保留全名；窄屏和大字号允许分行。红测旧布局两按钮中心相差 65 dp；修后控件可见、可点、回选 Home 等于 null。Flutter 定向 26 项通过；全量 691 通过、1 跳过；analyze 无问题。[定向](</d/dsh-native-chat-validation/beta114-workspace-layout.HxOeTsgz/targeted.log>) · [全量](</d/dsh-native-chat-validation/beta114-workspace-layout.HxOeTsgz/full.log>) · [静态分析](</d/dsh-native-chat-validation/beta114-workspace-layout.HxOeTsgz/analyze.log>)。
+- 专用模拟器验证未全通过；安装哈希未获得回读。最后确认阶段：无；Command '['E:/Android/Sdk/platform-tools/adb.exe', '-s', 'emulator-5570', 'install', '-r', '-t', 'D:\\dsh-native-chat-validation\\beta115-build.bzZqalif\\dsh-native-chat-beta115-x86_64.apk']' timed out after 12 seconds。不将旧包实测或本次源码回归冒充新包设备通过。[设备收据](<D:/dsh-native-chat-validation/beta115-build.bzZqalif/workspace-device.json>)。
+- 未取得专用模拟器停机确认，未对其它设备发送命令；未清数据、未触碰其他设备或主仓库。
+
+## 快速冷入口 ANR：红测与 AOT 对照准备
+
+- B01 快速冷入口最小防护：采用真实 Host 单快照门禁：未就绪即留 Web 并提示，恢复后只接受新点击；就绪路径保留 PixelCopy→当前 SID→Activity-result。请求世代约束所有异步继续，旧截图使用独占文件；预启动超时只结束本次。已安排隔离目录的行为测试先行，暂不改生产或五组旧红测，不占用持久默认的共享写入／Flutter 窗口。该防护不等于 B01 修复；须另验就绪冷启动、转场及回传。[设计与验收门槛](<D:/dsh-native-chat-validation/cold-entry-host-gate.YhvyQiD3/DESIGN.md>)。
+
+- B01 生产接线的宿主代际门槛： `Healthy`／`SafeMode` 现有快照携带可加载 URL，但没有启动代际；每次启动生成的 `bootId` 可作为候选，须沿该次启动发布到同一份就绪快照，并覆盖 SafeMode／失效路径。入口及所有异步回调各读一次快照，不能先读 phase 再调用会重读状态的 `webUrl()`，也不能拼接单独读取的工作区域或按 UI 刷新次数推断代际。测试须覆盖同端口或相同可见地址下 A→未就绪→B，旧请求不得继续或清除新请求。待共享代码窗口交回后接线验证；本条仅核对源码，未改生产和设备。[状态定义](<app/src/main/java/app/dsh/mobile/engine/EngineSupervisor.kt#L43-L72>) · [启动 ID](<app/src/main/java/app/dsh/mobile/engine/EngineSupervisor.kt#L954>)。
+
+- B01 转场截图回收的接线门槛：纯 JVM 候选的 `onActivityResult(attemptId)` 假定结果已关联请求；现有 Android 入口使用固定 `REQ_NATIVE_CHAT`，取消分支明确只调用 `setResult(RESULT_CANCELED)`、不带数据，成功分支目前只返回会话 ID。接线不得依赖结果额外字段存在，也不能按「当前准备中的请求」删除文件。需验证已启动的唯一在途转场如何跨 MainActivity 重建保留归属，取消无数据仍回收它自己的独占截图，晚到或重复结果不删另一张，且成功会话承接照旧；复核仍为只读，不算接线通过。[MainActivity 结果入口](<app/src/main/java/app/dsh/mobile/MainActivity.kt#L3352-L3353>) · [NativeChatActivity 返回分支](<app/src/main/java/app/dsh/mobile/NativeChatActivity.kt#L777-L779>)。
+
+- B01 纯 JVM 行为候选收据：隔离候选的行为红测编译退出 0、执行退出 1。Lead 核对候选源码和测试 SHA 后，在独立目录用 Kotlin/JVM 1.9.24／JDK 17 重新编译和运行：55/55 通过、退出 0。覆盖就绪后完整转场、旧世代回调、超时重试与截图独占。仅为假端口行为回归；生产 Host 快照与转场结果接线、Android 未过滤全量回归、实际未就绪拒绝及就绪冷进程仍待验，B01 不结案。[行为红测](<D:/dsh-native-chat-validation/cold-entry-host-gate.YhvyQiD3/red/receipt.json>) · [独立复跑收据](<D:/dsh-native-chat-validation/cold-entry-jvm-lead.52Vm8DhU/lead-recheck.json>) · [日志](<D:/dsh-native-chat-validation/cold-entry-jvm-lead.52Vm8DhU/behavior.log>)。
+
+- B01 离线反例与接线交付：原始收据复核 15 项故意改坏的门禁均编译退出 0、行为执行退出 1；候选纯 JVM 55/55 的独立复跑不变。Android 仍需把真实启动代际和就绪状态放在同一份快照，并验证独占截图、Activity 重建及无数据取消结果的归属。现有五条冷入口 Gradle 红测未改，待共享窗口交回后再接线和复跑未过滤测试；未构建、未实装，不宣称 B01 修复。[反例收据](<D:/dsh-native-chat-validation/cold-entry-host-gate.YhvyQiD3/mutants/summary.json>) · [接线说明](<D:/dsh-native-chat-validation/cold-entry-host-gate.YhvyQiD3/WIRING.md>)。
+
+- B01 Android 接线派工：实现代理 `2460230e-0e49-451a-a0b4-d8674e0b5357` 已接到任务，负责 Android 接线与对应回归，不跑 Flutter、Gradle 或设备；不修改工作区偏好桥。Lead 已独立完成基线 Flutter 全量 726 通过、1 跳过。接线交回后先审查宿主单快照及无数据取消的截图归属，再串行跑冷入口及域标识定向 Android 回归、未过滤 Android 单测；通过后才递增版本构建 x86_64 APK。专用 AVD 实装后分别取证实际未就绪拒绝、就绪后用户重新点击及会话承接、持久默认冷启动与原值还原。没有取得严格未就绪现场，不据此关闭 B01；没有 Android 真实落盘和独立 Host 回读，不据此关闭持久默认验收。
+
+- B01 Android 接线交付：实现代理已释放源码写入窗口。Lead 核对最终离线收据：编译与执行退出 0，JUnit 32 通过，其中候选入口内含 55 个行为对照；MainActivity 与 EngineSupervisor 和测试源码快照一致。入口从同份状态读取实际启动代际与就绪；结果用独占请求码关联，不靠取消结果中的 Intent。此轮不含 Android 框架运行、实装或 ANR 结论。工作区偏好读取仍分读就绪与作用域，已复现的换代反例未消除，设备默认值写入继续禁止。[最终离线测试](<E:/tmp/wt-flutter-native-chat/app/src/test/b01-evidence/final-green-complete/tests.json>) · [交付汇总](<E:/tmp/wt-flutter-native-chat/app/src/test/b01-evidence/summary.json>)。
+
+- B01 Lead Android 单测复验：定向未通过证据门槛（退出 1）；未过滤全量未启动。保留原日志，先定位出错阶段，不将未执行或未核验的 XML 宣称通过。持久默认作用域换代分读尚待修正；未打可安装新包，未启动 AVD，不放行设备默认值写入。[独立收据](</d/dsh-native-chat-validation/android-b01-gradle-lead.vTTdRM/receipt.json>) · [定向日志](<D:/dsh-native-chat-validation/android-b01-gradle-lead.vTTdRM/targeted.log>)。
+
+- B01 Lead Android 运行时补齐复验：原失败为 full 包缺 `runtime.zip`。从已核对签名的 beta.115 原包提取原始 `assets/runtime.zip`，源包和提取文件 SHA-256 均复核；仅通过 `-PruntimeZip` 显式传参，未改构建配置。定向 未通过（退出 1；> Task :file_selector_android:compileDebugKotlin FAILED）；未过滤 未启动。证据仅为 Gradle/JVM；无新安装包、无 AVD 实测。工作区换代仍待修正，不放行设备默认值写入。[独立收据](</d/dsh-native-chat-validation/android-b01-runtime-retry.uvWdE6/receipt.json>)。
+
+- B01 Lead Android 非增量编译复验：原日志含Kotlin 增量缓存路径跨盘根错误；复验仅以本次 Gradle 参数禁用增量编译、采用进程内编译，且沿用已验证的完整运行时，未删缓存、未改构建配置。定向 36 项通过、0 项跳过（退出 0）；未过滤 173 项通过、0 项跳过（退出 0）。源码指纹一致；仍无新包或 AVD 证据，持久默认的宿主换代反例未关闭。[复验收据](</d/dsh-native-chat-validation/android-b01-nonincremental.ugDyFV/receipt.json>) · [定向日志](<D:/dsh-native-chat-validation/android-b01-nonincremental.ugDyFV/targeted.log>) · [未过滤日志](<D:/dsh-native-chat-validation/android-b01-nonincremental.ugDyFV/unfiltered.log>)。
+
+- B01 设备收据离线判据：离线检查器通过 15 个形状用例，拒绝旧 APK、只采到已就绪、把 OCR 当宿主状态、未重新点击即启动、重复启动和短收据。仅校验收据自洽，不认证真实采样、不闭合 B01；实际仍须审核同轮应用日志、正常触控、Web 保留、就绪后新点击和 SID，并另验转场画面。[检查器](<D:/dsh-native-chat-validation/b01-receipt-lead.4ptpSZ/check_b01_receipt.py>) · [测试日志](</d/dsh-native-chat-validation/b01-receipt-lead.4ptpSZ/offline.log>)。
+
+- Android 本机构建入口与放行门槛：隔离树没有 Gradle wrapper，不新增 wrapper 或改 PATH。已核对 Android CI 同版 Gradle 9.5.0 的本机缓存脚本、脚本引用的 CLI JAR、JDK 17 和 Android SDK 36 文件；未运行 Gradle，未验证离线依赖能否全部解析。等 B01 接线窗口交回并审查后，在隔离树用 `JAVA_HOME=C:/Users/Qt/.jwmv/candidates/java/17.35-tem`、`ANDROID_HOME=E:/Android/Sdk` 和[缓存 Gradle 启动器](<C:/Users/Qt/.gradle/wrapper/dists/gradle-9.5.0-all/aca6g93cdtcf0oapcfka748qh/gradle-9.5.0/bin/gradle.bat>) 执行 `--offline --no-daemon -Pabi=x86_64 :app:testDebugUnitTest`（先定向、再去掉过滤跑全量）。Android 回归通过后再从 code490 跳过 AOT 对照已使用的 code491，递增到至少 code492，运行 `:app:assembleDebug` 并核对 APK 包名、版本、ABI、签名与 SHA-256。设备验证仅限专用 AVD，偏好先有精确还原方案；没有严格未就绪实测不关闭 B01。[CI 版本](<E:/tmp/wt-flutter-native-chat/.github/workflows/android-build.yml#L515>) · [CI 任务](<E:/tmp/wt-flutter-native-chat/.github/workflows/android-build.yml#L619-L621>) · [当前应用版本](<E:/tmp/wt-flutter-native-chat/app/build.gradle.kts#L384-L391>)。
+
+- Android 旧包签名与运行时对照：复核 beta.115/code490 x86_64 APK：包名、原 SHA、v2 验签和单一签名证书指纹均已回读；实包仍为 JIT，嵌入 runtime 与历史收据一致。新包须单独验签，证书与此基准一致才允许覆盖安装；签名结论不代表装包或设备测试。[离线 APK 收据](<D:/dsh-native-chat-validation/beta115-apk-baseline-lead._mkvwuj_/receipt.json>)。
+
+- Android 运行时清单复核：按确切的 `assets/runtime/MANIFEST.json` 对照已验签 beta.115 与 Android 单测生成资源；两份实际 runtime.zip 的 SHA-256 与声明大小一致。已核对的清单字段一致；下一包仍单独核对。本次未启动 Gradle、未产新 APK、未操作设备。[对照收据](</d/dsh-native-chat-validation/android-runtime-manifest-lead.2lXivl/receipt.json>)。
+
+- Android 内置资源打包前对照：对照已验签 beta.115 APK 与当前生成及静态资源，核对 152 项非 Flutter 资源，126 项字节一致（含 `runtime.zip`）。另 26 项不同、未在这两处找到或有多份来源；这不等于新包缺失，实际 APK 仍需核对。不以资源存在证明插件已激活或界面可用。[对照收据](<D:/dsh-native-chat-validation/android-bundled-assets-lead.o3M5Vf/receipt.json>)。 依赖与清单已拆分核对：旧包 25 项 OCR 资源中 25 项在本机 ML Kit 依赖 AAR 中同时匹配原路径、长度和 CRC，不是从应用静态资源目录取；运行时清单变化字段为 `builtAt`。待对实际新 APK 核验，不以本机输入替代。 清单顶层 `builtAt` 是生成时间，与 `runtime.builtAt` 不同；后者与运行时版本、SHA、字节数一起按旧包指纹核对。仅顶层时间变化不判漏包，也不要求改时间让 APK 逐字节相同。[清单生成器](</e/tmp/wt-flutter-native-chat/scripts/write-runtime-manifest.py#L117-L168>)。
+
+- B01 快速冷入口：历史证据与候选范围。 code489 同次主线程 trace 起止行复核：Flutter loader 3516.38 ms、Dart 入口 3565.96 ms；系统事件另记失焦等待 5,032 ms、Activity 创建 7,850 ms。旧截图只能证明画面显示「正在启动引擎…」，日志没有同一点击点的 EngineSupervisor 状态，不能倒推出 actual state=Starting，也不能把 loader 就绪当成 Dart 启动完成。候选防护只保证真正未就绪时在 PixelCopy 之前留在 Web 并提示重试，不排队或自动跳转；就绪后用户重新点击仍走 PixelCopy→当前 Web SID→Activity-result。新设备取证必须在入口判定点记录真实 Host phase 和请求代际，不记录 token；分别验证拒绝路径、正常重试和就绪冷进程，不以通过旧源码形状断言或界面文案替代。未改生产入口、未复跑设备。[历史 trace](</d/dsh-native-chat-validation/code489-verified-entry-119f02495d-first-native-atrace.txt#L36927-L44956>) · [系统事件](</d/dsh-native-chat-validation/code489-verified-entry-119f02495d-events.log#L58-L62>)。
+
+- beta.115/code490 快速截图复核：修正 OCR 对尾随中点的识别与样本相对路径。历史启动、beta.115 参考、原生画面、移除按钮共 4 个离线对照通过。专用 AVD 已核对实装 SHA；未获得满足条件的启动态点击样本，未点击。专用 AVD 已停、保留端口无监听。未额外装包，不宣称 ANR 修复。[OCR 校准](<D:/dsh-native-chat-validation/beta115-fast-cold-entry.4JfIwFzt/ocr-calibration.json>) · [设备收据](<D:/dsh-native-chat-validation/beta115-fast-cold-entry.4JfIwFzt/cold-entry.json>)。
+
+- beta.115 宿主重启对照：经工具栏正常重启、只在明确启动状态与入口同现时尝试点击。未在同一无障碍树读到明确启动状态与可点入口，未点击。RuntimeError: explicit engine-starting status and clickable normal native button in the same hierarchy timed out: Command '['E:/Android/Sdk/platform-tools/adb.exe', '-s', 'emulator-5570', 'shell', 'uiautomator dump --com。本对照不替代全应用快速冷启动。无安装、卸载或清数据；已停专用 AVD 并核对端口。[宿主重启对照收据](<D:/dsh-native-chat-validation/beta115-engine-restart-entry.Uh7nJlDQ/restart-entry.json>)。
+
+- 历史场景已核实：beta.114 点击前原始截图明确显示「正在启动引擎…」，同次系统日志记录 MainActivity 失焦事件等待 5,032 ms 后 ANR。beta.115 已就绪样本不覆盖此状态；宿主重启对照也不等于全应用快速冷启动。[点击前截图](<D:/dsh-native-chat-validation/code489-verified-entry-119f02495d-first-native-web.png>) · [系统日志](<D:/dsh-native-chat-validation/code489-verified-entry-119f02495d-events.log#L60-L61>)。
+
+- 专用 AVD 恢复后重启：正常启动器、实装原 beta.115/code490 SHA 与应用数据 inode 139581 一致。untraced：引擎已就绪、出现抽屉、未记录 ANR；traced：引擎已就绪、出现抽屉、未记录 ANR。合格快速冷入口样本 0 个；不据此宣布 ANR 修复。本轮未覆盖安装或清数据；专用 AVD 已停且保留端口无监听。[重启取证](<D:/dsh-native-chat-validation/beta115-recovery-reboot.UKlcZh42/reboot-receipt.json>)。
+
+- 专用 AVD 包扫描恢复：先离线备份 31 个文件（7110749851 bytes，逐文件 SHA-256 回读）。仅 `adb install -r -t` 覆盖同签名原 beta.115；实装 SHA 与原包一致，启动器可解析，用户 0 的应用数据 inode 未变化。专用 AVD 已停，5570/5571 无监听。未卸载、未清数据、未做入口 ANR 采样；尚须重新启动后再核对包扫描和真实会话。[备份清单](<E:/tmp/dsh-flutter-avd-backup.RDyAhQqh/backup-manifest.json>) · [恢复收据](<D:/dsh-native-chat-validation/beta115-package-recovery.8A2EKMRs/recovery.json>)。
+
+- 快速冷入口包扫描：活跃包路径 exit 1，启动器解析 No activity found，`base.apk` stat 未取得，本包启动扫描日志 4 条。未满足活跃包、入口和哈希联合门禁，未点击，不以设置中的 code490 替代实装验收。本轮未覆盖安装、卸载或清数据；专用 AVD 已停，5570/5571 无监听。[包扫描与专项收据](<D:/dsh-native-chat-validation/cold-entry-package-scan.c2209xyL/package-scan.json>)。
+
+- 快速冷入口包状态复核：当前 Android 用户 0；解锁回读 Unknown command: is-user-unlocked；显式用户的包路径查询 exit 1。未验证实装哈希，未点击入口。合格早入口样本 0 个。AssertionError: Package manager did not expose one active base APK for the current user; no toolbar click。未重装或清数据；专用 AVD 已停、5570/5571 无监听。[包状态收据](<D:/dsh-native-chat-validation/cold-entry-package-state.kPLZKVH1/pre-ready.json>)。
+
+- beta.115/code490 快速冷入口复查：未通过实装 APK 哈希门禁，设备点击未执行。RuntimeError: ('shell', 'pm path app.dsh.mobile'): 。确认点击时引擎明确未就绪的合格样本 0 个。未安装、卸载或清数据；仅专用 AVD 已停，5570/5571 监听已释放。未将该轮结果作为 ANR 修复结论。[专项设备收据](<D:/dsh-native-chat-validation/cold-entry-hash-gate.uTtjWs5h/pre-ready.json>)。
+
+- beta.115 早入口门禁复查：装备未通过目标 APK 哈希校验，装机元数据 490 / 未读到版本名 / x86_64。RuntimeError: installed beta.115/code490/x86_64 package gate timed out 。合格早入口样本 0；仅在工具栏出现且引擎明确未就绪才计入。未装包或清数据；专用 AVD 已停、5570/5571 已释放。单轮结果不作为 ANR 修复结论。[门禁复查收据](<D:/dsh-native-chat-validation/cold-entry-gate-recheck.wu0ocmwh/pre-ready.json>)。
+- beta.115 早入口续验：未完成装机哈希校验。未取得样本。0 个样本确认点击控件时引擎显示未就绪；沿用同一 beta.115 APK，未安装、卸载或清数据。专用 AVD 已停，5570/5571 已释放。未把非合格样本或单一设备窗口当作修复结论。[专项收据](<D:/dsh-native-chat-validation/cold-entry-pre-ready.mQDzGXGs/pre-ready.json>)。
+
+- 同一专用 AVD 的一对进程冷启动样本：beta.115/code490（JIT）和 beta.116-aot/code491 均从正常 Web 工具栏进入原生，采样窗口均未见 ANR。主线程 `NativeChatActivity.performCreate`：JIT 243.38 ms、AOT 120.31 ms。样本未锁定首次可点时的宿主就绪状态，且 Debug/Release 除编译模式外还有差异；不据此消除 beta.114 已观察到的冷入口 ANR。已保数据恢复 code490 并回读原 APK 哈希，专用 AVD 已停。下一轮在首次可点且宿主未就绪时取样；对照无追踪与主线程追踪，不以已就绪入口代替。[实机对照收据](<D:/dsh-native-chat-validation/cold-entry-ab.YGhP0ARF/comparison.json>) · [耗时取证](<D:/dsh-native-chat-validation/cold-entry-ab.YGhP0ARF/comparison-timing.json>)。
+
+- 已构建隔离诊断包 `1.6.0-beta.116-aot / code491`。临时 Gradle init 仅改本次 APK 版本及签名配置，不改生产入口或项目 Gradle 文件。x86_64 ELF `libapp.so` 已核验、无 JIT `kernel_blob.bin`、嵌入 runtime 指纹一致，v2 验签及与 beta.115 同证书通过；APK SHA-256 `19cfda226732e53358a9f52e197590d281051d712e5e94ba85df14cdc90ab7c5`。未装机、未做快速冷入口采样、未运行 Android 绿测。[产物收据](<D:/dsh-native-chat-validation/beta116-aot.6nIiLhH0/aot-artifact.json>)。
+
+- 当前入口实跑 `NativeChatColdEntryTest`：5 个源码契约断言失败，0 个执行错误，尚未实现加载就绪门禁。已装 Flutter SDK 的 `ensureInitializationCompleteAsync` 只有成功回调；worker 或后续主线程任务里的异常不会返回发起处。未将该 API 加进入口，也不把红测当作 ANR 复现。[红测日志](<D:/dsh-native-chat-validation/cold-entry-red.wa1HmPh0/gradle.log>)。
+- `:app:assembleRelease --offline --dry-run` 退出 0，任务图包含 Flutter release 编译和 APK 组装；本机 SDK 缓存已定位 Windows x86_64 `gen_snapshot`。本次只验证任务图，未实际编译、验签、安装或判断 ANR 是否消除。下一步构建仅供专用 AVD 的 AOT 对照：先检查 x86_64 的 `libapp.so`、APK 指纹、签名证书和版本，再做同冷入口采样。覆盖安装要求与当前包同证书，不卸载或清数据。[任务图日志](</d/dsh-native-chat-validation/cold-entry-aot-plan.ggQcbv1e/gradle.log>)。
+
+## 结构化 Ask 待决证据（beta.113）
+
+- beta.115/code490 Ask 临时配置清理复验：按上次只读审计仅接受同一测试模型的 `id` 及宿主补齐的 `compat`、`input`，并核对专属凭据引用、loopback `/v1`、唯一 QA 会话与原始提问/工具调用序号。回读确认测试模型已移除、专属凭据未配置、其他模型不变、QA 会话仍在且空闲、ADB 映射恢复。未清数据、删历史或改 Web 选中项（原值未留证）。专用 AVD 已停，端口已释放。本次不验证 Ask 跨端问答。[回读收据](<D:/dsh-native-chat-validation/beta115-ask-scoped-cleanup.roXieLUh/cleanup.json>) · [所有权反例](<D:/dsh-native-chat-validation/beta115-ask-scoped-cleanup.roXieLUh/ownership-controls.json>)。
+
+- beta.115 Ask 下轮放行条件：退出应用终端会结束其 PTY 会话（[TerminalActivity.kt:593–595](<app/src/main/java/app/dsh/mobile/TerminalActivity.kt#L593-L595>)、[TerminalPtySession.kt:165](<app/src/main/java/app/dsh/mobile/engine/TerminalPtySession.kt#L165>)）；上轮终端命令未执行，不能据其失败推断实际分流。下次发送前先验证只读探针在 Web 前台连续出样、Host RPC 与独立清理路径可用，并持久化本轮原 Web 选中项及 QA 配置标识；不满足则不发问。仅用同轮唯一题干和两个选项全等认定 PhoneAsk 正例，不消费答案、不改允许位、不注册第二答复方。无匹配只说明该采样未观察到。待只读专家方案，当前不新开设备窗口。
+
+- Ask 夹具恢复准备（离线，未接设备）：新增独立的[恢复记录辅助模块](<D:/dsh-native-chat-validation/beta115-ask-recovery-checkpoint.kjNBNX9e/recovery_checkpoint.py>)。只接受 code490 指定 AVD、loopback 测试模型和专属凭据引用；首次写入不覆盖，落盘回读后才返回。保存原 Web 选中项、设置修订号和其他模型配置摘要，不导出凭据值。未知选择格式拒绝写入。先红后绿，6 项通过，[测试日志](<D:/dsh-native-chat-validation/beta115-ask-recovery-checkpoint.kjNBNX9e/offline-test.log>)。尚未接入夹具；后续须先接入并验证运行时数据形状及独立清理，再满足同前台旁听放行条件。本轮未启动 AVD、未发问。
+
+- Ask 恢复记录接入候选（仍仅离线）：[补丁预览](<D:/dsh-native-chat-validation/beta115-ask-journal-splice.f5zAdpSA/preflight-candidate.diff>) 把持久化放在首个凭据／模型写入之前，失败不进入写操作；旧夹具未修改。8 项离线检查通过，含旧夹具缺记录反例、原选中项为空、未知格式、实装指纹不符、拒绝覆盖和落盘失败。[验证收据](<D:/dsh-native-chat-validation/beta115-ask-journal-splice.f5zAdpSA/splice-validation.json>)。真实设备字段形状、独立恢复和同前台旁听仍未验证，不放行设备发问。
+
+- Ask 旁听候选阶段：正常终端返回会结束 PTY，独立探针须先做离线对照，再在正常返回 Web 后证明连续健康采样与独立恢复，才允许发问。精确 code490 APK 及内嵌 runtime 哈希已核对；随包 settings controller 声明 `expectedRevision: number | undefined`（归档内 runtime.zip!lib/node_modules/@deepseek-ai/dsh-api-settings-controller/src/index.ts 第 119 行）。会话选中项仍须在专用 AVD 实际只读回读，归档匹配不替代运行验证。未启动设备、未发问题、未改模型配置。[实包契约收据](<D:/dsh-native-chat-validation/beta115-ask-offline-gate.d7FVXZmP/shipped-contract.json>)。
+
+- Ask 首次续测的选择恢复边界：精确 code490 随包 `dsh-client-ui-workspace/src/client/navigation.ts:28–31、174、293–295、518–520、541–544` 表明 `MainSelection` 可为空对象或含 `subagentAddress`，普通会话由 `openSession` 更新选择。以上为包内契约，不是设备回读。首次续测只接受能从正常 Web 会话列表恢复的既有普通会话；若原选择缺失、为空或指向子代理，且没有已验证的界面恢复路径，则不写临时配置、不发送。独立恢复须在丢弃旧连接后用同源新连接复核，不以直接改浏览器存储或重载页面替代正常导航。[实包契约收据](<D:/dsh-native-chat-validation/beta115-ask-offline-gate.d7FVXZmP/shipped-contract.json>)。
+
+- Ask 独立清理的并发边界：精确 code490 随包 `settings/mutate` 接收 `expectedRevision`；凭据控制器 `unset(ref)` 的公开签名未接收设置修订号（`lib/node_modules/@deepseek-ai/dsh-api-settings-controller/src/credentials.ts:114`）。因此不能把先改模型、再删凭据当作跨接口原子事务；离线模拟的联合写入守卫不等同于真宿主能力。设备续测仍须另证隔离和恢复路径，不放行发问。[实包接口收据](<D:/dsh-native-chat-validation/beta115-ask-offline-gate.d7FVXZmP/cleanup-controller-contract.json>)。
+
+- Ask 独立恢复离线回归：Lead 复核核心 SHA-256，并在独立目录全新运行 62 项合成回归，全部通过（0 失败／错误／跳过）。覆盖同源新连接、原会话选择和写入时并发检查。`credential/unset-cas` 只存在于模拟适配器，不是 code490 宿主能力；正常界面恢复、凭据清理的宿主等效保护和 Web 前台连续旁听仍待设备或接口验真，不放行设备发问。[独立复跑收据](<D:/dsh-native-chat-validation/beta115-ask-lead-recheck.mnOcyXYv/lead-recheck.json>) · [测试日志](<D:/dsh-native-chat-validation/beta115-ask-lead-recheck.mnOcyXYv/lead-recheck.log>)。
+
+- Ask 旁听探针独立复跑：新目录启用子进程、网络与进程信号拦截，3 项拦截对照和 103 项合成测试通过，退出 0、无跳过。实际后台入口仍拒绝设备启动；Android 返回 Web 后连续采样、超时后代回收及独立恢复未验，不放行设备发问。[复跑日志](<D:/dsh-native-chat-validation/beta115-ask-observer-lead.BJAQ9MHc/lead-recheck.tap>) · [收据](</d/dsh-native-chat-validation/beta115-ask-observer-lead.BJAQ9MHc/lead-recheck.json>)。
+
+- beta.115 Ask 清理所有权审计：同名模型存在=true、测试凭据已配置=true、API 匹配=true、凭据引用匹配=true、旧模型形状匹配=false。未改模型、凭据或会话。专用 AVD 已停，保留端口已释放。[脱敏收据](<D:/dsh-native-chat-validation/beta115-ask-ownership-audit.KGeXzV8L/cleanup.json>)。
+
+- beta.115/code490 Ask 专用夹具 72dbbb392d 清理续验：尚未验证全部清理：Matching provider name has different ownership; no cleanup。原 Web 选中项未记入失败收据，未猜测或覆盖；未删会话、未清数据。专用 AVD 已停，5570/5571 无监听。本次不验证 Ask 分流或原生选答。[清理收据](<D:/dsh-native-chat-validation/beta115-ask-cleanup-recovery.oEgliMMa/cleanup.json>)。
+
+- beta.115/code490 Ask 只读对照：实装哈希与唯一 `tool/call` 已核对。未取得有效桥状态；不能据此判断实际分流。未确认全部诊断清理。专用 AVD 已停且端口已释放。本轮诊断不算触控或跨端选答验收。[设备收据](<D:/dsh-native-chat-validation/beta115-ask-phone-route.tjIm4JwH/select-summary.json>)。
+
+- beta.115/code490 Ask 诊断：不用键盘 Back 或坐标手势，只在同会话、精确 QA 草稿、唯一启用的发送按钮下执行一次 DOM 点击，另以真实 Host `user/message` 确认。离线 8 项通过。实装 SHA 已核对；同一轮 Host 待决 0 次、匹配 Web 卡 0 次、成对 0 次。旁听已附着，可归属的 mux 连接 0 条、确认同题下行 0 次；零匹配不能证明未派发。 AssertionError('Timed out: same-session Host question and matching Web card')。临时设置、选择和 ADB 映射已回读恢复。专用 AVD 已停。本轮不是触控或跨端选答验收。[诊断收据](<D:/dsh-native-chat-validation/beta115-ask-dom-diagnostic.sWQhyqEJ/select-summary.json>)。
+
+- beta.115/code490 Ask 夹具续验：发送前不再执行全局 Back；核对同会话、前台、完整草稿和唯一可命中发送按钮。离线 10 项通过。实装 SHA 已核对；未记录到同调用 Ask，不推断分流。旁听已附着，已确认 mux 下行同题 0 次，来源未确认同题帧 0 次；无匹配不证明未派发。AssertionError('Timed out: one hit-tested Web send target with exact draft')。临时设置、会话选择和 ADB 映射已回读恢复。专用 AVD 已停且保留端口释放。[设备收据](<D:/dsh-native-chat-validation/beta115-ask-ime-safe.c8ia2oH4/select-summary.json>) · [离线判据](<D:/dsh-native-chat-validation/beta115-ask-ime-safe.c8ia2oH4/composer-offline.json>)。
+
+- beta.115/code490 Ask 被动取证：实装 SHA 已核对。未取得可用的 Web 下行采样。夹具未取得同询问待决观测。 AssertionError('Closing the keyboard did not preserve the exact QA draft')。临时模型、会话选择和 ADB 映射已回读恢复。专用模拟器已停，保留端口已释放。未捕获匹配帧不等于未派发（既有连接可能未获 URL）；不据此认定悬浮窗接管。未验证原生选答完成。[设备收据](<D:/dsh-native-chat-validation/beta115-ask-passive.Szfymi7z/select-summary.json>) · [离线反例](<D:/dsh-native-chat-validation/beta115-ask-passive.Szfymi7z/observer-offline.json>)。
+
+- beta.115/code490 结构化 Ask 单场景续验：实装 SHA 已核对；已出现工具调用；Host 待决 0 次、Web 精确卡 0 次、同采样 0 次，未证实跨端回传。AssertionError('Timed out: same-session Host question and matching Web card')。临时设置、会话选择和 ADB 转发均复核恢复。专用 AVD 已停，端口已释放。不将本结果外推到跳过、跨会话隔离、普通文本或悬浮窗实际接管。[续验收据](<D:/dsh-native-chat-validation/beta115-ask-select-retry.bOFIkxrw/select-summary.json>)。
+
+- beta.115/code490 包内 `android-ask-bridge` 已做离线行为对照（实装对应 APK 指纹、精确资产、8 项通过）：普通 `ask_user_question` 未携带活动操机任务或会话信息时，若桥返回 `allowed:true`，仍走悬浮窗并可绕过内置 Ask；`allowed:false`、非布尔值、无 token、桥失败等走原实现。该结果只证明包内分流条件，不证明先前设备请求实际命中。下一步用唯一 QA 题干与选项分别比对桥的只读待决状态、Gateway 与可见卡，不改开关、不消费答案。[离线收据](<D:/dsh-native-chat-validation/beta115-ask-route.NcVO4fKr/route-controls.json>)。
+
+- beta.115 首次 retest 未进入夹具：已核对实装 SHA，宿主唯一 WebView 页面门禁先返回断言；未送出 Ask。新隔离启动器只对该可重试的页面发现断言做有界等待，保留正在运行会话/状态不可读的立即拒绝，并显式提供夹具实际要求的版本变量。离线 6 项通过；设备未重跑。`android-ask-bridge` 是可解释旧症状的前置分流，尚无运行时命中证据，未作根因结论。[上次收据](</d/dsh-native-chat-validation/beta115-ask-select.esrAqFmB/select-summary.json>) · [启动器](<D:/dsh-native-chat-validation/beta115-ask-preflight.Z5a5ntut/run-select.py>) · [离线验证](<D:/dsh-native-chat-validation/beta115-ask-preflight.Z5a5ntut/preflight-offline.json>)。
+
+- beta.115/code490 Ask 单轮选答复测：实装哈希已核对。未进入 Ask 夹具：AssertionError: expected one dedicated emulator Host page。专用 AVD 已停、5570/5571 无监听。[本轮分层收据](<D:/dsh-native-chat-validation/beta115-ask-select.esrAqFmB/select-summary.json>)。
+
+- 新增隔离复测夹具：同轮采样 Host `pendingInput` 与 Web 卡，记录缺哪一层、选择漂移、多卡和提前结案；同一会话同时满足待决与精确题干/选项才进入跨端选答。不注册观察者为第二答复端，不注入答复。离线 12 个判据通过，删除 Host 门禁的对照可被 Web-only 反例抓住。未操作设备，beta.115 Ask 端到端仍未验。[复测夹具](<D:/dsh-native-chat-validation/beta115-ask-observe.AUuc60Y3/native-ask-observe.py>) · [离线收据](<D:/dsh-native-chat-validation/beta115-ask-observe.AUuc60Y3/offline-gates.json>)。
+
+- 已核对随包 rc.2：legacy `ask_user_question` 调用 `userQuestions.ask` 时传 agent 和 signal，不传 `wait.callId`；`session/state.pendingInput` 则来自 Gateway 的待决表。复测时须并行记宿主待决数据与 Web 可见卡；legacy 用同一会话、唯一问题 ID、题干和选项关联待决阶段，以 `tool/result` 及夹具收到的唯一 `tool_call_id` 校验最终回传。不能用缺 `wait.callId` 判定 legacy 请求不存在，也不能用已有 `tool/call` 判定已呈现。当前尚未定位待决缺失根因。[原始收据](<D:/dsh-native-chat-validation/native-ask-da7431e8c3-device.json>)。
+
+- beta.113/code488 的 Web 输入框已发送，宿主事件中出现唯一同调用 ID 的 `tool/call`。采样窗口内宿主 `pendingInput` 为空、未看到 Web 待决卡；续测未拿到新鲜的原生无障碍树，未验证原生选答或答复回传。临时设置、选中会话、ADB 转发均已回读恢复。不能据此断言插件未激活或原生卡渲染失败；下一次回环先分别保存 `tool/call`、Host `pendingInput.question` 和 `tool/result` 时间线，再验两端显示与同一调用只结案一次。不使用外部计费模型。[Ask 分阶段收据](<D:/dsh-native-chat-validation/native-ask-da7431e8c3-device.json>)
+
+## 工作区一次性选择竞态（beta.114 后续源码，未打包）
+
+- 审查复现：选定 Alpha 发起创建，在回执前切换到已有会话，旧实现收到成功回执后先丢弃过期导航，导致第二次新建仍携带 Alpha。回归修前第二次实际为 workspaceId=alpha，预期空 request。修后同一 Host 世代收到成功回执即消费选择，过期自动切换仍被拦住，失败不消费。常规回归使用不同会话 ID，验证选组不换当前会话且随后一次新建回到默认请求。
+- 定向回归 25 项通过；全量 03:19 +690 ~1: All tests passed!；analyze 退出 0。[定向日志](</d/dsh-native-chat-validation/beta114-workspace-race.jvVhlHl8/targeted.log>) · [全量日志](</d/dsh-native-chat-validation/beta114-workspace-race.jvVhlHl8/full.log>) · [静态分析](</d/dsh-native-chat-validation/beta114-workspace-race.jvVhlHl8/analyze.log>)。未重打或安装 APK，以下 code489 设备证据仍对应旧包；冷入口 ANR 和长工作区名换行遮挡不在此修复内。
+
+## beta.114 工作区折叠与欢迎页工作区选择（2026-11-26）
+
+- 隔离树为 `feat/flutter-native-chat`，HEAD `f8e39a86960d516b35acfe387389608cbc1dcab2`，保留既有 WIP，未操作主仓库和其他设备。版本递增为 `1.6.0-beta.114 / versionCode 489 / x86_64`。Full APK 为 252,716,253 bytes，SHA-256 `89e57c11d09108912699ab9850c9f34e4a8a4e0e3d24e8a4ffc323444b09c105`，aapt 回读 `app.dsh.mobile`、code489、beta.114、native-code x86_64，apksigner v2 通过。[APK](<D:/dsh-native-chat-validation/beta114-build/dsh-native-chat-beta114-x86_64.apk>)
+- Flutter 串行全量为 689 通过、1 跳过、0 失败，`flutter analyze --no-pub` 输出 No issues found。`engine_home_test.dart` 15 项全过，含 delayed exact handoff、workspace feed、空目录、重试、创建失败、rotation 和 settings；session drawer、welcome layout、EngineHome 定向共 23 项通过。Gradle 使用 rc.2 x86_64 runtime、关闭 Kotlin incremental、in-process compiler，`:app:testDebugUnitTest :app:assembleDebug` BUILD SUCCESSFUL，102 actionable tasks。runtime zip SHA-256 为 `0b693c76ae829035bb9c2f74ebaa869ad3f7abd086c97840d861bbf80c5e92a9`。[构建日志](<D:/dsh-native-chat-validation/beta114-gradle-full.log>)
+- beta.114 已通过 `adb -s emulator-5570 install -r -t` 安装到专用 `dsh_flutter_20261116 / emulator-5570`，设备回读 code489、beta.114、primaryCpuAbi=x86_64，设备 base.apk SHA 与构建产物一致。
+- 生产实现：SessionDrawer 按 Host `workspace/follow` 真实目录分组，`workspace-collapse-{id}` 在本地维护折叠集合，折叠后不渲染成员行，组内新建仍使用真实 workspace。欢迎页四张方卡、鲸鱼标志、对话模式胶囊旁新增 `工作区：Home` 胶囊；菜单顶部说明“用于下次新建，不更改当前会话”，Home 映射 null，具体工作区只记录下一次创建目标。`session/create` 的 null/Home 请求保持空 request，真实工作区才写入 workspaceId。
+- 专用 AVD warm NativeChatActivity 实测：从已健康的 Web MainActivity 工具栏真实点击“原生对话”后，NativeChatActivity 获焦并保持可操作。[warm 原生](<D:/dsh-native-chat-validation/beta114-warm-native.png>) · [原生抽屉](<D:/dsh-native-chat-validation/beta114-native-drawer-open.png>) · [欢迎页](<D:/dsh-native-chat-validation/beta114-native-welcome-retry.png>) · [工作区菜单](<D:/dsh-native-chat-validation/beta114-native-workspace-menu.png>)
+- 工作区抽屉真实点击 bravo 折叠与恢复，折叠截图中 bravo 成员行消失，恢复截图中成员行重新出现。[折叠](<D:/dsh-native-chat-validation/beta114-workspace-bravo-collapsed.png>) · [恢复](<D:/dsh-native-chat-validation/beta114-workspace-bravo-restored.png>)
+- 欢迎页真实选择 Alpha 后，从原生抽屉点击下一次“新建会话”。Host 新行的 `session/list` 回读字段没有单独的 workspaceId，但真实 cwd 为 `/data/user/0/app.dsh.mobile/files/dsh-home/dsh-qa-beta98-alpha`，且新建完成后欢迎页回到 `工作区：Home`，一次性选择已消费。Flutter 回归已精确断言该次 `session/create` request 为 `{workspaceId: alpha}`。新会话在原生抽屉的 Alpha 分组中可见。[设备收据](<D:/dsh-native-chat-validation/beta114-workspace-alpha-device.json>) · [Alpha 分组](<D:/dsh-native-chat-validation/beta114-alpha-grouped-drawer.png>) · [选择后](<D:/dsh-native-chat-validation/beta114-post-alpha.png>)
+- 冷进程正常 Web→Native 入口仍不能判通过。`native-chat-verified-entry.py` 在 code489/SHA 实包上记录 NativeChatActivity 约 12.931 秒获焦，随后 MainActivity 因等待 FocusEvent(false) 5032 ms 触发系统 ANR；events.log 记录 NativeChatActivity performCreate 7850 ms，atrace 记录 FlutterLoader 3516 ms 与 DartExecutor 3566 ms。该 APK 与 beta.113 的 MainActivity/NativeChatActivity DEX 和 libflutter.so 相同，未证明由工作区改动引入，仍需单独修复/验证入口。证据：[冷入口收据](<D:/dsh-native-chat-validation/code489-verified-entry-119f02495d-receipt.json>) · [事件](<D:/dsh-native-chat-validation/code489-verified-entry-119f02495d-events.log>) · [trace](<D:/dsh-native-chat-validation/code489-verified-entry-119f02495d-first-native-atrace.txt>) · [ANR 画面](<D:/dsh-native-chat-validation/code489-verified-entry-119f02495d-first-native-final.png>)
+- 结构化 Ask、桌宠接入、真机设备、冷入口 ANR 修复仍未在本版本判通过。当前设备保留 Host QA 数据，未清数据；最终收尾前需结束专用模拟器后台进程并把本节同步到反馈台账。
+
+## beta.112 原生聊天实装（2026-11-25）
+
+- 隔离工作树 `feat/flutter-native-chat`，HEAD `f8e39a86960d516b35acfe387389608cbc1dcab2`。版本 `1.6.0-beta.112 / 487 / x86_64 Full Debug`，252,704,765 bytes，产物与专用 AVD `dsh_flutter_20261116 / emulator-5570` 实装 SHA-256 均为 `5d209f64d83251cac1ad7e7800d77740d5a80bd819732b4c01af917f44a7c54c`。通过 `adb -s emulator-5570 install -r -t` 覆盖安装。[APK](<D:/dsh-native-chat-validation/beta112-build/dsh-native-chat-beta112-x86_64.apk>)
+- `flutter test --no-pub --concurrency=1 --reporter expanded` 为 680 通过、1 跳过。`flutter analyze --no-pub` 无问题。Gradle `:app:testDebugUnitTest :app:assembleDebug` 为 `BUILD SUCCESSFUL`，Android 单测任务为 `UP-TO-DATE`。[Flutter 回归](<D:/dsh-native-chat-validation/beta112-final-tests.log>) · [静态分析](<D:/dsh-native-chat-validation/beta112-final-analyze.log>) · [构建](<D:/dsh-native-chat-validation/beta112-build/gradle.log>)
+- 已从 Web 工具栏进入 `NativeChatActivity` 并实点模型配置、个性化主题、权限管理及返回。首次和返回后权限均回读为「完全访问」。`ChatController` 在连接阶段显示读取状态，就绪后再展示权限告警，连接错误单独显示，权限未知时保持禁发。连接中及连接失败由两项定向回归覆盖。[设置收据](<D:/dsh-native-chat-validation/beta112-device-settings-qa.json#L639>) · [权限回归](<D:/dsh-native-chat-validation/beta112-permission-green.log>)
+- 真实 Bionic Node 配合回环模型完成两个顺序 `read` 调用，重试及执行期间暂停键可用，结束后仅最终答复出现操作栏。一个「已调用工具」展开两段思考和两条工具，顺序为思考→read→思考→read，三段边界间距为 2.18／0／2.18 dp。「参数与结果」显示独有文件内容，实点完整输出后可见长结果尾标记。带正文的步骤继续划分执行组。回环临时 provider 与凭据已移除，QA 会话留存。[展开](<D:/dsh-native-chat-validation/beta112-06163ce362-tool-stack-expanded.png>) · [事件与控件收据](<D:/dsh-native-chat-validation/beta112-06163ce362-live-turn.json#L840>) · [完整输出复验](<D:/dsh-native-chat-validation/beta112-06163ce362-existing-output.json#L148>)
+- 欢迎页在 1080×2340、440 dpi 的模拟器上，同屏显示 DeepSeek 鲸鱼、问候、四张 407×407 px（148 dp）的方卡、对话模式和输入区。模式胶囊实际打开，显示该 Host 的 standard、ptc、minimal、cordis。393×851 与 360×640 的组件测试检查无滚动、真实浮动输入区避让与点卡片只填草稿。2× 大字测试覆盖滚动可达。[欢迎页](<D:/dsh-native-chat-validation/beta112-4ec9cefc6d-welcome-one-screen.png>) · [模式菜单](<D:/dsh-native-chat-validation/beta112-4ec9cefc6d-welcome-mode-menu.png>) · [量测](<D:/dsh-native-chat-validation/beta112-4ec9cefc6d-live-turn.json#L605>)
+- 逐项状态见[验收台账](docs/reports/2026-11-22-beta92-feedback-ledger.md)。本节证据基于专用 AVD，真实账户与真机耗电依赖对应环境。
+
+## task-14 红测阶段记录（2026-11-25）
+
+- 仅新增 `flutter_ui/test/welcome_layout_test.dart`，未修改生产代码、设备、Flutter 测试或构建。测试通过真实 `ChatShell` / `FloatingConversationLayout`，在 393×851 与 360×640 断言品牌、问候、四卡、模式胶囊、真实 composer extent，验证卡片方形且图标/文字居中、窄屏可滚动、点击卡片仅填草稿不发送，并覆盖玻璃模式菜单。
+- 静态检查：`E:/tools/flutter/bin/dart.bat analyze test/welcome_layout_test.dart` exit 0，输出 `No issues found!`。`git diff --check` 无输出；工作树新增仅该未跟踪测试文件。
+- 红测尚未由本代理运行，按分工交给 Lead 串行执行 `flutter test test/welcome_layout_test.dart`；预期当前生产实现因品牌图标/卡片对齐/一屏布局断言失败。
+
+## beta111 交付与验证状态（2026-11-25）
+
+- 版本 `1.6.0-beta.111` / versionCode 486。Flutter 串行全量：`+667 ~1`（667 通过、1 跳过、0 失败）；`flutter analyze` → `No issues found!`；`dart format` 已统一 3 个改动文件。
+- 本轮落地的功能：①工具调用连续栈（连续 assistant 工具片段合并、组内 2dp、共用一条执行摘要、过滤空正文 assistant，`compactExecution` 关闭 22/12dp 留白）；②空白开始页四卡（两列等宽、正方形、图标在上、DeepSeek 标识、48dp 胶囊模式选择 + GlassPanel 展开菜单）；③设置详情页 MIUI 化（AppBar 无阴影 + w700、分组圆角 18dp + 描边、列表 16/8/16/32）；④运行模式页内切换（`RuntimeModeAuthority` 先验→落偏好→权威回读→不一致回滚）；⑤长会话搜索（`conversation_search.dart`，懒定位、页边界冻结、命中锚点、回底浮标）；⑥断线/错误卡可操作（`chat_shell.dart`、`turn_notice_card.dart`）。
+- 搜索栏布局最终定案：收起态完全不占布局高度（48dp 图标为 `Positioned` 浮层），展开态独占自己的上方条带（`Column` + `Expanded(Stack)`），因此 `floating_chrome_test` 的 `list.top < 58` 与 `conversation_search_test` 的「打开后 list.top > viewport.top」同时成立；该矛盾曾由两个并发实现者各自引入，由 Lead 统一改写 `conversation_flow.dart` 650–709 收口，实跑 36 项全绿。
+- 模拟器包：`D:/dsh-native-chat-validation/beta111-build/dsh-native-chat-beta111-x86_64.apk`，252687357 bytes，SHA-256 `63e0e673ef1b7fe793df8b925595371efa59f749e9179b64b284a9b27826df39`；专用 AVD emulator-5570 保数据 `install -r -t` 成功，回读 code486/beta.111/x86_64 且设备 base.apk 哈希与产物一致。
+- 真机包：`D:/dsh-native-chat-validation/beta111-arm64/dsh-native-chat-beta111-arm64-release.apk`，164873702 bytes，SHA-256 `c1796282609df84994399ad86c9df345949132fabfd3f534977c1fbc2e3913cc`；PLZ110（192.168.101.21:9000）`install -r -t` 成功，回读 code486/beta.111/arm64-v8a 且设备哈希一致；冷启 `Status: ok`、`LaunchState: COLD`、`TotalTime: 342`，logcat 无 FATAL/ANR。签名族与既装 beta.109 release 一致（release keystore）。
+- UI 实测缺口（未通过）：beta111 的首次设备 UI 验收由 terra-ui 在 MainActivity 的 WebView 首页执行，五项均落在错误界面（新会话/设置/运行模式/搜索入口都在 NativeChatActivity），结论为 1 证据不足 + 2 失败 + 2 证据不足，**不可作为产品结论**；已按原生入口重新派发。
+- 真机当前处于锁屏 + 灭屏（`isKeyguardShowing=true`、`mScreenState=OFF`、`mCurrentFocus=NotificationShade`），未做任何解锁尝试；需要用户本人解锁后才能在真机上复检界面。
+- 跨文件偶发：`native_session_transport_test` 的 "a restored model remains identifiable when its catalog is unavailable" 单跑单用例与单跑整文件均 22 项通过，仅在串行全量时偶发 [E]；本轮全量已未复现，倾向跨文件状态/时序污染，尚未根治。
+
+## beta111 设备实测（2026-11-25 04:30–05:00，emulator-5570）
+
+包：`1.6.0-beta.111 / code486 / x86_64`，SHA-256 `63e0e673ef1b7fe793df8b925595371efa59f749e9179b64b284a9b27826df39`（产物与设备 base.apk 一致）。密度 440dpi（2.75x），物理 1080×2340。
+
+以下为 Lead 真实点击取证（截图与控件树在 `D:/dsh-native-chat-validation/beta111-native/`），入口为 MainActivity 工具栏 `btnNativeChat` → `NativeChatActivity`（首轮由子代理验收时误在 WebView 首页操作，已作废）。
+
+- **四卡欢迎页：通过**。控件树实测 4 张卡：`编写代码` 174.2×174.5dp、`轻松聊天` 174.5×174.5dp、`整理计划` 174.2×174.2dp、`无障碍操作` 174.5×174.2dp，宽高比 0.998 / 1.000 / 1.000 / 1.002，两列等宽 479/480px，列间距 22px ≈ 8dp；图标在上文字在下；`deepseek` 标识位于问候语 `晚上好，聊聊接下来的计划` 上方（y 472–549）；`对话模式：standard` 胶囊 194.9×48.0dp，点击后展开 `standard / ptc / minimal / cordis` 悬浮菜单（每项 112dp 宽、48dp 高）。截图 `beta111c-welcome-4cards.png`、`beta111c-mode-menu.png`。
+- **搜索收起态零占高：通过**。收起时仅 `搜索已加载消息` 48.0dp 图标浮层（y 307），无占高条带；点开后出现 `0/0` 计数与关闭/上下命中按钮，正文锚点 `QA final native-timeout` 由 y 774 下移到 1228（展开时让位 165.1dp）；关闭后锚点精确回到 774，图标复现。截图 `beta111c-search-closed.png` / `-open.png` / `-after-close.png`。
+- **设置列表 MIUI 化：通过（列表壳与分组）**。设置页三组（运行与能力 / 显示与个性化 / 系统与数据）均为 18dp 量级圆角卡片 + 细描边 + 统一内边距，浅色标题与次级说明层级清晰；语言/个性化主题等行位于同一分组内。截图 `beta111c-settings-scrolled.png`。**二级页未逐项截图核对**（进入语言行实际落在个性化页，属导航命中偏差，需补测）。
+- **运行模式页内切换：通过（页内反馈，未完成真实切换）**。顶栏 `Bionic Node` 胶囊打开 `运行环境` 浮层（前台始终 `NativeChatActivity`），点 `DSH Alpine` 后仍在同一浮层内给出 `容器环境尚未部署，请先在「DSH Alpine」管理页部署`，**未跳转外部「运行身份设置」页**，符合用户诉求；但因容器未部署，成功切换路径未取得证据。截图 `beta111c-runtime-panel.png`、`beta111c-runtime-switch.png`。
+- **工具调用连续栈：证据不足**。实测会话 `QA Approval c778dbefe1` 仅有单条 `已调用工具，已运行命令`（48.0dp 行高、单一摘要头，未出现重复的 48dp 摘要切分）；另一回合 `| Item | Value |` 为 Markdown 表格回复、无工具行，取不到相邻多行间距数值。需在含多工具回合的会话里补测 ≤4dp。
+
+其它实测边界：设备通知权限弹窗需先点 `Don’t allow` 才能进入原生聊天；`uiautomator dump` 在 Git Bash 下必须 `MSYS2_ARG_CONV_EXCL=*` 且路径用 `/sdcard/...`，否则 dump 落到 `/Files/Git/sdcard/...`。曾在排查中临时开启无障碍服务，已还原 `accessibility_enabled=0` 并删除 `enabled_accessibility_services`。
+
+## 设置详情页视觉统一（2026-11-25，terra-ui，未构建）
+
+- 仅修改 flutter_ui/lib/src/ui/settings/settings_detail_pages.dart 的表现层；未改行为、回调、测试 key、Android/Kotlin 或构建配置。
+- 公共详情壳：AppBar 使用 DshPalette 的 ink/paper，标题 w700，elevation=0、scrolledUnderElevation=0；列表内边距由 16/10/16/28 调为 16/8/16/32，保持 8dp 节奏。
+- 公共 _SettingsGroup：圆角 20→18dp；surface 保持主题 token，新增 colors.line.withValues(alpha: .42) 描边；分隔线复用 colors.line。
+- 个性化页自然配色卡：surface→surfaceRaised，圆角 20→18dp，InkWell 同步 18dp；保留所有 mood key 与回调。
+- 已执行静态格式检查：dart format 实际格式化 1 文件；git diff --check 通过。按任务约束未运行构建、Flutter 测试或设备验证。
+- 当前缺口：视觉截图、暗浅色设备、动态字体和触控实机未验证，需 Lead 串行验证。
+
+## beta108 集成验收（2026-11-24）
+
+- 隔离树 `feat/flutter-native-chat @ f8e39a86` 集成原生语言刷新、会话权限即时写入与宿主回读、待决审批定位及 Web 空会话展示。Flutter analyze 无问题，串行全量 603 项通过、1 项跳过。Android 单测与 full x86_64 构建退出 0，系统栏与底栏源码探针分别通过 22 项和 10 项。
+- 专用 AVD dsh_flutter_20261116 / emulator-5570 从 beta107 用 `install -r -t` 覆盖至 1.6.0-beta.108/code483。APK 为调试签名，252614769 bytes，设备及产物 SHA-256 均为 `5436bb0af0e13354cc720e9678ebebe85c7906a792239c3fb9e954895bf1f151`。[APK](<D:/dsh-native-chat-validation/beta108-build.fl6TckwZ/dsh-native-chat-beta108-x86_64-full.apk>)、[构建日志](<D:/dsh-native-chat-validation/beta108-build.fl6TckwZ/gradle.log>)、[Flutter 回归日志](<D:/dsh-native-chat-validation/beta108-build.fl6TckwZ/flutter-test.log>)、[实装回读](<D:/dsh-native-chat-validation/beta108-build.fl6TckwZ/install-code483.log>)。
+- 设备验收进行中。逐项结果以 [反馈台账](docs/reports/2026-11-22-beta92-feedback-ledger.md) 为准。
+- F01/B09 beta108/code483 当前包在专用 AVD 实测：语言先从 zh 改为 de，回到同一 NativeChatActivity 会话后连接状态与输入提示为德语，重进语言面板仍保留 de，最后恢复 zh；收据 `code483-native-346856dc5f-language.json`，APK SHA `5436bb0af0e13354cc720e9678ebebe85c7906a792239c3fb9e954895bf1f151`。
+- B09/F01 beta108/code483：原生在 dsh-qa-beta98-alpha 新建 blank=true 会话，cwd 为 `/data/user/0/app.dsh.mobile/files/dsh-home/dsh-qa-beta98-alpha`；原生权限初值 danger-full-access，选择只读后宿主 projections 回读 read-only，未产生 turn/start，重进仍显示只读；Web 分组展开、刷新前后均显示同一空会话。收据 `code483-group-permission-3c32ffbee8.json`，linksRestored=true。
+- B08b beta108/code483 Web→原生：Web 输入框触发后，原生实点拒绝。宿主于 11.024 秒以同一请求 ID `4ebdfbcf-b27a-464f-97e2-30975bd38354` 唯一主动结案，非超时；原生和 Web 均进入终态并撤下按钮。设备测试配置与转发已恢复。[审批收据](</d/dsh-native-chat-validation/b08b-f35414a488-device.json>)。
+- B01 beta108/code483：冷暖正常入口均通过，到 Activity 首显 2.411／1.247 秒，点按至 Flutter 撤罩 8.300／6.709 秒。两轮均通过返回关闭系统通知权限窗，采样无 ANR；不等于历史样本已归因。[入口收据](</d/dsh-native-chat-validation/code483-verified-entry-af3b9635e5-receipt.json>)。
+
+
+## 主线同步与构建核对（2026-11-24）
+
+- 在隔离树 `E:/tmp/wt-flutter-native-chat` 的 `feat/flutter-native-chat` 上，使用共享本地 `main` `24df393f2a9ede932ee92e912f39547df33b54cf` 完成同步。合并提交为 `f8e39a86960d516b35acfe387389608cbc1dcab2`，父提交为内部 beta106 基线 `7d9b26dfd42391fbed9c776a21c3f97f97a67b05` 与本地 `main`。`origin` 因代理连接 GitHub 失败未读取，本次同步来源限定为本地 `main`。
+- 合并前创建回退分支 `backup/feat-flutter-native-chat-pre-main-sync-20261124`，保留 `stash@{0}` `pre-main-sync-20261124-feat-flutter-native-chat` 与 `stash@{1}` `On main: system-toggles-wip`。合并后应用 `stash@{0}` 无冲突，既有 WIP、草稿和历史记录继续保留。
+- 冲突处理保留内部原生聊天入口、NativeChatActivity、原生主题、AGP 9.1.1 与 Flutter plugin，并接入主线的 WebView polyfill、`ChatImportLayer`、`RuntimeInstaller` 自愈、`chat-anchor-fallback` 资产和部署清单。`app/build.gradle.kts` 当前 Material 依赖为 `1.14.0`。
+- stash 恢复前工作树为 219 条变更，当前为 223 条。新增的 4 条路径已核对为 3 个 Kotlin 编译错误日志 `.kotlin/errors/errors-1795473921465.log`、`.kotlin/errors/errors-1795474014258.log`、`.kotlin/errors/errors-1795474144503.log`，以及本轮补齐主线兼容 API 的 `app/src/main/java/app/dsh/mobile/MainActivity.kt`。三份错误日志和全部既有 WIP 均保留。
+- `MainActivity.kt` 本轮补入 `CookieManager`、`ImmersiveMode` 三档及旧布尔兼容 API、Splash 快照适配回调和 `IslandDock.BOTTOM` 分支。`EngineConfig.ensureChatImportLayer` 也已接入运行时初始化路径。
+- Flutter 门禁串行通过。`flutter analyze --no-pub` exit 0 且输出 `No issues found`，`flutter test --no-pub --concurrency=1 --reporter expanded` exit 0，585 项通过、1 项跳过。
+- Android 验证命令 `./flutter_ui/.android/gradlew :app:testDebugUnitTest :app:assembleDebug -Pabi=x86_64 -Ppackage=noruntime --no-daemon -Pkotlin.incremental=false -Pkotlin.incremental.useClasspathSnapshot=false` exit 0，`BUILD SUCCESSFUL in 51s`，102 个 actionable tasks 完成。APK 为 `app/build/outputs/apk/debug/app-debug.apk`，大小 118686985 bytes，版本为 `1.6.0-beta.106`、`versionCode 481`、x86_64。
+- 最终 `git diff --check` exit 0，未发现冲突标记。当前状态为 223 条变更、70 个 tracked changes、153 个 untracked files。HEAD 仍为 `f8e39a86`，回退分支和两个 stash 均保留。beta106 交接中列出的冷启动焦点、Flutter 语言跟随、Web 空会话同步、长会话负载和 Web 转原生主动决定仍按原判据记录。
+
+## 接班入口（2026-11-23，beta106）
+
+- [beta106 接班交接](docs/reports/2026-11-23-beta106-handoff.md)汇总了 20 项进度、设备收据、三份复核结论及接手顺序。[逐项反馈台账](docs/reports/2026-11-22-beta92-feedback-ledger.md)保留原始验收口径。
+- beta106 验收基线为 feat/flutter-native-chat @ 7d9b26df，继承全部 WIP。当前工作树已同步到合并提交 f8e39a86。专用 AVD dsh_flutter_20261116 / emulator-5570 最后回读 beta106/code481/x86_64。原交接时无运行中的托管作业和激活目标。
+- 接班前已实测原生拒绝、20.007 秒超时和 Web 允许一次。以下续验记录覆盖跨端与跨会话。原生入口尝试在发出请求前遇到焦点事件 ANR，Android 记录 NativeChatActivity 首次显示耗时 15.875 秒。Web 隔离尝试由非空 QA 草稿保护中止。两次测试设置均已恢复。
+- 23:37–23:38，专用 AVD 实装 beta106/code481/x86_64 哈希回读一致。存量 App 进程两次经 MainActivity 工具栏进入原生。两轮在系统通知授权页按返回后，分别于点按后 4.903／5.658 秒撤遮罩，采样窗口无 ANR。历史 ANR 根因及真正冷进程仍待取证。[启动收据](</d/dsh-native-chat-validation/beta106-entry-518e896367-receipt.json>) · [系统事件](</d/dsh-native-chat-validation/beta106-entry-518e896367-events.log>) · [首轮 atrace](</d/dsh-native-chat-validation/beta106-entry-518e896367-first-native-atrace.txt>)
+- 23:42，beta106 Web 从隔离 A 发出审批，B 仅显示自己的聊天，回到 A 后仍可处理原请求。宿主同 ID 唯一结案 `allowed-once`，4.858 秒，工具续跑并正常结束，测试配置已回读清理。[收据](</d/dsh-native-chat-validation/b08b-f6441bd69d-device.json>) · [会话 B](</d/dsh-native-chat-validation/b08b-f6441bd69d-web-isolation-foreign.png>) · [返回 A](</d/dsh-native-chat-validation/b08b-f6441bd69d-web-isolation-returned-pending.png>)
+- 23:47，beta106 原生→Web 通过同一待决请求接续，10.877 秒允许一次且宿主唯一结案。Web→原生一轮在 20.006 秒到达宿主默认拒绝终态，原生显示最终答复，活请求接续继续复测。[原生转 Web 收据](</d/dsh-native-chat-validation/b08b-9d468f69c9-device.json>) · [两端待决画面之原生](</d/dsh-native-chat-validation/b08b-9d468f69c9-native-handoff-pending.png>) · [两端待决画面之 Web](</d/dsh-native-chat-validation/b08b-9d468f69c9-native-handoff-web-pending.png>) · [Web 转原生超时收据](</d/dsh-native-chat-validation/b08b-004b787bcd-device.json>)
+- 23:57，beta106 从原生设置切德语，Android 写入 `de` 且重进保持选中，Flutter 当次返回仍显示中文。经界面恢复 `zh` 并核实。[语言收据](</d/dsh-native-chat-validation/beta106-native-080648472f-language.json>) · [Android 德语设置页](</d/dsh-native-chat-validation/beta106-native-080648472f-language-android-after.png>) · [Flutter 返回画面](</d/dsh-native-chat-validation/beta106-native-080648472f-language-native-after.png>) · [再次打开语言对话框](</d/dsh-native-chat-validation/beta106-native-080648472f-language-dialog-reopened.png>)
+- 23:59，beta106 标准和 360 dp、1.6× 窄屏的抽屉新建高度 132／159 px，账号菜单两组均可打开，运行面板间距均为 11 px。显示参数已恢复。[布局收据](</d/dsh-native-chat-validation/beta106-native-6ef5836183-layout.json>) · [窄屏抽屉](</d/dsh-native-chat-validation/beta106-native-6ef5836183-narrow-large-drawer.png>) · [窄屏运行面板](</d/dsh-native-chat-validation/beta106-native-6ef5836183-narrow-large-runtime.png>)
+- 11-24 00:09，beta106 的 30 轮回环会话经正常入口进入原生，八次滑动把最新可见标记从第 07 轮移到第 13 轮。前台静置／滚动／后台单核等效 CPU 约 103%／123%／27%。保留 QA 会话，临时设置与链路已恢复。[宿主 30 轮收据](</d/dsh-native-chat-validation/beta106-long-b2d19c3850.json>) · [负载原始数据](</d/dsh-native-chat-validation/beta106-long-787a2f6327.json>) · [滚动前](</d/dsh-native-chat-validation/beta106-long-787a2f6327-before.png>) · [滚动后](</d/dsh-native-chat-validation/beta106-long-787a2f6327-scrolled.png>)
+- 11-24，冷进程启动 MainActivity 为 1.534 秒，点原生入口后仍停留 Web，采样无 ANR。另一次 Web→原生跨端已看到同一待决卡，宿主最终在 20.010 秒超时。取证见[续验交接](docs/reports/2026-11-23-beta106-handoff.md#L52)。
+- 11-24，beta106 实际切换短、长模型名。胶囊扩至 x=745 px，加号、权限与发送的边界保持一致。[坐标收据](</d/dsh-native-chat-validation/beta106-composer-cae236ddf1.json>) · [短模型](</d/dsh-native-chat-validation/beta106-composer-cae236ddf1-short-model.png>) · [长模型](</d/dsh-native-chat-validation/beta106-composer-cae236ddf1-long-model.png>)
+- 11-24 00:35，同一 beta106 会话首轮前选 ptc，首轮后原生模式编辑入口退出，宿主拒绝改模式。宿主仍在生成时，原生已渲染表格和条形图。[原生首轮收据](</d/dsh-native-chat-validation/beta106-composer-bb57e1363b.json>) · [首轮前选择](</d/dsh-native-chat-validation/beta106-composer-bb57e1363b-before-first-mode.png>) · [首轮后](</d/dsh-native-chat-validation/beta106-composer-bb57e1363b-after-first-mode.png>) · [流式表格与图表](</d/dsh-native-chat-validation/beta106-composer-bb57e1363b-chart-streaming.png>)
+- 11-24，beta106 再次验证重试中停止键及两次工具结果后不提前完成，最终唯一 `turn/end` 后显示答复动作。原生工具长输出可从截断预览进入完整页并滚到末行。[宿主与画面收据](</d/dsh-native-chat-validation/beta106-2125b3fe14-live-turn.json>) · [完整输出收据](</d/dsh-native-chat-validation/beta106-2125b3fe14-long-output.json>) · [工具输出末行](</d/dsh-native-chat-validation/beta106-2125b3fe14-long-output-tail.png>)
+- 11-24，组内新建的空会话在宿主归组正确，Web 展开组重载前后都缺此记录。原生设置选择只读后在同一界面重进可见，发送前宿主值仍为原值。[分组与权限收据](</d/dsh-native-chat-validation/beta106-group-permission-d4c1039954.json>) · [权限页重进](</d/dsh-native-chat-validation/beta106-group-permission-d4c1039954-permission-reopened.png>) · [Web 重载后](</d/dsh-native-chat-validation/beta106-group-permission-d4c1039954-web-group-after-reload.png>)
+- 11-24，窄屏设置首页抽验账号、Token 与主要入口文案。当前未登录，退出按钮实测需登录态。[窄屏抽验收据](</d/dsh-native-chat-validation/beta106-copy-a3995493dd.json>) · [账号与 Token](</d/dsh-native-chat-validation/beta106-copy-a3995493dd-settings-1.png>) · [设置文案](</d/dsh-native-chat-validation/beta106-copy-a3995493dd-settings-3.png>)
+- 11-24，专用 AVD 停机前回读 beta106/code481/x86_64、原 APK SHA-256、中文、1080×2340、font_scale=1.0 和 ADB 正反向转发各 0 条。确认专用实例停止、5570／5571 端口关闭。保留既有 WIP、草稿和会话历史。[设备收尾收据](</d/dsh-native-chat-validation/beta106-cleanup-dcc7630c03.json>)
+- 设备操作结束后串行执行 Flutter analyze --no-pub 和 flutter test --no-pub --concurrency=1 --reporter expanded。两者退出码均为 0。分析无问题，全量 585 项通过、1 项跳过。设备实测沿用原 beta106 已安装包。[analyze 日志](</d/dsh-native-chat-validation/beta106-checks.VBL5X7Nf/analyze.log>) · [全量测试日志](</d/dsh-native-chat-validation/beta106-checks.VBL5X7Nf/test.log>)
+- 当前未结案判据包括冷启动焦点超时、Flutter 语言跟随、Web 空会话同步、长会话前台负载和 Web→原生主动决定，详见[续验交接](docs/reports/2026-11-23-beta106-handoff.md)和[逐项台账](docs/reports/2026-11-22-beta92-feedback-ledger.md)。
+
+## 当前工作：beta92 真机反馈修复（2026-11-22）
+
+- [逐项实现与验收计划](docs/superpowers/plans/2026-11-22-beta92-feedback-closure.md)；当前仅用专用模拟器。
+- B08b：已接入仅记录一次性用户同意的宿主命令，不修改 Android 或工具权限。beta104/code479 在专用模拟器启动报 `prompt section "android:cli-approval" order must be a finite number`；本地回归复现后改用宿主提供的 `TOOL_BASH` 排序值，33 项检查通过（含 19,999 ms 仍开放、20,000 ms 撤销的模拟时钟验证）。beta105/code480 仅在专用模拟器保数据安装并回读 APK SHA-256 `566e24e6d9cc0b0ebdc6bb0de3efe76c68845fab6f89e0946745fe21eb68c6f8`；本版本宿主启动日志 `plugin health: ok=true missing=[] failed=[]`；部署文件 SHA-256 `5c9f77472f1aa82b2985e4c7a0ad81ed8584c89b63aaf0e502cc17f399abb0e5` 与源码和 APK 资产一致。
+- beta106/code481（2026-11-23）：修正审批命令的 Bash 前台工具输出契约。专用 AVD 回读 APK SHA-256 `331cf44db734d0b2a805ca3de7b197be2e85eaa00de675511e701cd6fffd6f07`，宿主插件健康检查通过。原生端按钮拒绝、无人操作超时均实测到匹配的 `approval/asked` → `approval/decided` → `tool/result` → `turn/end`；拒绝保持同一请求 ID，超时耗时 20.007 秒（宿主事件为 `cancelled`、工具回执为 `rejected:`）。原生两轮结束后测试路由、凭据与转发均已回读清理。[原生收据](</d/dsh-native-chat-validation/b08b-c778dbefe1-device.json:346>)。同版 Web 从真实输入框发送，点击「允许一次」后宿主记录同一 ID 的唯一结案与 `tool/result`，工具收到 `allowed-once:`，回合正常结束；[Web 收据](</d/dsh-native-chat-validation/b08b-6cb3873808-device.json:81>)确认该轮临时测试路由、凭据与转发也已清理。测试过程中另观察到系统通知授权页伴随 MainActivity 焦点丢失超时 ANR，根因未确认；仅重启专用 AVD 上目标 App 进程，未清数据。
+- 工具调用事件（2026-11-22 22:39–23:12）：最小返回测试的代码相同；带空 `justification` 的调用在执行前被拒（`invalid justification: expected a non-empty sentence`），已有一次非空参数的对照返回 `probe-ok`，只读 Git 命令回读 `7d9b26df`。这些证据仅定位到该组调用的参数校验，不能判断整个会话是否发生解码退化。重复探测拖延了 B06，未产生新设备证据。后续省略权限提升字段，沿用会话权限，工具入口只转发，验收脚本用 Bash/Python；不重复探测。
+- beta103/code478（2026-11-23）：在专用 AVD 从原生设置验证模型发现、保存、编辑、重进回读及移除确认。发现仅改草稿，编辑保留高级配置和模型元数据，移除仅删除路由。测试凭据和 ADB 转发均已核实清理。[设备收据](</d/dsh-native-chat-validation/beta103-f01-59f3c1e0.json>)。Flutter 全量 586 项通过，静态检查无问题，Gradle 53 秒成功，设备 APK SHA-256 回读 `ce985bac85ade6d48d79e37e8927b387d90a1e861adfd073e6750f7c6a4f0c34`。
+- beta102/code477：B06 已在专用模拟器同场景复验。两次真实只读工具返回后，宿主尚未记录整轮结束，原生页保持停止键且无答复动作；唯一一次 `turn/end.reason.kind=completed` 后，仅最终答复出现一套五个操作。[实时轨迹](</d/dsh-native-chat-validation/beta102-c7678f2663-live-turn.json>)，[终态截图](</d/dsh-native-chat-validation/beta102-c7678f2663-finished-turn.png>)。583 项 Flutter 测试通过，analyze 无问题，Gradle 成功，设备 APK 哈希回读一致；回环测试配置、文件和 ADB 转发已撤销。
+- beta101/code476：原生模型页新增服务商与独立 Key；专用模拟器从输入栏新增后，设置重进回读成功并清理测试配置。Host首轮后模式选择返回 agent-preset/locked。全量581通过/1跳过，analyze干净。
+- beta100/code475：B08a 图表在真实聊天组件入口误折为代码已回归修复，表格转义与图表原文降级一并修复。四项先红后绿，全量 580 通过、1 跳过，analyze 干净；专用 AVD 已安装并从正常入口进入，B08a 的真实宿主回复已在原生历史同时显示表格与条形图；原生端实时流和外部模型未验。另补了 dsh-Go 固定版本协议对照与 beta99 抽屉取证，见反馈台账 beta100 小节。
+- 当前状态见[逐项台账](docs/reports/2026-11-22-beta92-feedback-ledger.md#L5)。B05 已实测下一次请求尚未返回时显示重试提示与停止键；调度事件到提示出现的时延未测。未结案重点：B08b 的同一待决请求切换与跨会话拒批；F01 的其他原生设置读写；B07 长会话场景；L01–L07 剩余布局与文案。下一步用无副作用的回环夹具，从已验证启动的版本核对同一审批在界面切换及另一会话中的可见性。只用隔离树和专用 AVD，不调用外部模型。
+- B07，2026-11-22 16:40：专用 AVD `dsh_flutter_20261116` / `emulator-5570`，空白欢迎页、引擎已连接。beta98/code473 前台两轮约 10 秒的单核 CPU 占用为 35.95%、34.36%，Android gfxinfo 累计帧增量为 30、35；后台为 2.78% / 0 帧。beta99/code474 在同一 AVD 同页面复测为 3.48%、3.38% / 0、0 帧，后台 2.98% / 0 帧。每轮首尾核对前台 Activity、进程 PID 和启动时钟；CPU 用 /proc/PID/stat 差值按 CLK_TCK 和 /proc/uptime 换算。两个版本间有重新装机及进程重启，结果仅代表本次模拟器静置采样，不代表真机续航；长会话滚动尚未测量。
+- 回归：修前每 2 秒查询到相同宿主状态也重建原生聊天；新增测试“identical Host polls leave the chat tree untouched”修前失败，修后验证相同状态不重建且真实状态变化仍更新。未关闭宿主轮询或 WebView 保活。Flutter analyze 0 问题；全量 576 通过 / 1 跳过；Gradle :app:assembleDebug exit 0（2m14s）。
+- 产物：beta99/code474 x86_64，SHA-256 `e134be5a7e83c1a058a31f57c351aeb618632864eb0b1f34ad1de7fd5f8b8c4c`；仅专用 AVD install -r -t 成功并回读版本。证据：D:/dsh-native-chat-validation/beta99-{analyze,test,closure-build}.log；截图 beta99-idle-welcome.png（9351d4ef01f4ada47fa6ac970801f22217c8c0f0c9ed88ecf8694c65805625ec）。
+- F03：beta98/code473，专用 AVD 的真实宿主目录为 `standard/ptc/minimal/cordis`。空会话菜单点选 `ptc`，经「打开 Web 版」并再次走原生入口后，NativeChatActivity 从 `dae0768` 换成 `85532ff`，模式仍为 `ptc`；随后通过原生菜单恢复 `standard`。重进截图 `beta98-f03-reopened.png` SHA-256 `fe0a4258cbfcb070730615d6cefd01762e28334328dffe5a9050061393655e11`。未发送消息；设备端首轮后的锁定未验。
+- F01 外观子项：beta98/code473，专用 `dsh_flutter_20261116`。从标准/深色/雾灰实际点按切到紧凑/浅色/暖砂，三项从 `native_chat_ui` 回读为 `compact/light/sand`。退出到 MainActivity 再走正常入口，NativeChatActivity 实例记录从 `5cf479b` 变为 `dae0768`；重进外观页三值不变。截图中同一背景像素为 RGB(248,245,239)，显示大小标题高度 65 px；恢复原值后为 RGB(21,26,25)、71 px，和初始截图一致。证据在 `E:/tmp/native-chat-web-preview/android-evidence/beta98-appearance-{pre-change,changed,reopened,restored}.png`，重进截图 SHA-256 `b9c40a52440f0b717635fbbfd0c194035da395eda37ec8405a5640008cd5312f`。通过产品界面恢复原有效值，无数据清理；不代表模型、权限或其它管理项的持久化通过。
+- B09：beta98/code473，专用 AVD 通过 Web 产品界面登记两个空测试工作区 `dsh-qa-beta98-alpha`、`dsh-qa-beta98-bravo`。原生抽屉排序与宿主一致（bravo 在 alpha 前）；原生组内新建前 bravo/alpha/未分组各 1 条，依次点 alpha、bravo 的组内入口后为 1/2/1、2/2/1。宿主登记只读核对两个测试组（仅输出名称和去重计数），各 2 条。证据 `beta98-b09-native-groups.png`、`beta98-b09-native-after-alpha.png`、`beta98-b09-native-after-bravo.png`。Web 回切抽屉仅确认两组顺序，未证明实时同步完整空会话列表；不覆盖这项。未发送消息，保留测试组和会话记录，不直接改宿主登记。
+- F02 六张快捷入口实测：beta98/code473，专用 AVD 新会话初始草稿为空。真实触点坐标分别落在 3×2 网格：x=[50,529]/[551,1031] px，y=[867,999]/[1021,1153]/[1175,1307] px。依次点「无障碍操作、编写代码、构建和调试、轻松聊天、理解一个概念、整理计划」，输入框逐项精确等于各卡文案以双换行连接；每步六张卡、模式按钮仍在，未触发发送/离开欢迎态。测后仅将本轮生成的草稿在原输入框清空并验证空值。证据 `beta98-starters-before.png` SHA-256 `2e3a8f6147d5cc9cc9e416c24896795d2aeec40980bfe52df96b75c60ba5bcd7`；填入终态 `beta98-starters-filled.png` SHA-256 `f7a4a8c4fdcf2b673fa0d082448927261e941f36fc87a08c050ec2eed3bbb2bb`。
+- F02：beta98/code473，x86_64 APK SHA-256 `cbdb543e67ddf860bb29bde49e9932aff191ec2d20ead54e32e69fecdb85c505`。欢迎页新增前台整点唤醒，退后台和卸载组件时取消计时，恢复前台按本地时间刷新。修前 23:59:59→00:00 测试失败，修后覆盖 24 条不同文案。专用 AVD 保持页面打开，05:59:22 为「给新的一天起个头」，06:00:14 为「早安，今天想做什么？」；截图 `beta98-welcome-post-boundary.png`、`beta98-welcome-hour-final.png`。本快照 Flutter analyze 无问题、串行全量 576 项通过（`beta98-analyze.log`、`beta98-test.log`），Gradle 构建及专用 AVD 安装 exit 0。
+- B04/F01：beta97/code472（x86_64，SHA-256 `5969cf6f7f526d91a82145a9ccd050c2aaa54166cfc13a80298ba28854cb4a06`）修复抽屉设置的七处占位路由。修前回归抓到插件入口未调用 `openSettingsSection`，修后组件测试 5 项通过。专用 AVD 实际打开并返回：插件市场、扩展中心、Linux 容器、语言、日志、备份与恢复、关于。语言原生弹窗需要先关闭弹窗，再返回 Flutter 设置；旧自动化只按了一次返回，续验核对了实际 Activity。未修改选项、安装插件或导入备份，不据此判定 F01 完成。
+- B01：beta94/code469 的录屏（720×1560）中，两个稳定 Web 锚点均上移 22 px，6 个高置信帧后回正。beta96/code471 的 `TYPE_APPLICATION_PANEL` 从 Android 30 起不再适配系统栏 inset；同一专用 AVD 正常入口录屏 142 帧，两个锚点在 120 个相关性 >0.90 的帧均为 0 px，剩余混合帧低于阈值不计位置；亮度标准差 <4 的空帧为 0，混合画面窗口约 821 ms，不等于冷启动时长。对照视频 `D:/dsh-native-chat-validation/beta94-closure-transition.mp4` 与 `beta96-closure-transition.mp4`。Android 握手契约红测 8 项中 1 失败，修后 8/8；Gradle 构建与专用 AVD 安装成功，APK SHA-256 `fff22b74234438c07174222c36ee3ab59af3ca80860e22ebe0afdd67fcf50a39`。本判定限此模拟器、这一入口和画面；旧 Android、真机及其他画面仍未测。
+- B04/B02：beta95/code470 中，设置 → 连接与远程 → Windows/Linux 已通过真实点按进入各自的原生 SSH 表单并返回（`beta95-settings-windows-ssh.png`、`beta95-settings-linux-ssh.png`）；此结果不是实际连接 Windows，也不代表全部原生设置的数据读写通过。
+- beta94/code469 专用模拟器已安装（x86_64，SHA-256 `79525bf5d48b4bb9da7e60030cb24861b52bc7999b19b8f17767024e0dcbebc5`）。B02 的 Linux SSH 入口已与本机隔离 Paramiko 服务实测：验证指纹与密码、执行固定样本得到 stdout `local-ssh` / stderr `diagnostic` / 退出码 `7`、断开后执行控件消失；错误指纹没有触发认证，正确指纹配错误密码有认证但未执行。仅证明此测试服务，未验证实际 Windows 主机。F02 实测六卡可见及「轻松聊天」只填草稿；F03 真实宿主菜单有 `standard`、`ptc`、`minimal`、`cordis`，成功从 standard 切到 ptc；24 小时、其他入口、持久化和设备首轮锁定仍未全验。
+
+- beta93/code468 真机验收（2026-11-22）：ARM64 release `:app:assembleRelease` exit 0（3m54s）；签名与 PLZ110 现装包相同。APK `D:/dsh-native-chat-validation/dsh-mobile-1.6.0-beta.93-arm64.apk`，163840392 B，SHA-256 `4a7b95810146c1a719a3b022936d5487c5bd5585b93e4f8f7966529af5f8cf0d`。旧包备份 `D:/dsh-native-chat-validation/plz110-beta93.dtNrjl/before-beta92.apk` 与现装 SHA-256 `4d7308254f640523b5e026bb66057eb88341c06099402c79f052644966ea0cb8` 一致（不含应用数据）。
+- PLZ110 序列号 `3B164M0105000000`：9000 直装无结果、已取消本轮任务；改用分步 `adb push` 在 450s 超时（exit 124），中途测得 86114304 B，超时后暂存路径已不存在，未执行暂存包安装；mDNS 广播的 TLS 端口 34147 连接被拒（10061）。最终回读仍为 1.6.0-beta.92/code467；未卸载、未清数据、未启动应用测试。下一步用 USB ADB 或在手机上手动覆盖安装已校验 APK，再验新对话六卡对齐、点卡填草稿不发送、模式菜单展示及首轮前可选。
+
+- 09:33 欢迎页补验：六张快捷卡将图标和文字作为一组居中，换行文字居中；旧实现测得第一张卡水平偏左 29.75 dp。模式仍由宿主目录提供，`standard` 只是前次模拟器显示的选中值。两份相关测试共 19 项通过，覆盖实际点进测试宿主的模式菜单、选择、确认回读和首轮锁定。未重建 APK、未重新装机。
+
+- 逐项需求、验收标准与证据维护在 [beta92 反馈台账](docs/reports/2026-11-22-beta92-feedback-ledger.md)。本轮仅专用模拟器；下方 PLZ110 记录只证明上轮装机。
+
+## 当前交接：beta92/code467 已覆盖安装到 PLZ110；真机交互验收待进行（2026-11-21）
+
+
+## beta92 Feedback 当前实测交接（2026-11-22 04:10）
+- Flutter 全量测试 575 项通过，日志 D:/dsh-native-chat-validation/beta92-feedback-test-r2.log；x86_64 debug APK 已构建并 install -r -t 到专用 AVD dsh_flutter_20261116/emulator-5570，SHA-256 7b7f0fb65ae1147c6b42b0a5886ba60143df4ed1996514885f035863ff7e7835，versionCode 467。
+- 正常 MainActivity 入口和原生页已实测；录屏 D:/dsh-native-chat-validation/beta92-avd-acceptance.9dLMLj/web-to-native.mp4（720x1560，11.98s，258 帧），抽帧 transition-contact.png。证据确认 Web 内容保留并淡入原生；逐帧位移判定仍未完成，B01 不标通过。
+- 抽屉标签、工作区/未分组、账号入口及设置模型配置页均已点验；设置数据桥、SSH 原生真实模拟器连接、CLI 审批真入口、连续工具轮次、耗电和完整文件验收仍未完成。
+
+- 范围：源码与构建仅在隔离工作树 E:/tmp/wt-flutter-native-chat，分支 feat/flutter-native-chat，基线 7d9b26df；未改主仓库或清理对话历史。PLZ110 安装是本轮明确授权的保数据 `adb install -r`，期间未卸载、清数据或主动启动 App。安装前实际版本为 beta30/code406（非 beta91），备份 APK 位于 D:/dsh-native-chat-validation/plz110-beta92-install.QtAGsw/before-beta30-code406.apk，190915681 B，SHA-256 050db7eed3e7fee61d4447dd93e1ccc01f2cbd2e9ea6605517c45ded60f43111；这只是已装 APK 备份，不是用户数据备份。
+- 变更：抽屉去除遮挡并固定小字 DSH Mobile；助手正文支持常用 Markdown、比较表及明确声明的有限数据图表，主会话权限批准/停止卡进对话流，问题继续留在输入区；启动遮罩等有效会话投影、有尺寸的浮动布局与宿主确认后交接，正常淡入目标为 1500ms；原生透明系统栏统一背景。主聊天底部改用 max(IME inset, gesture inset)，正文高度预留在面板布局后的下一帧对齐；长草稿按实际空间调整可见行数，内部仍可滚动。
+- 长历史：主会话初始界面只为最近 48 条建立行描述，旧消息按页访问；引擎快照仍完整接收，不等同于服务端分页。标题单向循环、字符间隔及每圈停留；按会话 ID 稳定加载和持久化草稿，历史编辑用独立缓冲、直接点选并突出当前气泡，提交经过原轮次确认而不是发送新消息。
+- Flutter 门禁：flutter analyze --no-pub 与 flutter test --no-pub --concurrency=1 均 exit 0，No issues found，560 项通过，日志 D:/dsh-native-chat-validation/beta92-analyze.log 与 beta92-test.log；Gradle :app:testDebugUnitTest --tests app.dsh.mobile.NativeChatLaunchHandshakeTest exit 0、7 项通过；这 7 项是 Kotlin/资源契约检查，不是真机启动。具名 checker 请求超时，未收到可用审查。
+- beta92/code467 ARM64 release：Gradle BUILD SUCCESSFUL（148 tasks，5m47s）；APK D:/dsh-native-chat-validation/beta92-build/app/outputs/apk/release/app-release.apk，162463873 B，SHA-256 4d7308254f640523b5e026bb66057eb88341c06099402c79f052644966ea0cb8；aapt 回读 versionCode 467/versionName 1.6.0-beta.92、native-code arm64-v8a；apksigner 证书 SHA-256 d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8。已通过 `adb install -r` 覆盖安装到序列号 3B164M0105000000、型号 PLZ110、arm64-v8a 的设备；安装回报 Success，回读 versionCode=467/versionName=1.6.0-beta.92、primaryCpuAbi=arm64-v8a；设备 base.apk 的 SHA-256 与构建产物完全相同，firstInstallTime 保持不变。旧 APK 的证书指纹与新包相同（d28ca4f5…42892c8）；新包 apksigner 验证 v2/v3 均通过。未做设备应用数据备份。未主动启动 App，淡入、系统栏、键盘、长会话帧率和杀进程后草稿恢复仍待真机交互验收。
+- 2026-11-21 23:44 续验：`adb devices -l` 无设备，`adb connect 192.168.101.21:9000` 报 TCP 超时（10060），`adb mdns services` 无发现；本次未读取或操作手机，未重新安装。恢复无线 ADB（使用手机当前连接地址）或 USB 连接后，先核对实装版和前台状态，再通过 Web 的实际入口录制切入原生及键盘开合；随后验证长会话滚动与独立草稿。本轮未进行真机交互验收。
+- 第二次覆盖安装：无线 ADB 恢复后，根据用户授权在同一 PLZ110 执行 `adb install -r`，返回 Success（exit 0）。实装 1.6.0-beta.92/code467、arm64-v8a，APK SHA-256 仍与构建包一致；设备记录 lastUpdateTime=2026-11-22 00:11:04，firstInstallTime=2026-11-20 21:35:03 不变。未卸载、未清数据、未主动启动 App；本次只验证安装，未进行界面验收。
+
+
+## 本轮新鲜验证（2026-11-22 08:58-09:20）
+
+- 代码基线：`feat/flutter-native-chat` / `7d9b26df`；未改主仓库、PLZ110 或 emulator-5554。
+- 新鲜门禁：`flutter analyze --no-pub` exit 0，日志 `D:/dsh-native-chat-validation/beta92-verify-analyze.log`，输出 `No issues found! (ran in 71.2s)`；串行全量 `flutter test --no-pub --concurrency=1 --reporter expanded` exit 0，日志 `D:/dsh-native-chat-validation/beta92-verify-test.log`，末尾 `+575: All tests passed!`。
+- 新鲜构建：Gradle x86_64 debug exit 0，日志 `D:/dsh-native-chat-validation/beta92-verify-build.log`，`BUILD SUCCESSFUL in 1m 37s`；APK `D:/dsh-native-chat-validation/beta92-feedback-emulator-build/app/outputs/apk/debug/app-debug.apk`，SHA-256 `7ee791b0f23fca106bfe6afb14e09ffcd4d9749e988b8efefaa67f9602d75ab4`，versionCode 467/versionName 1.6.0-beta.92/native-code x86_64，debug 证书 `4dcec87dbb07395cb65e63c72af6754d7b0ad24ed5c9e5660cecea2051579585`。
+- 专用 AVD：`dsh_flutter_20261116` / `emulator-5570`；`install -r -t` 返回 `Success`，回读 `versionCode=467`、`primaryCpuAbi=x86_64`。冷启动先进入 OnboardingActivity；通过真实点击完成 1/7 至 7/7，未清数据、未使用 intent 绕过。step5/6/7 截图哈希分别为 `8c1751ce3569d75731a4db90325bf664490c1b21e5adbf670fe07d8e97e403a3`、`d154d0cd51c1279323de6ef1b0f3d23adf434a133bdc5912f669b2a736c3a169`、`40b7e684ddfb4c9ff0a206c18cb759b48584338c1d5a708dcf20c8125bda6775`，文件在 `E:/tmp/native-chat-web-preview/android-evidence/`。
+- 正常入口：完成引导后 MainActivity/WebView 可见；关闭预览提示后点击 Web 工具栏「原生对话」，原生页真实出现。截图 `beta92-verify-native-entry.png` SHA-256 `51e7848935a6cc612cefb7831ae3438fcfd5e447c30ce3c9c9abd7416e538508`，可见六个欢迎草稿入口、`对话模式：standard`、Bionic Node 已连接、模型/权限/发送区域。
+- 抽屉与设置：点击「打开会话抽屉」真实打开，显示 DSH Mobile、新建会话、会话区、账号入口；截图 `beta92-verify-native-drawer.png` SHA-256 `5a20d26c8640188162bf1e6383c050ba492d2428ab22b6eaae7aa7e9f679325a`。点击账号入口后真实展开「设置/登录 DeepSeek」菜单，再点「设置」进入设置页面；截图 `beta92-verify-settings.png` SHA-256 `0a4f0971612514f7a2345569ff3c71bfdde7f6107e51f2ab687a06c3fc8ad9ab`，页面可见运行与能力、模型配置和插件管理入口。
+- 分项判定：B01 仍「证据不足」（本轮未做完整逐帧位移测量）；B02/B05/B06/B07/B08a/B08b/B09/L01/L04/L05/L06/L07/F01 仍未完成真实设备级验收；B03 只有组件证据；B04、L02、L03、F02、F03 为「设备入口/可见性部分验证」，不等于全部交互或持久化通过。
+
+## 当前交接：真机反馈整合（2026-11-21，beta91/code466，PLZ110 已安装）
+
+- 仅隔离树：会话标题优先使用引擎目录，顶部与输入区收紧；编辑改为输入区内状态、不弹遮挡通知；会话抽屉移除外观项；Token 在原热力图选日；结构化思考独立折叠，工具/代码细节按需构建。引擎会话与启动目录查询自动重试；新建会话失败保留人工重试，不自动重复提交。
+- 会话边缘 BackdropFilter 从最多 24 层改为 8 层；滤镜预算和原有像素检查均为 Flutter 组件证据，不是 PLZ110 帧率证据。键盘双向 insets 测试不是实体键盘动效验收。
+- beta91 ARM64 release 构建 7m7s / 148 tasks，APK D:/dsh-native-chat-validation/beta91-build/app/outputs/apk/release/app-release.apk，162327955 B，SHA-256 e29122184bf13330f7442c53040b3db8313265375e27caea274b6fcd8a9b60dc，release 证书 d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8。beta90 无 HardSSH 资产；beta91 内含已用 npm integrity 核验的 @xiaopb/dsh-hardssh 0.2.13，APK 内 215 文件逐一比对，5 个依赖开发 dotfile 被 Gradle 排除；原生项回到 Web，未建立原生 SSH 管理/Windows 连接或验证主机可连通。
+- 真机安装（2026-11-21 13:13:51 +08:00）：用户明确授权；PLZ110（3B164M0105000000，192.168.101.21:9000）由 beta26/code402 同签名 `adb install -r` 升至 beta91/code466，`Success`，arm64-v8a，首次安装时间不变，设备端 APK SHA-256 与上列构建产物一致。未卸载、未清数据、未降级、未主动启动应用。安装前 APK 已备份至 D:/dsh-native-chat-validation/plz110-pre-beta91-code402-20261121-131246.apk，SHA-256 45f50a3d194aa0f991fe2f94b42598975f158f885ec1efaba67eb2df5637ae0c；这是安装包备份，不是应用数据备份。
+- beta91 独立 checker 调用超时，未收到新报告，beta90 审查不代替本轮。最终回归与静态分析串行 exit 0（521 项通过、No issues found）；日志 D:/dsh-native-chat-validation/beta91-release-test.log 与 beta91-release-analyze.log；后续真机优先验收滚动帧耗时、键盘编辑实录、SSH 插件加载与实际连接。
+
+## 历史交接：文件体验与 ARM64（2026-11-21，beta90/code465，PLZ110 已安装）
+
+- 当前代码和证据位于隔离树 E:/tmp/wt-flutter-native-chat。实现：文件/模型/权限菜单逐项入场、主/子受理发送与进入编辑的单次系统触感、文件预览/系统打开/分享。GLM 只读审查无必须修复项，发送异常锁定建议已以 try/finally 修复。Flutter 最终 498 项测试 exit 0、analyze No issues found；日志在 D:/dsh-native-chat-validation/2026-11-21-flutter-*-final.log。
+- beta89/code464 已同签名保数据装到 emulator-5570，通过正常入口进入原生页；模型和三档权限菜单最终可见。临时 ConversationFlow 助手消息生成五类文件卡，PNG 成功解码预览。通过实际预览→外部打开→仅此一次，独立 UID10193 ACTION_VIEW 读到 822 B 原 PNG，哈希一致且 writeDenied=true，见 D:/dsh-native-chat-validation/beta89-image-open-result.json。临时路由不写会话，也不证明真实历史全链路；beta89 新 ACTION_SEND、PDF/ZIP/APK 外部交付、逐帧流畅度仍未验收，旧 beta88 SEND 证据单独保留。
+- ARM64 release 构建 exit 0（9m43s），产物 D:/dsh-native-chat-validation/arm64-build/app/outputs/apk/release/app-release.apk，161491464 B，beta90/code465，arm64-v8a 单 ABI、非 debuggable。SHA-256 1b5e8bbe6ee5b0145ad6cd5b6819c527429b1a78cd95c847bc4f94a164a32482；release 证书 d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8；内嵌 runtime SHA-256 61bc738970a435dea61e8e5f445281a4ffad16cfe3012cba2682aefa4367a2c1。
+- 真机：PLZ110/序列3B164M0105000000/192.168.101.21:9000 安装前实时为 beta25/code401、arm64-v8a；另一轮并行容器任务未停止。随后以同 release 签名 `adb install -r` 安装 beta90/code465，未卸载、未清数据、未使用 -d。安装后 pull APK SHA-256 1b5e8bbe6ee5b0145ad6cd5b6819c527429b1a78cd95c847bc4f94a164a32482 与构建产物一致；正常 MainActivity 入口最终进入 NativeChatActivity，Bionic Node 显示已连接，最终截图 D:/dsh-native-chat-validation/plz110-beta90-native-final.png（SHA-256 bce84830e58efea2ab02d953983a1280ff152fd12ae9de5e2e49aaa66ce0e2b0）。本次截取的最终筛选日志未见 FATAL EXCEPTION/ANR；另有 dsh-home backup failed 警告及部分 symlink 读取权限不足记录，二者因果未验证，完整数据备份仍未建立。后续复核手机前台已切换 DeepSeek，未抢占；原生页启动结论绑定 09:19:47 截图及当时 resumed 记录。真实聊天文件动作、物理触感及完整无障碍矩阵仍未验收。
+- 清理：临时路由已 popUntil(first)，5 个样本与 5 个缓存副本均逐项核对 SHA 后精确删除并 rmdir；自有接收器 app.dsh.fileprobe.beta88 已卸载（Success），attach bash-e9b4a730205b49a7 已停止，tcp50103 已移除。原 Web 页 probe-target 草稿仍在（beta89-after-cleanup.png）；共享 emulator-5570 保持运行，emulator-5554 的 tcp13083 转发未动。
+- 详细分层报告 docs/reports/2026-11-21-beta90-validation.md；产物身份 D:/dsh-native-chat-validation/beta90-arm64-identity.json。源码快照 D:/dsh-native-chat-validation/beta90-source-snapshot.zip 含逐文件身份。未推送、未发布，不重开旧 blur/rewind/raw JSON。
+
+## 文件交付与按钮调整（2026-11-20，beta.88/code463，历史记录；以顶部当前交接为准）
+
+- 仅隔离工作树：权限圆面 38dp、发送/停止 40dp、间距 4dp、触控目标 ≥48dp，主/子会话复用。助手文件卡支持 DSH 图片/文本与代码预览、系统打开和分享；真实 workspaceFiles multipart 二进制已解包。
+- 验证：Flutter 全量 470 项通过（file-delivery-full-test-final.log）；随后补入真实 HTTP/Cookie/RPC 二进制用例，专项 11 项通过（file-delivery-http-test.log）；最终 analyze No issues found（file-delivery-analyze-final.log）。日志均在 D:/dsh-native-chat-validation。Kotlin 26 项：缓存 3、启动 4、目录检索 19，全部零失败。
+- GLM 静态报告 D:/dsh-native-chat-validation/file-delivery-glm-review.md；已复现并修复数字误识别与裸 % 文件名错误，补会话切换/重复点击守卫和仅本功能 UUID 副本的 24h 清理。首轮全量 4 个失败来自旧 8dp 断言，更新为已批准精确 4dp 后全绿。
+- Android 构建成功 4m48s/102 tasks。APK D:/dsh-native-chat-validation/beta88-build/app/outputs/apk/debug/app-debug.apk，248367598 B，SHA-256 57c6a3a648ae806d878750cec89d114027b87fade55c01bbdb3e59d41f257b76；证书与旧包同为 4dcec87dbb07395cb65e63c72af6754d7b0ad24ed5c9e5660cecea2051579585。专用 emulator-5570 已同签名 -r -t 安装，dumpsys 确认 code463/beta.88；未清数据、未改 Web 草稿 probe-target、未发模型请求。
+- 装机尚未完成文件验收：正常聊天入口已使 NativeChatActivity resumed，画面一度显示本机引擎 Starting，后仍见 Web 底图；需区分遮罩与引擎就绪。VM PID3935，local forward tcp50103->37789 已创建，结束须移除。自有临时接收器 app.dsh.fileprobe.beta88 已装，仅用于独立 UID 文件哈希/只读授权验收，结束后卸载。测试文件和期望哈希 D:/dsh-native-chat-validation/beta88-probe-files/expected.json。
+- 当前自有模拟器进程 job bash-0de396923d5d4adf；AVD dsh_flutter_20261116，原数据目录不动。不得操作其他设备。下一步：核实引擎状态，完成设备预览/外部读取哈希与只读授权；收集截图、清理自有测试进程/转发/接收器，最终更新本节。旧 blur 严格 A/B、rewind/raw JSON 不在本轮范围。
+
+
+## 输入区周边正文漏字与 Android A/B（2026-11-20，beta.87／code462）
+
+- 仅隔离工作树。`FloatingConversationLayout` 把整个 `ComposerViewport` 的实测高度作为 bottom inset，旧 `ConversationEdgeBlur` 在距底部 `inset - 16dp` 处截止，透明侧边及底部留白未覆盖。Terra 修复将底部模糊和淡出延至视口底边，保留原有过渡和交互。
+- 组件证据：旧版红测场景为 240dp 视口、120dp 输入区，侧边探针 (10, 144) 像素差为 0（要求 >8）；修复后独立复跑专项 8/8、全量 443/443，`flutter analyze --no-pub` EXIT=0。实现 SHA-256 `eb371798654333c1da9818ff8d6700fd1f1a83164f966d5042b40a155600b420`，测试 SHA-256 `83f3d74b897876cad7c289ab23d3eb89ce5b85ba71bcfa5d48c779e669a97da7`。
+- `:app:assembleDebug` EXIT=0（5m48s）。x86_64 debug APK：`D:/dsh-native-chat-validation/beta87-build/app/outputs/apk/debug/app-debug.apk`，248207522 B，SHA-256 `cc13125dd1bf667c321e9ac9be747a2f9856a3a4f23bfe1cdf875cc763cecb89`。旧包回退副本 `D:/dsh-native-chat-validation/beta86-x86_64.apk` 已校验。
+- Terra 在专用 emulator-5570（AVD `dsh_flutter_20261116`）同签名覆盖安装 beta.87；Lead 独立核对装机 code462 与三张诊断截图 SHA-256。正常入口进入 `NativeChatActivity` 后系统 ANR 弹窗抢占焦点，点 Wait 后再次出现；Android 事件日志记录 `MainActivity` 未响应 `FocusEvent(hasFocus=false)`，等待 5002ms。beta.86 也出现过 ANR，当前证据不足以归因于模糊实现。没有取得同内容、无遮挡、可配准的上下边缘 A/B，输入区侧边/底部视觉与帧率尚未验收。证据见 `D:/dsh-native-chat-validation/beta87-device/REPORT.md`；beta.86 的无效对照记录在 `E:/tmp/native-chat-web-preview/android-evidence/terra-native-ab/REPORT.md`。
+- GLM 只读委派超时，未取得独立审查。通过 Android DropBox 取得 beta.87 的 ANR 主线程栈：采样时为 Native/R，可见 `clock_gettime`、未符号化的 APK 原生帧与 `[anon:dart-code]`；单次栈不足以证明阻塞根因。已对比 Android DropBox：beta.86／code461 与 beta.87／code462 均为 `MainActivity` 未响应 `FocusEvent(hasFocus=false)`（分别 5006ms／5002ms），主线程采样状态分别为 Native/S 和 Native/R；只能确认超时症状早于本次输入区修复，不能证明两版根因相同。下一步定位原生入口的焦点交接阻塞；原生界面恢复后由 Terra 在同一专用模拟器补齐同内容上下边缘 A/B。不清数据、不以 Web 截图或组件测试替代装机验收。
+
+## 悬浮玻璃顶栏与输入区（2026-11-19，beta.80 / code455，实机已验证）
+
+- 用户投诉：顶栏与输入框「根本没有悬浮效果，感觉就是叠在面板上」，且对话区背景色与它们不一致。根因：两者与正文是 Column 同级，全局矩形与正文无交集，玻璃的 BackdropFilter 只能采到页面渐变（模糊等于无效），所以看起来是叠在面板上的色块；同时顶栏 fill .62 与输入区 .34 两档不透明度让三块底色明显不同。
+- 改法：新增 `flutter_ui/lib/src/ui/floating_conversation_layout.dart`（header / composer 两个浮层 + `Positioned.fill` 正文，正文用 `EdgeInsets` 预留浮层高度），`chat_shell.dart`、`subagent_panel.dart` 由 Column 改为该布局，`conversation_flow.dart`/`message_list.dart` 新增 `padding` 透传，`conversation_edge_blur.dart` 新增 `contentInsets` 让模糊带落在真正可读区域的上下沿。浮层高度由 `_MeasuredOverlay` 实测回传（post-frame + SizeChangedLayoutNotifier），输入区上限改为 `max(96, min((H-header)*.62, H*.5-40))`，保证正文至少留一条可读带、且视口中线不被输入区覆盖。输入区玻璃补一条柔和外阴影（浅 .10 / 深 .34，blur 22 offset 0,8），顶栏仍用原材质。
+- 门禁：`dart format lib/src/ui test`、`flutter analyze --no-pub` EXIT=0（No issues found）；`flutter test --no-pub --concurrency=1` 两次连跑 EXIT=0、`+440: All tests passed!`（第一次跑出现过一次 `native_session_transport_test.dart: close during opening` 的 `Bad state: Cannot add new events after calling close`，单文件重跑 22/22 通过、后续全量再跑亦全绿，属该用例的偶发流时序，未改产品代码）。新增 `test/floating_chrome_test.dart` 断言正文 global rect 与顶栏/输入区矩形相交；负对照把正文改回独立带状后断言变红（Expected <78 vs Actual 78），恢复后绿。
+- 构建与实机：beta.80/code455 全量构建 EXIT=0（BUILD SUCCESSFUL 5m59s，x86_64/full/rc.2 runtime）；APK 248,203,946 B，SHA-256 `284d71b60cc426ea2576208222ae722280d46474739e48cdeaf445075a615e6a`，仅 x86_64，内嵌 runtime `0b693c76…`。装到 emulator-5570 后 455 生效、NativeChatActivity 前台可操作。
+- 实机截图证据 `docs/reports/assets/2026-11-19-floating-chrome/`（manifest 内含哈希）：`fc80-chat-1.png` 默认态；`fc80-under-header2.png` 正文滚到顶栏下方（顶栏玻璃内部行对比 stddev 14.6→34.0、均值 238.2→228.9，即模糊采到了正文）；`fc80-under-composer.png` 正文滚到输入区下方（输入区玻璃行对比 44.7→19.2、均值 212.1→227.7）；`fc80-high-contrast.png` 高对比下玻璃降级为近实色、控件与文字仍清晰。三块玻璃区域亮度均值 235.6 / 234.8 / 235.1，底色一致问题消除。
+- 未验证/保留边界：subagent_panel 同一布局已改但只在 widget 测试层验证，未单独上设备截图；`conversation_edge_blur.dart` 的四段硬分界仍是旧问题（本轮只把它挪到可读区边缘，未改连续性）；Web 端 turn-rewind 未动；预热遮罩约 2.4s 遮挡仍在。
+- 回滚：撤 `floating_conversation_layout.dart`（新文件）、`chat_shell.dart`/`subagent_panel.dart` 的布局段、`conversation_flow.dart`/`message_list.dart` 的 padding 透传、`conversation_edge_blur.dart` 的 contentInsets、glass_panel 的 composer shadow、`test/floating_chrome_test.dart` 与两份测试改动；保留其他 WIP 与 `.superpowers/brainstorm/`。
+
+## 消息视口上下边缘模糊过渡（2026-11-18，beta.78 后局部视觉，未构建）
+
+- 本轮只改 E:/tmp/wt-flutter-native-chat：新增 `flutter_ui/lib/src/ui/conversation_edge_blur.dart` 与局部测试；`chat_shell.dart`、`subagent_panel.dart` 各包一次消息视口。顶 28dp、底 40dp，四档局部 BackdropFilter sigma 5/2.8/1.2/.35，主题 paper/paperDeep 渐隐；首末按 extent 归零，覆盖层 IgnorePointer/ExcludeSemantics；高对比、减少动效、无障碍导航关闭额外 blur/fade。未改 composer/glass、flow/state/transport、Android、插件、全局配置。
+- 门禁：`/e/tools/flutter/bin/flutter.bat test --no-pub --concurrency=1 test/conversation_edge_blur_test.dart test/conversation_flow_test.dart test/subagent_panel_test.dart test/chat_screen_test.dart` EXIT=0，36 项通过；`/e/tools/flutter/bin/flutter.bat analyze --no-pub` EXIT=0，`No issues found!`。负对照将 sigma 置 0 后像素断言 `>8` 实际为 1、EXIT=1，已恢复。
+- 真实 Flutter widget-test 截图：`docs/reports/assets/2026-11-18-edge-blur-render.png`、`docs/reports/assets/2026-11-18-edge-blur-shell-light.png`、`docs/reports/assets/2026-11-18-edge-blur-shell-dark.png`；shell 截图使用测试字体，仅作布局/渲染证据。**设备、Gradle、安装、ARM、TalkBack 与真实字体验收未验证。**
+- 交接报告：`docs/reports/2026-11-18-conversation-edge-blur.md`。回滚仅撤本轮新增包装、两处接入、测试、报告与截图；`.superpowers/brainstorm/`及其他 WIP 保留。
+
 ## 浮动玻璃输入区 + TurnNotice 折叠 + Web 结构化 turn-error（2026-11-18，beta.78）
 
 - 范围：只写 E:/tmp/wt-flutter-native-chat（feat/flutter-native-chat）；主仓库 E:/Deepeek harness/dsh-android 与他人工作树未动。未改 MainActivity/NativeChatActivity/转场、turn-rewind core.js/index.js、第三方缓存、全局配置。

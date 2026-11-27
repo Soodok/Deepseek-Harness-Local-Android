@@ -30,6 +30,25 @@ class EngineUnavailableSettingsService implements SettingsService {
   Future<void> close() async {}
 }
 
+abstract interface class ModelProviderSettings {
+  Future<ProviderSettingsSnapshot?> loadModelProviders();
+  Future<void> addModelProvider(
+    ProviderSettingsSnapshot snapshot,
+    ModelProviderProfile profile,
+  );
+  Future<void> updateModelProvider(
+    ProviderSettingsSnapshot snapshot,
+    ModelProviderProfile profile,
+  );
+  Future<void> removeModelProvider(ProviderSettingsSnapshot snapshot, String route);
+  Future<List<String>> discoverProviderModels({
+    required String baseUrl,
+    required String api,
+    String? apiKey,
+  });
+  Future<void> setModelProviderKey(String reference, String value);
+}
+
 abstract interface class AccountUsageLink {
   Future<Uri> usagePage();
 }

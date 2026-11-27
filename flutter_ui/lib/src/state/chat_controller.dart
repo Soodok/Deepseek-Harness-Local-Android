@@ -32,6 +32,8 @@ class ChatController extends ChangeNotifier {
   bool _disposed = false;
   bool _resyncInFlight = false;
   bool _queuedDispatchInFlight = false;
+  bool _permissionWriteInFlight = false;
+  String? _permissionWriteError;
   String? _pendingAction;
   bool _stopInFlight = false;
   bool actionBusy(String requestId) =>
@@ -68,8 +70,99 @@ class ChatController extends ChangeNotifier {
   ComposerPermission get permission => _permission;
   String? get configurationError => _configurationError;
   bool get permissionKnown => _configurationError == null;
-  String get permissionLabel =>
-      permissionKnown ? _permission.label : '未知 · 请确认';
+
+  /// The permission the Host currently holds for this session, which is not
+  /// the same thing as the draft selection used by the next send.
+  ComposerPermission? get sessionPermission =>
+      transport is SessionComposerTransport
+      ? (transport as SessionComposerTransport).composerConfiguration.permission
+      : null;
+
+  /// True while an immediate settings write runs; the page stays disabled so a
+  /// second tap cannot queue a second command.
+  bool get permissionWriteInFlight => _permissionWriteInFlight;
+
+  /// Why the last immediate write did not take effect, in product language.
+  String? get permissionWriteError => _permissionWriteError;
+
+  bool get canApplySessionPermission =>
+      transport is SessionPermissionTransport && !_permissionWriteInFlight;
+
+  /// Re-reads the Host value. A reopened page shows the Host's answer, not the
+  /// copy it happened to keep; an unreadable Host keeps the previous value and
+  /// the row then says the value is unknown.
+  Future<void> refreshSessionConfiguration() async {
+    if (_disposed || transport is! SessionPermissionTransport) return;
+    final peer = transport as SessionPermissionTransport;
+    try {
+      await peer.refreshSessionPermission();
+    } on Object {
+      // A failed read is not a permission change; the row already reports an
+      // unknown value instead of guessing.
+    }
+  }
+
+  /// Drops a message from an earlier attempt. Opening the page again shows the
+  /// Host value, not a failure the reader already dealt with.
+  void clearPermissionWriteError() {
+    if (_permissionWriteError == null) return;
+    _permissionWriteError = null;
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Persists the choice for the session itself (settings page), leaving the
+  /// composer's next-send selection untouched.
+  Future<bool> applySessionPermission(ComposerPermission mode) async {
+    if (_disposed) return false;
+    if (transport is! SessionPermissionTransport) {
+      _permissionWriteError = '当前引擎不支持立即修改会话权限，请使用 Web 版。';
+      if (!_disposed) notifyListeners();
+      return false;
+    }
+    final peer = transport as SessionPermissionTransport;
+    if (_permissionWriteInFlight) return false;
+    if (!supportsPermission(mode)) {
+      _permissionWriteError = '当前引擎未提供此权限模式，请使用 Web 版查看。';
+      if (!_disposed) notifyListeners();
+      return false;
+    }
+    _permissionWriteInFlight = true;
+    _permissionWriteError = null;
+    notifyListeners();
+    var applied = false;
+    try {
+      await peer.applySessionPermission(mode);
+      applied = true;
+      // Host and draft now agree, so the next send inherits instead of
+      // repeating the same preset; a differing draft still applies on send.
+      if (_permission == mode) _permissionChanged = false;
+      if (peer is SessionComposerTransport && !_disposed) {
+        _restoreComposerConfiguration(
+          (peer as SessionComposerTransport).composerConfiguration,
+        );
+      }
+    } on SessionPermissionException catch (error) {
+      _permissionWriteError = error.code == 'permission/unconfirmed'
+          ? '权限未生效：宿主回读的仍是其它模式。'
+          : error.message;
+    } on Object catch (error) {
+      _permissionWriteError = '权限未生效：' + error.toString();
+    } finally {
+      _permissionWriteInFlight = false;
+      if (!_disposed) notifyListeners();
+    }
+    return applied;
+  }
+
+  String get permissionLabel {
+    if (permissionKnown) return _permission.label;
+    return switch (_state.status) {
+      ChatStatus.connecting || ChatStatus.reconnecting => '读取中',
+      ChatStatus.error => '暂不可用',
+      _ => '未知 · 请确认',
+    };
+  }
+
   int _modelRevision = 0;
   int _permissionRevision = 0;
   List<PromptAttachment> get attachments => List.unmodifiable(_attachments);
@@ -118,11 +211,19 @@ class ChatController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  static bool _hasSession(ChatStatus status) => switch (status) {
+    ChatStatus.ready ||
+    ChatStatus.streaming ||
+    ChatStatus.waitingAction => true,
+    ChatStatus.connecting ||
+    ChatStatus.reconnecting ||
+    ChatStatus.error => false,
+  };
+
   bool get canSend =>
-      _configurationError == null &&
-      (_state.status == ChatStatus.ready ||
-          _state.status == ChatStatus.streaming ||
-          _state.status == ChatStatus.waitingAction);
+      permissionKnown &&
+      !_permissionWriteInFlight &&
+      _hasSession(_state.status);
 
   bool get isBusy =>
       _state.status == ChatStatus.streaming ||
@@ -301,6 +402,19 @@ class ChatController extends ChangeNotifier {
     await _submitAction(requestId, () => transport.approve(requestId));
   }
 
+  bool get canRejectApproval => transport is ApprovalRejectionTransport;
+
+  Future<void> rejectApproval(String requestId) async {
+    final peer = transport;
+    if (_state.approval?.requestId != requestId ||
+        peer is! ApprovalRejectionTransport)
+      return;
+    await _submitAction(
+      requestId,
+      () => (peer as ApprovalRejectionTransport).rejectApproval(requestId),
+    );
+  }
+
   Future<void> answer(String requestId, String answer) async {
     final value = answer.trim();
     if (value.isEmpty || _state.question?.requestId != requestId) return;
@@ -309,7 +423,9 @@ class ChatController extends ChangeNotifier {
 
   Future<void> answerQuestion(String requestId, QuestionAnswer answer) async {
     if (_state.question?.requestId != requestId ||
-        (answer.selected.isEmpty && answer.custom.trim().isEmpty))
+        (transport is! StructuredQuestionTransport &&
+            answer.selected.isEmpty &&
+            answer.custom.trim().isEmpty))
       return;
     await _submitAction(
       requestId,
@@ -370,12 +486,20 @@ class ChatController extends ChangeNotifier {
               (configuration.permissionPreset ?? '未知') +
               '，原生端无法回显；请显式选择权限或使用 Web 版。'
         : null;
-    if (_configurationError != null) {
-      _state = _state.copyWith(error: _configurationError);
-    } else if (previousError != null && _state.error == previousError) {
-      _state = _state.copyWith(clearError: true);
-    }
+    final next = previousError != null && _state.error == previousError
+        ? _state.copyWith(clearError: true)
+        : _state;
+    _state = _withConfigurationError(next);
     if (notify) notifyListeners();
+  }
+
+  ChatState _withConfigurationError(ChatState state) {
+    final error = _configurationError;
+    if (error == null) return state;
+    if (!_hasSession(state.status)) {
+      return state.error == error ? state.copyWith(clearError: true) : state;
+    }
+    return state.error == null ? state.copyWith(error: error) : state;
   }
 
   void _onEvent(ChatEvent event) {
@@ -407,9 +531,7 @@ class ChatController extends ChangeNotifier {
         (_pendingAction != next.approval?.requestId &&
             _pendingAction != next.question?.requestId))
       _pendingAction = null;
-    _state = next.error == null && _configurationError != null
-        ? next.copyWith(error: _configurationError)
-        : next;
+    _state = _withConfigurationError(next);
     notifyListeners();
   }
 

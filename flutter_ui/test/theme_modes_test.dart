@@ -14,6 +14,49 @@ Future<void> settleUi(WidgetTester tester) async {
   }
 }
 
+/// 外观与自然配色只剩「设置 · 个性化主题」一个入口。
+///
+/// 抽屉里原先那两个下拉选择器已经拆除：同一个开关有两个入口，两边显示的
+/// 当前值迟早会不一致。用例因此走真实路径——抽屉 → 账号菜单 → 设置 → 个性化主题。
+Future<void> openAppearance(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('打开会话抽屉'));
+  await settleUi(tester);
+  await tester.tap(find.byKey(const ValueKey('account-menu')));
+  await settleUi(tester);
+  await tester.tap(find.text('设置'));
+  await settleUi(tester);
+  final entry = find.byKey(const ValueKey('settings-destination-appearance'));
+  await tester.ensureVisible(entry);
+  await settleUi(tester);
+  await tester.tap(entry);
+  await settleUi(tester);
+}
+
+Future<void> pickTheme(WidgetTester tester, ThemeMode mode) async {
+  final row = find.byKey(ValueKey('settings-theme-' + mode.name));
+  await tester.ensureVisible(row);
+  await settleUi(tester);
+  await tester.tap(row);
+  await settleUi(tester);
+}
+
+/// 关掉个性化页与设置页，回到对话本身。
+///
+/// 断言必须在对话页面上做：设置页自己也有 Scaffold，留在那层会让
+/// find.byType(Scaffold) 命中多个，也会把「切外观后聊天有没有重绘」
+/// 这个真正的问题替换成「设置页有没有重绘」。
+Future<void> backToChat(WidgetTester tester) async {
+  await tester.pageBack();
+  await settleUi(tester);
+  final back = find.byKey(const ValueKey('settings-back'));
+  // The page keeps its scroll offset, and the appearance row sits well below
+  // the header, so the back action has to be scrolled into view first.
+  await tester.ensureVisible(back);
+  await settleUi(tester);
+  await tester.tap(back);
+  await settleUi(tester);
+}
+
 void main() {
   testWidgets('system appearance updates an already open runtime panel', (
     tester,
@@ -22,14 +65,9 @@ void main() {
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await tester.pumpWidget(const DshApp(preview: true));
     await settleUi(tester);
-    await tester.tap(find.byTooltip('打开会话抽屉'));
-    await settleUi(tester);
-    await tester.tap(find.byKey(const ValueKey('theme-selector')));
-    await settleUi(tester);
-    await tester.tap(find.byKey(const ValueKey('theme-system')));
-    await settleUi(tester);
-    await tester.tap(find.byTooltip('关闭会话抽屉'));
-    await settleUi(tester);
+    await openAppearance(tester);
+    await pickTheme(tester, ThemeMode.system);
+    await backToChat(tester);
     await tester.tap(find.byKey(const ValueKey('runtime-selector')));
     await settleUi(tester);
     final panels = find.byType(GlassPanel);
@@ -68,12 +106,9 @@ void main() {
         find.byKey(const ValueKey('composer-input')),
         '保留正在编辑的内容',
       );
-      await tester.tap(find.byTooltip('打开会话抽屉'));
-      await settleUi(tester);
-      await tester.tap(find.byKey(const ValueKey('theme-selector')));
-      await settleUi(tester);
-      await tester.tap(find.byKey(const ValueKey('theme-light')));
-      await settleUi(tester);
+      await openAppearance(tester);
+      await pickTheme(tester, ThemeMode.light);
+      await backToChat(tester);
       expect(
         Theme.of(tester.element(find.byKey(const ValueKey('floating-header'))))
             .brightness,
@@ -94,10 +129,9 @@ void main() {
             .computeLuminance(),
         greaterThan(.8),
       );
-      await tester.tap(find.byKey(const ValueKey('theme-selector')));
-      await settleUi(tester);
-      await tester.tap(find.byKey(const ValueKey('theme-dark')));
-      await settleUi(tester);
+      await openAppearance(tester);
+      await pickTheme(tester, ThemeMode.dark);
+      await backToChat(tester);
       expect(
         Theme.of(tester.element(find.byKey(const ValueKey('floating-header'))))
             .brightness,

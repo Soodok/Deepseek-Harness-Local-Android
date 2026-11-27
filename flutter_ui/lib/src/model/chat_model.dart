@@ -36,15 +36,18 @@ class ChatMessage {
     required this.role,
     required this.text,
     this.isStreaming = false,
+    this.reasoning = '',
     this.notice,
     this.seq,
     this.messageId,
+    this.isFinalAnswer = false,
   });
 
   final String id;
   final ChatRole role;
   final String text;
   final bool isStreaming;
+  final String reasoning;
 
   /// Durable journal sequence of the event this row came from. Rewind addresses
   /// messages by exact seq, so a row without one cannot be retracted.
@@ -54,19 +57,25 @@ class ChatMessage {
   /// assistant rows carry one; it is not a display value.
   final String? messageId;
 
+  /// Host-confirmed final answer, independent of message streaming.
+  final bool isFinalAnswer;
+
   /// Structured turn ending shown as its own card. Only [ChatRole.notice] rows
   /// carry one; the label behind it comes from durable journal metadata.
   final TurnNotice? notice;
 
-  ChatMessage copyWith({String? text, bool? isStreaming}) => ChatMessage(
-    id: id,
-    role: role,
-    text: text ?? this.text,
-    isStreaming: isStreaming ?? this.isStreaming,
-    notice: notice,
-    seq: seq,
-    messageId: messageId,
-  );
+  ChatMessage copyWith({String? text, bool? isStreaming, bool? isFinalAnswer}) =>
+      ChatMessage(
+        id: id,
+        role: role,
+        text: text ?? this.text,
+        isStreaming: isStreaming ?? this.isStreaming,
+        reasoning: reasoning,
+        notice: notice,
+        seq: seq,
+        messageId: messageId,
+        isFinalAnswer: isFinalAnswer ?? this.isFinalAnswer,
+      );
 
   @override
   bool operator ==(Object other) =>
@@ -74,14 +83,17 @@ class ChatMessage {
       other.id == id &&
       other.role == role &&
       other.text == text &&
+      other.reasoning == reasoning &&
       other.isStreaming == isStreaming &&
       other.notice == notice &&
       other.seq == seq &&
-      other.messageId == messageId;
+      other.messageId == messageId &&
+      other.isFinalAnswer == isFinalAnswer;
 
   @override
-  int get hashCode =>
-      Object.hash(id, role, text, isStreaming, notice, seq, messageId);
+  int get hashCode => Object.hash(
+    id, role, text, reasoning, isStreaming, notice, seq, messageId, isFinalAnswer,
+  );
 }
 
 class ToolRun {
@@ -155,6 +167,7 @@ class ChatEvent {
     required this.sequence,
     this.messages = const [],
     this.messageId,
+    this.projectedMessage,
     this.role,
     this.text = '',
     this.done = false,
@@ -202,8 +215,10 @@ class ChatEvent {
     required String text,
     required bool done,
     TurnNotice? notice,
+    ChatMessage? projectedMessage,
   }) : this._(
          kind: ChatEventKind.delta,
+         projectedMessage: projectedMessage,
          generation: generation,
          sequence: sequence,
          messageId: messageId,
@@ -327,6 +342,9 @@ class ChatEvent {
   final int generation;
   final int sequence;
   final List<ChatMessage> messages;
+
+  /// The journal projection can carry exact row metadata with a delta.
+  final ChatMessage? projectedMessage;
   final String? messageId;
   final ChatRole? role;
   final String text;

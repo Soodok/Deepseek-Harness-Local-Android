@@ -2,7 +2,6 @@ package app.dsh.mobile
 
 import android.app.Activity
 import android.content.Intent
-import android.view.PixelCopy
 import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs
@@ -15,6 +14,36 @@ import io.flutter.plugin.common.MethodChannel
  */
 class NativeChatActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
+    private val draftIo = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /**
+     * 运行模式切换的串行执行器。
+     *
+     * 切换要跑 [app.dsh.mobile.engine.EngineModeSelector.resolve]，而它会走
+     * LinuxEngineLauncher.readiness() —— 里面做 SELinux 哨兵、写 distro 配置、
+     * 装兼容 shim，实测十几到几十毫秒不等。放主线程会卡掉一帧，所以整段
+     * （判定 → 落偏好 → 权威回读 → 请求重启）都在这里串行跑。
+     */
+    private val runtimeIo = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /**
+     * 是否有一次切换正在执行。
+     *
+     * 面板上两个模式项都在同一帧可点，双击会并发两次「落偏好 + 重启引擎」，
+     * 后者把前者的重启掐掉。这里用「不排队、直接回 busy」的语义：并发的第二次
+     * 调用拿到的是一份如实说「正在切换」的回执，而不是排一次队再重启一遍。
+     */
+    @Volatile private var runtimeSwitching = false
+
+    /**
+     * 「偏好已切、引擎还没重启」的待生效目标（wire）。
+     *
+     * 面板说「成功」指的是**权威判定**已经切过去了；引擎进程仍在用旧模式跑，
+     * 直到用户点重启才开始用新模式 spawn。这个标记只作说明，不做动作 ——
+     * 由 engineInfo() 在检测到 webUrl 换了一代（重启必然换 token）时清掉。
+     */
+    @Volatile private var pendingRuntimeTarget: String? = null
+    @Volatile private var pendingRuntimeUrl: String = ""
 
     /**
      * 当前这个原生会话对应的 DSH 会话标识。
@@ -25,227 +54,115 @@ class NativeChatActivity : FlutterActivity() {
      */
     private var sessionId: String? = null
 
-    /**
-     * 引擎冷启动期间露出窗口底色，而不是先铺一块不透明黑。
-     *
-     * Flutter 的 surface 默认是 opaque：从 Activity 创建到 Flutter 画出第一帧之间，
-     * 屏幕上就是这块**引擎自己的**黑色，主题里的 windowBackground 根本看不到。
-     * 实测（beta.52 → beta.53 三次录屏）这个空窗是 1.9–3.7 秒——Web 是深色页、
-     * 会话页是浅色页，中间夹一段纯黑就是一次硬切，与「自然消散、渐变浮现」相反。
-     *
-     * 只把引擎 surface 改成 transparent 还不够：windowBackground 若是不透明色，空窗里
-     * 就是那个颜色（beta.53 第一版是纯黑 4 秒、beta.52 是 #151517 1.9 秒，两次录屏
-     * 逐帧亮度都掉到 16.x）。所以 Theme.Dsh.NativeChat 同时把窗口设成
-     * windowIsTranslucent=true + 透明底：空窗里露出来的是**被覆盖的 Web 页面本身**，
-     * 新页面 220ms 淡入叠在上面，这才是真正的交叉淡化。
-     *
-     * 注意：这个 Flutter 版本（3.50 / embedding 1.0.0-371f77202a）已经没有
-     * io.flutter.embedding.android.SplashScreenDrawable 这个 meta-data 了（反查 aar
-     * 里的类表确认过），启动图只能靠窗口/主题承载。
-     */
     override fun getBackgroundMode(): FlutterActivityLaunchConfigs.BackgroundMode =
         FlutterActivityLaunchConfigs.BackgroundMode.transparent
 
-    /**
-     * 用 TextureView 渲染，而不是默认的 SurfaceView。
-     *
-     * 这一条是「原生渐变浮现」能不能成立的分水岭：SurfaceView 的画面由
-     * SurfaceFlinger 单独合成在一个独立图层上，**不参与宿主窗口的 alpha**。
-     * 于是 Dart 侧无论把 opacity 从 0 淡到 1、窗口动画怎么配，屏幕上都是
-     * 「第一帧直接整块出现」——beta.53～beta.56 六轮录屏逐帧亮度都是
-     * 31.5 → 228～233 的单帧跳变，中间一帧过渡都没有，原因就在这里。
-     *
-     * TextureView 是普通 View，画面被合成进窗口图层，alpha 才真的作用到内容上。
-     * 代价是比 SurfaceView 多一次纹理拷贝；对话页静态内容为主，可以接受。
-     */
     override fun getRenderMode(): RenderMode = RenderMode.texture
 
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingFirstFrame = false
+    private var firstFrameDrawn = false
+    private var windowFocused = false
+    private var announced = false
+    private var backdropView: android.widget.ImageView? = null
+    private var backdropPath: String? = null
+    private var backdropManager: android.view.WindowManager? = null
+    private var backdropReleased = false
+    private var launchFailed = false
+    private val readyTimeout = Runnable { failLaunch("content-ready-timeout") }
 
-    /**
-     * 引擎真正把第一帧画到屏幕上之后，才通知 Dart 侧开始入场淡化。
-     *
-     * 这是整段切换里最关键的一环：Flutter 自己的报时（initState / post-frame）在
-     * 引擎冷启时不可靠 —— 这一页起来要 5–8 秒，等它真被看见，260ms/2s 的淡化早跑完了，
-     * 屏幕上第一眼就是不透明整帧（实测 w3/v2/t2 三个包逐帧亮度都是 31.5 → 228–229，
-     * 中间一帧过渡都没有）。onFlutterUiDisplayed 是 embedding 报告"首帧已显示"的
-     * 回调，从这里起跳，渐显才真的落在用户看得见的那段时间上。
-     */
     override fun onFlutterUiDisplayed() {
         super.onFlutterUiDisplayed()
         firstFrameDrawn = true
         announceVisibleOnce()
     }
 
-    /**
-     * 窗口真正拿到焦点，才说明这一页已经在屏幕上、用户看得见了。
-     *
-     * 实测（beta.57，TextureView 生效之后）：只等 onFlutterUiDisplayed 起跳是不够的 ——
-     * 那个回调早于内容真正上屏约 1.5–2 秒（活动切换 + 首次合成），短淡化（320/520ms）
-     * 全在那段看不见的时间里跑完，屏幕上仍是单帧硬切（t8.mp4 逐帧 31.5 → 233.7）。
-     * 把 3000ms 的探针放慢才看得见渐变（t5.mp4：31.8 → 81 → 191 → 205 → 218 → 231 → 233），
-     * 正说明淡化本身是有效的、只是起点太早。
-     *
-     * 于是改成「首帧已画 + 窗口已获得焦点」两个条件同时成立才起跳。
-     */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        windowFocused = hasFocus
         if (hasFocus) {
-            windowFocused = true
+            configureEdgeToEdge()
             announceVisibleOnce()
         }
     }
 
-    /**
-     * 用窗口 alpha 做入场淡化。
-     *
-     * 为什么不再依赖 Flutter 画透明度：这一页是冷启动进来的，切换那几秒 Flutter 的
-     * 帧循环被拖到 200–400ms 一帧，beta.59 的日志显示宿主首帧信号 00:25:00.68 到达、
-     * controller 从 0 起跳，到 00:25:07.58 才产出第一个 tick —— 7 秒里一帧都没画，
-     * 于是第一个 tick 直接把进度算成 1.0，屏幕上仍是一帧从透明到不透明的硬切。
-     * 按帧推进能缓解（beta.60 录到 31.7 → 152 → 233 的两跳），但仍受制于帧率。
-     *
-     * 窗口 alpha 由系统合成器逐帧应用，与 Flutter 的帧率无关：本页主题是
-     * translucent + 透明底，窗口 alpha 从 0 涨到 1，下面那页（Web）就一直透出来，
-     * 形成一次真正的交叉淡化。TextureView（见 getRenderMode）保证内容画在窗口图层里，
-     * 因此窗口 alpha 对内容生效。
-     */
-    private fun startWindowFade() {
-        if (windowFaded) return
-        windowFaded = true
-        // 尊重系统的「移除动画/减少动效」：动画倍率为 0 时直接到位，不做装饰性淡化。
-        val scale = runCatching {
-            android.provider.Settings.Global.getFloat(contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE)
-        }.getOrDefault(1f)
-        if (scale <= 0f) {
-            setWindowAlpha(1f)
-            return
-        }
-        val duration = (WINDOW_FADE_MS * scale).toLong().coerceIn(120L, 1200L)
-        setWindowAlpha(0f)
-        // 手写阶梯而不是 ValueAnimator：切进来的头一两秒主线程被引擎初始化独占，
-        // ValueAnimator 的帧回调排不上队。实测（beta.62 日志）start 之后 1.2 秒里只
-        // 回调了一次、进度还是 0.0，随后被兜底直接推成不透明 —— 屏幕上仍是硬切。
-        //
-        // 而且**每一步至少推进 1/FADE_STEPS**，不按墙钟折算：
-        // 主线程卡成什么样都不影响「淡化一共跨过多少个可见台阶」。
-        // 先按墙钟试过（beta.63 tH.mp4）：第一步算出来 t=0.08 就卡住不动了，
-        // 页面以 8% 透明度挂了十几秒，看着像一页幽灵。
-        val startAt = longArrayOf(0L)
-        val step = object : Runnable {
-            private var progress = 0f
-            override fun run() {
-                if (isFinishing || isDestroyed) return
-                if (startAt[0] == 0L) startAt[0] = android.os.SystemClock.uptimeMillis()
-                val elapsed = (android.os.SystemClock.uptimeMillis() - startAt[0]).toFloat()
-                val byClock = (elapsed / duration).coerceIn(0f, 1f)
-                val byStep = progress + 1f / FADE_STEPS
-                progress = if (byClock > byStep) byClock else byStep
-                if (progress > 1f) progress = 1f
-                setWindowAlpha(progress)
-                if (progress < 1f) handler.postDelayed(this, STEP_DELAY_MS)
-            }
-        }
-        handler.post(step)
-    }
-
-    private fun setWindowAlpha(alpha: Float) {
-        if (isFinishing || isDestroyed) return
-        val attrs = window.attributes
-        if (attrs.alpha == alpha) return
-        attrs.alpha = alpha
-        window.attributes = attrs
-    }
-
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-
-    private var windowFaded = false
-
-    private var pendingFirstFrame = false
-    private var firstFrameDrawn = false
-    private var windowFocused = false
-    private var announced = false
-
+    /** First-frame notifications are telemetry, never permission to remove the cover. */
     private fun announceVisibleOnce() {
         if (announced || !firstFrameDrawn || !windowFocused) return
         announced = true
-        // 有底图就溶底图：内容已经画完了，alpha 只是叠在静态画面上，不受冷启动帧率牵连。
-        // 没有底图（拍图失败/旧系统）才退回窗口 alpha 阶梯，至少不是纯黑。
-        if (backdropView != null) {
-            // 覆盖层留着不动，等 Flutter 自己把同一张图画出来再撤（releaseBackdrop）。
-            // 为什么不在这一层溶：覆盖层是独立子窗口，底下是 Flutter 的另一个 Surface，
-            // 两者之间没有可用的混合过渡 —— beta.59~beta.70 十几轮录屏全部证明了这点
-            // （底图淡出的那一秒里底下是黑的，然后一帧跳到 233.8）。
-            // 真正的淡化交给 Flutter：它把同一张图画在自己那一层的最上面，
-            // 再由同一个合成器把它淡掉。
-            handler.postDelayed({ if (!isFinishing && !isDestroyed) startBackdropWatch() }, 1200)
-        } else {
-            // 底图还在 post 队列里没挂上：让它在挂上那一刻自己收尾；
-            // 真挂不上（权限/异常）时由那条失败分支退回到窗口淡化。
-            backdropFadeRequested = true
-        }
-        // 用 pending 兜住时序：回调可能早于 configureFlutterEngine 里的 channel 赋值。
         val target = channel
-        if (target == null) {
-            pendingFirstFrame = true
-        } else {
-            target.invokeMethod("firstFrameShown", null)
-        }
+        if (target == null) pendingFirstFrame = true
+        else target.invokeMethod("firstFrameShown", null)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // 从 Web 切过来时主界面已经知道当前会话，直接承接，不经过任何选择页。
-        sessionId = intent?.getStringExtra(EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
-        // 主界面在点击那一刻拍下的 Web 页面，铺在整个窗口最上层当入场底图。
-        // 冷启期间（实测 4–7 秒）屏幕上就不再是黑屏，而是「刚才那一页」。
+        // Flutter can ask for these during super.onCreate/configureFlutterEngine.
+        sessionId = if (savedInstanceState?.containsKey(EXTRA_SESSION_ID) == true) {
+            savedInstanceState.getString(EXTRA_SESSION_ID)
+        } else {
+            intent?.getStringExtra(EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
+        }
         backdropPath = intent?.getStringExtra(EXTRA_BACKDROP)?.takeIf { it.isNotBlank() }
-        backdropPath?.let { attachBackdrop(it) }
+        super.onCreate(savedInstanceState)
+        publishSessionResult()
+        configureEdgeToEdge()
+        backdropPath?.let {
+            handler.postDelayed(readyTimeout, BACKDROP_READY_TIMEOUT_MS)
+            attachBackdrop(it)
+        }
     }
 
-    /** 入场底图：铺满窗口的 ImageView，盖在 Flutter 视图之上，首帧就绪后溶解掉。 */
-    private var backdropView: android.widget.ImageView? = null
-    private var backdropParams: android.view.WindowManager.LayoutParams? = null
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(EXTRA_SESSION_ID, sessionId)
+    }
 
-    /** 入场底图 PNG 的落盘路径。 */
-    private var backdropPath: String? = null
-    private var backdropManager: android.view.WindowManager? = null
+    override fun onResume() {
+        super.onResume()
+        configureEdgeToEdge()
+    }
 
-    /** 首帧已就绪、但底图还没挂上：等它挂上再溶。 */
-    private var backdropFadeRequested = false
+    @Suppress("DEPRECATION")
+    private fun configureEdgeToEdge() {
+        // Keep the same window rectangle before and after the Flutter handoff.
+        // Insets remain available to Flutter; Android does not also inset its root.
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+        }
+        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or
+            android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+    }
 
-    /** 观察窗口缓冲的后台线程（见 startBackdropWatch）。 */
-    private var backdropWatchThread: android.os.HandlerThread? = null
-
-    /**
-     * 把主界面拍下的那一屏铺在窗口最上层。
-     *
-     * 解码同步做：PNG 解一张 1080×2340 只要几十毫秒，换来的是「第一帧里就有底图」，
-     * 不会出现先黑一下再补图的闪跳。
-     */
+    /** The panel holds the captured Web frame until Flutter explicitly owns it. */
     private fun attachBackdrop(path: String) {
-        // 底图必须是**独立子窗口**，不能是 Activity 视图树里的子 View。
-        //
-        // 两轮实测把它钉死了：底图挂在 android.R.id.content 与 decorView 上都一样，
-        // logcat 能证明它确实存在（backdrop attached ... 3.4 秒后 fade out ... 2.4 秒后
-        // removed），可录屏里那几秒亮度始终是 31.7、然后一帧跳到 233.8，中间没有过渡。
-        // 原因是 Flutter 的画面由引擎自己的 Surface 承载，在窗口合成里压在 Activity
-        // 视图树之上：底图放在视图树顶端也仍在它下面，首帧一画上去就整块盖掉，
-        // 改 alpha 自然看不见。
-        //
-        // TYPE_APPLICATION_PANEL 子窗口挂在同一个窗口 token 上，才真正压在 Flutter
-        // Surface 之上，改它的窗口 alpha 才能真正做「旧页溶进新页」。
-        val bitmap = runCatching {
-            android.graphics.BitmapFactory.decodeFile(path)
-        }.getOrNull()
+        val bitmap = runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull()
         if (bitmap == null) {
-            // 拍图失败就退回原来的窗口淡化，至少不是纯黑。
-            logFade("backdrop decode failed: " + path)
+            handler.post { failLaunch("backdrop-decode-failed") }
             return
         }
-        val image = android.widget.ImageView(this)
-        image.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-        image.setImageBitmap(bitmap)
-        image.setBackgroundColor(0xFF151517.toInt())
+        val image = android.widget.ImageView(this).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            setImageBitmap(bitmap)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
         val lp = android.view.WindowManager.LayoutParams(
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
@@ -256,227 +173,82 @@ class NativeChatActivity : FlutterActivity() {
             android.graphics.PixelFormat.TRANSLUCENT,
         )
         lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-        // 等到窗口真正 attach 之后再加：onCreate 里 decorView.windowToken 还是 null，
-        // 直接 addView 抛 BadTokenException（beta.63 logcat: "token null is not valid"）。
-        // post 到 decorView 上，run 的时候窗口已经挂到 WindowManager 了。
+        // PixelCopy captured the full window; fitting the panel to system bars crops it.
+        if (android.os.Build.VERSION.SDK_INT >= 30) lp.setFitInsetsTypes(0)
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            lp.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        // The token is not available until the decor has attached. A queued add
+        // must never resurrect a cover after an earlier release or failure.
         window.decorView.post {
-            @Suppress("DEPRECATION")
+            if (isFinishing || isDestroyed || backdropReleased || launchFailed) {
+                image.setImageDrawable(null)
+                return@post
+            }
             lp.token = window.decorView.windowToken
             val manager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
             val added = runCatching { manager.addView(image, lp) }
-                .onFailure { logFade("backdrop overlay add threw: " + it) }
+                .onFailure { logFade("backdrop overlay add failed: " + it) }
                 .isSuccess
             if (!added) {
-                logFade("backdrop overlay add failed, falling back to the window fade")
                 image.setImageDrawable(null)
-                backdropFadeRequested = false
-                startWindowFade()
+                failLaunch("backdrop-attach-failed")
                 return@post
             }
             backdropView = image
-            backdropParams = lp
             backdropManager = manager
             logFade("backdrop overlay attached: " + bitmap.width + "x" + bitmap.height)
-            // 底图是 post 上去的，可能晚于首帧信号：真到了就直接把这笔账结掉。
-            if (backdropFadeRequested) {
-                backdropFadeRequested = false
-                fadeOutBackdrop()
-            }
         }
     }
 
-    /**
-     * 首帧画好之后把底图溶掉。
-     *
-     * 这一步与之前的「窗口 alpha 淡化」关键区别：要露出来的内容**已经画完了**，
-     * 所以 alpha 只是叠在一张静态画面上，不再受 200–400ms 一帧的冷启动帧率牵连。
-     */
-    private fun fadeOutBackdrop() {
-        val image = backdropView ?: return
-        backdropView = null
-        val scale = animatorScale()
-        if (scale <= 0f) {
-            removeBackdrop(image)
-            return
-        }
-        val duration = (BACKDROP_FADE_MS * scale).toLong().coerceIn(200L, 1600L)
-        logFade("backdrop fade out ${duration}ms")
-        // 手写台阶而不是 animate()：首帧刚画完那一瞬主线程还在收尾（实测 animate 的
-        // 260ms 动画拖到 614ms 才结束、中间一帧都没上屏，屏幕上就是一次硬跳）。
-        // 每 STEPS 分之一直接设一次 alpha，墙面时间到了就收尾，卡住也不会永远挂着。
-        val steps = BACKDROP_FADE_STEPS
-        val stepDelay = (duration / steps).coerceAtLeast(16L)
-        val step = object : Runnable {
-            private var index = 0
-            override fun run() {
-                if (isFinishing || isDestroyed) return
-                index++
-                // 纯按台阶推进，不看墙钟。beta.67 录到 41.2 / 44.7 两级之后直接跳到底：
-                // 冷启时主线程被占住，等它回来时墙钟早已超过总时长，按时间折算的进度
-                // 一步就是 1.0，中间几级全被跳过。台阶法保证「一定跨过这么多级」。
-                val progress = (index.toFloat() / steps).coerceIn(0f, 1f)
-                setBackdropAlpha((1f - progress).coerceIn(0f, 1f))
-                if (progress < 1f) handler.postDelayed(this, stepDelay) else removeBackdrop(image)
-            }
-        }
-        handler.postDelayed(step, stepDelay)
+    /** Return true only once the panel has actually been removed. */
+    private fun releaseBackdrop(): Boolean {
+        if (isFinishing || isDestroyed || launchFailed) return false
+        if (!removeBackdrop()) return false
+        backdropReleased = true
+        handler.removeCallbacks(readyTimeout)
+        logFade("backdrop released by flutter")
+        return true
     }
 
-    /**
-     * 盯着 Activity 窗口的缓冲，直到新画面真的画进去，再把底图溶掉。
-     *
-     * 为什么要「看」而不是「等固定时长」：beta.65/66 两次录屏都显示，底图开始淡出
-     * 的那一秒里底下仍然是黑的（k11.mp4 帧 100 → 44.6 → 31.5 → 一帧跳到 233.9），
-     * 说明 onFlutterUiDisplayed 并不等于「新画面已经进了窗口缓冲」。这里直接每 80ms
-     * 从窗口中心取一小块像素，与底图同位置比较；连续两次明显不同就认为新页已经上屏。
-     *
-     * 取样放在独立 HandlerThread 上，冷启时主线程正忙，不能再去挤它。
-     */
-    private fun startBackdropWatch() {
-        val image = backdropView ?: return
-        val bitmap = (image.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return
-        val root = window.decorView
-        val rw = root.width
-        val rh = root.height
-        if (rw <= 0 || rh <= 0) {
-            handler.postDelayed({ if (!isFinishing && !isDestroyed) startBackdropWatch() }, 60)
-            return
-        }
-        val size = 48
-        val left = (rw - size) / 2
-        val top = (rh - size) / 2
-        val rect = android.graphics.Rect(left, top, left + size, top + size)
-        val reference = IntArray(size * size)
-        val sx = bitmap.width.toFloat() / rw
-        val sy = bitmap.height.toFloat() / rh
-        for (y in 0 until size) {
-            for (x in 0 until size) {
-                val bx = ((left + x) * sx).toInt().coerceIn(0, bitmap.width - 1)
-                val by = ((top + y) * sy).toInt().coerceIn(0, bitmap.height - 1)
-                reference[y * size + x] = bitmap.getPixel(bx, by)
-            }
-        }
-        stopBackdropWatch()
-        val thread = android.os.HandlerThread("backdrop-watch").also { it.start() }
-        backdropWatchThread = thread
-        val watchHandler = android.os.Handler(thread.looper)
-        val sample = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-        val startedAt = android.os.SystemClock.uptimeMillis()
-        var hits = 0
-        val poll = object : Runnable {
-            override fun run() {
-                if (backdropView == null) {
-                    stopBackdropWatch()
-                    return
-                }
-                if (android.os.SystemClock.uptimeMillis() - startedAt > BACKDROP_WATCH_TIMEOUT_MS) {
-                    logFade("backdrop watch timed out")
-                    runOnUiThread { fadeOutBackdrop() }
-                    stopBackdropWatch()
-                    return
-                }
-                val self = this
-                runCatching {
-                    PixelCopy.request(
-                        window,
-                        rect,
-                        sample,
-                        { result: Int ->
-                            if (result != PixelCopy.SUCCESS) {
-                                watchHandler.postDelayed(self, BACKDROP_WATCH_INTERVAL_MS)
-                                return@request
-                            }
-                            var diff = 0L
-                            var luma = 0L
-                            for (i in 0 until size * size) {
-                                val a = sample.getPixel(i % size, i / size)
-                                val b = reference[i]
-                                diff += Math.abs(((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)).toLong()
-                                diff += Math.abs(((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)).toLong()
-                                diff += Math.abs((a and 0xFF) - (b and 0xFF)).toLong()
-                                luma += (((a shr 16) and 0xFF) + ((a shr 8) and 0xFF) + (a and 0xFF)) / 3
-                            }
-                            val mean = diff / (size * size * 3)
-                            val brightness = luma / (size * size)
-                            // 真正可靠的信号是「窗口内容变亮了」：原生会话页是浅色底
-                            // （实测整屏亮度 223，Web 深色页 33），Flutter 第一帧一旦进到
-                            // 窗口缓冲，中心区亮度就会跳上去。只用「与底图不同」判断会误报
-                            // ——窗口里原来的东西本来就未必与底图一致（beta.67 k12 就是
-                            // 提前触发，底图在内容出现前就化完了，屏幕上留一帧黑）。
-                            // 只看亮度。底图在**独立子窗口**里，主窗口的 PixelCopy 读不到它，
-                            // 读到的是「底图下面那层」——Flutter 还没画时就是纯黑（luma=0）。
-                            // beta.69 误用过「与底图不同」这一条：黑窗口当然与深色 Web 底图
-                            // 不同，于是 mean=46 提前触发溶解（k16.mp4 帧 191 起 44.7 → 31.5
-                            // → 一帧跳到 233.8）。亮度才是唯一可靠信号。
-                            val looksDrawn = brightness >= BACKDROP_DRAWN_LUMA
-                            hits = if (looksDrawn) hits + 1 else 0
-                            if (hits >= 3) {
-                                logFade("backdrop watch: drawn mean=" + mean + " luma=" + brightness)
-                                runOnUiThread { fadeOutBackdrop() }
-                                stopBackdropWatch()
-                            } else {
-                                watchHandler.postDelayed(self, BACKDROP_WATCH_INTERVAL_MS)
-                            }
-                        },
-                        watchHandler,
-                    )
-                }.onFailure { logFade("backdrop watch failed: " + it) }
-            }
-        }
-        watchHandler.post(poll)
-    }
-
-    private fun stopBackdropWatch() {
-        backdropWatchThread?.quitSafely()
-        backdropWatchThread = null
-    }
-    private fun removeBackdrop(image: android.widget.ImageView) {
-        // 不要 recycle：窗口移除之后，ViewRootImpl 队列里还有一帧要绘制这同一个
-        // BitmapDrawable，recycle 会让它抛
-        // "Canvas: trying to use a recycled bitmap" 直接弄死进程
-        // （beta.64 实测：backdrop removed 之后 0.6 秒 FATAL EXCEPTION、进程 died）。
-        // 先解绑 drawable，再交给 GC —— 一张 10MB 的 ARGB 位图不值得用崩溃风险去省。
+    private fun removeBackdrop(): Boolean {
+        val image = backdropView ?: return true
+        val manager = backdropManager ?: return false
+        val removed = runCatching { manager.removeViewImmediate(image) }
+            .onFailure { logFade("backdrop remove failed: " + it) }
+            .isSuccess
+        if (!removed) return false
+        // Do not recycle: a queued draw can still reference the BitmapDrawable.
         image.setImageDrawable(null)
-        runCatching { backdropManager?.removeView(image) }
+        backdropView = null
         backdropManager = null
-        backdropParams = null
-        logFade("backdrop removed")
+        return true
     }
 
-    /**
-     * 改子窗口的 alpha，而不是 ImageView 自己的 view alpha。
-     *
-     * 子窗口有独立 Surface，view alpha 只是它的内部绘制参数；改窗口 alpha 才是由系统
-     * 合成器按层混合，与「窗口淡入淡出」同一套机制。
-     */
-    private fun setBackdropAlpha(alpha: Float) {
-        val image = backdropView ?: return
-        val lp = backdropParams ?: return
-        val manager = backdropManager ?: return
-        if (lp.alpha == alpha) return
-        lp.alpha = alpha
-        runCatching { manager.updateViewLayout(image, lp) }
+    /** A timeout or explicit error returns to Web; it never reveals a placeholder. */
+    private fun failLaunch(reason: String): Boolean {
+        if (launchFailed || isFinishing || isDestroyed) return false
+        launchFailed = true
+        handler.removeCallbacks(readyTimeout)
+        logFade("launch handoff failed: " + reason)
+        runCatching { openWebFallback() }
+            .onFailure { logFade("Web fallback failed: " + it) }
+        removeBackdrop()
+        finish()
+        return true
     }
 
-    /**
-     * 把入场底图按 PNG 交给 Flutter；没有底图就回 null。
-     *
-     * 直接读**落盘的那份文件**，不用覆盖层里的 Bitmap：Dart 侧的 main() 在
-     * configureFlutterEngine 之后立刻就来问，而覆盖层是 post 到 decorView 上才加的，
-     * 那时 Bitmap 可能还没准备好（beta.71 实测：Flutter 拿到 null，于是没画底图，
-     * 只等覆盖层被撤，屏幕上仍是一次硬切）。文件在 onCreate 时就已经存在。
-     */
+    /** Read the already captured file; the panel may still be queued for attachment. */
     private fun backdropPng(): ByteArray? {
         val path = backdropPath ?: return null
-        return runCatching { java.io.File(path).readBytes() }.getOrNull()
+        val bytes = runCatching { java.io.File(path).readBytes() }.getOrNull()
+        if (bytes == null || bytes.isEmpty()) {
+            handler.post { failLaunch("backdrop-read-failed") }
+            return null
+        }
+        return bytes
     }
-
-    private fun animatorScale(): Float = runCatching {
-        android.provider.Settings.Global.getFloat(
-            contentResolver,
-            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-        )
-    }.getOrDefault(1f)
 
     private fun logFade(message: String) {
         android.util.Log.i("NativeChatFade", message)
@@ -496,10 +268,87 @@ class NativeChatActivity : FlutterActivity() {
         ).also { methodChannel ->
             methodChannel.setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "readSessionDraft", "writeSessionDraft" -> {
+                        val id = call.argument<String>("id")
+                        val text = call.argument<String>("text")
+                        val writing = call.method == "writeSessionDraft"
+                        if (id.isNullOrBlank() || id.length > 256 || (writing && (text == null || text.length > 1048576))) {
+                            result.error("draft/invalid", "Invalid session draft", null)
+                        } else {
+                            val prefs = getSharedPreferences("native_chat_drafts", MODE_PRIVATE)
+                            draftIo.execute {
+                                val value: Any? = runCatching {
+                                    if (!writing) prefs.getString(id, null)
+                                    else prefs.edit().apply {
+                                        if (text.isNullOrEmpty()) remove(id) else putString(id, text)
+                                    }.commit()
+                                }.getOrElse { if (writing) false else null }
+                                handler.post { result.success(value) }
+                            }
+                        }
+                    }
+                    "readDefaultWorkspace", "writeDefaultWorkspace", "clearDefaultWorkspace" -> {
+                        val domain = call.argument<String>("domain")
+                        val generation = call.argument<String>("generation")
+                        val scope = supervisorOrNull()?.nativeWorkspaceScope()
+                        if (scope == null || !scope.matches(domain, generation)) {
+                            result.error("workspace/scope-unknown", "Running local Host data domain is unknown or changed", null)
+                        } else {
+                            val writing = call.method == "writeDefaultWorkspace"
+                            val clearing = call.method == "clearDefaultWorkspace"
+                            val target = call.argument<Map<String, Any?>>("target")
+                            val validTarget = target != null && (
+                                (target.size == 1 && target["home"] == true) ||
+                                (target.size == 2 && (target["workspaceId"] as? String)?.isNotBlank() == true &&
+                                    (target["path"] as? String)?.let { path ->
+                                        path.startsWith("/") && path.none { it.code < 32 || it.code == 127 }
+                                    } == true)
+                                )
+                            if (writing && !validTarget) {
+                                result.error("workspace/invalid", "Invalid native default workspace target", null)
+                            } else {
+                                val queued = runCatching {
+                                    runtimeIo.execute {
+                                        val value = runCatching {
+                                            check(supervisorOrNull()?.nativeWorkspaceScope() == scope)
+                                            val prefs = getSharedPreferences("native_chat_ui", MODE_PRIVATE)
+                                            val key = "defaultWorkspace.v1." + scope.domain
+                                            if (writing) {
+                                                val encoded = org.json.JSONObject(target!!).toString()
+                                                val committed = prefs.edit().putString(key, encoded).commit()
+                                                committed && prefs.getString(key, null) == encoded &&
+                                                    supervisorOrNull()?.nativeWorkspaceScope() == scope
+                                            } else if (clearing) {
+                                                val committed = prefs.edit().remove(key).commit()
+                                                committed && !prefs.contains(key) &&
+                                                    supervisorOrNull()?.nativeWorkspaceScope() == scope
+                                            } else {
+                                                val stored = prefs.getString(key, null)
+                                                val decoded = stored?.let { org.json.JSONObject(it) }
+                                                val wire = decoded?.let { json ->
+                                                    json.keys().asSequence().associateWith { json.get(it) }
+                                                }
+                                                check(supervisorOrNull()?.nativeWorkspaceScope() == scope)
+                                                mapOf("domain" to scope.domain, "generation" to scope.generation, "target" to wire)
+                                            }
+                                        }
+                                        handler.post {
+                                            value.fold(
+                                                onSuccess = { result.success(it) },
+                                                onFailure = { result.error("workspace/preference-failed", "Native workspace preference unavailable", null) },
+                                            )
+                                        }
+                                    }
+                                }.isSuccess
+                                if (!queued) result.error("workspace/preference-failed", "Native workspace preference executor unavailable", null)
+                            }
+                        }
+                    }
                     "readAppearance" -> {
                         val prefs = getSharedPreferences("native_chat_ui", MODE_PRIVATE)
                         result.success(mapOf("mode" to prefs.getString("mode", "dark"), "mood" to prefs.getString("mood", "mist")))
                     }
+                    "readLocale" -> result.success(LocaleHelper.get(this@NativeChatActivity))
                     "consumeFirstFrame" -> {
                         // Dart 侧订阅前先问一句：首帧是不是已经显示过了？
                         val already = pendingFirstFrame || announced
@@ -537,6 +386,13 @@ class NativeChatActivity : FlutterActivity() {
                         openRuntimeSettings(call.argument<String>("target"))
                         result.success(true)
                     }
+                    // 面板内切换运行模式：先落偏好，再由 EngineModeSelector.resolve()
+                    // 做权威判定，readback 与目标不一致就回滚 —— 绝不把「写进去了」
+                    // 当成「切成功了」。见 RuntimeModeAuthority 的注释。
+                    "selectRuntimeMode" -> {
+                        val target = call.argument<String>("mode")
+                        switchRuntimeMode(target, result)
+                    }
                     "openSshManager" -> { openSshManager(call.argument<String>("platform")); result.success(true) }
                     "openResource" -> {
                         val uri = call.argument<String>("uri")?.let { android.net.Uri.parse(it) }
@@ -545,6 +401,44 @@ class NativeChatActivity : FlutterActivity() {
                     }
                     "openSettingsSection" -> result.success(openSettingsSection(call.argument<String>("section")))
                     "shareText" -> result.success(shareText(call.argument<String>("text"), call.argument<String>("subject")))
+                    "openFile" -> result.success(
+                        app.dsh.mobile.engine.OpenBridge(applicationContext).open(
+                            call.argument<String>("path"),
+                            call.argument<String>("mime"),
+                        ),
+                    )
+                    "shareFile" -> result.success(
+                        app.dsh.mobile.engine.OpenBridge(applicationContext).share(
+                            call.argument<String>("path"),
+                            call.argument<String>("mime"),
+                        ),
+                    )
+                    "openFileBytes", "shareFileBytes" -> {
+                        val bytes = call.argument<ByteArray>("bytes")
+                        val name = call.argument<String>("name")
+                        val mime = call.argument<String>("mime")
+                        if (bytes == null || name == null) {
+                            result.success(false)
+                        } else {
+                            val share = call.method == "shareFileBytes"
+                            Thread({
+                                val file = runCatching {
+                                    app.dsh.mobile.engine.DeliveredFileCache.stage(
+                                        java.io.File(cacheDir, "shared/deliveries"), name, bytes,
+                                    )
+                                }.getOrNull()
+                                runOnUiThread {
+                                    if (isFinishing || isDestroyed || file == null) {
+                                        result.success(false)
+                                    } else {
+                                        val bridge = app.dsh.mobile.engine.OpenBridge(applicationContext)
+                                        result.success(if (share) bridge.share(file.absolutePath, mime)
+                                            else bridge.open(file.absolutePath, mime))
+                                    }
+                                }
+                            }, "dsh-file-share").start()
+                        }
+                    }
                     "saveText" -> result.success(saveText(call.argument<String>("text"), call.argument<String>("suggestedName")))
                     // 首屏会话：从 Web 切过来时带进来的那个；没有就为 null，
                     // Flutter 会按引擎自己的目录决定打开哪一个。
@@ -552,6 +446,7 @@ class NativeChatActivity : FlutterActivity() {
                     // Flutter 真正打开会话后上报，供"切回 Web"带回同一会话。
                     "setSession" -> {
                         sessionId = call.argument<String>("sessionId")?.takeIf { it.isNotBlank() }
+                        publishSessionResult()
                         result.success(true)
                     }
                     "backdropImage" -> {
@@ -559,18 +454,10 @@ class NativeChatActivity : FlutterActivity() {
                         logFade("backdrop png requested, bytes=" + (bytes?.size ?: -1))
                         result.success(bytes)
                     }
-                    "releaseBackdrop" -> {
-                        // Flutter 已经在自己那一层画出同一张图了，这里一次性撤掉覆盖层：
-                        // 两层是同一个像素内容，撤掉的瞬间看不出跳变。
-                        runCatching { backdropView?.let { backdropManager?.removeView(it) } }
-                        backdropView = null
-                        backdropManager = null
-                        backdropParams = null
-                        stopBackdropWatch()
-                        handler.removeCallbacksAndMessages(null)
-                        logFade("backdrop released by flutter")
-                        result.success(true)
-                    }
+                    "releaseBackdrop" -> result.success(releaseBackdrop())
+                    "launchFadeFailed" -> result.success(
+                        failLaunch(call.argument<String>("reason") ?: "content-failed"),
+                    )
                     "openWebFallback" -> {
                         openWebFallback()
                         result.success(true)
@@ -607,8 +494,11 @@ class NativeChatActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        draftIo.shutdown()
+        runtimeIo.shutdown()
         handler.removeCallbacksAndMessages(null)
-        stopBackdropWatch()
+        backdropReleased = true
+        removeBackdrop()
         super.onDestroy()
     }
 
@@ -656,26 +546,178 @@ class NativeChatActivity : FlutterActivity() {
             runCatching { app.supervisor }.getOrNull()
         }
 
-    private fun engineInfo(): Map<String, Any> {
-        val supervisor = supervisorOrNull()
-        val mode = app.dsh.mobile.engine.EngineModeSelector.lastMode
-        val resolved = app.dsh.mobile.engine.EngineModeSelector.resolved
-        val runtimeMode = if (!resolved) "unknown" else when (mode) {
+    /**
+     * 判定结果转 wire 值。与 Flutter 侧 [HostInfo.runtimeMode] 的判据一一对应 ——
+     * 两边都改才叫改，只改一边会让面板显示「未知环境」。
+     */
+    private fun runtimeWire(mode: app.dsh.mobile.engine.EngineModeSelector.Mode): String =
+        when (mode) {
             app.dsh.mobile.engine.EngineModeSelector.Mode.NATIVE -> "native"
             app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX -> "linux"
             app.dsh.mobile.engine.EngineModeSelector.Mode.NATIVE_FALLBACK -> "native_fallback"
         }
+
+    /**
+     * 当前**判定**值；未判定时是 "unknown"（面板显示「检测中」）。
+     *
+     * ⚠️ 不能只读 lastMode：EngineModeSelector.resolve() 在「Linux 已关闭」这条
+     * 快路径上会在 resolveEarly 里提前返回，**不刷新 lastMode** —— 于是同进程内
+     * 从 Linux 切回原生之后，lastMode 仍停在 LINUX（上一次判定留下的），而引擎
+     * 下次 spawn 实际会走原生。直接透出 lastMode 就会让面板说「没切过去」。
+     *
+     * 这里按偏好归一：偏好关 ⇒ 判定恒为原生（这是 resolve() 自己的语义）；
+     * 偏好开 ⇒ lastMode 才是真判定（LINUX / NATIVE_FALLBACK）。
+     */
+    private fun currentRuntimeWire(): String {
+        if (!app.dsh.mobile.engine.EngineModeSelector.resolved) return "unknown"
+        if (!app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this)) return "native"
+        return runtimeWire(app.dsh.mobile.engine.EngineModeSelector.lastMode)
+    }
+
+    private fun engineInfo(): Map<String, Any> {
+        val supervisor = supervisorOrNull()
+        val hostSnapshot = supervisor?.nativeHostSnapshot()
+        val webUrl = hostSnapshot?.webUrl.orEmpty()
         val distro = app.dsh.mobile.engine.EngineModeSelector.lastDistro
+        val workspaceScope = hostSnapshot?.workspaceScope
+        // 「切了但引擎还没重启」的判定：webUrl 里带每次启动才有的 token，所以
+        // 换了一代（含引擎停掉后变空）就说明已经重新拉起过、新偏好已被采用，
+        // 待生效标记可以收掉；没变则继续挂着。
+        if (pendingRuntimeTarget != null && webUrl != pendingRuntimeUrl) {
+            pendingRuntimeTarget = null
+            pendingRuntimeUrl = ""
+        }
         return mapOf(
-            "webUrl" to (supervisor?.webUrl().orEmpty()),
-            "available" to (supervisor?.hasLoadableUrl() == true),
-            "state" to engineState(supervisor),
-            "runtimeMode" to runtimeMode,
-            "runtimeResolved" to resolved,
+            "webUrl" to webUrl,
+            "available" to (hostSnapshot?.available == true),
+            "state" to (hostSnapshot?.state?.let { it::class.simpleName ?: "unknown" } ?: "uninitialized"),
+            "runtimeMode" to currentRuntimeWire(),
+            "runtimeResolved" to app.dsh.mobile.engine.EngineModeSelector.resolved,
             "runtimeReason" to app.dsh.mobile.engine.EngineModeSelector.lastReason,
             "distro" to distro,
+            "runtimeRestartPending" to (pendingRuntimeTarget != null),
+            "workspaceDomain" to workspaceScope?.domain.orEmpty(),
+            "workspaceGeneration" to workspaceScope?.generation.orEmpty(),
         )
     }
+
+    /**
+     * 面板内切换运行模式的宿主实现。
+     *
+     * 只走 [RuntimeModeAuthority] 那条「先验 → 落偏好 → 权威回读 → 不一致回滚」的路径；
+     * 不重启引擎、不起停止进程、不碰 su —— 重启是用户显式动作。
+     * readiness() 会做几十毫秒的静态探测与幂等自愈，所以整段放到 [runtimeIo]。
+     */
+    private fun switchRuntimeMode(rawTarget: String?, result: MethodChannel.Result) {
+        val requested = app.dsh.mobile.engine.RuntimeModeAuthority.Target.fromWire(rawTarget)
+        if (requested == null) {
+            result.error("runtime/invalid", "Unknown runtime mode", null)
+            return
+        }
+        val previous = currentRuntimeWire()
+        if (runtimeSwitching) {
+            result.success(
+                app.dsh.mobile.engine.RuntimeModeAuthority.Receipt(
+                    ok = false,
+                    target = requested.wire,
+                    applied = previous,
+                    previous = previous,
+                    restartRequired = false,
+                    reason = "busy",
+                ).toWire(),
+            )
+            return
+        }
+        runtimeSwitching = true
+        val bootUrlAtSwitch = supervisorOrNull()?.webUrl().orEmpty()
+        // 执行器可能已随 Activity 关闭（RejectedExecutionException）：那样必须
+        // 立刻解开锁并如实回失败，不能留一个「永远在切换中」的面板。
+        val queued = runCatching {
+            runtimeIo.execute {
+                val receipt = try {
+                    app.dsh.mobile.engine.RuntimeModeAuthority.select(
+                        requested,
+                        runtimePort(),
+                        previous,
+                    )
+                } catch (t: Throwable) {
+                    app.dsh.mobile.engine.RuntimeModeAuthority.Receipt(
+                        ok = false,
+                        target = requested.wire,
+                        applied = currentRuntimeWire(),
+                        previous = previous,
+                        restartRequired = false,
+                        reason = t.message ?: (t::class.simpleName ?: "unknown error"),
+                    )
+                }
+                handler.post {
+                    // 锁在**回执送达**的同一刻解开，而不是算完就解：否则两次点击
+                    // 之间存在「算完了但界面还没收到」的窗口，第二次点击会在旧回执
+                    // 尚未生效时又改一次偏好 —— 面板显示的成功就属于两次里较晚的那次。
+                    runtimeSwitching = false
+                    // 「重启后才生效」只在引擎**正在跑**时才成立；没在跑时下次启动
+                    // 自然按新偏好 spawn，挂个待生效标记只会让面板一直挂着假提醒。
+                    if (receipt.ok && bootUrlAtSwitch.isNotEmpty()) {
+                        pendingRuntimeTarget = receipt.applied
+                        pendingRuntimeUrl = bootUrlAtSwitch
+                    }
+                    result.success(receipt.toWire())
+                }
+            }
+        }.isSuccess
+        if (!queued) {
+            // 执行器已随 Activity 关闭：如实回失败，并把锁解开，
+            // 绝不留一个「永远在切换中」的面板。
+            runtimeSwitching = false
+            result.success(
+                app.dsh.mobile.engine.RuntimeModeAuthority.Receipt(
+                    ok = false,
+                    target = requested.wire,
+                    applied = previous,
+                    previous = previous,
+                    restartRequired = false,
+                    reason = "unavailable",
+                ).toWire(),
+            )
+        }
+    }
+
+    /** [app.dsh.mobile.engine.RuntimeModeAuthority.Port] 的真实实现。 */
+    private fun runtimePort(): app.dsh.mobile.engine.RuntimeModeAuthority.Port =
+        object : app.dsh.mobile.engine.RuntimeModeAuthority.Port {
+            override fun isLinuxEnabled(): Boolean =
+                app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this@NativeChatActivity)
+
+            override fun setLinuxEnabled(on: Boolean) =
+                app.dsh.mobile.engine.EngineModeSelector.setLinuxEnabled(
+                    this@NativeChatActivity,
+                    on,
+                )
+
+            override fun resolve(): String = runtimeWire(
+                app.dsh.mobile.engine.EngineModeSelector.resolve(this@NativeChatActivity),
+            )
+
+            override fun lastReason(): String =
+                app.dsh.mobile.engine.EngineModeSelector.lastReason
+
+            /**
+             * 与 LinuxActivity.toggleEngineMode 同一套判据（end-to-end readiness，
+             * 不是「rootfs 目录存在」那种半判据），失败原因原样上交，由面板显示。
+             */
+            override fun linuxUnavailableReason(): String? =
+                when (
+                    val r = app.dsh.mobile.engine.LinuxEngineLauncher
+                        .get(this@NativeChatActivity)
+                        .readiness()
+                ) {
+                    is app.dsh.mobile.engine.LinuxEngineLauncher.Readiness.Ready -> null
+                    is app.dsh.mobile.engine.LinuxEngineLauncher.Readiness.NeedsDeploy ->
+                        "needs-deploy"
+                    is app.dsh.mobile.engine.LinuxEngineLauncher.Readiness.NeedsPackages -> r.reason
+                    is app.dsh.mobile.engine.LinuxEngineLauncher.Readiness.Unavailable -> r.reason
+                }
+        }
 
     private fun engineState(supervisor: app.dsh.mobile.engine.EngineSupervisor? = supervisorOrNull()): String =
         supervisor?.state?.value?.let { it::class.simpleName ?: "unknown" } ?: "uninitialized"
@@ -700,6 +742,7 @@ class NativeChatActivity : FlutterActivity() {
             "extensions" -> Intent(this, ExtensionStoreActivity::class.java)
             "containers" -> Intent(this, LinuxActivity::class.java)
             "language" -> Intent(this, SettingsActivity::class.java).putExtra("native_chat_open_language", true)
+            "pet" -> Intent(this, app.dsh.mobile.pet.PetSettingsActivity::class.java)
             "permissions" -> Intent(this, PermissionCenterActivity::class.java)
             "diagnostics" -> Intent(this, LogViewerActivity::class.java)
             "backup" -> Intent(this, BackupActivity::class.java)
@@ -721,50 +764,34 @@ class NativeChatActivity : FlutterActivity() {
      * 没有会话标识时不带 extra，另一个方向也不会因此猜一个。
      */
     private fun openWebFallback() {
-        startActivity(
-            Intent(this, MainActivity::class.java).apply {
+        if (returnsToWeb()) {
+            publishSessionResult()
+            finish()
+        } else {
+            startActivity(Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                sessionId?.let { putExtra(EXTRA_SESSION_ID, it) }
-            },
-        )
+            })
+        }
+    }
+
+    // Let Flutter handle nested Back routes; Android delivers this result only on Activity exit.
+    private fun returnsToWeb(): Boolean = callingActivity?.className == MainActivity::class.java.name
+
+    private fun publishSessionResult() {
+        if (!returnsToWeb()) return
+        val selected = sessionId
+        if (selected == null || launchFailed) {
+            setResult(RESULT_CANCELED)
+        } else {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_SESSION_ID, selected))
+        }
     }
 
     companion object {
         const val CHANNEL = "app.dsh.mobile/native_chat"
 
-        /** 入场窗口淡化的基准时长（会被系统动画倍率缩放）。 */
-        private const val WINDOW_FADE_MS = 900
-
-        /** 淡化至少跨过的台阶数：主线程再卡，也一定能看到这么多级渐变。 */
-        private const val FADE_STEPS = 8
-
-        /**
-         * 台阶之间的间隔。
-         *
-         * 不能取 16ms：窗口 alpha 的变化要经过 relayout + 合成才上屏，模拟器上一次合成
-         * 实测要 40–100ms，8 级台阶挤在 128ms 里会被合成器合并成一两级
-         * （beta.64 tI.mp4：31.8 → 57.7 挂 300ms → 234，中间几级根本没上屏）。
-         * 110ms 一层既让每一级都真的被合成一次，整段也只有 0.9 秒。
-         */
-        private const val STEP_DELAY_MS = 110L
-
-        /** 入场底图溶解时长（会被系统动画倍率缩放）。 */
-        private const val BACKDROP_FADE_MS = 1000L
-
-        /** 观察窗口缓冲的取样间隔。 */
-        private const val BACKDROP_WATCH_INTERVAL_MS = 80L
-
-        /** 观察窗口缓冲的最大等待：超时就按旧逻辑直接溶，不让用户看太久旧页。 */
-        private const val BACKDROP_WATCH_TIMEOUT_MS = 9000L
-
-        /** 取样区中心像素与底图对应像素的平均分量差，超过它才算「新画面已经上屏」。 */
-        private const val BACKDROP_CHANGE_THRESHOLD = 8L
-
-        /** 中心区平均亮度达到它就认为浅色页面已经画出来了。 */
-        private const val BACKDROP_DRAWN_LUMA = 12L
-
-        /** 溶解跨过的台阶数：与窗口 alpha 同理，多给几级才有肉眼可见的渐变。 */
-        private const val BACKDROP_FADE_STEPS = 20
+        /** Last-resort failure deadline; never interpreted as content-ready. */
+        private const val BACKDROP_READY_TIMEOUT_MS = 45000L
 
         /**
          * 主界面拍下的入场底图（PNG 绝对路径）。

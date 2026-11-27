@@ -36,18 +36,36 @@ Future<void> _pump(
   await tester.pump(const Duration(milliseconds: 50));
 }
 
-SettingsPage _settings() => SettingsPage(
-  profile: null,
-  usage: UsageHistory(
-    days: const [],
-    from: DateTime(2026, 1, 1),
-    through: DateTime(2026, 1, 7),
-  ),
-  onLogin: () {},
-  onLogout: () {},
-  onOpen: (_) {},
-  onRefresh: () async {},
-);
+SettingsPage _settings({AccountProfile? profile, VoidCallback? onLogout}) =>
+    SettingsPage(
+      profile: profile,
+      usage: UsageHistory(
+        days: const [],
+        from: DateTime(2026, 1, 1),
+        through: DateTime(2026, 1, 7),
+      ),
+      onLogin: () {},
+      onLogout: onLogout ?? () {},
+      onOpen: (_) {},
+      onRefresh: () async {},
+    );
+
+Future<void> _pumpNarrowLarge(WidgetTester tester, Widget page) async {
+  tester.view.physicalSize = const Size(576, 1536);
+  tester.view.devicePixelRatio = 1.6;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: DshTheme.light(displayFactor: 1.6),
+      home: MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(1.6)),
+        child: page,
+      ),
+    ),
+  );
+  await tester.pump();
+}
 
 void main() {
   testWidgets('display and theme rows keep a real 48dp target at compact', (
@@ -111,5 +129,98 @@ void main() {
     // The row is disabled, so the copy cannot promise a switch that this
     // environment does not have.
     expect(find.textContaining('本次运行'), findsNothing);
+  });
+
+  testWidgets(
+    'long account identity keeps logout visible at narrow large text',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      var logoutCount = 0;
+      await _pumpNarrowLarge(
+        tester,
+        _settings(
+          onLogout: () => logoutCount++,
+          profile: const AccountProfile(
+            id: 'acct-long',
+            displayName: '这是一个非常长的账号显示名称用于窄屏回归',
+            email: 'long.account.identifier@example.deepseek.invalid',
+          ),
+        ),
+      );
+
+      final logout = find.byKey(const ValueKey('settings-logout'));
+      final name = find.text('这是一个非常长的账号显示名称用于窄屏回归');
+      final email = find.text(
+        'long.account.identifier@example.deepseek.invalid',
+      );
+      expect(logout, findsOneWidget);
+      expect(name, findsOneWidget);
+      expect(email, findsOneWidget);
+
+      final viewport =
+          Offset.zero & tester.view.physicalSize / tester.view.devicePixelRatio;
+      final logoutRect = tester.getRect(logout);
+      final nameRect = tester.getRect(name);
+      final emailRect = tester.getRect(email);
+      expect(logoutRect.width, greaterThanOrEqualTo(48));
+      expect(logoutRect.height, greaterThanOrEqualTo(48));
+      expect(logoutRect.left, greaterThanOrEqualTo(viewport.left));
+      expect(logoutRect.right, lessThanOrEqualTo(viewport.right));
+      expect(logoutRect.top, greaterThanOrEqualTo(viewport.top));
+      expect(logoutRect.bottom, lessThanOrEqualTo(viewport.bottom));
+      expect(logoutRect.top, greaterThanOrEqualTo(nameRect.bottom));
+      expect(logoutRect.top, greaterThanOrEqualTo(emailRect.bottom));
+      expect(
+        tester.getSemantics(logout),
+        isSemantics(
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          label: '退出登录',
+          hasTapAction: true,
+        ),
+      );
+      await tester.tap(logout);
+      expect(logoutCount, 1);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets('normal-sized account keeps logout alongside identity', (
+    tester,
+  ) async {
+    var logoutCount = 0;
+    await _pump(
+      tester,
+      _settings(
+        onLogout: () => logoutCount++,
+        profile: const AccountProfile(
+          id: 'acct-short',
+          displayName: 'DeepSeek',
+          email: 'user@example.com',
+        ),
+      ),
+      size: DshDisplaySize.standard,
+    );
+    final logout = find.byKey(const ValueKey('settings-logout'));
+    final name = tester.getRect(find.text('DeepSeek'));
+    final email = tester.getRect(find.text('user@example.com'));
+    final button = tester.getRect(logout);
+    expect(button.left, greaterThanOrEqualTo(name.right));
+    expect(button.top, lessThan(email.bottom));
+    expect(button.width, greaterThanOrEqualTo(48));
+    expect(button.height, greaterThanOrEqualTo(48));
+    await tester.tap(logout);
+    expect(logoutCount, 1);
+  });
+
+  testWidgets('token card follows the account identity without a large gap', (
+    tester,
+  ) async {
+    await _pumpNarrowLarge(tester, _settings());
+
+    final account = tester.getRect(find.text('登录 DeepSeek'));
+    final token = tester.getRect(find.text('Token 记录'));
+    expect(token.top - account.bottom, lessThanOrEqualTo(96));
   });
 }

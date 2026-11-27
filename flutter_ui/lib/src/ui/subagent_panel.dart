@@ -14,7 +14,10 @@ import '../transport/dsh_transport.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'composer_surface.dart';
 import 'conversation_flow.dart';
+import 'conversation_edge_blur.dart';
 import 'glass_panel.dart';
+import 'interaction_haptics.dart';
+import 'floating_conversation_layout.dart';
 import 'overflow_title.dart';
 
 TextStyle _meta(BuildContext context) => TextStyle(
@@ -408,6 +411,10 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
     final version = _draftVersion;
     final ok = await child.send(_input.text);
     if (!mounted || !identical(child, _child)) return;
+    // A child conversation has its own receipt: only an accepted send ticks, so
+    // a refused, empty, repeated or failed one stays silent. A late answer for a
+    // page that already switched children never reaches here.
+    if (ok) InteractionHaptics.sendAccepted();
     if (ok && version == _draftVersion) _input.clear();
   }
 
@@ -508,69 +515,69 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
       backgroundColor: DshPalette.of(context).paper,
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, viewport) => Column(
-            children: [
-              _bar(context, widget.agent.name, busy: busy),
-              Expanded(
-                child: ConversationFlow(
-                  conversationIdentity: child,
-                  listKey: const ValueKey('subagent-messages'),
-                  messages: flowMessages,
-                  tools: child?.conversation?.tools ?? const [],
-                  leading: header,
-                  trailing: [
-                    if (receipt != null)
-                      Padding(
-                        key: const ValueKey('subagent-receipt'),
-                        padding: const EdgeInsets.only(top: 8),
+          builder: (context, viewport) => FloatingConversationLayout(
+            header: _bar(context, widget.agent.name, busy: busy),
+            composer: ComposerViewport(
+              availableHeight: viewport.maxHeight,
+              scrollKey: const ValueKey('subagent-composer-scroll'),
+              child: restriction == null && child != null
+                  ? ComposerSurface(
+                      textController: _input,
+                      inputKey: const ValueKey('subagent-input'),
+                      hintText: '发给' + widget.agent.name,
+                      controls: [
+                        const Spacer(),
+                        ComposerActionButton(
+                          sendKey: const ValueKey('subagent-send'),
+                          stopKey: const ValueKey('subagent-stop'),
+                          running:
+                              child.sending ||
+                              child.conversation?.running == true,
+                          // A child conversation has no cancel RPC of its
+                          // own, so this slot never pretends to stop it.
+                          canStop: false,
+                          stopInFlight: false,
+                          canSend: child.canSend,
+                          hasContent: _input.text.trim().isNotEmpty,
+                          onSend: _send,
+                          onStop: () {},
+                          busyLabel: child.sending ? '发送中' : '排队到下一轮',
+                          noStopLabel: '子会话不能停止，正在输出时无法发送',
+                        ),
+                      ],
+                    )
+                  : GlassPanel(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
                         child: Text(
-                          _receiptLabel(receipt.delivery),
-                          style: _meta(context),
+                          restriction ?? '子会话不可用。',
+                          style: _body(context),
                         ),
                       ),
-                  ],
-                ),
-              ),
-              ComposerViewport(
-                availableHeight: viewport.maxHeight,
-                scrollKey: const ValueKey('subagent-composer-scroll'),
-                child: restriction == null && child != null
-                    ? ComposerSurface(
-                        textController: _input,
-                        inputKey: const ValueKey('subagent-input'),
-                        hintText: '发给' + widget.agent.name,
-                        controls: [
-                          const Spacer(),
-                          ComposerActionButton(
-                            sendKey: const ValueKey('subagent-send'),
-                            stopKey: const ValueKey('subagent-stop'),
-                            running:
-                                child.sending ||
-                                child.conversation?.running == true,
-                            // A child conversation has no cancel RPC of its
-                            // own, so this slot never pretends to stop it.
-                            canStop: false,
-                            stopInFlight: false,
-                            canSend: child.canSend,
-                            hasContent: _input.text.trim().isNotEmpty,
-                            onSend: _send,
-                            onStop: () {},
-                            busyLabel: child.sending ? '发送中' : '排队到下一轮',
-                            noStopLabel: '子会话不能停止，正在输出时无法发送',
-                          ),
-                        ],
-                      )
-                    : GlassPanel(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            restriction ?? '子会话不可用。',
-                            style: _body(context),
-                          ),
-                        ),
+                    ),
+            ),
+            transcriptBuilder: (context, insets) => ConversationEdgeBlur(
+              contentInsets: insets,
+              child: ConversationFlow(
+                conversationIdentity: child,
+                listKey: const ValueKey('subagent-messages'),
+                messages: flowMessages,
+                tools: child?.conversation?.tools ?? const [],
+                leading: header,
+                padding: insets,
+                trailing: [
+                  if (receipt != null)
+                    Padding(
+                      key: const ValueKey('subagent-receipt'),
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        _receiptLabel(receipt.delivery),
+                        style: _meta(context),
                       ),
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

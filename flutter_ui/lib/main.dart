@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -12,6 +12,7 @@ import 'src/state/chat_controller.dart';
 import 'src/theme/dsh_theme.dart';
 import 'src/transport/fixture_transport.dart';
 import 'src/ui/chat_shell.dart';
+import 'src/ui/chat_strings.dart';
 import 'src/ui/launch_fade.dart';
 import 'src/state/settings_controller.dart';
 import 'src/theme/display_scale.dart';
@@ -21,6 +22,13 @@ import 'src/bridge/settings_service_stub.dart'
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Preserve the native window geometry when Flutter takes system-UI ownership.
+  try {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
+        .timeout(LaunchFade.hostAckTimeout);
+  } catch (_) {
+    // Previews and unsupported platforms have no Android system bars.
+  }
   // 外观必须在 runApp 之前读出来。
   //
   // 原先这里直接 runApp，_themeMode 的初始值是 ThemeMode.dark，用户保存的 light
@@ -34,10 +42,39 @@ Future<void> main() async {
   // 入场底图：宿主在点击「切换原生对话」那一刻拍下的 Web 那一屏。
   // 它在冷启动那几秒里替我们挡住黑屏，起来后再由 LaunchFade 在自己这层淡掉。
   final backdrop = await HostBridge.readBackdrop();
+  final locale = await HostBridge.readLocale();
   // The chrome is drawn with Flutter's own BackdropFilter/ImageFilter, so the
   // app no longer initializes a third-party glass renderer at startup.
-  runApp(DshApp(initialAppearance: appearance, backdrop: backdrop));
+  runApp(
+    DshApp(
+      initialAppearance: appearance,
+      backdrop: backdrop,
+      initialLocale: locale,
+    ),
+  );
 }
+
+SystemUiOverlayStyle _transparentSystemBars(Brightness brightness) =>
+    SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: brightness == Brightness.light
+          ? Brightness.dark
+          : Brightness.light,
+      statusBarBrightness: brightness,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness: brightness == Brightness.light
+          ? Brightness.dark
+          : Brightness.light,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarContrastEnforced: false,
+    );
+
+ThemeData _withTransparentSystemBars(ThemeData theme) => theme.copyWith(
+  appBarTheme: theme.appBarTheme.copyWith(
+    systemOverlayStyle: _transparentSystemBars(theme.brightness),
+  ),
+);
 
 class DshApp extends StatefulWidget {
   const DshApp({
@@ -45,6 +82,7 @@ class DshApp extends StatefulWidget {
     this.preview = kIsWeb,
     this.initialAppearance,
     this.backdrop,
+    this.initialLocale,
   });
 
   final bool preview;
@@ -54,6 +92,9 @@ class DshApp extends StatefulWidget {
 
   /// 宿主拍下的 Web 那一屏：入场时盖在页面之上，再淡掉露出会话页。
   final Uint8List? backdrop;
+
+  /// The Android app locale, read before the first Flutter frame.
+  final String? initialLocale;
 
   @override
   State<DshApp> createState() => _DshAppState();
@@ -70,11 +111,13 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.dark;
   DshMood _mood = DshMood.mist;
   DshDisplaySize _displaySize = DshDisplaySize.fallback;
+  Locale? _locale;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _locale = _localeFromWire(widget.initialLocale);
     // Web preview has no Android bridge; native hosts enter real engine sessions.
     _controller = ChatController(FixtureTransport());
     _settingsHostUrl = widget.preview ? 'preview' : 'unavailable';
@@ -95,6 +138,19 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
     _applyInitialAppearance();
     _readAppearance();
     _readDisplaySize();
+  }
+
+  Locale? _localeFromWire(String? value) {
+    final code = value?.trim().toLowerCase();
+    if (code == null || code.isEmpty) return null;
+    return Locale(code);
+  }
+
+  Future<void> _readLocale() async {
+    if (widget.preview) return;
+    final value = _localeFromWire(await HostBridge.readLocale());
+    if (!mounted || value == null || value == _locale) return;
+    setState(() => _locale = value);
   }
 
   int _appearanceEpoch = 0;
@@ -170,33 +226,25 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
           ? info.webUrl
           : 'unavailable';
       final changed = key != _settingsHostUrl;
-      setState(() {
-        if (changed) {
-          _settings.dispose();
-          _settingsHostUrl = key;
-          _settings = SettingsController(
-            createSettingsService(
-              key == 'unavailable'
-                  ? const HostInfo(
-                      webUrl: '',
-                      state: 'unavailable',
-                      available: false,
-                    )
-                  : info,
-            ),
-          );
-        }
-        _hostResolved = true;
-        _hostInfo =
-            info ??
-            (key == 'unavailable'
-                ? const HostInfo(
-                    webUrl: '',
-                    state: 'unavailable',
-                    available: false,
-                  )
-                : null);
-      });
+      const unavailable = HostInfo(
+        webUrl: '',
+        state: 'unavailable',
+        available: false,
+      );
+      final next = info ?? unavailable;
+      if (!_hostResolved || changed || !next.hasSameSnapshot(_hostInfo)) {
+        setState(() {
+          if (changed) {
+            _settings.dispose();
+            _settingsHostUrl = key;
+            _settings = SettingsController(
+              createSettingsService(key == 'unavailable' ? unavailable : next),
+            );
+          }
+          _hostResolved = true;
+          _hostInfo = next;
+        });
+      }
       if (changed || refreshSettings) unawaited(_settings.refresh());
       if (_hostInfo != null && _hostPoll == null) _startHostPolling();
     });
@@ -213,6 +261,7 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && !widget.preview) {
+      _readLocale();
       _refreshHostInfo();
       if (_hostInfo != null) _startHostPolling();
     } else {
@@ -255,13 +304,11 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
           child: MaterialApp(
             navigatorKey: _navigatorKey,
             title: 'DSH',
-            theme: DshTheme.light(
-              mood: _mood,
-              displayFactor: _displaySize.factor,
+            theme: _withTransparentSystemBars(
+              DshTheme.light(mood: _mood, displayFactor: _displaySize.factor),
             ),
-            darkTheme: DshTheme.dark(
-              mood: _mood,
-              displayFactor: _displaySize.factor,
+            darkTheme: _withTransparentSystemBars(
+              DshTheme.dark(mood: _mood, displayFactor: _displaySize.factor),
             ),
             themeMode: _themeMode,
             debugShowCheckedModeBanner: false,
@@ -269,10 +316,19 @@ class _DshAppState extends State<DshApp> with WidgetsBindingObserver {
             // route and overlay scales together, and below nothing that owns
             // state: the widget chain is identical at every size, so switching
             // never remounts routes, focus, drafts or scroll offsets.
-            builder: (context, child) => DshDisplayCanvas(
-              child: LaunchFade(
-                backdrop: widget.backdrop,
-                child: child ?? const SizedBox.shrink(),
+            // Keep the handoff image in real window coordinates. Scaling it
+            // inside DshDisplayCanvas would crop or magnify the host snapshot
+            // when the user chooses compact/relaxed display size.
+            builder: (context, child) => DshChatLocale(
+              languageCode: _locale?.languageCode ?? 'zh',
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: _transparentSystemBars(Theme.of(context).brightness),
+                child: LaunchFade(
+                  backdrop: widget.backdrop,
+                  child: DshDisplayCanvas(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
               ),
             ),
             home: Builder(

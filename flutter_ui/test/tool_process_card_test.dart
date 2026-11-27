@@ -219,6 +219,80 @@ void main() {
     expect(find.text('执行中'), findsOneWidget);
   });
 
+  testWidgets('edit sections keep expansion when a prior path is inserted', (
+    tester,
+  ) async {
+    const first = CodeEdit(path: 'a.dart', before: 'a old', after: 'a new');
+    const second = CodeEdit(path: 'b.dart', before: 'b old', after: 'b new');
+    await _pump(tester, _run(edits: const [first, second]));
+    await _tap(tester, 'process-diff-run-1-1');
+    expect(find.textContaining('b old'), findsOneWidget);
+
+    await _pump(
+      tester,
+      _run(
+        edits: const [
+          CodeEdit(path: 'new.dart', before: 'new old', after: 'new new'),
+          first,
+          second,
+        ],
+      ),
+    );
+    expect(find.textContaining('b old'), findsOneWidget);
+    expect(find.textContaining('a old'), findsNothing);
+    expect(find.textContaining('new old'), findsNothing);
+
+    await _pump(
+      tester,
+      _run(
+        edits: const [
+          first,
+          CodeEdit(path: 'b.dart', before: 'updated old', after: 'updated new'),
+        ],
+      ),
+    );
+    expect(find.textContaining('updated old'), findsOneWidget);
+    expect(find.textContaining('updated new'), findsOneWidget);
+    expect(find.textContaining('b old'), findsNothing);
+  });
+
+  testWidgets('repeated edit paths keep independent disclosures', (
+    tester,
+  ) async {
+    const first = CodeEdit(
+      path: 'a.dart',
+      before: 'first old',
+      after: 'first new',
+    );
+    const second = CodeEdit(
+      path: 'a.dart',
+      before: 'second old',
+      after: 'second new',
+    );
+    await _pump(tester, _run(edits: const [first, second]));
+    await _tap(tester, 'process-diff-run-1-1');
+    expect(find.textContaining('second old'), findsOneWidget);
+    expect(find.textContaining('first old'), findsNothing);
+
+    await _pump(
+      tester,
+      _run(
+        edits: const [
+          CodeEdit(path: 'prior.dart', before: 'prior old', after: 'prior new'),
+          first,
+          second,
+        ],
+      ),
+    );
+    expect(find.textContaining('second old'), findsOneWidget);
+    expect(find.textContaining('first old'), findsNothing);
+    expect(find.textContaining('prior old'), findsNothing);
+    await _tap(tester, 'process-diff-run-1-1');
+    expect(find.textContaining('first old'), findsOneWidget);
+    expect(find.textContaining('second old'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('diff expands to added and removed lines', (tester) async {
     await _pump(
       tester,
@@ -255,6 +329,10 @@ void main() {
     );
     await _tap(tester, 'process-command-run-1');
     await tester.pump(const Duration(milliseconds: 240));
+    expect(
+      find.byKey(const ValueKey('process-preview-boundary-run-1-stdout')),
+      findsOneWidget,
+    );
 
     final shown = tester.widget<SelectableText>(
       _key('process-output-run-1-stdout'),

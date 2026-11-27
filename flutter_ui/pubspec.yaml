@@ -29,6 +29,9 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   file_selector: ^1.1.0
+  dartssh2: 4.1.0
+  mime: 2.0.0
+  path: 1.9.1
 
 dev_dependencies:
   flutter_test:

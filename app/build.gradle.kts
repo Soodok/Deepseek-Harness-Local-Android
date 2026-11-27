@@ -350,14 +350,47 @@ android {
         // 48dp 目标兜底；原生 TurnNotice 默认单行小字号摘要，整行点开才有原因/建议/代码/
         // 脱敏详情/复制；Web 端把官方 conversation.chat.node 的 turn-error 那一格换成
         // 同一套折叠提示（只换渲染器，脱敏沿用上游 displayFailure）。
-        versionCode = 453
+        // v1.6.0-beta.79 (2026-11-18): 消息视口上下边缘渐变模糊；首末与无障碍模式归零。
+        // v1.6.0-beta.80 (2026-11-19): 顶部栏与输入区改为真正悬浮在对话之上（玻璃采样到正文，
+        // 输入区高度按可用空间封顶，正文可滚动贯通到两个浮层之下）。
+        // v1.6.0-beta.86 (2026-11-19): 模糊层只覆盖带内侧 71%，其余交给遮盖尾段，带尾硬跳移到遮盖仍不透明处。
+        // v1.6.0-beta.87 (2026-11-20): Extend transcript softening to the composer gutters.
+        // v1.6.0-beta.90 (2026-11-21 05:24): ARM64 release validation for staggered menu reveal and accepted-send/edit haptic feedback.
+        // v1.6.0-beta.91 (2026-11-21): Compact native chat, automatic recovery, and bundled SSH validation.
+        // v1.6.0-beta.92 (2026-11-21): Native chat feedback and readiness-gated transition.
+        // v1.6.0-beta.93 (2026-11-22): Center the native new-chat starter cards.
+        // v1.6.0-beta.94 (2026-11-22): Android emulator feedback acceptance baseline.
+        // v1.6.0-beta.95 (2026-11-22): Reuse the native SSH form in settings.
+        // v1.6.0-beta.96 (2026-11-22): Keep the captured Web backdrop in full-window coordinates.
+        // v1.6.0-beta.97 (2026-11-22): Route hosted settings to Android management pages.
+        // v1.6.0-beta.98 (2026-11-22): Refresh the welcome greeting on the hour.
+        // v1.6.0-beta.99 (2026-11-22): Skip rebuilding the native chat on unchanged Host snapshots.
+        // v1.6.0-beta.100 (2026-11-22): Render assistant chart blocks and preserve unsupported source.
+        // v1.6.0-beta.101 (2026-11-22): Add native custom model provider setup.
+        // v1.6.0-beta.102 (2026-11-23): Show answer actions only after successful turn completion.
+        // v1.6.0-beta.103 (2026-11-23): Add native provider editing, removal, and model discovery.
+        // v1.6.0-beta.104 (2026-11-23): Add the Host command for one-time approval.
+        // v1.6.0-beta.105 (2026-11-23): Match the Host prompt ordering contract.
+        // v1.6.0-beta.106 (2026-11-23): Return CLI approval decisions in the Host Bash result format.
+        // v1.6.0-beta.107 (2026-11-24): Integrate mainline display controls and native account layout.
+        // v1.6.0-beta.108 (2026-11-24): Apply native locale and permission settings, reveal pending approvals, and show empty workspace sessions.
+        // v1.6.0-beta.109 (2026-11-24): Carry the native session back to Web and support explicit Ask skip.
+        // v1.6.0-beta.110 (2026-11-25): Continuous tool-call stack, redesigned welcome, MIUI settings, in-panel runtime switch.
+        // v1.6.0-beta.111 (2026-11-25): In-conversation search with lazy hit seeking, actionable error cards, zero-cost closed search chrome.
+        // v1.6.0-beta.112 (2026-11-25): Group multi-step tool activity, refine the welcome screen, and defer permission alerts until ready.
+        // v1.6.0-beta.113 (2026-11-25): Preserve execution and history across paging; fit short-screen welcome and scope reconnect actions.
+        // v1.6.0-beta.114 (2026-11-26): Collapse workspace groups and choose the next new-session workspace from the welcome screen.
+        // v1.6.0-beta.115: Consume the workspace on successful creation and keep long selectors above the composer.
+        // v1.6.0-beta.119 (2026-11-26): Add the native Flutter entry to existing pet settings.
+        // v1.6.0-beta.120 (2026-11-26): Preserve fade timing on slow foreground frames.
+        versionCode = 513
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.78"
+        versionName = "1.6.0-beta.138"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -807,7 +840,7 @@ dependencies {
     //   main 经 PR #97 的 MD3 界面需要它；feat 的 MD3 设置页重构也需要它。
     //   合并后 MD3 主题整包保留，因此这条依赖必须留下，否则 MaterialCardView /
     //   MaterialAlertDialogBuilder 等全部编译不过。
-    implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.android.material:material:1.14.0")
 
     // 纯 JVM 单元测试（v1.6）：`EndpointCatalog.search()` 这类不碰 Android API
     // 的逻辑必须能在本机跑，不能只靠 py 探针读源码 —— 探针只能证明「代码长这样」，

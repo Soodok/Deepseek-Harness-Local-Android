@@ -65,7 +65,9 @@ class MessageActions extends ChangeNotifier {
   bool _loading = false;
   String? _lastCopiedId;
   EditTarget? _edit;
-  String? _stashedDraft;
+  String? _editText;
+  bool get hasUnsavedEdit => isEditing && _editText != null;
+  String? get editingText => _editText;
 
   bool get loading => _loading;
   String? get busyMessageId => _busyMessageId;
@@ -196,17 +198,15 @@ class MessageActions extends ChangeNotifier {
     }
   }
 
-  /// Begin editing [message]: its text moves into the composer and the current
-  /// draft is kept aside until the edit ends.
+  /// Begin editing [message] without modifying the ordinary Session draft.
   void beginEdit(ChatMessage message) {
     if (_disposed || message.seq == null) return;
-    _stashedDraft = draft.text;
+    _editText = message.text;
     _edit = EditTarget(
       messageId: message.id,
       seq: message.seq!,
       text: message.text,
     );
-    draft.replace(message.text);
     _notify();
   }
 
@@ -214,20 +214,26 @@ class MessageActions extends ChangeNotifier {
   void cancelEdit() {
     if (_disposed || _edit == null) return;
     _edit = null;
-    final stashed = _stashedDraft;
-    _stashedDraft = null;
-    draft.replace(stashed ?? '');
+    _editText = null;
     _notify();
   }
 
   /// Send the edited text: rewind the original Turn, then continue from there.
+  void recordEditText(String text) {
+    if (!isEditing || _disposed) return;
+    if (_editText == text) return;
+    _editText = text;
+    _notify();
+  }
+
   Future<void> submitEdit({
     required bool includeFiles,
     required bool replaceDraft,
   }) async {
     if (_disposed) return;
     final edit = _edit;
-    if (edit == null || _busyMessageId != null) return;
+    final text = _editText;
+    if (edit == null || text == null || text.trim().isEmpty || _busyMessageId != null) return;
     _busyMessageId = edit.messageId;
     _notify();
     try {
@@ -250,11 +256,11 @@ class MessageActions extends ChangeNotifier {
         _say('编辑后的发送没有被接受，文本仍然保留', isError: true);
         return;
       }
-      final text = draft.text;
-      _edit = null;
-      _stashedDraft = null;
-      draft.replace('');
-      await onOpenFork(outcome.childSessionId!, text);
+      final accepted = await onOpenFork(outcome.childSessionId!, text);
+      if (accepted && identical(_edit, edit) && _editText == text) {
+        _edit = null;
+        _editText = null;
+      }
     } on Object catch (error) {
       // The edit stays open with the text intact: the person can retry or cancel.
       _say('编辑后的发送失败：' + readableFailure(error), isError: true);
@@ -356,6 +362,7 @@ class MessageActions extends ChangeNotifier {
     }
   }
 }
+
 /// The callbacks one transcript row may use.
 ///
 /// The screen owns dialogs, navigation and the composer; a row only reports

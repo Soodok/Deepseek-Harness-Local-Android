@@ -71,10 +71,6 @@ Future<void> _pump(
 }
 
 Future<void> _tap(WidgetTester tester, String key) async {
-  if (key.startsWith('settings-usage-day-') &&
-      find.byKey(ValueKey(key)).evaluate().isEmpty) {
-    await _tap(tester, 'settings-usage-expand');
-  }
   final finder = find.byKey(ValueKey(key));
   await tester.ensureVisible(finder);
   await tester.pump();
@@ -83,27 +79,29 @@ Future<void> _tap(WidgetTester tester, String key) async {
 }
 
 void main() {
-  testWidgets('compact heatmap overview opens accessible daily details', (
+  testWidgets('compact heatmap stays short and keeps cells tappable', (
     tester,
   ) async {
-    await _pump(tester, usage: _history([]));
+    await _pump(
+      tester,
+      usage: _history([
+        TokenUsageDay(date: _last, inputTokens: 40, outputTokens: 10),
+      ]),
+    );
     final overview = find.byKey(const ValueKey('settings-usage-overview'));
+    // A day panel used to be folded out below a header button; the card now
+    // holds a dense grid plus one inline line, so it must stay visibly shorter
+    // than the old 12-week panel even with a selected day.
     expect(tester.getSize(overview).height, lessThanOrEqualTo(160));
-    expect(
-      find.byKey(const ValueKey('settings-usage-day-2026-11-16')),
-      findsNothing,
-    );
-    await _tap(tester, 'settings-usage-expand');
-    expect(
-      find.byKey(const ValueKey('settings-usage-day-2026-11-16')),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .getSize(find.byKey(const ValueKey('settings-usage-day-2026-11-16')))
-          .height,
-      greaterThanOrEqualTo(48),
-    );
+    final cell = find.byKey(const ValueKey('settings-usage-day-2026-11-16'));
+    expect(cell, findsOneWidget);
+    expect(tester.getSize(cell).height, lessThanOrEqualTo(24));
+    expect(find.text('输入 40'), findsOneWidget);
+    await _tap(tester, 'settings-usage-day-2026-11-15');
+    expect(find.text('该日暂无记录'), findsOneWidget);
+    expect(tester.getSize(overview).height, lessThanOrEqualTo(160));
+    // No fold-out control is left behind.
+    expect(find.byKey(const ValueKey('settings-usage-expand')), findsNothing);
   });
   testWidgets('signed out profile invokes the supplied login callback', (
     tester,
@@ -125,6 +123,27 @@ void main() {
     expect(find.text(_profile.email), findsOneWidget);
     await _tap(tester, 'settings-logout');
     expect(logouts, 1);
+  });
+
+  testWidgets('signed in layout remains usable at 360dp and 2x text', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pump(tester, profile: _profile, usage: _history([]), scale: 2);
+    expect(tester.takeException(), isNull);
+    await _tap(tester, 'settings-logout');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('logout is beside the account and usage follows immediately', (tester) async {
+    await _pump(tester, profile: _profile, usage: _history([]));
+    final name = tester.getRect(find.text(_profile.displayName));
+    final logout = tester.getRect(find.byKey(const ValueKey('settings-logout')));
+    final usage = tester.getRect(find.text('Token 记录'));
+    expect(logout.left, greaterThan(name.right));
+    expect(logout.center.dy, closeTo(name.center.dy, 24));
+    expect(usage.top - logout.bottom, lessThan(80));
   });
 
   testWidgets(
@@ -243,7 +262,6 @@ void main() {
     'heatmap contains exactly 84 calendar dates in 12 weekly columns',
     (tester) async {
       await _pump(tester, usage: _history([]));
-      await _tap(tester, 'settings-usage-expand');
       final days = find.byWidgetPredicate(
         (widget) =>
             widget.key is ValueKey<String> &&

@@ -922,17 +922,25 @@ void main() {
     final send = sendRect.size;
     expect(send.width, greaterThanOrEqualTo(48));
     expect(send.height, greaterThanOrEqualTo(48));
-    await tester.scrollUntilVisible(
-      find.textContaining('演示正文 11'),
-      300,
-      scrollable: find.ancestor(
-        of: find.descendant(
-          of: find.byKey(const ValueKey('subagent-messages')),
-          matching: find.byType(SliverList),
-        ),
-        matching: find.byType(Scrollable),
+    final scrollable = find.ancestor(
+      of: find.descendant(
+        of: find.byKey(const ValueKey('subagent-messages')),
+        matching: find.byType(SliverList),
       ),
+      matching: find.byType(Scrollable),
     );
+    // The floating composer covers the scrollable centre, so a drag-based
+    // scrollUntilVisible starts its gesture on chrome and never moves the list.
+    // Drive the position directly instead; the assertion below still requires
+    // the last row to become reachable on a 360x640 screen with 2x text.
+    final pos = tester.state<ScrollableState>(scrollable).position;
+    // Lazy slivers revise their estimated extent while scrolling, so a single
+    // jump to maxScrollExtent lands short of the real end. Settle it first.
+    for (var i = 0; i < 8; i++) {
+      await tester.pump();
+      pos.jumpTo(pos.maxScrollExtent);
+    }
+    await tester.pump();
     // The overflowing title intentionally keeps animating.
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));

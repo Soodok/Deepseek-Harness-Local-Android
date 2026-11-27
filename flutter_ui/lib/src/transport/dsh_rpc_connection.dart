@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'rpc_multipart.dart';
+
 class DshRpcException implements Exception {
   const DshRpcException(this.code, this.message, [this.details = const {}]);
   final String code;
@@ -243,10 +245,11 @@ class DshRpcConnection {
         }
         final bytes = await _readBody(response);
         _check(generation);
-        final envelope = _map(jsonDecode(utf8.decode(bytes)));
-        if (envelope == null ||
-            envelope['type'] != 'server-response' ||
-            envelope['rpcId'] != rpcId)
+        final envelope = await decodeRpcBody(
+          bytes,
+          response.headers.contentType,
+        );
+        if (envelope['type'] != 'server-response' || envelope['rpcId'] != rpcId)
           throw _protocolError;
         final result = _map(envelope['result']);
         if (result == null) throw _protocolError;

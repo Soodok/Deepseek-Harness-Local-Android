@@ -560,6 +560,7 @@ object AgentBridge {
         "POST /batch" to Route("POST") { _, _, b -> batch(b) },
         "GET /interference" to Route("GET") { _, q, _ -> interference(q) },
         "POST /overlay" to Route("POST") { _, _, b -> overlay(b) },
+        "GET /overlay/available" to Route("GET") { _, _, _ -> overlayAvailable() },
         "POST /launch" to Route("POST") { c, _, b -> launch(c, b) },
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
@@ -3868,6 +3869,25 @@ document.getElementById('api').textContent = checks.map(function(c){
     }
 
     /**
+     * GET /overlay/available → 提问抽屉此刻能不能真的被看到（v1.8.1）。
+     *
+     * 只读、不吃触摸、不改状态：给 ask-bridge 插件在接管提问前判断用。
+     * 无障碍服务没跑 = 没有窗口；用户把球收起 / 手动隐藏时窗口不挂载；
+     * 窗口挂载但抽屉没展开时 ask-bridge 会先调 reveal，再确认 mounted。
+     */
+    private fun overlayAvailable(): Pair<Int, String> {
+        val available = StatusOverlay.isAvailable()
+        val mounted = available && StatusOverlay.isShown()
+        val panel = mounted && StatusOverlay.askPanelMounted()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("available", available)
+            .put("mounted", panel)
+            .put("shown", mounted)
+            .toString()
+    }
+
+    /**
      * POST /overlay → 控制状态悬浮窗（v1.2.57）。
      * body: {"status":"<short status>","action":"tap-text \"<label>\"","show":true,"hide":false}
      *
@@ -4601,6 +4621,11 @@ document.getElementById('api').textContent = checks.map(function(c){
             .put("error", "a question is already pending")
             .put("pending", ask().pending()?.text ?: "")
             .toString()
+        // 有问题就得让用户看得见：无障碍服务刚连上时窗口还没挂载，或窗口正收成
+        // 一颗球（抽屉没画）。先确保窗口在屏幕上并展开到档位 1，抽屉出现后再由
+        // ask-bridge 的轮询把内容填进去。用户主动隐藏时不强行弹出。
+        StatusOverlay.showAskPanel(DshAccessibilityService.instance)
+
         val res = JSONObject()
             .put("ok", true)
             .put("id", q.id)

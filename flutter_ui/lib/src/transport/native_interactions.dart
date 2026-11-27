@@ -410,7 +410,12 @@ class NativeInteractions {
           action = _questionAction(
             requestId,
             question,
-            draftKey: jsonEncode([agentId, eventId, _canonicalJson(request)]),
+            draftKey: jsonEncode([
+              _home,
+              agentId,
+              eventId,
+              _canonicalJson(request),
+            ]),
           );
           kind = NativeInteractionKind.question;
         } else {

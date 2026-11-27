@@ -25,6 +25,7 @@ class LoopbackDshHost {
   void Function(MuxRequest)? onFrame;
   Future<void> Function(HttpRequest)? onExchange;
   bool wrongRpcId = false;
+  List<int>? binaryData;
   Map<String, Object?>? failure;
   String location = './api/remote.mux';
   String get webUrl =>
@@ -85,16 +86,44 @@ class LoopbackDshHost {
         final value = onCall == null
             ? <String, Object?>{'accepted': true}
             : await onCall!(call);
-        request.response.headers.contentType = ContentType.json;
-        request.response.write(
-          jsonEncode({
-            'type': 'server-response',
-            'rpcId': wrongRpcId ? 'wrong-id' : envelope['rpcId'],
-            'result': failure == null
-                ? {'ok': true, 'value': value}
-                : {'ok': false, 'error': failure},
-          }),
-        );
+        final reply = {
+          'type': 'server-response',
+          'rpcId': wrongRpcId ? 'wrong-id' : envelope['rpcId'],
+          'result': failure == null
+              ? {'ok': true, 'value': value}
+              : {'ok': false, 'error': failure},
+        };
+        if (binaryData != null) {
+          const boundary = 'dsh-test-real-http-binary';
+          reply['attachments'] = [
+            {
+              'path': ['data'],
+              'codec': 'bytes',
+              'part': 'bytes-0',
+            },
+          ];
+          request.response.headers.contentType = ContentType(
+            'multipart',
+            'form-data',
+            parameters: {'boundary': boundary},
+          );
+          request.response.add(
+            utf8.encode(
+              '--$boundary\r\nContent-Disposition: form-data; name="bytes-0"; filename="blob"\r\nContent-Type: application/octet-stream\r\n\r\n',
+            ),
+          );
+          request.response.add(binaryData!);
+          request.response.add(
+            utf8.encode(
+              '\r\n--$boundary\r\nContent-Disposition: form-data; name="metadata"\r\n\r\n' +
+                  jsonEncode(reply) +
+                  '\r\n--$boundary--\r\n',
+            ),
+          );
+        } else {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode(reply));
+        }
         await request.response.close();
         return;
       }
@@ -147,6 +176,31 @@ void main() {
     await rpc.close();
     await host.close();
   });
+
+  test(
+    'binary workspace response survives real HTTP Cookie and RPC framing',
+    () async {
+      host.binaryData = [0, 255, 128, 13, 10, 45, 45, 1];
+      host.onCall = (_) async => {
+        'data': null,
+        'eof': true,
+        'absolutePath': '/work/image.png',
+      };
+      final file = await rpc.call('workspaceFiles/readBytes', {
+        'workspaceFileScopeId': 'file-session',
+        'path': 'image.png',
+        'options': <String, Object?>{},
+      }) as Map;
+      expect(file['data'], orderedEquals(host.binaryData!));
+      expect(file['absolutePath'], '/work/image.png');
+      expect(host.requests.single.cookie, 'dsh-peer=peer-1');
+      expect(
+        (host.requests.single.envelope['payload']
+            as Map)['args']['workspaceFileScopeId'],
+        'file-session',
+      );
+    },
+  );
 
   test('exchange preserves mount, peer Cookie and a single socket', () async {
     await Future.wait([rpc.connect(), rpc.connect()]);

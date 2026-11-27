@@ -118,6 +118,43 @@ void main() {
         await tester.pump(const Duration(milliseconds: 450));
       }
 
+      // 自然配色只剩「设置 · 个性化主题」一个入口：抽屉里那个下拉选择器已经
+      // 拆除，用例因此每次都要真的走进设置页选一次配色，再回到对话页检查
+      // 对话本身有没有重绘、草稿有没有留下。
+      Future<void> openAppearance() async {
+        await tester.tap(find.byTooltip('打开会话抽屉'));
+        await frame();
+        await tester.tap(find.byKey(const ValueKey('account-menu')));
+        await frame();
+        await tester.tap(find.text('设置'));
+        await frame();
+        final entry = find.byKey(
+          const ValueKey('settings-destination-appearance'),
+        );
+        await tester.ensureVisible(entry);
+        await frame();
+        await tester.tap(entry);
+        await frame();
+      }
+
+      Future<void> pickMood(DshMood mood) async {
+        final card = find.byKey(ValueKey('settings-mood-' + mood.name));
+        await tester.ensureVisible(card);
+        await frame();
+        await tester.tap(card);
+        await frame();
+      }
+
+      Future<void> backToChat() async {
+        await tester.pageBack();
+        await frame();
+        final back = find.byKey(const ValueKey('settings-back'));
+        await tester.ensureVisible(back);
+        await frame();
+        await tester.tap(back);
+        await frame();
+      }
+
       await tester.pumpWidget(const DshApp(preview: true));
       await frame();
       final shell = tester.state(find.byType(ChatShell));
@@ -125,13 +162,10 @@ void main() {
         find.byKey(const ValueKey('composer-input')),
         '保留我的草稿',
       );
-      await tester.tap(find.byTooltip('打开会话抽屉'));
-      await frame();
       for (final mood in DshMood.values) {
-        await tester.tap(find.byKey(const ValueKey('mood-selector')));
-        await frame();
-        await tester.tap(find.byKey(ValueKey('mood-' + mood.name)));
-        await frame();
+        await openAppearance();
+        await pickMood(mood);
+        await backToChat();
         expect(
           DshPalette.of(
             tester.element(find.byKey(const ValueKey('floating-header'))),

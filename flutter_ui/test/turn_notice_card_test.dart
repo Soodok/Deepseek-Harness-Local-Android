@@ -40,6 +40,21 @@ Future<void> _expand(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('error disclosure confines its ink to the notice surface', (tester) async {
+    await _pump(tester, [
+      _notice(const TurnNotice(kind: TurnNoticeKind.failed, message: '请求失败', detail: '详细原因')),
+    ]);
+    final notice = find.byKey(const ValueKey('turn-notice'));
+    final surface = find.ancestor(of: notice, matching: find.byType(Material)).first;
+    final ink = tester.widget<Material>(surface);
+    expect(ink.clipBehavior, isNot(Clip.none));
+    expect(ink.shape, isA<RoundedRectangleBorder>());
+    expect(tester.getRect(surface), tester.getRect(notice));
+    await _expand(tester);
+    expect(tester.getRect(surface), tester.getRect(notice));
+    expect(find.byKey(const ValueKey('turn-notice-detail')), findsOneWidget);
+  });
+
   testWidgets('a failed turn renders its own card with code and copy', (
     tester,
   ) async {

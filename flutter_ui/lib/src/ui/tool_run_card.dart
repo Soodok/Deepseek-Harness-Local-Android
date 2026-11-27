@@ -64,7 +64,12 @@ class _ToolRunCardState extends State<ToolRunCard> {
         tilePadding: widget.compact
             ? const EdgeInsets.only(right: 4)
             : const EdgeInsets.fromLTRB(10, 0, 6, 0),
-        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+        childrenPadding: EdgeInsets.fromLTRB(
+          10,
+          0,
+          10,
+          widget.compact ? 4 : 12,
+        ),
         leading: running
             ? SizedBox(
                 width: 15,
@@ -125,9 +130,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: SelectableText(
-                      detail.length > 1600
-                          ? detail.substring(0, 1600) + '…'
-                          : detail,
+                      _outputPreview(detail),
+                      maxLines: 12,
                       style: TextStyle(
                         color: DshPalette.of(context).inkSoft,
                         fontSize: 13,
@@ -135,7 +139,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
                       ),
                     ),
                   ),
-                if (detail.length > 1600)
+                if (detail.isNotEmpty)
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
@@ -185,6 +189,22 @@ class _ToolRunCardState extends State<ToolRunCard> {
       ms < 1000 ? ms.toString() + ' 毫秒' : (ms / 1000).toStringAsFixed(1) + ' 秒';
 }
 
+String _outputPreview(String text) {
+  var end = text.length.clamp(0, 1200);
+  var lines = 1;
+  for (var i = 0; i < end; i++) {
+    if (text.codeUnitAt(i) == 10 && ++lines > 12) {
+      end = i;
+      break;
+    }
+  }
+  if (end > 0 &&
+      end < text.length &&
+      (text.codeUnitAt(end - 1) & 0xfc00) == 0xd800)
+    end--;
+  return text.substring(0, end);
+}
+
 class _FullOutput extends StatelessWidget {
   const _FullOutput({required this.title, required this.text});
   final String title;
@@ -196,10 +216,18 @@ class _FullOutput extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: text));
-            if (context.mounted)
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('已复制完整输出')));
+            var success = false;
+            try {
+              await Clipboard.setData(ClipboardData(text: text));
+              success = true;
+            } catch (_) {
+              success = false;
+            }
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(success ? '已复制完整输出' : '复制失败，请重试')),
+              );
+            }
           },
           child: const Text('复制全部'),
         ),

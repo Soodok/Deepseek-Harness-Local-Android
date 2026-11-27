@@ -19,17 +19,21 @@ class ExecutionGroupHeader extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggle;
   String get _summary {
-    final running = tools.any((tool) => tool.status == ToolStatus.running);
-    final failed = tools
-        .where((tool) => tool.status == ToolStatus.failed)
-        .length;
-    final cancelled = tools
-        .where((tool) => tool.status == ToolStatus.cancelled)
-        .length;
+    var running = false;
+    var failed = 0;
+    var cancelled = 0;
+    var hasCommand = false;
+    var hasEdits = false;
+    for (final tool in tools) {
+      running = running || tool.status == ToolStatus.running;
+      if (tool.status == ToolStatus.failed) failed++;
+      if (tool.status == ToolStatus.cancelled) cancelled++;
+      hasCommand = hasCommand || tool.content?.command != null;
+      hasEdits = hasEdits || (tool.content?.edits.isNotEmpty ?? false);
+    }
     final parts = <String>[running ? '正在调用工具' : '已调用工具'];
-    if (tools.any((tool) => tool.content?.command != null)) parts.add('已运行命令');
-    if (tools.any((tool) => tool.content?.edits.isNotEmpty ?? false))
-      parts.add('已修改文件');
+    if (hasCommand) parts.add('已运行命令');
+    if (hasEdits) parts.add('已修改文件');
     final prefix = failed > 0
         ? '$failed项失败 · '
         : cancelled > 0

@@ -84,10 +84,49 @@ class DshSessionProjection {
 
   /// A state read may trail follow; it cannot settle a newer presentation.
   /// Idle is not durable success and deliberately emits no turnComplete event.
+  ///
+  /// A scheduled model retry is the one case where "not running" is not a
+  /// presentation the client may adopt: the engine failed one request and has
+  /// queued the next, so the turn is still live. Closing it here would show a
+  /// finished turn during a retry window the engine intends to continue.
   List<ChatEvent> idle({required int throughSeq}) {
     if (!_opened || _poisoned || throughSeq < cursor || _idle) return const [];
+    if (_retryInFlight) return const [];
     _idle = true;
     return _publish(forceSnapshot: true);
+  }
+
+  /// True while the engine has announced a retry whose delay has not clearly
+  /// elapsed: the newest relevant record is an llm/retry for the current turn
+  /// and nothing has started, settled or ended since.
+  ///
+  /// The window is the delay the engine itself announced plus [_retryGraceMs].
+  /// The engine runs on this device, so its record time and the local clock are
+  /// the same clock; after the window a not-running read is trusted again, so a
+  /// process that died mid-delay still returns to idle.
+  bool get _retryInFlight {
+    Map<String, Object?>? retry;
+    for (final event in _records.values) {
+      final type = event['type'];
+      if (type == 'llm/retry') {
+        retry = event;
+      } else if (type == 'llm/retry-started' ||
+          type == 'assistant/message' ||
+          type == 'assistant/attempt' ||
+          type == 'turn/start' ||
+          type == 'turn/end') {
+        retry = null;
+      }
+    }
+    if (retry == null) return false;
+    final at = retry['time'];
+    // An unreadable clock keeps the announced retry live: the engine said it
+    // intends to continue, and inventing an ending is the worse mistake.
+    if (at is! int) return true;
+    final delay = _object(retry['data'])?['delayMs'];
+    final window =
+        (delay is num && delay >= 0 ? delay.round() : 0) + _retryGraceMs;
+    return DateTime.now().millisecondsSinceEpoch - at <= window;
   }
 
   List<ChatEvent> interaction(ActionRequest? action, {bool question = false}) {
@@ -278,10 +317,17 @@ class DshSessionProjection {
   _View _view() {
     final surface = <int, Map<String, Object?>>{};
     bool running = false;
+    int? activeTurnStart;
     for (final entry in _records.entries) {
       final event = entry.value;
-      if (event['type'] == 'turn/start') running = true;
-      if (event['type'] == 'turn/end') running = false;
+      if (event['type'] == 'turn/start') {
+        running = true;
+        activeTurnStart = entry.key;
+      }
+      if (event['type'] == 'turn/end') {
+        running = false;
+        activeTurnStart = null;
+      }
       final op = _object(event['surfaceOp']);
       if (op != null) {
         if (op['op'] != 'replace') throw _protocol;
@@ -292,6 +338,7 @@ class DshSessionProjection {
       surface[entry.key] = event;
     }
     final messages = <ChatMessage>[];
+    final answerByTurn = <int, int>{};
     final tools = <String, ToolRun>{};
     final callData = <String, Map<String, Object?>>{};
     final callTimes = <String, int>{};
@@ -321,15 +368,29 @@ class DshSessionProjection {
                 seq: seq,
               ),
             );
+        case 'turn/start':
+          answerByTurn.remove(data['turn']);
         case 'assistant/message':
           final message = _requiredObject(data['message']);
-          final text = _blocksText(message['content']);
-          if (text.isNotEmpty)
+          final content = message['content'];
+          final (text, reasoning) = _assistantContent(content);
+          final turn = data['turn'];
+          if (turn is int) {
+            answerByTurn.remove(turn);
+            final callsTool = content is List && content.any(
+              (block) => _object(block)?['type'] == 'tool-call',
+            );
+            if (text.trim().isNotEmpty && !callsTool) {
+              answerByTurn[turn] = messages.length;
+            }
+          }
+          if (text.isNotEmpty || reasoning.isNotEmpty)
             messages.add(
               ChatMessage(
                 id: id,
                 role: ChatRole.assistant,
                 text: text,
+                reasoning: reasoning,
                 seq: seq,
                 messageId: _string(message['id']),
               ),
@@ -343,7 +404,12 @@ class DshSessionProjection {
           // The card is built from the durable reason only. A completion is
           // reported by turnComplete, a user/parent stop leaves no error card,
           // and every remaining ending keeps its structured facts.
-          final notice = _turnEndNotice(_object(data['reason']), data);
+          final reason = _object(data['reason']);
+          final index = answerByTurn.remove(data['turn']);
+          if (index != null && reason?['kind'] == 'completed') {
+            messages[index] = messages[index].copyWith(isFinalAnswer: true);
+          }
+          final notice = _turnEndNotice(reason, data);
           if (notice != null)
             messages.add(
               ChatMessage(
@@ -352,6 +418,15 @@ class DshSessionProjection {
                 text: notice.message,
                 notice: notice,
               ),
+            );
+        case 'llm/retry':
+          // The engine announced a scheduled retry: one request failed and the
+          // next is queued. This is durable progress, so it stays visible as its
+          // own row; hiding it made a retrying turn look finished or stuck.
+          final retry = _retryText(data);
+          if (retry != null)
+            messages.add(
+              ChatMessage(id: id, role: ChatRole.system, text: retry, seq: seq),
             );
         case 'assistant/attempt':
           final stream = data['stream'];
@@ -363,16 +438,18 @@ class DshSessionProjection {
             _integerOr(data['step']),
           );
           retained.expand(stream);
-          final text = _blocksText(retained.content);
-          if (text.isNotEmpty)
+          final (text, reasoning) = _assistantContent(retained.content);
+          if (text.isNotEmpty || reasoning.isNotEmpty)
             messages.add(
               ChatMessage(
                 id: id,
                 role: ChatRole.system,
-                text: '未提交的模型输出\n' + text,
+                text: text.isEmpty ? '未提交的模型输出' : '未提交的模型输出\n' + text,
+                reasoning: reasoning,
               ),
             );
         case 'tool/call':
+          answerByTurn.remove(data['turn']);
           final callId = _string(data['callId']), name = _string(data['name']);
           if (callId == null ||
               name == null ||
@@ -423,13 +500,14 @@ class DshSessionProjection {
     if (attempt != null && attempt.settledSeq == null) {
       final settled = _records.values.any(attempt.matches);
       if (!settled) {
-        final text = _blocksText(attempt.content);
-        if (text.isNotEmpty)
+        final (text, reasoning) = _assistantContent(attempt.content);
+        if (text.isNotEmpty || reasoning.isNotEmpty)
           messages.add(
             ChatMessage(
               id: sessionId + ':attempt:' + attempt.id,
               role: ChatRole.assistant,
               text: text,
+              reasoning: reasoning,
               isStreaming: !_idle && !attempt.ended,
             ),
           );
@@ -484,8 +562,11 @@ class DshSessionProjection {
       // The live cursor belongs to model or activity output only. A turn card is
       // a closed record of a past turn and a user bubble is not "being written",
       // so when neither exists the running turn gets its own activity row.
+      final turnStart = activeTurnStart;
       final tail = messages.lastIndexWhere(
-        (m) => m.role == ChatRole.assistant || m.role == ChatRole.system,
+        (m) => !m.isFinalAnswer &&
+            (m.role == ChatRole.assistant || m.role == ChatRole.system) &&
+            (turnStart == null || (m.seq ?? -1) >= turnStart),
       );
       if (tail >= 0) {
         messages[tail] = messages[tail].copyWith(isStreaming: true);
@@ -530,6 +611,7 @@ class DshSessionProjection {
       }
     }
     final events = <ChatEvent>[];
+    var closedWhileRunning = false;
     if (replace) {
       events.add(
         ChatEvent.snapshot(
@@ -543,6 +625,10 @@ class DshSessionProjection {
         final message = next.messages[i];
         final previous = i < old!.messages.length ? old.messages[i] : null;
         if (previous == message) continue;
+        // A row that is closed on arrival (a human echo, a finished answer)
+        // still reports its own delta as settled; that must not be read as the
+        // whole turn settling, so a running turn reasserts below.
+        if (next.running && !message.isStreaming) closedWhileRunning = true;
         events.add(
           ChatEvent.delta(
             generation: generation,
@@ -552,6 +638,7 @@ class DshSessionProjection {
             text: message.text.substring(previous?.text.length ?? 0),
             done: !message.isStreaming,
             notice: message.notice,
+            projectedMessage: message,
           ),
         );
       }
@@ -602,20 +689,15 @@ class DshSessionProjection {
         next.messages.isNotEmpty &&
         (replace ||
             old?.running != next.running ||
+            closedWhileRunning ||
             events.any((e) => e.kind == ChatEventKind.toolStarted))) {
       // Reassert on the row that can legitimately stream, never on a turn card
       // or a user bubble: those are closed records, not live output. When no
       // such row exists the real state is already published by the snapshot or
       // the tool events, so nothing is invented here.
-      final streamable = next.messages.lastIndexWhere(
-        (m) => m.role == ChatRole.assistant || m.role == ChatRole.system,
-      );
-      // No streamable row is fine while running (the activity row owns the
-      // cursor); when the turn is over, the closing delta must still land so a
-      // reducer that was told "streaming" returns to ready.
-      final index = streamable >= 0
-          ? streamable
-          : (next.running ? -1 : next.messages.length - 1);
+      final index = next.running
+          ? next.messages.lastIndexWhere((message) => message.isStreaming)
+          : next.messages.length - 1;
       if (index >= 0) {
         final message = next.messages[index];
         events.add(
@@ -626,6 +708,7 @@ class DshSessionProjection {
             role: message.role,
             text: '',
             done: !next.running,
+            projectedMessage: message,
           ),
         );
       }
@@ -635,6 +718,11 @@ class DshSessionProjection {
     return events;
   }
 }
+
+/// Grace added to an announced retry delay before a not-running state read is
+/// trusted again. The engine's own policy delays stay in the seconds, so this
+/// only covers jitter, and a dead process still returns to idle shortly after.
+const _retryGraceMs = 15000;
 
 const _protocol = DshRpcException(
   'session/protocol',
@@ -787,6 +875,20 @@ TurnNotice? _turnEndNotice(
         detail: payload == null ? '' : jsonEncode(payload),
       );
   }
+}
+
+/// The user-facing line for a scheduled model retry. The attempt number and
+/// budget come from the record; the cause is named with the same wording the
+/// failure card uses, so a retry never repeats a raw provider payload.
+String? _retryText(Map<String, Object?> data) {
+  final attempt = data['retry'], budget = data['maxRetries'];
+  if (attempt is! int || attempt < 1) return null;
+  final failure = _object(data['failure']);
+  final cause = failure == null ? null : _failureText(failure);
+  final count = budget is int && budget > 0
+      ? '（第 ' + attempt.toString() + '/' + budget.toString() + ' 次）'
+      : '（第 ' + attempt.toString() + ' 次）';
+  return '模型请求失败，正在重试' + count + (cause == null ? '' : '：' + cause);
 }
 
 Map<String, Object?> _event(Object? raw) {
@@ -959,6 +1061,22 @@ class _Attempt {
     final keys = _blocks.keys.toList()..sort();
     return [for (final key in keys) _blocks[key]!, ..._unknown];
   }
+}
+
+(String, String) _assistantContent(Object? raw) {
+  if (raw is! List) return (_blocksText(raw), '');
+  final body = <Object?>[];
+  final reasoning = <String>[];
+  for (final value in raw) {
+    final block = _object(value);
+    final text = block?['text'];
+    if (block?['type'] == 'reasoning' && text is String) {
+      if (text.isNotEmpty) reasoning.add(text);
+    } else if (block?['type'] != 'tool-call') {
+      body.add(value);
+    }
+  }
+  return (_blocksText(body), reasoning.join('\n\n'));
 }
 
 String _blocksText(Object? raw) {

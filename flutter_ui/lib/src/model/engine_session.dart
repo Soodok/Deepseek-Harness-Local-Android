@@ -12,6 +12,7 @@ class EngineSession {
     this.running = false,
     this.openable = true,
     this.blank = false,
+    this.agentPresetId,
   });
 
   final String id;
@@ -23,13 +24,15 @@ class EngineSession {
   final String? title;
   final bool running, openable;
 
-  /// Whether the Session has no completed turn yet.
+  /// Whether the Host catalogue reports the Session as blank.
   final bool blank;
+  final String? agentPresetId;
 
   /// What a person sees in the drawer. Never an id and never a path.
   String get displayName {
     final text = (title ?? '').trim();
-    if (text.isNotEmpty) return text.length <= 60 ? text : text.substring(0, 59) + '…';
+    if (text.isNotEmpty)
+      return text.length <= 60 ? text : text.substring(0, 59) + '…';
     if (blank) return '新的对话';
     return '未命名对话';
   }
@@ -60,11 +63,18 @@ class EngineSession {
           running: raw['running'] == true,
           openable: raw['formatStatus'] != 'migration-required',
           blank: raw['blank'] == true,
+          agentPresetId: readAgentPreset(raw['projections']),
         ),
       );
     }
     rows.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return List.unmodifiable(rows);
+  }
+
+  static String? readAgentPreset(Object? projections) {
+    final values = projections is Map ? projections['values'] : null;
+    final preset = values is Map ? values['agentPreset'] : null;
+    return preset is String && preset.isNotEmpty ? preset : null;
   }
 
   /// Read the `title` projection value out of a Session summary.

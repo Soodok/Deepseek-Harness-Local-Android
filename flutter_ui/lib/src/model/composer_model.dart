@@ -85,6 +85,36 @@ abstract interface class ComposerCapabilities {
   List<ComposerPermission> get permissions;
 }
 
+/// A refused or unconfirmed immediate permission write.
+///
+/// [code] names the reason so a surface can say what actually happened instead
+/// of claiming the choice was saved: the Host never advertised the preset,
+/// refused the command, answered without the same value, was still busy with a
+/// previous write, or the connection changed underneath the write.
+class SessionPermissionException implements Exception {
+  const SessionPermissionException(this.code, this.message);
+  final String code;
+  final String message;
+  @override
+  String toString() => 'SessionPermissionException(' + code + '): ' + message;
+}
+
+/// Optional transport capability: write the permission of the bound session
+/// right away, without creating a prompt or a turn.
+///
+/// The composer keeps owning its own draft selection; only surfaces that must
+/// persist a choice immediately (the permission settings page) use this. An
+/// implementation has to stay inside the session it is bound to, refuse
+/// presets the Host does not advertise, and resolve only after the Host reads
+/// back the same preset — a receipt alone is not proof.
+abstract interface class SessionPermissionTransport {
+  Future<void> applySessionPermission(ComposerPermission mode);
+
+  /// Re-reads the Host's current values. A surface that just reopened must not
+  /// present its previous copy as if it had been confirmed again.
+  Future<void> refreshSessionPermission();
+}
+
 /// Optional transport capability. A transport must implement this before the
 /// composer enables model selection, tool policy or binary attachments.
 abstract interface class ComposerTransport {

@@ -54,6 +54,7 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     /** 点「运行模式」：由宿主弹 RunModeDialog（需要 Activity 级 Dialog）。 */
     var onRunMode: (() -> Unit)? = null
     var onRestart: (() -> Unit)? = null
+    var onNativeChat: (() -> Unit)? = null
 
     fun build(): View {
         root = LinearLayout(act).apply {
@@ -105,6 +106,11 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         root.addView(actionRow(ic = R.drawable.ic_terminal, label = act.getString(R.string.btn_terminal)) {
             act.startActivity(Intent(act, TerminalActivity::class.java))
         })
+        if (onNativeChat != null) {
+            root.addView(actionRow(ic = R.drawable.ic_native_chat, label = act.getString(R.string.btn_native_chat)) {
+                onNativeChat?.invoke()
+            })
+        }
         root.addView(actionRow(ic = R.drawable.ic_chevron, label = act.getString(R.string.btn_hide)) {
             onCollapse?.invoke()
         })

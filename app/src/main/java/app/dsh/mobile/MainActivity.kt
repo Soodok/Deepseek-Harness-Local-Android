@@ -25,6 +25,7 @@ import java.io.FileOutputStream
 import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -35,6 +36,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import app.dsh.mobile.coldentry.*
 import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.OpenBridge
 import app.dsh.mobile.engine.RepoConfig
@@ -106,14 +108,13 @@ class MainActivity : ThemedActivity() {
     @Volatile private var backMobile = false
     @Volatile private var backConsumable = false
 
-    /**
-     * 原生会话页切回来时带来的 DSH 会话标识（一次性的）。
-     *
-     * 拿到后不猜、不改写历史：等页面加载完成，把官方持久化的「当前会话」
-     * 改成它再重新加载一次，WebUI 自己就会打开这个会话。取用即清空，
-     * 避免后续每次 onPageFinished 都重放一次。
-     */
-    @Volatile private var handoffSessionId: String? = null
+    private val sessionHandoff = WebSessionHandoff(
+        currentView = { if (::webView.isInitialized && !isFinishing && !isDestroyed) webView else null },
+        engineUrl = { (application as DshApp).supervisor.webUrl() },
+        onUnavailable = {
+            Toast.makeText(this, R.string.native_session_handoff_failed, Toast.LENGTH_SHORT).show()
+        },
+    )
 
     /** 上一次「再按一次退出」的时刻（elapsedRealtime，不受用户改系统时间影响）。 */
     private var lastBackAt = 0L
@@ -208,6 +209,10 @@ class MainActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        nativeEntryResults.restore(
+            savedInstanceState?.getInt(ENTRY_NEXT_CODE, 0) ?: 0,
+            savedInstanceState?.getInt(ENTRY_CHILD_CODE, 0)?.takeIf { it != 0 },
+        )
         appliedTheme = ThemePref.get(this)
         appliedAccent = Accent.current(this).argb
         // 用户主动打开了 App → 清除「显式退出」标记，恢复正常保活行为。
@@ -235,8 +240,7 @@ class MainActivity : ThemedActivity() {
         // 任何 await 引擎状态的 UI 逻辑之前 —— 这样 Chromium 的 700ms
         // 初始化与引擎启动并行，而不是串行叠加。
         preheatWebView()
-        // 冷启动也可能带着会话交接（原生会话页在后台被回收后切回来）。
-        takeSessionHandoff()
+        sessionHandoff.restore(savedInstanceState)
         // 读回用户保存的页面缩放与屏幕朝向偏好
         readUiPrefs()
         applyOrientation(orientationMode)
@@ -270,33 +274,7 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.btnTerminal).setOnClickListener {
             startActivity(Intent(this, TerminalActivity::class.java))
         }
-        // 独立 Native Chat：Flutter 对话页，不改变现有 WebView 主入口
-        // 灵岛入口：带上 Web 当前正在看的会话，原生页直接承接，不经过选择页。
-        findViewById<View>(R.id.btnNativeChat).setOnClickListener {
-            // 先把这一屏（Web 页面）拍成图，随 Intent 带进原生页当底图。
-            //
-            // 为什么必须这么做：原生页是冷启动的 Flutter Activity，从点击到它画出第一帧
-            // 实测要 4–7 秒。这期间 WebView 已经停在后台不再合成，窗口又是 translucent +
-            // 透明底，于是屏幕上留一段**纯黑空窗**（beta.52 sw2.mp4 亮度 45 → 16.5 持续
-            // 1.9 秒；beta.53 更糟是它自己那块近黑底 4 秒）。空窗正是「硬切」观感的主体，
-            // 只调窗口动画/透明度都盖不住它。
-            // 带着这张底图进去，冷启期间屏幕上一直是"刚才那一页"，原生页画好后再把底图
-            // 溶解掉 —— 这才是「Web 自然消散、原生浮现」。
-            captureWindowBackdrop { backdrop ->
-                readCurrentWebSession { sessionId ->
-                    startActivity(
-                        Intent(this, NativeChatActivity::class.java).apply {
-                            if (!sessionId.isNullOrBlank()) {
-                                putExtra(NativeChatActivity.EXTRA_SESSION_ID, sessionId)
-                            }
-                            if (backdrop != null) {
-                                putExtra(NativeChatActivity.EXTRA_BACKDROP, backdrop)
-                            }
-                        },
-                    )
-                }
-            }
-        }
+        findViewById<View>(R.id.btnNativeChat).setOnClickListener { requestNativeChat() }
         // 齿轮按钮：跳转独立设置页
         findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -332,6 +310,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         app.supervisor.onExplicitExit = exitCallback
         uiScope.launch {
             app.supervisor.state.collectLatest {
+                coldEntryCoordinator.onHostChanged(it.coldEntrySnapshot())
                 render(it)
                 // 自动更新的检查时机（R9）：引擎就绪才算"应用打开了"，
                 // 首启可能正在解压 580MB 运行时，此时抢网络/IO 只会拖慢启动。
@@ -435,76 +414,128 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        takeSessionHandoff()
     }
 
-    /**
-     * 读 WebUI 此刻正在看的会话标识。
-     *
-     * 直接问页面自己的持久化（`localStorage['dsh.sessions.current']`，与
-     * 用户手选会话写的是同一个键），不解析 DOM 标题、不猜"最近会话"。
-     * 页面还没加载完或没有选择时回调 null，原生页会按引擎自己的目录决定。
-     */
-    /**
-     * 把当前这一屏拍成 PNG 落到 cacheDir，回传绝对路径给原生页当入场底图。
-     *
-     * 用 PixelCopy 而不是 view.draw(canvas)：WebView 的内容由独立的合成层渲染，
-     * 软件绘制拿到的是空白（实测只有背景色）。PixelCopy 走系统合成结果，才是用户
-     * 眼睛看到的那一帧。
-     *
-     * 回传**文件路径**而不是 Bitmap：整屏 1080×2340 的 Bitmap 走 Intent 会触发
-     * TransactionTooLargeException；PNG 落盘只有一两百 KB。
-     */
-    private fun captureWindowBackdrop(onResult: (String?) -> Unit) {
+    private val nativeEntryResults get() = NativeEntryProcess.results
+    private val entryHandler = Handler(Looper.getMainLooper())
+    private val coldEntryCoordinator by lazy {
+        ColdEntryCoordinator(
+            object : EntryPorts {
+                override fun hostSnapshot(): HostSnapshot =
+                    (application as DshApp).supervisor.state.value.coldEntrySnapshot().also {
+                        Log.i("DshNativeEntry", "host phase=" + it.phase + " boot=" + it.epoch + " loadable=" + it.hasLoadableUrl)
+                    }
+                override fun activityAlive() = !isFinishing && !isDestroyed && nativeEntryResults.launchedCode == null
+                override fun reserveBackdrop(attemptId: Long): ExclusiveBackdrop =
+                    BackdropFiles.reserve(File(cacheDir, "native-chat-backdrop")) {
+                        Log.w("DshNativeEntry", "owned backdrop delete deferred; retry on next entry")
+                    }
+                override fun captureBackdrop(target: ExclusiveBackdrop, done: (CaptureOutcome) -> Unit) =
+                    captureWindowBackdrop(target, done)
+                override fun readCurrentWebSession(done: (SessionOutcome) -> Unit) =
+                    this@MainActivity.readCurrentWebSession(done)
+                override fun startForResult(entry: NativeEntry) {
+                    val code = nativeEntryResults.launched(entry)
+                    try {
+                        startActivityForResult(Intent(this@MainActivity, NativeChatActivity::class.java).apply {
+                            entry.sessionId?.let { putExtra(NativeChatActivity.EXTRA_SESSION_ID, it) }
+                            entry.backdropPath?.let { putExtra(NativeChatActivity.EXTRA_BACKDROP, it) }
+                        }, code)
+                    } catch (failure: Exception) {
+                        nativeEntryResults.abandon(code)
+                        throw failure
+                    }
+                }
+                override fun trace(attemptId: Long?, foregroundGeneration: Long, snapshot: HostSnapshot, event: String) {
+                    Log.i("DshNativeEntry", "entry=" + event + " attempt=" + attemptId + " foreground=" + foregroundGeneration + " boot=" + snapshot.epoch + " phase=" + snapshot.phase)
+                }
+                override fun showNotice(notice: EntryNotice) {
+                    Log.i("DshNativeEntry", "entry notice=" + notice)
+                    val reason = if (notice == EntryNotice.NotReady || notice == EntryNotice.HostChanged) {
+                        getString(R.string.priv_gray_hint)
+                    } else getString(R.string.native_session_handoff_failed)
+                    Toast.makeText(this@MainActivity, reason + " · " + getString(R.string.about_update_action_retry), Toast.LENGTH_SHORT).show()
+                }
+            },
+            object : EntryScheduler {
+                override fun nowMs() = SystemClock.elapsedRealtime()
+                override fun after(delayMs: Long, action: () -> Unit): Cancellation {
+                    val task = Runnable { action() }
+                    entryHandler.postDelayed(task, delayMs)
+                    return Cancellation { entryHandler.removeCallbacks(task) }
+                }
+            },
+            NativeEntryProcess.deliveries,
+            NativeEntryProcess.ids,
+            NATIVE_ENTRY_PREPARATION_TIMEOUT_MS,
+        )
+    }
+
+    private fun requestNativeChat() {
+        coldEntryCoordinator.request()
+    }
+
+    /** PixelCopy and PNG encoding retain one exclusive lease until writer close, then UI continuation. */
+    private fun captureWindowBackdrop(target: ExclusiveBackdrop, onResult: (CaptureOutcome) -> Unit) {
+        fun finishWithoutWriter(outcome: CaptureOutcome) {
+            target.writerFinished(false)
+            onResult(outcome)
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            onResult(null)
+            finishWithoutWriter(CaptureOutcome.Unavailable)
             return
         }
         val view = window.decorView
-        val width = view.width
-        val height = view.height
-        if (width <= 0 || height <= 0) {
-            onResult(null)
+        if (view.width <= 0 || view.height <= 0) {
+            finishWithoutWriter(CaptureOutcome.Unavailable)
             return
         }
-        val startAt = android.os.SystemClock.uptimeMillis()
-        runCatching {
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            PixelCopy.request(
-                window,
-                bitmap,
-                { copyResult: Int ->
-                    logWebView("backdrop copy ${copyResult} in ${android.os.SystemClock.uptimeMillis() - startAt}ms")
-                    if (copyResult != PixelCopy.SUCCESS) {
-                        bitmap.recycle()
-                        onResult(null)
-                        return@request
-                    }
-                    // 写盘也走后台：一两百 KB 的 PNG 压缩在主线程会掉帧，正好毁掉这一帧。
-                    Thread {
-                        val dir = File(cacheDir, "native-chat-backdrop").apply { mkdirs() }
-                        val file = File(dir, "backdrop.png")
-                        val ok = runCatching {
-                            FileOutputStream(file).use { out ->
-                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        var allocated: Bitmap? = null
+        try {
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            allocated = bitmap
+            PixelCopy.request(window, bitmap, { copyResult: Int ->
+                if (!coldEntryCoordinator.permitsCapture(target)) {
+                    bitmap.recycle()
+                    finishWithoutWriter(CaptureOutcome.Failed)
+                } else if (copyResult != PixelCopy.SUCCESS) {
+                    bitmap.recycle()
+                    finishWithoutWriter(CaptureOutcome.Failed)
+                } else {
+                    try {
+                        Thread {
+                            var ok = false
+                            try {
+                                if (!target.abandoned) {
+                                    ok = FileOutputStream(File(target.path)).use { out ->
+                                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                Log.w("DshNativeEntry", "backdrop encoding failed")
+                            } finally {
+                                bitmap.recycle()
+                                // Stream is closed before release is allowed to unlink the exact file.
+                                target.writerFinished(ok)
                             }
-                        }.isSuccess
+                            entryHandler.post { onResult(if (ok) CaptureOutcome.Ready else CaptureOutcome.Failed) }
+                        }.start()
+                    } catch (_: Exception) {
                         bitmap.recycle()
-                        runOnUiThread { onResult(if (ok) file.absolutePath else null) }
-                    }.start()
-                },
-                Handler(Looper.getMainLooper()),
-            )
-        }.onFailure {
-            logWebView("capture backdrop failed: ${it.message}")
-            onResult(null)
+                        finishWithoutWriter(CaptureOutcome.Failed)
+                    }
+                }
+            }, entryHandler)
+        } catch (_: Exception) {
+            allocated?.recycle()
+            finishWithoutWriter(CaptureOutcome.Failed)
         }
     }
 
-    private fun readCurrentWebSession(onResult: (String?) -> Unit) {
+    private fun readCurrentWebSession(onResult: (SessionOutcome) -> Unit) {
         val view = if (::webView.isInitialized) webView else null
         if (view == null) {
-            onResult(null)
+            onResult(SessionOutcome.Value(null))
             return
         }
         val js = """
@@ -519,47 +550,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         """.trimIndent()
         runCatching {
             view.evaluateJavascript(js) { raw ->
-                onResult(jsString(raw).takeIf { it.isNotBlank() })
+                val outcome = try {
+                    SessionOutcome.Value(jsString(raw).takeIf { it.isNotBlank() })
+                } catch (_: Exception) { SessionOutcome.Failed }
+                onResult(outcome)
             }
         }.onFailure {
-            logWebView("read current session failed: ${it.message}")
-            onResult(null)
+            logWebView("read current session failed")
+            onResult(SessionOutcome.Failed)
         }
-    }
-
-    /** 从 Intent 里取一次会话交接（原生会话页切回来时带的那一个）。 */
-    private fun takeSessionHandoff() {
-        val carried = intent?.getStringExtra(NativeChatActivity.EXTRA_SESSION_ID)
-            ?.takeIf { it.isNotBlank() }
-        intent?.removeExtra(NativeChatActivity.EXTRA_SESSION_ID)
-        if (carried != null) handoffSessionId = carried
-    }
-
-    /**
-     * 让 WebUI 打开交接来的会话。
-     *
-     * 走的是 WebUI 自己的持久化入口（`localStorage['dsh.sessions.current']`，
-     * 与用户手选会话写的是同一个键），改完重新加载一次让工作区按这个选择
-     * 恢复。不是 DOM 猜测、也不是改历史记录：刷新后界面上就是那个会话。
-     */
-    private fun applySessionHandoff(view: WebView) {
-        val sessionId = handoffSessionId ?: return
-        handoffSessionId = null
-        val quoted = org.json.JSONObject.quote(sessionId)
-        val js = """
-            (function () {
-              try {
-                var next = JSON.stringify({ sessionId: $quoted });
-                var now = window.localStorage.getItem('dsh.sessions.current');
-                if (now === next) return 'same';
-                window.localStorage.setItem('dsh.sessions.current', next);
-                window.location.reload();
-                return 'reload';
-              } catch (error) { return 'failed:' + error.message; }
-            })();
-        """.trimIndent()
-        runCatching { view.evaluateJavascript(js, null) }
-            .onFailure { logWebView("session handoff failed: ${it.message}") }
     }
 
     /** 点「已下载完成」通知进来：直接提交安装（有权限/闸门检查，见 UpdateDialogs）。 */
@@ -587,6 +586,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 外侧圆角」这套几何的地方。
         // ⚠️ 原注释写「按新图片/形状/尺寸重绘」——v1.7.6 删掉外观里的圆点
         // 配置项后已不成立，那个入口也早已是空壳。
+        val dock = CustomVisualPref.islandDock(this)
+        if (dock != islandDock) closeSidePanelImmediately()
+        islandDock = dock
         runCatching { applyDock() }
         val currentTheme = ThemePref.get(this)
         val currentAccent = Accent.current(this).argb
@@ -670,6 +672,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (oldScale != pageScale || oldMode != orientationMode) {
             webView.reload()
         }
+        sessionHandoff.resume()
+        coldEntryCoordinator.onResume()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        sessionHandoff.save(outState)
+        outState.putInt(ENTRY_NEXT_CODE, nativeEntryResults.nextCode)
+        nativeEntryResults.launchedCode?.let { outState.putInt(ENTRY_CHILD_CODE, it) }
     }
 
     /**
@@ -684,6 +695,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 这是「后台也要能收到 AI 回复」这个需求的必要成本。
      */
     override fun onPause() {
+        coldEntryCoordinator.onPause()
+        sessionHandoff.pause()
         // v1.6.20：记下离开前台的时刻。回来后用「在后台待了多久」决定要不要
         // 强制重连 —— 这是判断「进程是否可能被系统冻结过」唯一可靠的信号。
         // 用 elapsedRealtime 而不是 currentTimeMillis：后者会被用户改时间/校时
@@ -1108,9 +1121,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // 必须在这里（真实页面加载完成、且已排除预热页）调用 —— 见
                 // dropPreheatHistory 的注释，早调清不掉。
                 dropPreheatHistory()
-                // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
-                // 原生会话页切回来：先把当前会话落到 WebUI 自己的持久化里。
-                applySessionHandoff(view)
+                if (view === webView) sessionHandoff.documentChanged()
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
                 // v1.4.17（issue #37）：注入 blob 下载桥。每次页面加载后都要重新注入
                 //（导航/刷新会重置页面 JS 环境）。桥只拦 a[download] 且 href 为 blob:
@@ -1394,15 +1405,22 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     /** 缓存的侧面板是按哪个停靠边构造的；与当前 dock 不一致时必须重建。 */
     private var sidePanelDock: IslandDock? = null
     private var sideHost: android.widget.FrameLayout? = null
+    private var bottomToolbar: DshBottomToolbarController? = null
+    private var bottomMenu: DshBottomMenu? = null
+    private var bottomToolbarCollapsed = false
+    private var bottomToolbarImeVisible = false
+    private var imeFreeWindowBottom = 0
 
     private fun setupIslandDock() {
         islandDock = CustomVisualPref.islandDock(this)
+        setupBottomToolbar()
         // 长按把手循环切换停靠边：顶部 → 左 → 右 → 顶部
         findViewById<View>(R.id.handleBar)?.setOnLongClickListener {
             val next = when (islandDock) {
                 IslandDock.TOP -> IslandDock.LEFT
                 IslandDock.LEFT -> IslandDock.RIGHT
-                IslandDock.RIGHT -> IslandDock.TOP
+                IslandDock.RIGHT -> IslandDock.BOTTOM
+                IslandDock.BOTTOM -> IslandDock.TOP
             }
             CustomVisualPref.setIslandDock(this, next)
             islandDock = next
@@ -1417,6 +1435,86 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         applyDock()
     }
 
+    private fun setupBottomToolbar() {
+        val parent = findViewById<View>(R.id.statusBarOverlay).parent as? android.widget.FrameLayout ?: return
+        val controller = DshBottomToolbarController(
+            layoutInflater, parent,
+            object : DshBottomToolbarController.Callbacks {
+                override fun onHome() {
+                    closeSidePanelImmediately()
+                    hideRunModeOverlay()
+                    val url = (application as DshApp).supervisor.webUrl()
+                    if (url.isNotEmpty()) loadLocalUrl(url)
+                    else Toast.makeText(this@MainActivity, R.string.status_idle, Toast.LENGTH_SHORT).show()
+                }
+                override fun onMenu() { showBottomMenu() }
+                override fun onSettings() { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+                override fun onExpand() { bottomToolbarCollapsed = false; renderBottomToolbar() }
+                override fun onCollapse() { bottomToolbarCollapsed = true; renderBottomToolbar() }
+                override fun onDragRatio(ratio: Float) {
+                    CustomVisualPref.setIslandBottomAlongRatio(this@MainActivity, ratio)
+                }
+                override fun onPosition(xRatio: Float, yRatio: Float) {
+                    CustomVisualPref.setIslandBottomPosition(this@MainActivity, xRatio, yRatio)
+                }
+                override fun onMoveDock() {
+                    islandDock = IslandDock.TOP
+                    islandCollapsed = true
+                    CustomVisualPref.setIslandDock(this@MainActivity, islandDock)
+                    applyDock()
+                }
+            },
+            initialDragRatio = CustomVisualPref.islandBottomAlongRatio(this),
+            initiallyShown = false,
+        )
+        bottomToolbar = controller
+        val lp = android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM,
+        )
+        val splashIndex = parent.indexOfChild(findViewById<View>(R.id.splash))
+        parent.addView(controller.root, splashIndex.coerceAtLeast(0), lp)
+        val floatingParams = android.widget.FrameLayout.LayoutParams(
+            dpV(48), dpV(48), android.view.Gravity.TOP or android.view.Gravity.LEFT,
+        )
+        parent.addView(controller.floatingView, parent.indexOfChild(findViewById<View>(R.id.splash)).coerceAtLeast(0), floatingParams)
+        controller.setPosition(CustomVisualPref.islandBottomAlongRatio(this), CustomVisualPref.islandBottomVerticalRatio(this))
+        controller.root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+                findViewById<View>(android.R.id.content)?.requestApplyInsets()
+            }
+        }
+    }
+
+    private fun showBottomMenu() {
+        val menu = bottomMenu ?: DshBottomMenu(this).also { sheet ->
+            sheet.onRunMode = { showRunModeOverlay() }
+            sheet.onNativeChat = { window.decorView.post { requestNativeChat() } }
+            sheet.onRestart = {
+                urlLoaded = false
+                (application as DshApp).supervisor.restart()
+                Toast.makeText(this, R.string.engine_restarting, Toast.LENGTH_SHORT).show()
+            }
+            sheet.onStatus = {
+                val failed = (application as DshApp).supervisor.state.value as? EngineSupervisor.State.Failed
+                if (failed != null) FailureDialog.show(this, failed)
+            }
+            bottomMenu = sheet
+        }
+        val state = (application as DshApp).supervisor.state.value
+        menu.update(statusBar.text.toString(), "", islandPal().dot, state is EngineSupervisor.State.Failed)
+        menu.show()
+    }
+
+    private fun renderBottomToolbar() {
+        val toolbar = bottomToolbar ?: return
+        val active = islandDock == IslandDock.BOTTOM
+        toolbar.setExpanded(!bottomToolbarCollapsed)
+        toolbar.setShown(active && !bottomToolbarImeVisible)
+        if (active) toolbar.setPosition(CustomVisualPref.islandBottomAlongRatio(this), CustomVisualPref.islandBottomVerticalRatio(this))
+        findViewById<View>(android.R.id.content)?.requestApplyInsets()
+    }
+
     private fun applyDock() {
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup
         val overlay = findViewById<View>(R.id.statusBarOverlay)
@@ -1428,8 +1526,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val ph = container.height.takeIf { it > 0 } ?: dm.heightPixels
         val ratio = CustomVisualPref.islandAlongRatio(this)
 
-        if (islandDock == IslandDock.TOP) {
-            sideHost?.visibility = View.GONE
+        if (islandDock == IslandDock.TOP || islandDock == IslandDock.BOTTOM) {
+            closeSidePanelImmediately()
         } else {
             // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
             // 一条边拖到另一条边之后，缓存里的旧面板仍按旧 dock 绘制 —— 表现就是
@@ -1440,7 +1538,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
         }
         // 先把把手按当前停靠边摆好（尺寸/贴边/沿边位置都在 placeCollapsedHandle 里）
-        placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        if (islandDock != IslandDock.BOTTOM) placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        renderBottomToolbar()
         // ★ v1.7.13：可见性一律由 renderIslandVisibility() 按状态推导，
         // 不再在这里「TOP 就无条件 GONE」——
         // 旧代码在贴顶且已收起时把把手设成 GONE，而 statusBarRow 又是 GONE，
@@ -1469,11 +1568,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val overlay = findViewById<View>(R.id.statusBarOverlay) ?: return
         val row = findViewById<View>(R.id.statusBarRow) ?: return
         val handle = findViewById<View>(R.id.handleBar) ?: return
-        val side = islandDock != IslandDock.TOP
-        // 侧面板正在展开时把手要让位（否则会和面板叠在屏幕边缘）
+        val bottom = islandDock == IslandDock.BOTTOM
+        val side = islandDock == IslandDock.LEFT || islandDock == IslandDock.RIGHT
         val panelOpen = sideHost?.visibility == View.VISIBLE
-        val showOverlay = !side && !islandCollapsed
-        val showHandle = !panelOpen && (side || islandCollapsed)
+        val showOverlay = !bottom && !side && !islandCollapsed
+        val showHandle = !bottom && !panelOpen && (side || islandCollapsed)
         overlay.visibility = if (showOverlay) View.VISIBLE else View.GONE
         row.visibility = if (showOverlay) View.VISIBLE else View.GONE
         handle.visibility = if (showHandle) View.VISIBLE else View.GONE
@@ -1543,6 +1642,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
             cornerRadii = when (dock) {
                 IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+                IslandDock.BOTTOM -> floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
                 IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
             }
@@ -1627,6 +1727,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         (h.parent as? ViewGroup)?.removeView(h)
     }
 
+    private fun closeSidePanelImmediately() {
+        sideHost?.let { host ->
+            host.animate().cancel()
+            host.visibility = View.GONE
+            host.alpha = 1f
+        }
+    }
+
     /** 收起侧面板但不触发"展开"分支（拖动/开浮层时需要强制关）。 */
     private fun closeSidePanelNow() {
         val h = sideHost ?: return
@@ -1652,6 +1760,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
             sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
+            sp.onNativeChat = {
+                closeSidePanelImmediately()
+                renderIslandVisibility()
+                requestNativeChat()
+            }
             // 先收起侧面板再开运行模式浮层：否则面板会从卡片左边露出一条，
             // 看起来像"两个浮层叠在一起"（真机截图一眼可见）。
             sp.onRunMode = { runOnUiThread { closeSidePanelNow(); showRunModeOverlay() } }
@@ -2179,12 +2292,27 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     state is EngineSupervisor.State.Installing ||
                     state is EngineSupervisor.State.Starting
             },
+            snapshotForDisplay = { snapshot -> splashSnapshotForDisplay(snapshot) },
             onWatchdog = { dismissSplash() },
             onHidden = {
                 splash = null
                 splashController = null
             },
         )
+    }
+
+    /** Only terminal supervisor failures should remain visible in the splash trace. */
+    private fun splashSnapshotForDisplay(snapshot: BootTrace.Snapshot): BootTrace.Snapshot {
+        if (snapshot.stage != BootTrace.Stage.FAILED) return snapshot
+        return when ((application as DshApp).supervisor.state.value) {
+            is EngineSupervisor.State.Failed -> snapshot
+            is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode ->
+                BootTrace.Snapshot(stage = BootTrace.Stage.LOADING)
+            is EngineSupervisor.State.Installing -> BootTrace.Snapshot(stage = BootTrace.Stage.PREPARING)
+            is EngineSupervisor.State.Starting, is EngineSupervisor.State.Backoff ->
+                BootTrace.Snapshot(stage = BootTrace.Stage.STARTING)
+            else -> BootTrace.Snapshot(stage = BootTrace.Stage.PREPARING)
+        }
     }
 
     /** 更新遮罩上的阶段文案（兜底路径；正常渲染走 BootTrace）。 */
@@ -2276,6 +2404,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val w = window ?: return
         runCatching {
             val hide = immersiveEnabled(this)
+            val hideNav = immersiveNavEnabled(this)
             // 状态栏可见性变了 → 岛的位置要跟着重新算
             applyIslandInsets()
             if (hide) {
@@ -2308,21 +2437,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 w.setSoftInputMode(
                     android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
                 )
-                if (android.os.Build.VERSION.SDK_INT >= 30) {
-                    w.setDecorFitsSystemWindows(false)
-                    val c = WindowInsetsControllerCompat(w, w.decorView)
-                    c.hide(WindowInsetsCompat.Type.statusBars())
-                    c.systemBarsBehavior =
-                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                }
-                @Suppress("DEPRECATION")
-                w.decorView.systemUiVisibility =
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
-                WindowInsetsControllerCompat(w, w.decorView)
-                    .hide(WindowInsetsCompat.Type.statusBars())
+                if (Build.VERSION.SDK_INT >= 30) w.setDecorFitsSystemWindows(false)
+                applyImmersiveLayoutFlags(w, hideNav)
+                val controller = WindowInsetsControllerCompat(w, w.decorView)
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                var bars = WindowInsetsCompat.Type.statusBars()
+                if (hideNav) bars = bars or WindowInsetsCompat.Type.navigationBars()
+                controller.hide(bars)
+                if (!hideNav) controller.show(WindowInsetsCompat.Type.navigationBars())
                 // ⚠️ v1.4.51（用户报「有些系统不会自动隐藏状态栏，导致状态栏遮挡页面」）：
                 // 部分 OEM 系统（MIUI/EMUI/部分 Android 12 定制版）在 Activity 刚
                 // 创建、或从后台切回、或 WebView 重新加载时会**重置** systemUiVisibility，
@@ -2363,7 +2486,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     val clearMask = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                         View.SYSTEM_UI_FLAG_FULLSCREEN or
                         View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                        View.SYSTEM_UI_FLAG_IMMERSIVE
+                        View.SYSTEM_UI_FLAG_IMMERSIVE or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     @Suppress("DEPRECATION")
                     val cur = w.decorView.systemUiVisibility
                     w.decorView.systemUiVisibility =
@@ -2371,8 +2496,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
                 // 交给 ThemeManager.applyBars 恢复「主题背景色 + 正确的图标明暗」。
                 ThemeManager.applyBars(this)
-                WindowInsetsControllerCompat(w, w.decorView)
-                    .show(WindowInsetsCompat.Type.statusBars())
+                WindowInsetsControllerCompat(w, w.decorView).show(
+                    WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars(),
+                )
                 // v1.4.57：立刻重算一次布局（岛的 topMargin、WebView 的底部 padding
                 // 都按 immersive 分支切换）。只靠 insets 回调是不够的 —— 退出全屏时
                 // insets 可能没变化（状态栏本来就在），回调不会触发，padding 就
@@ -2397,6 +2523,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     private var immersiveReassertToken = 0
 
+    @Suppress("DEPRECATION")
+    private fun applyImmersiveLayoutFlags(window: android.view.Window, hideNav: Boolean) {
+        val navFlags = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        val flags = (window.decorView.systemUiVisibility and navFlags.inv()) or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        window.decorView.systemUiVisibility = if (hideNav) flags or navFlags else flags
+    }
+
     private fun scheduleImmersiveReassert() {
         if (!immersiveEnabled(this)) return
         val token = ++immersiveReassertToken
@@ -2409,19 +2544,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 if (isFinishing || isDestroyed) return@postDelayed
                 val w2 = window ?: return@postDelayed
                 runCatching {
-                    if (android.os.Build.VERSION.SDK_INT >= 30) {
-                        w2.setDecorFitsSystemWindows(false)
-                        WindowInsetsControllerCompat(w2, w2.decorView)
-                            .hide(WindowInsetsCompat.Type.statusBars())
-                    }
-                    @Suppress("DEPRECATION")
-                    w2.decorView.systemUiVisibility =
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-                            .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
-                    WindowInsetsControllerCompat(w2, w2.decorView)
-                        .hide(WindowInsetsCompat.Type.statusBars())
+                    val hideNav = immersiveNavEnabled(this)
+                    if (Build.VERSION.SDK_INT >= 30) w2.setDecorFitsSystemWindows(false)
+                    applyImmersiveLayoutFlags(w2, hideNav)
+                    var bars = WindowInsetsCompat.Type.statusBars()
+                    if (hideNav) bars = bars or WindowInsetsCompat.Type.navigationBars()
+                    WindowInsetsControllerCompat(w2, w2.decorView).hide(bars)
                     // 系统重置后窗口可能又开始为状态栏预留空间 → 立刻重算岛位置
                     w2.decorView.requestApplyInsets()
                 }
@@ -2767,14 +2895,31 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
             } else {
                 @Suppress("DEPRECATION")
-                if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
+                if (insets.systemWindowInsetBottom >= (96 * d).toInt()) insets.systemWindowInsetBottom else 0
             }
             val visibleRect = android.graphics.Rect()
-            root.getWindowVisibleDisplayFrame(visibleRect)
-            val imeFromFrame = (root.height - visibleRect.bottom).let {
-                if (it >= (96 * d).toInt()) it else 0
-            }
-            val imeBottom = maxOf(imeFromInsets, imeFromFrame)
+            val location = IntArray(2)
+            val content = webView.parent as? View ?: root
+            content.getWindowVisibleDisplayFrame(visibleRect)
+            content.getLocationOnScreen(location)
+            val overlap = if (!visibleRect.isEmpty && content.height > 0) {
+                (location[1] + content.height - visibleRect.bottom).coerceIn(0, content.height)
+            } else 0
+            val imeFromFrame = if (overlap >= (96 * d).toInt()) overlap else 0
+            val imeReported = if (Build.VERSION.SDK_INT >= 30) {
+                insets.isVisible(android.view.WindowInsets.Type.ime())
+            } else imeFromInsets > 0
+            val imeVisible = imeReported || imeFromFrame > 0
+            val contentBottom = location[1] + content.height
+            if (!imeVisible && content.height > 0) imeFreeWindowBottom = contentBottom
+            val resizeConsumed = (imeFreeWindowBottom - contentBottom).coerceAtLeast(0)
+            val remainingIme = if (imeFreeWindowBottom > 0) {
+                (imeFromInsets - resizeConsumed).coerceAtLeast(0)
+            } else imeFromInsets
+            val imeBottom = if (islandDock != IslandDock.BOTTOM || immersive) {
+                maxOf(imeFromInsets, imeFromFrame)
+            } else maxOf(remainingIme, imeFromFrame).coerceAtMost(content.height.coerceAtLeast(0))
+            val imeAffectsViewport = imeVisible || imeBottom > 0
             val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(
                     android.view.WindowInsets.Type.navigationBars()
@@ -2798,13 +2943,37 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //     直接顶到键盘上方）；
             //   · 键盘收起 → 让位 navBottom **仅在全屏时**需要（窗口铺到屏幕最底，
             //     手势条会压住内容）；非全屏时系统已让开，留 0。
-            val bottomPad = if (imeBottom > 0) {
+            val navHidden = immersive && immersiveNavEnabled(this@MainActivity)
+            val bottomPad = if (imeAffectsViewport) {
                 imeBottom
-            } else if (immersive) {
+            } else if (immersive && !navHidden) {
                 navBottom
             } else {
                 0
             }
+
+            val toolbar = bottomToolbar
+            if (bottomToolbarImeVisible != imeVisible) {
+                bottomToolbarImeVisible = imeVisible
+                renderBottomToolbar()
+            }
+            if (toolbar != null) {
+                val sideInsets = if (immersive && Build.VERSION.SDK_INT >= 30) {
+                    insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                } else null
+                val barBottom = if (immersive && !navHidden) navBottom else 0
+                toolbar.setHorizontalInsets(sideInsets?.left ?: 0, sideInsets?.right ?: 0)
+                toolbar.setFloatingInsets(sideInsets?.left ?: 0, maxOf(statusTop, cutTop), sideInsets?.right ?: 0, barBottom)
+                val lp = toolbar.root.layoutParams as? android.widget.FrameLayout.LayoutParams
+                if (lp != null && lp.bottomMargin != barBottom) {
+                    lp.bottomMargin = barBottom
+                    toolbar.root.layoutParams = lp
+                }
+            }
+            val bottomToolbarInset = if (islandDock == IslandDock.BOTTOM && !imeVisible && toolbar?.isExpanded == true) {
+                toolbar.root.height
+            } else 0
+            val viewportBottom = bottomPad + bottomToolbarInset
 
             // v1.4.63（宝宝反馈「网页感觉有点被压缩太狠了，还是改回全屏吧，
             // 到时候被遮挡就收起灵动岛即可」）：
@@ -2838,14 +3007,19 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             }
             val wlp = webView.layoutParams
             if (wlp is android.view.ViewGroup.MarginLayoutParams) {
-                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != bottomPad
+                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != viewportBottom
                 if (dirty) {
                     wlp.topMargin = 0
-                    wlp.bottomMargin = bottomPad
+                    wlp.bottomMargin = viewportBottom
                     webView.layoutParams = wlp
                 }
             }
             if (webView.paddingBottom != 0) webView.setPadding(0, 0, 0, 0)
+            if (navHidden && imeAffectsViewport) {
+                WindowInsetsControllerCompat(window, window.decorView).hide(
+                    WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars(),
+                )
+            }
             insets
         }
         root.requestApplyInsets()
@@ -3220,6 +3394,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     @Deprecated("startActivityForResult is the established contract for the WebView file chooser")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (nativeEntryResults.recognizes(requestCode)) {
+            val delivered = nativeEntryResults.complete(requestCode)
+            if (delivered && resultCode == RESULT_OK) {
+                sessionHandoff.enqueue(data?.getStringExtra(NativeChatActivity.EXTRA_SESSION_ID))
+            }
+            return
+        }
+        // Legacy fixed-code children retain SID handoff, never guessed screenshot cleanup.
+        if (requestCode == REQ_NATIVE_CHAT) {
+            if (resultCode == RESULT_OK) sessionHandoff.enqueue(data?.getStringExtra(NativeChatActivity.EXTRA_SESSION_ID))
+            return
+        }
         if (requestCode == app.dsh.mobile.engine.cap.ScreenRecordRelay.REQ_CAPTURE) {
             // 屏幕录制授权：系统弹窗的「开始录制」结果只能在这里收到，转交给 RecordCap。
             // 打日志是因为授权链路一旦断了，从外部只看到「permission_pending 永远 false」，
@@ -3764,6 +3950,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     override fun onDestroy() {
+        coldEntryCoordinator.onDestroy()
+        sessionHandoff.pause()
+        bottomMenu?.dismiss()
+        bottomMenu = null
         // 注意：引擎由前台服务持有，Activity 销毁不影响后台任务。
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。
@@ -3891,13 +4081,16 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         runCatching {
             stopHangWatchdog()
             val parent = webView.parent as? android.view.ViewGroup
+            val index = parent?.indexOfChild(webView) ?: 0
+            val params = webView.layoutParams ?: ViewGroup.LayoutParams(-1, -1)
             val oldUrl = runCatching { webView.url }.getOrNull()
             parent?.removeView(webView)
             runCatching { webView.destroy() }
             val fresh = WebView(this)
             fresh.id = R.id.webView
-            parent?.addView(fresh, android.view.ViewGroup.LayoutParams(-1, -1))
+            parent?.addView(fresh, index.coerceAtLeast(0), params)
             webView = fresh
+            sessionHandoff.documentChanged()
             // 新渲染层还没有页面上报：先回到「不认识」状态，让 onBackPressed
             // 走原逻辑，避免拿旧 WebView 的条目判断去退新页面。
             backMobile = false
@@ -3993,6 +4186,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     companion object {
+        private const val REQ_NATIVE_CHAT = 1081
+        private const val ENTRY_NEXT_CODE = "native.entry.nextCode"
+        private const val ENTRY_CHILD_CODE = "native.entry.childCode"
+        /** Bounds PixelCopy + SID preparation only, not Flutter readiness or ANR. */
+        private const val NATIVE_ENTRY_PREPARATION_TIMEOUT_MS = 10000L
         /** WebView 文件选择器的请求码（onShowFileChooser → onActivityResult） */
         private const val REQ_FILE_CHOOSER = 1001
 
@@ -4440,18 +4638,46 @@ runCatching { (application as DshApp).supervisor.webUrl() }
          * 想全屏的用户仍可在设置 → 外观与显示里打开（岛会贴住摄像头）。
          */
         private const val KEY_IMMERSIVE = "immersive_statusbar"
+        private const val KEY_IMMERSIVE_NAV = "immersive_navbar"
         private const val DEFAULT_IMMERSIVE = false
 
+        /** Three display modes used by AppearanceActivity and kept compatible with old callers. */
+        enum class ImmersiveMode {
+            OFF,
+            STATUS,
+            STATUS_NAV,
+        }
+
         @JvmStatic
-        fun immersiveEnabled(ctx: Context): Boolean =
+        fun immersiveMode(ctx: Context): ImmersiveMode {
+            val prefs = ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)) return ImmersiveMode.OFF
+            return if (prefs.getBoolean(KEY_IMMERSIVE_NAV, false)) {
+                ImmersiveMode.STATUS_NAV
+            } else {
+                ImmersiveMode.STATUS
+            }
+        }
+
+        @JvmStatic
+        fun setImmersiveMode(ctx: Context, mode: ImmersiveMode) {
             ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
-                .getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+                .edit()
+                .putBoolean(KEY_IMMERSIVE, mode != ImmersiveMode.OFF)
+                .putBoolean(KEY_IMMERSIVE_NAV, mode == ImmersiveMode.STATUS_NAV)
+                .apply()
+        }
+
+        @JvmStatic
+        fun immersiveEnabled(ctx: Context): Boolean = immersiveMode(ctx) != ImmersiveMode.OFF
 
         @JvmStatic
         fun setImmersiveEnabled(ctx: Context, on: Boolean) {
-            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_IMMERSIVE, on).apply()
+            setImmersiveMode(ctx, if (on) ImmersiveMode.STATUS else ImmersiveMode.OFF)
         }
+
+        @JvmStatic
+        fun immersiveNavEnabled(ctx: Context): Boolean = immersiveMode(ctx) == ImmersiveMode.STATUS_NAV
 
         /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
         private const val DEFAULT_PAGE_SCALE = 90

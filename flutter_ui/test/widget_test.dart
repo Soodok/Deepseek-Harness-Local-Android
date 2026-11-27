@@ -4,13 +4,121 @@ import 'package:material_ui/material_ui.dart';
 import 'package:dsh_native_chat/main.dart';
 import 'package:dsh_native_chat/src/bridge/engine_sessions_native.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
+import 'package:dsh_native_chat/src/ui/chat_strings.dart';
 import 'package:dsh_native_chat/src/ui/launch_fade.dart';
+import 'package:dsh_native_chat/src/ui/overflow_title.dart';
 import 'package:dsh_native_chat/src/ui/settings/settings_scope.dart';
 
 // 1x1 透明 PNG：入场底图用例只需要一张能解码的图。
-final Uint8List _onePixelPng = Uint8List.fromList(<int>[137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 252, 207, 192, 80, 15, 0, 4, 133, 1, 128, 132, 169, 140, 33, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]);
+final Uint8List _onePixelPng = Uint8List.fromList(<int>[
+  137,
+  80,
+  78,
+  71,
+  13,
+  10,
+  26,
+  10,
+  0,
+  0,
+  0,
+  13,
+  73,
+  72,
+  68,
+  82,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  1,
+  8,
+  6,
+  0,
+  0,
+  0,
+  31,
+  21,
+  196,
+  137,
+  0,
+  0,
+  0,
+  13,
+  73,
+  68,
+  65,
+  84,
+  120,
+  218,
+  99,
+  252,
+  207,
+  192,
+  80,
+  15,
+  0,
+  4,
+  133,
+  1,
+  128,
+  132,
+  169,
+  140,
+  33,
+  0,
+  0,
+  0,
+  0,
+  73,
+  69,
+  78,
+  68,
+  174,
+  66,
+  96,
+  130,
+]);
 
 void main() {
+  testWidgets('identical Host polls leave the chat tree untouched', (
+    tester,
+  ) async {
+    const channel = MethodChannel('app.dsh.mobile/native_chat');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var reads = 0;
+    var hostState = 'Starting';
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method != 'engineInfo') return null;
+      reads++;
+      return {'state': hostState, 'available': false, 'webUrl': ''};
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(const DshApp());
+    await tester.pump();
+    EngineHome home() => tester.widget<EngineHome>(find.byType(EngineHome));
+    final first = home();
+    expect(first.host.state, 'Starting');
+    expect(reads, 1);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    expect(reads, 2);
+    expect(home(), same(first), reason: 'unchanged poll rebuilt the chat');
+
+    hostState = 'Unavailable';
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    expect(reads, 3);
+    expect(home().host.state, 'Unavailable');
+    expect(home(), isNot(same(first)));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'host loss replaces the old account service and late results stay inert',
     (tester) async {
@@ -87,6 +195,47 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
+  testWidgets('returning from Android settings refreshes locale in place', (
+    tester,
+  ) async {
+    const channel = MethodChannel('app.dsh.mobile/native_chat');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String? locale = 'de';
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'readLocale') return locale;
+      if (call.method == 'engineInfo') {
+        return {'state': 'Starting', 'available': false, 'webUrl': ''};
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(const DshApp(initialLocale: 'zh'));
+    await tester.pump();
+    final home = tester.element(find.byType(EngineHome));
+    String language() =>
+        tester.widget<DshChatLocale>(find.byType(DshChatLocale)).languageCode;
+    expect(language(), 'zh');
+
+    Future<void> resume() async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+    }
+
+    await resume();
+    expect(language(), 'de');
+    expect(tester.element(find.byType(EngineHome)), same(home));
+    locale = null;
+    await resume();
+    expect(language(), 'de');
+    locale = 'zh';
+    await resume();
+    expect(language(), 'zh');
+    expect(tester.element(find.byType(EngineHome)), same(home));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('the host backdrop covers the first frame and then dissolves', (
     tester,
   ) async {
@@ -124,33 +273,28 @@ void main() {
     double opacityOf() => tester.widget<Opacity>(layer).opacity;
     // 第一帧：底图满不透明，宿主覆盖层还没撤。
     expect(opacityOf(), 1.0, reason: '首帧必须先撑住底图，否则就是先黑一下');
-    // 交接是异步的：先解码底图、等它真的画上去，才撤宿主覆盖层（见 _handOver）。
-    // 撤层必须发生，否则多留一层挡着；也不能早于画图，否则中间会露出空白页
-    // （beta.74 设备实测到的 226.7 那一跳）。解码回调排在帧回调之后，测试里要
-    // 靠推进时钟兑现，两步合计跨过 1 秒以上。
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(seconds: 2));
-    expect(
-      calls,
-      contains('releaseBackdrop'),
-      reason: '同一像素内容画上去之后要撤掉宿主覆盖层',
+    final content = tester.element(find.byKey(const Key('content')));
+    await tester.runAsync(
+      () => precacheImage(MemoryImage(_onePixelPng), content),
     );
+    await tester.pump();
+    await tester.pump();
+    expect(calls, isEmpty);
+    expect(LaunchFade.markContentReady(content), isTrue);
+    await tester.pump();
+    await tester.pump();
+    expect(calls, contains('releaseBackdrop'), reason: '同一像素内容画上去之后要撤掉宿主覆盖层');
     // 淡化按**帧**推进，不按墙钟：冷启动只有 3～5 帧/秒，按时间折算的动画在第一个
     // tick 就到终点，屏幕上是一帧硬切（beta.73 k25.mp4 / beta.75 k27.mp4）。
     // 所以这里故意一次跳 5 秒 —— 真按时间走的话 opacity 会直接变 0。
     await tester.pump(const Duration(seconds: 5));
     final afterFirstStep = opacityOf();
-    expect(
-      afterFirstStep,
-      greaterThan(0.0),
-      reason: '一次长跳只该退一步，不能按墙钟一步到底',
-    );
+    expect(afterFirstStep, greaterThan(0.0), reason: '一次长跳只该退一步，不能按墙钟一步到底');
     expect(afterFirstStep, lessThan(1.0), reason: '每帧都得真的退一步');
     // 继续逐帧推动：必须跨过好几帧才淡完，中途始终可见半透明。
     var framesToClear = 0;
     var sawPartial = false;
-    while (opacityOf() > 0 && framesToClear < 40) {
+    while (opacityOf() > 0 && framesToClear < 100) {
       final value = opacityOf();
       if (value > 0 && value < 1) sawPartial = true;
       await tester.pump(const Duration(milliseconds: 16));
@@ -188,13 +332,16 @@ void main() {
         ),
       ),
     );
-    // 减少动效：底图一帧就让开，不画任何渐变。交接（解码 → 撤宿主覆盖层 →
-    // _play）是异步的，不推完时钟会在测试结束时留下 precache 的 2.5s 超时定时器，
-    // 于是 postTest 报 "A Timer is still pending"；那是测试自己的收尾问题，不是
-    // 组件缺陷，所以这里把交接真的推完再断言。
+    final content = tester.element(find.byKey(const Key('content')));
+    await tester.runAsync(
+      () => precacheImage(MemoryImage(_onePixelPng), content),
+    );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(calls, isEmpty);
+    expect(LaunchFade.markContentReady(content), isTrue);
+    await tester.pump();
+    await tester.pump();
     final fade = find.descendant(
       of: find.byType(LaunchFade),
       matching: find.byType(FadeTransition),
@@ -260,7 +407,16 @@ void main() {
   ) async {
     await tester.pumpWidget(const DshApp(preview: true));
     await tester.pump();
-    expect(find.text('DSH', findRichText: true), findsOneWidget);
+    // 标题显示的是这次对话，不是产品名：演示数据里第一条用户消息就是它。
+    expect(
+      tester
+          .widget<OverflowTitle>(
+            find.byKey(const ValueKey('conversation-title')),
+          )
+          .text,
+      '帮我检查一下项目状态，并说明接下来该做什么。',
+    );
+    expect(find.text('DSH', findRichText: true), findsNothing);
     expect(find.byTooltip('fixture 模式'), findsOneWidget);
     // 真实 App 必须真的把内容包进入场淡化里：单元测试单测 LaunchFade 只能证明
     // 这个组件本身会淡，证明不了它被挂上去了。
@@ -278,11 +434,7 @@ void main() {
           .setMockMethodCallHandler(
             channel,
             (call) async => call.method == 'engineInfo'
-                ? {
-                    'state': 'Healthy',
-                    'available': false,
-                    'webUrl': '',
-                  }
+                ? {'state': 'Healthy', 'available': false, 'webUrl': ''}
                 : true,
           );
       addTearDown(

@@ -145,6 +145,19 @@ class ChatReducer {
 
   static ChatState _applyDelta(ChatState state, ChatEvent event) {
     final index = state.messages.indexWhere((m) => m.id == event.messageId);
+    final projected = event.projectedMessage;
+    if (projected != null) {
+      final messages = [...state.messages];
+      if (index < 0) {
+        messages.add(projected);
+      } else {
+        messages[index] = projected;
+      }
+      return state.copyWith(
+        status: event.done ? ChatStatus.ready : ChatStatus.streaming,
+        messages: messages,
+      );
+    }
     if (index < 0) {
       return state.copyWith(
         status: event.done ? ChatStatus.ready : ChatStatus.streaming,

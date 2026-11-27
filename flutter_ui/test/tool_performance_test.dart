@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dsh_native_chat/src/model/chat_model.dart';
@@ -5,6 +6,82 @@ import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 import 'package:dsh_native_chat/src/ui/tool_run_card.dart';
 
 void main() {
+  testWidgets(
+    'short tool output has full-copy access and handles clipboard failure',
+    (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData')
+            throw PlatformException(code: 'denied');
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: const Scaffold(
+            body: ToolRunCard(
+              tool: ToolRun(
+                id: 'short',
+                name: 'read',
+                status: ToolStatus.complete,
+                detail: '{"ok":true}',
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.textContaining('"ok"'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('tool-card-short')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('查看完整输出'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('复制全部'));
+      await tester.pump();
+      expect(find.text('复制失败，请重试'), findsOneWidget);
+      expect(find.text('已复制完整输出'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('many short output lines have a bounded inline preview', (
+    tester,
+  ) async {
+    final detail = List.generate(500, (i) => 'line $i').join('\n');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.light(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ToolRunCard(
+              tool: ToolRun(
+                id: 'lines',
+                name: 'read',
+                status: ToolStatus.complete,
+                detail: detail,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('tool-card-lines')));
+    await tester.pumpAndSettle();
+    final preview = tester.widget<SelectableText>(
+      find.byType(SelectableText).first,
+    );
+    expect(preview.data!.split('\n').length, lessThanOrEqualTo(12));
+    expect(preview.maxLines, 12);
+    expect(find.text('查看完整输出'), findsOneWidget);
+  });
+
   testWidgets('collapsed logs are not built and long logs remain accessible', (
     t,
   ) async {

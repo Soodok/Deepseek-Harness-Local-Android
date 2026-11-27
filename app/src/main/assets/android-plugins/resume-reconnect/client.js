@@ -211,6 +211,27 @@ window.__ModuleLoader__.load({
         void checkAndReconnect("host-resume", force);
       };
 
+      // Navigate the living workspace without touching the document or its subscriptions.
+      var handoffActive = true;
+      function openNativeSession(sessionId) {
+        if (!handoffActive) return "retry";
+        if (typeof sessionId !== "string" || !sessionId.trim() || sessionId.length > 256) return "unavailable";
+        try {
+          var workspace = typeof ctx.get === "function" ? ctx.get("uiWorkspace") : null;
+          if (!workspace || typeof workspace.openSession !== "function") return "retry";
+          var catalog = workspace.sessions.list.getSnapshot();
+          var groups = workspace.workspaces.list.getSnapshot();
+          if (catalog.phase !== "ready" || groups.phase !== "ready") return "retry";
+          var row = Object.prototype.hasOwnProperty.call(catalog.byId, sessionId) && catalog.byId[sessionId];
+          if (!row || row.archived || (groups.archivedSessionIds || []).includes(sessionId)) return "unavailable";
+          workspace.openSession(sessionId);
+          return workspace.selection.getSnapshot().sessionId === sessionId ? "selected:" + sessionId : "retry";
+        } catch (_) {
+          return "retry";
+        }
+      }
+      window.__dshOpenNativeSession = openNativeSession;
+
       /**
        * 诊断快照 —— 给端到端测试读，不参与业务逻辑。
        *
@@ -253,6 +274,8 @@ window.__ModuleLoader__.load({
 
       ctx.effect(function () {
         return function () {
+          handoffActive = false;
+          if (window.__dshOpenNativeSession === openNativeSession) delete window.__dshOpenNativeSession;
           document.removeEventListener("visibilitychange", onVisibility);
           window.removeEventListener("pageshow", onPageShow);
           if (window.__dshResume) delete window.__dshResume;

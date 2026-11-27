@@ -12,8 +12,10 @@
  * 拿到答案后直接作为这次工具调用的结果返回 —— 对话流里既没有卡片也没有等待。
  *
  * ## 边界
- * 只在「允许 AI 操作」开着的时候接管（GET /task/allow）。关着的时候说明用户不是
- * 在让 AI 操作手机，正常聊天该走原生卡片就走原生卡片。
+ * 只在「允许 AI 操作」开着**且悬浮面板真的挂在屏幕上**时才接管（GET /task/allow、
+ * GET /overlay/available）。无障碍服务没开 / 窗口被用户收起时面板压根不会画出来，
+ * 此时接管等于把问题吞掉：用户什么都看不到，模型却白等 5 分钟。这两种情况一律
+ * 立刻交回原生卡片。
  *
  * ## 失败即让路
  * 拿不到 token / 桥不可达 / 用户超时没答 / 题目为空 —— 任何一步出问题都直接
@@ -79,6 +81,19 @@ async function allowedOn(signal) {
 }
 
 /**
+ * 悬浮面板此刻能不能被拉起来。
+ *
+ * 只看 `available`（无障碍服务在跑），**不能**要求窗口已经挂着：窗口平时是收起的，
+ * 正是这次提问才要把它显示出来（POST /ask 会 resetHidden + show + 展开抽屉）。
+ * 若在这里要求 `shown`，窗口不存在就永不接管 → 提问永远走不出悬浮层，
+ * 两条规则会锁死（beta.124 实测踩到这个死锁）。
+ */
+async function overlayReady(signal) {
+  const r = await call("GET", "/overlay/available", undefined, signal);
+  return r.status === 200 && r.json && r.json.ok === true && r.json.available === true;
+}
+
+/**
  * 把一道题送进悬浮窗，等用户答。
  * @returns {Promise<string|null>} 用户答的文本；没答成返回 null。
  */
@@ -115,6 +130,7 @@ async function intercept(exec, next) {
     if (!exec || exec.name !== ASK_TOOL) return next();
     if (!token()) return next();
     if (!(await allowedOn(exec.signal))) return next();
+    if (!(await overlayReady(exec.signal))) return next();
     const args = exec.arguments || {};
     const questions = Array.isArray(args.questions) ? args.questions : [];
     if (questions.length === 0) return next();

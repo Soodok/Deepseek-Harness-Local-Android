@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
@@ -8,8 +10,10 @@ import '../state/composer_draft.dart';
 import '../bridge/attachment_picker.dart';
 import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
+import 'chat_strings.dart';
 import 'composer_surface.dart';
 import 'composer_sheets.dart';
+import 'interaction_haptics.dart';
 import 'composer_dock.dart';
 import 'permission_icon.dart';
 
@@ -21,6 +25,10 @@ class Composer extends StatefulWidget {
     this.draft,
     this.editing = false,
     this.onCancelEdit,
+    this.onSubmitEdit,
+    this.onEditChanged,
+    this.editText,
+    this.inlineApproval = false,
   });
   final ChatController controller;
   final double? availableHeight;
@@ -34,6 +42,10 @@ class Composer extends StatefulWidget {
   /// cancel affordance instead of pretending this is a fresh prompt.
   final bool editing;
   final VoidCallback? onCancelEdit;
+  final Future<void> Function(String text)? onSubmitEdit;
+  final ValueChanged<String>? onEditChanged;
+  final String? editText;
+  final bool inlineApproval;
   @override
   State<Composer> createState() => _ComposerState();
 }
@@ -62,23 +74,31 @@ class _ComposerState extends State<Composer> {
     if (oldWidget.draft != widget.draft) {
       oldWidget.draft?.removeListener(_adoptDraft);
       widget.draft?.addListener(_adoptDraft);
+    }
+    if (oldWidget.draft != widget.draft ||
+        oldWidget.editing != widget.editing ||
+        oldWidget.editText != widget.editText) {
       _adoptDraft();
+    }
+    if (!oldWidget.editing && widget.editing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.editing) _focusNode.requestFocus();
+      });
     }
   }
 
   void _adoptDraft() {
-    final draft = widget.draft;
-    if (draft == null) return;
-    if (draft.revision == _adoptedRevision &&
-        _textController.text == draft.text)
-      return;
-    _adoptedRevision = draft.revision;
-    if (_textController.text == draft.text) return;
+    final target = widget.editing
+        ? (widget.editText ?? '')
+        : (widget.draft?.text ?? '');
+    final revision = widget.draft?.revision ?? 0;
+    if (revision == _adoptedRevision && _textController.text == target) return;
+    _adoptedRevision = revision;
+    if (_textController.text == target) return;
     _textController.value = TextEditingValue(
-      text: draft.text,
-      selection: TextSelection.collapsed(offset: draft.text.length),
+      text: target,
+      selection: TextSelection.collapsed(offset: target.length),
     );
-    if (draft.text.isNotEmpty) _focusNode.requestFocus();
   }
 
   @override
@@ -96,18 +116,31 @@ class _ComposerState extends State<Composer> {
         (value.trim().isEmpty && widget.controller.attachments.isEmpty))
       return;
     setState(() => _sending = true);
-    final sent = await widget.controller.sendPrompt(value);
-    if (!mounted) return;
-    if (sent && _textController.text == value) {
-      final draft = widget.draft;
-      if (draft != null) {
-        draft.clear();
-      } else {
-        _textController.clear();
+    try {
+      if (widget.editing) {
+        await widget.onSubmitEdit?.call(value);
+        return;
+      }
+      final sent = await widget.controller.sendPrompt(value);
+      if (!mounted) return;
+      // Only a submission the controller itself accepted, queued ones included,
+      // gets a tick: a refused, empty, repeated or failed send returns false and
+      // stays silent. The button and the keyboard both arrive here.
+      if (sent) InteractionHaptics.sendAccepted();
+      if (sent && _textController.text == value) {
+        final draft = widget.draft;
+        if (draft != null) {
+          draft.clear();
+        } else {
+          _textController.clear();
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+        _focusNode.requestFocus();
       }
     }
-    setState(() => _sending = false);
-    _focusNode.requestFocus();
   }
 
   Future<void> _stop() async {
@@ -135,7 +168,12 @@ class _ComposerState extends State<Composer> {
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
+  Widget build(BuildContext context) => LayoutBuilder(builder: _buildComposer);
+
+  Widget _buildComposer(
+    BuildContext context,
+    BoxConstraints constraints,
+  ) => AnimatedBuilder(
     animation: widget.controller,
     builder: (context, _) {
       final controller = widget.controller;
@@ -143,6 +181,19 @@ class _ComposerState extends State<Composer> {
       final busy =
           state.status == ChatStatus.streaming ||
           state.status == ChatStatus.waitingAction;
+      // Keep the glass shell and controls visible; the TextField scrolls
+      // its own content once its line budget is reached.
+      final viewportHeight = math.min(
+        constraints.maxHeight,
+        (widget.availableHeight ?? MediaQuery.sizeOf(context).height) * .75,
+      );
+      final controlsHeight = DshDisplayScope.minTargetOf(context);
+      final lineHeight = MediaQuery.textScalerOf(context).scale(17) * 1.5;
+      final maxInputLines =
+          ((viewportHeight - controlsHeight - 48) / lineHeight).floor().clamp(
+            1,
+            6,
+          );
       return ComposerViewport(
         availableHeight: widget.availableHeight,
         scrollKey: const ValueKey('composer-scroll'),
@@ -152,6 +203,7 @@ class _ComposerState extends State<Composer> {
             ComposerDock(
               controller: controller,
               availableHeight: widget.availableHeight,
+              showApproval: !widget.inlineApproval,
             ),
             const SizedBox(height: 6),
             if (state.queuedPrompts.isNotEmpty)
@@ -162,18 +214,28 @@ class _ComposerState extends State<Composer> {
                     ? controller.sendNextQueued
                     : null,
               ),
-            if (widget.editing)
-              _EditingBar(
-                key: const ValueKey('composer-editing'),
-                onCancel: widget.onCancelEdit,
-              ),
             ComposerSurface(
+              maxInputLines: maxInputLines,
+              inputTrailing: widget.editing
+                  ? _EditingBar(
+                      key: const ValueKey('composer-editing'),
+                      onCancel: widget.onCancelEdit,
+                    )
+                  : null,
               textController: _textController,
               focusNode: _focusNode,
               inputKey: const ValueKey('composer-input'),
-              hintText: widget.editing ? '修改这条消息' : '给 DSH 发消息',
+              hintText: widget.editing
+                  ? DshChatStrings.of(context).editHint
+                  : DshChatStrings.of(context).promptHint,
               onSubmitted: _send,
-              onChanged: (value) => widget.draft?.record(value),
+              onChanged: (value) {
+                if (widget.editing) {
+                  widget.onEditChanged?.call(value);
+                } else {
+                  widget.draft?.record(value);
+                }
+              },
               leading: [
                 if (controller.attachments.isNotEmpty)
                   ConstrainedBox(
@@ -265,7 +327,7 @@ class _ComposerState extends State<Composer> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 2),
                 Expanded(
                   child: ComposerModelPill(
                     pillKey: const ValueKey('composer-model'),
@@ -277,10 +339,11 @@ class _ComposerState extends State<Composer> {
                     onPressed: () => showModelSelector(context, controller),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 IconButton(
                   key: const ValueKey('composer-permission'),
-                  tooltip: '工具权限：' + controller.permissionLabel,
+                  tooltip: DshChatStrings.of(context)
+                      .toolPermission(controller.permissionLabel),
                   onPressed: () => showPermissionSelector(context, controller),
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.transparent,
@@ -288,15 +351,15 @@ class _ComposerState extends State<Composer> {
                     minimumSize: DshDisplayScope.targetSize(context),
                   ),
                   icon: Container(
-                    width: 34,
-                    height: 34,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       color: DshPalette.of(context).ink.withValues(alpha: .06),
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
                     child: !controller.permissionKnown
-                        ? const Icon(Icons.help_outline, size: 18)
+                        ? const Icon(Icons.help_outline, size: 20)
                         : DshPermissionIcon(
                             glyph: switch (controller.permission) {
                               ComposerPermission.readOnly =>
@@ -306,11 +369,10 @@ class _ComposerState extends State<Composer> {
                               ComposerPermission.fullAccess =>
                                 DshPermissionGlyph.fullAccess,
                             },
-                            size: 18,
+                            size: 20,
                           ),
                   ),
                 ),
-                const SizedBox(width: 8),
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _textController,
                   builder: (context, value, _) {
@@ -432,45 +494,24 @@ class _QueueTray extends StatelessWidget {
   }
 }
 
-/// The one line above the input that makes edit mode unmistakable, with the
-/// only way out that keeps the original message untouched.
 class _EditingBar extends StatelessWidget {
   const _EditingBar({super.key, required this.onCancel});
 
   final VoidCallback? onCancel;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = DshPalette.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
-      decoration: BoxDecoration(
-        color: palette.ice.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.ice.withValues(alpha: .35)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.edit_outlined, size: 16, color: palette.ice),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '正在编辑这条消息，发送会从这里继续',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: palette.inkSoft, fontSize: 12.5),
-            ),
-          ),
-          IconButton(
-            key: const ValueKey('composer-cancel-edit'),
-            tooltip: '取消编辑',
-            onPressed: onCancel,
-            icon: Icon(Icons.close_rounded, size: 18, color: palette.inkSoft),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => IconButton(
+    key: const ValueKey('composer-cancel-edit'),
+    tooltip: '取消编辑',
+    onPressed: onCancel,
+    style: IconButton.styleFrom(
+      minimumSize: DshDisplayScope.targetSize(context),
+      padding: EdgeInsets.zero,
+    ),
+    icon: Icon(
+      Icons.close_rounded,
+      size: 18,
+      color: DshPalette.of(context).inkSoft,
+    ),
+  );
 }

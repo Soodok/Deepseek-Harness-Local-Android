@@ -206,10 +206,11 @@ void main() {
     expect(surface.left - touch.left, lessThanOrEqualTo(1));
     expect(touch.width, lessThanOrEqualTo(surface.width + 0.5));
     expect(touch.height, greaterThanOrEqualTo(48));
-    expect(surface.left - attach.right, inInclusiveRange(4, 10));
-    // A tap at the visible centre really reaches the capsule.
+    expect(surface.left - attach.right, inInclusiveRange(0, 4));
+    // A tap at the visible centre really reaches the capsule. The shell's
+    // header title pans its own animation at this width, so settle by frames.
     await tester.tapAt(touch.center);
-    await tester.pumpAndSettle();
+    await _settle(tester, frames: 8);
     expect(find.text('选择模型'), findsOneWidget);
     controller.dispose();
   });

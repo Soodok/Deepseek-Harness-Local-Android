@@ -7,7 +7,11 @@ import 'package:flutter/foundation.dart';
 /// once. Typing writes back without bumping the revision, so a late write from
 /// an earlier action cannot overwrite what a person just typed.
 class ComposerDraft extends ChangeNotifier {
-  String _text = '';
+  ComposerDraft({String initialText = '', this.onTextChanged})
+    : _text = initialText;
+
+  final ValueChanged<String>? onTextChanged;
+  String _text;
   int _revision = 0;
 
   String get text => _text;
@@ -15,15 +19,26 @@ class ComposerDraft extends ChangeNotifier {
 
   bool get isBlank => _text.trim().isEmpty;
 
+  /// Seeds an untouched draft from storage without treating it as a new edit.
+  void hydrate(String text) {
+    if (_text == text) return;
+    _text = text;
+    notifyListeners();
+  }
+
   /// Adopt text typed by the person. No revision change: this is the source.
   void record(String text) {
     if (_text == text) return;
     _text = text;
+    onTextChanged?.call(text);
+    notifyListeners();
   }
 
   /// Replace the draft and tell the field to adopt it.
-  void replace(String text) {
+  void replace(String text, {bool persist = true}) {
+    final changed = _text != text;
     _text = text;
+    if (changed && persist) onTextChanged?.call(text);
     _revision++;
     notifyListeners();
   }

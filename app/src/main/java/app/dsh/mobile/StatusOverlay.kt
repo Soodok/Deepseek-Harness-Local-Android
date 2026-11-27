@@ -135,16 +135,79 @@ object StatusOverlay {
 
     fun isAvailable(): Boolean = DshAccessibilityService.instance != null
 
+    /**
+     * 有问题要问时确保窗口真的在屏幕上（v1.8.2）。
+     *
+     * 只展开不够：无障碍服务刚连上、或窗口被收起后 root 仍是 null，此时抽屉无处可画，
+     * 问题只会排在 PhoneAsk 队列里 —— 用户看不到、模型白等。
+     *
+     * hidden 必须一并解除：空闲 60 秒的自动收起走的是 [hide]，它会置粘性 hidden=true，
+     * 之后 [show] 直接返回。于是「AI 问了问题，用户屏幕上什么都没有」——实测复现
+     * （beta.121 面板取证时提问发生在自动收起之后）。问题在等答案，属于必须让用户
+     * 看见的状态，和 [showForWork] 的处理保持一致：先 resetHidden 再 show。
+     */
+    fun showAskPanel(svc: AccessibilityService?) {
+        if (svc == null) return
+        askPending = true
+        main {
+            resetHidden()
+            if (root == null) showBody(svc)
+            if (root == null) return@main
+            if (expandLevel < 1) {
+                expandLevel = 1
+                autoExpanded = true
+                applyExpandLevel()
+            }
+            cancelAskPoll()
+            scheduleAskPoll(0L)
+        }
+    }
+
+    /** 是否有问题正在等回答（无障碍服务重连时要用它把抽屉带回来）。 */
+    fun hasPendingAsk(): Boolean = askPending
+
     /** 窗口此刻是否挂在屏幕上（v1.7.9：设置页的「显示/收起」要按真实状态切文案）。 */
     fun isShown(): Boolean = root != null && !hidden
 
     /**
-     * 显示悬浮窗。
+     * 提问抽屉此刻是否真的画在屏幕上（v1.8.1）。
+     *
+     * 抽屉只在展开档位 ≥1 才画，所以不能用 [isShown] 代替：窗口收成一颗球时
+     * root 仍在，但画面里没有问题。ask-bridge 靠这个判据决定是否接管。
+     */
+    fun askPanelMounted(): Boolean = root != null && !hidden && expandLevel >= 1
+
+    /**
+     * 把窗口展开到档位 1 并立刻问一次桥，让提问抽屉马上画出来（v1.8.1）。
+     *
+     * 抽屉只在档位 ≥1 才画：窗口收成一颗球时画面里没有问题，接管等于把它吞掉。
+     * 所以发起提问的那一刻就展开，并把默认 2 秒的轮询提前到下一帧。
+     */
+    fun revealAskPanel() {
+        main {
+            if (root == null || hidden) return@main
+            if (expandLevel < 1) {
+                expandLevel = 1
+                autoExpanded = true
+                applyExpandLevel()
+            }
+            cancelAskPoll()
+            scheduleAskPoll(0L)
+        }
+    }
+
+    /**
+     * 显示悬浮窗（post 到主线程）。
      * @param svc 无障碍服务实例（提供 overlay 窗口类型）
      */
     fun show(svc: AccessibilityService) {
-        main {
-            if (root != null || hidden) return@main
+        main { showBody(svc) }
+    }
+
+    /** [show] 的主线程实现；调用方必须已经在主线程。 */
+    private fun showBody(svc: AccessibilityService) {
+        if (root != null || hidden) return
+        run {
             try {
                 val ctx = svc.applicationContext
                 appCtx = ctx
@@ -205,12 +268,17 @@ object StatusOverlay {
                 micView = mic; sessionsBox = sessions
                 pauseBtn = playPause; hintView = hint; askBox = ask; barView = bar
                 askDivider = view.findViewById(R.id.overlayAskDivider)
+                // 新建的视图里什么都没有：不清这个 id，renderAsk 会以为「同一问题已画过」
+                // 直接早退，抽屉永远是空的（实测 beta.132 重建后 boxVis=GONE）。
+                askShownId = -1L
                 root = view; params = p
 
                 w.addView(view, p)
 
                 view.post {
-                    expandLevel = 0
+                    // 正在等回答时不许退回折叠态：ask 抽屉只在档位 ≥1 渲染，
+                    // 这里若无条件置 0，会把 showAskPanel 刚设的档位抹掉（实测）。
+                    expandLevel = if (askPending) 1 else 0
                     applyExpandLevel(view)
                 }
 
@@ -219,18 +287,33 @@ object StatusOverlay {
                 // 宽度恒为 0，于是 x 被算成 screenW - 0 - margin = 1059（1080 宽的屏），
                 // 整个悬浮窗被推到屏幕外，用户完全看不见（模拟器实测日志：
                 // "overlay shown at 1059,315 (0x0)"）。用 post 等布局完成再回算。
-                view.post {
-                    val margin = dp(ctx, 8)
-                    val vw = if (view.width > 0) view.width else dp(ctx, 120)
-                    p.x = (ctx.resources.displayMetrics.widthPixels - vw - margin)
-                        .coerceAtLeast(margin)
-                    runCatching { w.updateViewLayout(view, p) }
-                    Log.i(TAG, "overlay shown at ${p.x},${p.y} (${view.width}x${view.height})")
-                }
+                view.post { reanchorRight(ctx, w, view, p) }
             } catch (e: Exception) {
-                Log.w(TAG, "show failed: ${e.message}")
+                // Never swallow silently: a failed addView leaves root null, so the ask
+                // drawer can never be drawn and the question dies in the queue.
+                Log.w(TAG, "show failed: " + (e.message ?: e.javaClass.simpleName), e)
             }
         }
+    }
+
+    /**
+     * 把窗口贴回屏幕右侧。
+     *
+     * 窗口是 WRAP_CONTENT：宽度随内容变，而布局参数里的 x 是绝对值、不会跟着重算。
+     * 折叠态只有一颗球（很窄），展开出抽屉后宽度能到 616px —— 若还按折叠时的 x，
+     * 右侧一截（选项按钮、发送键）会被推出屏幕。所以每次尺寸变化都要重算一次。
+     */
+    private fun reanchorRight(
+        ctx: Context,
+        w: WindowManager,
+        view: android.view.View,
+        p: WindowManager.LayoutParams,
+    ) {
+        val margin = dp(ctx, 8)
+        val vw = if (view.width > 0) view.width else dp(ctx, 120)
+        p.x = (ctx.resources.displayMetrics.widthPixels - vw - margin).coerceAtLeast(margin)
+        runCatching { w.updateViewLayout(view, p) }
+        Log.i(TAG, "overlay shown at ${p.x},${p.y} (${view.width}x${view.height})")
     }
 
     /**
@@ -758,6 +841,8 @@ object StatusOverlay {
     @Volatile private var askPoll: Runnable? = null
     /** 当前展示的提问 id，避免同一问题反复重建视图。 */
     @Volatile private var askShownId: Long = -1L
+    /** 有一条问题正在等回答：这期间窗口不许自动收起（否则用户看不到问题）。 */
+    @Volatile private var askPending = false
 
     private fun ensureAskArea(ctx: Context) {
         val v = root ?: return
@@ -805,7 +890,7 @@ object StatusOverlay {
     }
 
     /** 每 2 秒问一次桥：有没有待回答的问题 → 有就画出来。 */
-    private fun scheduleAskPoll() {
+    private fun scheduleAskPoll(delayMs: Long = 2_000L) {
         cancelAskPoll()
         val r = Runnable {
             askPoll = null
@@ -813,6 +898,8 @@ object StatusOverlay {
             runCatching {
                 daemonPollExec.execute {
                     val body = runCatching { getBridge("/ask") }.getOrNull()
+                    // 诊断：抽屉画不出来时，先分得清「桥里没有待答问题」和「画了但没显示」。
+                    Log.i(TAG, "ask poll -> " + (body ?: "null(token or bridge unavailable)"))
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         if (expandLevel >= 1) renderAsk(body)
                         if (expandLevel >= 1) scheduleAskPoll()
@@ -821,7 +908,7 @@ object StatusOverlay {
             }
         }
         askPoll = r
-        mainHandler.postDelayed(r, 2_000L)
+        mainHandler.postDelayed(r, delayMs)
     }
 
     /** 画一个问题（没有就清空）。 */
@@ -830,7 +917,32 @@ object StatusOverlay {
         val box = askBox ?: return
         val o = runCatching { org.json.JSONObject(body ?: "{}") }.getOrNull()
         val pending = o?.optBoolean("pending", false) == true
+        // 判据必须是「真的还挂在窗口上」，不能只看 root 是否为 null：
+        // 无障碍服务被系统销毁/重建时，它的 TYPE_ACCESSIBILITY_OVERLAY 窗口由系统摘除，
+        // 而我们持有的 root 引用还在 —— 只看 null 会以为窗还在，问题就永远画不出来
+        // （实测 beta.134：/ask 仍 pending、日志显示抽屉已画，屏上却什么都没有）。
+        val attached = root?.isAttachedToWindow == true
+        if (pending && !attached) {
+            // 窗口被某条路径摘掉了（hide() 会把 root 置空）。提问还没回答就丢了窗口，
+            // 用户永远看不到问题 —— 这里直接重建，不依赖上一个调用点的时序。
+            val svc = app.dsh.mobile.DshAccessibilityService.instance
+            Log.i(TAG, "renderAsk: window not attached while pending -> rebuilding")
+            // 旧视图已随服务一起消失，引用必须放掉，否则 showBody 会因 root != null 早退。
+            root = null; params = null; statusText = null; actionText = null; statusDot = null
+            pauseBtn = null; micView = null; hintView = null; barView = null
+            askBox = null; askDivider = null; askShownId = -1L
+            if (svc != null) showAskPanel(svc)
+        }
+        // 每一轮轮询都要刷新这个标记：它只在 showAskPanel 里被置 true，
+        // 而提问超时清空后 renderAsk 会置 false，之后的下一次提问若走同一窗口
+        // （showAskPanel 未再被调用）就再也不算「有待答问题」，自动收起会把窗摘掉。
+        askPending = pending
+        Log.i(TAG, "renderAsk pending=" + pending + " boxVis=" + box.visibility +
+            " boxSize=[" + box.width + "," + box.height + "] shownId=" + askShownId +
+            " level=" + expandLevel + " rootAlpha=" + (root?.alpha ?: -1f) +
+            " captureHidden=" + hiddenForCapture + " hidden=" + hidden)
         if (!pending) {
+            askPending = false
             if (askShownId != -1L) {
                 box.removeAllViews()
                 box.visibility = View.GONE
@@ -951,7 +1063,21 @@ object StatusOverlay {
             }
         })
 
+        box.post {
+            val loc = IntArray(2)
+            for (i in 0 until box.childCount) {
+                val c = box.getChildAt(i)
+                c.getLocationOnScreen(loc)
+                val tag = (c as? TextView)?.text?.toString()?.take(24) ?: c.javaClass.simpleName
+                Log.i(TAG, "askChild[" + i + "] '" + tag + "' onScreen=[" + loc[0] + "," + loc[1] + "," + (loc[0] + c.width) + "," + (loc[1] + c.height) + "]")
+            }
+        }
         (root)?.requestLayout()
+        // 抽屉一出现窗口就变宽，必须重新右对齐，否则右侧被推出屏幕（见 reanchorRight）。
+        val w = wm ?: return
+        val v = root ?: return
+        val pp = params ?: return
+        v.post { reanchorRight(ctx, w, v, pp) }
     }
 
     /** 把用户的答案送回桥。 */
@@ -1123,8 +1249,15 @@ object StatusOverlay {
         autoHide = null
     }
 
-    fun hide(svc: AccessibilityService?) {
+    fun hide(svc: AccessibilityService?, force: Boolean = false) {
         cancelAutoHide()
+        // 有提问在等回答时，整窗必须留在屏幕上 —— 这是用户能看见问题的唯一载体。
+        // 实测（beta.132 设备取证）：某条收起路径把窗口摘了，而 /ask 仍 pending，
+        // 用户的屏幕上就此什么都没有。收起逻辑自己会重新排期，这里只兜底拒绝。
+        if (askPending && !force) {
+            Log.i(TAG, "hide refused: a question is pending (" + Throwable().stackTrace.take(6).joinToString(" <- ") { it.className.substringAfterLast('.') + "." + it.methodName + ":" + it.lineNumber } + ")")
+            return
+        }
         main {
             val r = root ?: return@main
             runCatching {
@@ -1139,7 +1272,8 @@ object StatusOverlay {
             barView = null
             pauseReady = false
             hidden = true
-            Log.i(TAG, "overlay hidden by user")
+            Log.i(TAG, "overlay hidden; askPending=" + askPending + " askShownId=" + askShownId +
+                " caller=" + Throwable().stackTrace.take(4).joinToString(" <- ") { it.className.substringAfterLast('.') + "." + it.methodName + ":" + it.lineNumber })
         }
     }
 
@@ -1168,13 +1302,30 @@ object StatusOverlay {
             askDivider = null
             askShownId = -1L
             daemonBtn = null
-            hide(svc)
+            hide(svc, force = true)
             Log.i(TAG, "overlay torn down (engine exited)")
         }
     }
 
     /** 用户隐藏后重新允许显示（引擎重启等场景调用） */
     fun resetHidden() { hidden = false }
+
+    /**
+     * 无障碍服务被销毁：系统随之摘掉我们的 TYPE_ACCESSIBILITY_OVERLAY 窗口。
+     *
+     * 这里只放掉引用，**不**去 removeView（服务已销毁，那个 WindowManager 也失效了），
+     * 也不动 askPending —— 待答问题还在桥里，下次轮询要能凭「未附着」重建窗口。
+     */
+    fun onServiceDestroyed() {
+        main {
+            root = null; params = null; wm = null; appCtx = null
+            statusText = null; actionText = null; statusDot = null
+            pauseBtn = null; micView = null; hintView = null; barView = null
+            askBox = null; askDivider = null; askShownId = -1L
+            hiddenForCapture = false
+            Log.i(TAG, "overlay released (service destroyed); askPending=" + askPending)
+        }
+    }
 
     // ---------- 截图避让（v1.2.164，用户反馈"截图会带上悬浮窗，遮挡 AI 视野"）----------
     // ⚠️ 实现选择：**不能**用 hide()/show() —— 那两个会 removeView + 完整重建视图
@@ -1325,7 +1476,12 @@ object StatusOverlay {
             // ★ 只有「自动展开」的那一档才自动收回，且止于档位 1。
             // 用户自己展开到档位 2 是为了看「停止 AI」按钮——
             // AI 一停手就把界面收回去，按钮就消失了，用户根本点不到。
-            val needFade = autoExpanded && expandLevel == 1 && r != null
+            // 有提问在等回答时整段不做「淡出→改布局→淡入」：下面 withEndAction 里那句
+            // expandLevel = 0 是无条件的（applyIdleNow 里虽有 askPending 守卫，但淡出
+            // 收尾这条分支绕过了它）。档位一旦归 0，applyExpandLevel 会顺手把 askShownId
+            // 清成 -1，于是自动收起不再被提问挡住 → hide() 把整窗摘掉，问题就消失在屏幕上。
+            // 实测（beta.128 设备取证）：抽屉画出来约十秒后整窗消失，而 /ask 仍 pending。
+            val needFade = autoExpanded && expandLevel == 1 && r != null && !askPending
 
             /** 真正的空闲布局（调用时必须处于 alpha=0 或本来就不需要淡出）。 */
             fun applyIdleNow() {
@@ -1334,7 +1490,8 @@ object StatusOverlay {
                 working = false
                 refreshActionVisibility()
                 // 同上：只收回自动展开的档位 1。
-                if (autoExpanded && expandLevel == 1) {
+                // 有提问在等回答时不许收回：收成一颗球，问题就没人看得见。
+                if (autoExpanded && expandLevel == 1 && !askPending) {
                     autoExpanded = false
                     expandLevel = 0
                     applyExpandLevel()
@@ -1352,6 +1509,8 @@ object StatusOverlay {
             val job = Runnable {
                 collapsePending = null
                 val view = root ?: return@Runnable
+                // 排队期间可能刚来了一个问题：此时放弃收起，别把抽屉一起吞掉。
+                if (askPending) return@Runnable
                 view.animate().cancel()
                 view.animate().alpha(0f).setDuration(80L).withEndAction {
                     // 此刻不可见 → 安全地改尺寸
@@ -1668,9 +1827,9 @@ object StatusOverlay {
         // 而且 alpha 反馈比 isPressed 更稳（自带背景的 TextView 不一定有 pressed 态）。
         setOnTouchListener { v, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { v.alpha = 0.65f; true }
-                MotionEvent.ACTION_UP -> { v.alpha = 1f; onClick(); true }
-                MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
+                MotionEvent.ACTION_DOWN -> { Log.i(TAG, "pill touch DOWN '" + label + "' at (" + ev.rawX + "," + ev.rawY + ")"); v.alpha = 0.65f; true }
+                MotionEvent.ACTION_UP -> { Log.i(TAG, "pill touch UP '" + label + "'"); v.alpha = 1f; onClick(); true }
+                MotionEvent.ACTION_CANCEL -> { Log.i(TAG, "pill touch CANCEL '" + label + "'"); v.alpha = 1f; true }
                 else -> false
             }
         }

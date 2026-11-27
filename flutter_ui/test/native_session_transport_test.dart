@@ -99,6 +99,15 @@ void main() {
       )['outcome'],
       {'kind': 'result', 'value': 'allowed-once'},
     );
+    approval('reject-me');
+    await until((s) => s.approval != null);
+    await live.rejectApproval(state.approval!.requestId);
+    await until((s) => s.approval == null);
+    expect(
+      args(host.requests.lastWhere((r) => r.endpoint == r'$events/result')),
+      containsPair('outcome', {'kind': 'result', 'value': 'rejected'}),
+    );
+    expect(host.requests.where((r) => r.endpoint == 'session/cancel'), isEmpty);
     host.item(channel, {
       'type': 'waterfall',
       'event': 'user-questions/request',

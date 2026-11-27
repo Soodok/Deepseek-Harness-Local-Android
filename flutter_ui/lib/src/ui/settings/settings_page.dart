@@ -41,7 +41,6 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _refreshError;
   DateTime? _selectedDate;
   bool _refreshing = false;
-  bool _usageExpanded = false;
   int _attempt = 0;
 
   bool get _blocked => widget.busy || widget.loading || _refreshing;
@@ -145,7 +144,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       _searchField(colors),
                       const SizedBox(height: 14),
                       _profileSection(colors),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       _usageSection(colors),
                       if (matches.isEmpty)
                         Padding(
@@ -222,80 +221,91 @@ class _SettingsPageState extends State<SettingsPage> {
     final subtitle = profile == null
         ? '连接账户，查看个人资料'
         : (profile.email.trim().isEmpty ? '已连接 DeepSeek 账户' : profile.email);
-    final identity = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          _avatar(colors),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: TextStyle(
-                    color: colors.ink,
-                    fontSize: 18,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
+        final stackLogout = profile != null &&
+            constraints.maxWidth < 300 + 80 * (textScale - 1);
+        final logout = profile == null
+            ? null
+            : _action(
+                key: const ValueKey('settings-logout'),
+                label: '退出登录',
+                enabled: !_blocked,
+                onTap: () {
+                  if (!_blocked) widget.onLogout();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '退出登录',
+                    style: TextStyle(color: colors.inkSoft, fontSize: 13),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: colors.inkSoft,
-                    fontSize: 13,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (profile == null) ...[
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, color: colors.inkSoft, size: 22),
-          ],
-        ],
-      ),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (profile == null)
-          _action(
-            key: const ValueKey('settings-login'),
-            label: '$name，$subtitle',
-            enabled: !_blocked,
-            onTap: () {
-              if (!_blocked) widget.onLogin();
-            },
-            child: identity,
-          )
-        else
-          identity,
-        if (profile != null)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: _action(
-              key: const ValueKey('settings-logout'),
-              label: '退出登录',
-              enabled: !_blocked,
-              onTap: () {
-                if (!_blocked) widget.onLogout();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  '退出登录',
-                  style: TextStyle(color: colors.inkSoft, fontSize: 13),
+              );
+        final identity = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _avatar(colors),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        color: colors.ink,
+                        fontSize: 18,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: colors.inkSoft,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+              if (profile == null) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right_rounded, color: colors.inkSoft, size: 22),
+              ] else if (!stackLogout)
+                logout!,
+            ],
           ),
-      ],
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (profile == null)
+              _action(
+                key: const ValueKey('settings-login'),
+                label: '$name，$subtitle',
+                enabled: !_blocked,
+                onTap: () {
+                  if (!_blocked) widget.onLogin();
+                },
+                child: identity,
+              )
+            else
+              identity,
+            if (stackLogout)
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: logout!,
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -499,97 +509,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             if (available) ...[
-              const SizedBox(height: 18),
-              if (_usageExpanded)
-                Text(
-                  '左右滑动查看 12 周，点按格点查看当日用量',
-                  style: TextStyle(
-                    color: colors.inkSoft,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
-              const SizedBox(height: 6),
-              if (!_usageExpanded)
-                _action(
-                  key: const ValueKey('settings-usage-overview'),
-                  label: '12周 Token 概览，展开每日明细',
-                  onTap: () => setState(() => _usageExpanded = true),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        for (int week = 0; week < 12; week++)
-                          Expanded(
-                            child: Column(
-                              children: [
-                                for (int day = 0; day < 7; day++)
-                                  Container(
-                                    height: 16,
-                                    margin: const EdgeInsets.all(2),
-                                    decoration: BoxDecoration(
-                                      color: _usageColor(
-                                        entries[DateTime(
-                                              start.year,
-                                              start.month,
-                                              start.day + week * 7 + day,
-                                            )]
-                                            ?.totalTokens,
-                                        peak,
-                                        colors,
-                                      ),
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              if (_usageExpanded)
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    // Every date keeps a separate 48dp target, including on narrow screens.
-                    final width = math.max(576.0, constraints.maxWidth);
-                    return SingleChildScrollView(
-                      key: const PageStorageKey('settings-usage-weeks'),
-                      scrollDirection: Axis.horizontal,
-                      reverse: true,
-                      child: SizedBox(
-                        width: width,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: List.generate(
-                            12,
-                            (week) => SizedBox(
-                              width: width / 12,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: List.generate(7, (day) {
-                                  final date = DateTime(
-                                    start.year,
-                                    start.month,
-                                    start.day + week * 7 + day,
-                                  );
-                                  return _usageDay(
-                                    date,
-                                    entries[date],
-                                    selected == date,
-                                    peak,
-                                    colors,
-                                  );
-                                }),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
               const SizedBox(height: 10),
+              _usageGrid(colors, entries, start, peak),
+              const SizedBox(height: 8),
+              _usageDetail(colors, selected, record),
+              const SizedBox(height: 8),
+
               Wrap(
                 spacing: 16,
                 runSpacing: 8,
@@ -604,80 +529,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _legend('高', colors.ice, colors),
                 ],
               ),
-              TextButton.icon(
-                key: const ValueKey('settings-usage-expand'),
-                onPressed: () =>
-                    setState(() => _usageExpanded = !_usageExpanded),
-                icon: Icon(
-                  _usageExpanded
-                      ? Icons.expand_less_rounded
-                      : Icons.calendar_view_month_rounded,
-                  size: 18,
-                ),
-                label: Text(_usageExpanded ? '收起每日明细' : '查看每日明细'),
-              ),
-              if (_usageExpanded)
-                Semantics(
-                  liveRegion: true,
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: colors.paper,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _iso(selected),
-                          style: TextStyle(
-                            color: colors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        if (record == null)
-                          Text(
-                            '该日暂无记录',
-                            style: TextStyle(
-                              color: colors.inkSoft,
-                              fontSize: 13,
-                            ),
-                          )
-                        else
-                          Wrap(
-                            spacing: 16,
-                            runSpacing: 6,
-                            children: [
-                              Text(
-                                '输入 ${_number(record.inputTokens)}',
-                                style: TextStyle(
-                                  color: colors.inkSoft,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              Text(
-                                '输出 ${_number(record.outputTokens)}',
-                                style: TextStyle(
-                                  color: colors.inkSoft,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              Text(
-                                '总量 ${_number(record.totalTokens)}',
-                                style: TextStyle(
-                                  color: colors.ink,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+
             ] else ...[
               const SizedBox(height: 12),
               Text(
@@ -705,42 +557,93 @@ class _SettingsPageState extends State<SettingsPage> {
           0.28 + 0.72 * (total / peak).clamp(0.0, 1.0),
         )!;
 
-  Widget _usageDay(
+  /// A compact 12-week heatmap: weeks are columns, weekdays are rows.
+  ///
+  /// There is no expand button and no 576dp day panel any more. The cells are
+  /// deliberately small so the whole card stays short; tapping one shows that
+  /// day's numbers on a single inline line right below the grid. 84 cells at
+  /// the full 48dp target would be taller than the rest of the page, so the
+  /// cells trade target size for density - the totals, the legend and the
+  /// inline readout carry the information a screen reader needs.
+  Widget _usageGrid(
+    DshColors colors,
+    Map<DateTime, TokenUsageDay> entries,
+    DateTime start,
+    int peak,
+  ) => Semantics(
+    key: const ValueKey('settings-usage-overview'),
+    container: true,
+    label: '12 周 Token 热力图，点按格子查看当日用量',
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int week = 0; week < 12; week++)
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int day = 0; day < 7; day++)
+                  Builder(
+                    builder: (context) {
+                      final date = DateTime(
+                        start.year,
+                        start.month,
+                        start.day + week * 7 + day,
+                      );
+                      return _usageCell(
+                        date,
+                        entries[date],
+                        _selectedDate == date,
+                        peak,
+                        colors,
+                      );
+                    },
+                  ),
+              ],
+            ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _usageCell(
     DateTime date,
     TokenUsageDay? record,
     bool selected,
     int peak,
     DshColors colors,
   ) {
-    final total = record?.totalTokens;
-    final color = _usageColor(total, peak, colors);
+    final color = _usageColor(record?.totalTokens, peak, colors);
     final label = record == null
         ? '${_iso(date)}，暂无记录'
         : '${_iso(date)}，输入 ${_number(record.inputTokens)}，输出 ${_number(record.outputTokens)}，总量 ${_number(record.totalTokens)} Token';
+    void select() => setState(() => _selectedDate = date);
     return Semantics(
       key: ValueKey('settings-usage-day-${_iso(date)}'),
       button: true,
       enabled: true,
       selected: selected,
       label: label,
-      onTap: () => setState(() => _selectedDate = date),
+      onTap: select,
       child: ExcludeSemantics(
         child: SizedBox(
-          height: DshDisplayScope.minTargetOf(context),
-          width: double.infinity,
+          width: 20,
+          height: 20,
           child: InkWell(
-            onTap: () => setState(() => _selectedDate = date),
-            borderRadius: BorderRadius.circular(8),
+            onTap: select,
+            borderRadius: BorderRadius.circular(4),
             splashFactory: MediaQuery.disableAnimationsOf(context)
                 ? NoSplash.splashFactory
                 : null,
             child: Center(
               child: Container(
-                width: 20,
-                height: 20,
+                width: 13,
+                height: 13,
                 decoration: BoxDecoration(
                   color: color,
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(3),
                   border: Border.all(
                     color: selected ? colors.ink : colors.line,
                     width: selected ? 2 : 1,
@@ -753,6 +656,62 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
+
+  /// One line for the selected day, always visible.
+  ///
+  /// The old panel took 48dp rows plus a bordered card; the same three numbers
+  /// fit on a single line next to the date, which keeps the usage card short
+  /// enough to sit above the rest of the page.
+  Widget _usageDetail(
+    DshColors colors,
+    DateTime selected,
+    TokenUsageDay? record,
+  ) => Semantics(
+    liveRegion: true,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          _iso(selected),
+          style: TextStyle(
+            color: colors.ink,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: record == null
+              ? Text(
+                  '该日暂无记录',
+                  style: TextStyle(color: colors.inkSoft, fontSize: 12),
+                )
+              : Wrap(
+                  spacing: 12,
+                  children: [
+                    Text(
+                      '输入 ${_number(record.inputTokens)}',
+                      style: TextStyle(color: colors.inkSoft, fontSize: 12),
+                    ),
+                    Text(
+                      '输出 ${_number(record.outputTokens)}',
+                      style: TextStyle(color: colors.inkSoft, fontSize: 12),
+                    ),
+                    Text(
+                      '总量 ${_number(record.totalTokens)}',
+                      style: TextStyle(
+                        color: colors.ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    ),
+  );
 
   Widget _legend(
     String label,
@@ -836,8 +795,10 @@ class _SettingsPageState extends State<SettingsPage> {
       SettingsDestination.plugins => (Icons.extension_rounded, colors.thought),
       SettingsDestination.extensions => (Icons.code_rounded, colors.edit),
       SettingsDestination.containers => (Icons.layers_rounded, colors.warn),
+      SettingsDestination.connections => (Icons.cable_rounded, colors.terminal),
       SettingsDestination.language => (Icons.language_rounded, colors.terminal),
       SettingsDestination.appearance => (Icons.palette_rounded, colors.thought),
+      SettingsDestination.pet => (Icons.pets_rounded, colors.thought),
       SettingsDestination.permissions => (Icons.shield_outlined, colors.good),
       SettingsDestination.webUi => (
         Icons.open_in_browser_rounded,
@@ -959,10 +920,12 @@ const _groups = [
     SettingsDestination.plugins,
     SettingsDestination.extensions,
     SettingsDestination.containers,
+    SettingsDestination.connections,
   ]),
   _SettingsGroup('显示与个性化', [
     SettingsDestination.language,
     SettingsDestination.appearance,
+    SettingsDestination.pet,
   ]),
   _SettingsGroup('系统与数据', [
     SettingsDestination.permissions,

@@ -1,11 +1,14 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../model/composer_model.dart';
-import '../bridge/host_bridge.dart';
+import 'settings/settings_home.dart' show showModelConfiguration;
 import '../state/chat_controller.dart';
 import '../theme/dsh_theme.dart';
 import 'glass_panel.dart';
 import 'permission_icon.dart';
+import 'staggered_reveal.dart';
 
 Future<void> showModelSelector(
   BuildContext context,
@@ -15,11 +18,23 @@ Future<void> showPermissionSelector(
   BuildContext context,
   ChatController controller,
 ) => _show(context, controller, false);
+
+/// The settings variant: the tap is the whole action, so it writes the bound
+/// session's permission right away instead of staging it for the next send.
+Future<void> showSessionPermissionSelector(
+  BuildContext context,
+  ChatController controller,
+) {
+  controller.clearPermissionWriteError();
+  return _show(context, controller, false, persist: true);
+}
+
 Future<void> _show(
   BuildContext context,
   ChatController controller,
-  bool models,
-) async {
+  bool models, {
+  bool persist = false,
+}) async {
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -78,6 +93,8 @@ Future<void> _show(
                           ? (models
                                 ? '当前为演示模式，以下选项不会调用在线模型。'
                                 : '仅影响当前对话的演示工具，不修改手机系统权限。')
+                          : persist && !models
+                          ? '立即写入当前会话，选择后即生效，不会发送消息。'
                           : '使用引擎提供的可用选项。',
                       style: TextStyle(
                         color: DshPalette.of(context).inkSoft,
@@ -102,7 +119,7 @@ Future<void> _show(
                       label: const Text('配置模型'),
                       onPressed: () {
                         Navigator.of(sheetContext).pop();
-                        HostBridge.openWebFallback();
+                        showModelConfiguration(context, controller);
                       },
                     ),
                     TextButton.icon(
@@ -117,52 +134,126 @@ Future<void> _show(
                       },
                     ),
                   ] else if (models)
-                    ...controller.models.map(
-                      (model) => _Choice(
-                        key: ValueKey('model-option-' + model.id),
-                        title: model.label,
-                        detail: model.description,
-                        selected: controller.selectedModelId == model.id,
-                        onTap: () {
-                          controller.selectModel(model.id);
-                          Navigator.of(sheetContext).pop();
-                        },
-                      ),
-                    )
-                  else
-                    ...ComposerPermission.values.map(
-                      (mode) => _Choice(
-                        key: ValueKey('permission-option-' + mode.name),
-                        leading: DshPermissionIcon(
-                          glyph: switch (mode) {
-                            ComposerPermission.readOnly =>
-                              DshPermissionGlyph.readOnly,
-                            ComposerPermission.workspaceWrite =>
-                              DshPermissionGlyph.workspaceWrite,
-                            ComposerPermission.fullAccess =>
-                              DshPermissionGlyph.fullAccess,
-                          },
-                          size: 20,
-                        ),
-                        title: mode.label,
-                        detail: controller.supportsPermission(mode)
-                            ? mode.description
-                            : '当前引擎未提供此模式，请使用 Web 版查看。',
-                        selected:
-                            controller.permissionKnown &&
-                            controller.permission == mode,
-                        onTap: !controller.supportsPermission(mode)
-                            ? null
-                            : () {
-                                controller.selectPermission(mode);
+                    StaggeredReveal(
+                      children: controller.models
+                          .map(
+                            (model) => _Choice(
+                              key: ValueKey('model-option-' + model.id),
+                              title: model.label,
+                              detail: model.description,
+                              selected: controller.selectedModelId == model.id,
+                              onTap: () {
+                                controller.selectModel(model.id);
                                 Navigator.of(sheetContext).pop();
                               },
+                            ),
+                          )
+                          .toList(),
+                    )
+                  else
+                    AnimatedBuilder(
+                      animation: controller,
+                      builder: (context, _) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          StaggeredReveal(
+                            children: ComposerPermission.values
+                                .map(
+                                  (mode) => _Choice(
+                                    key: ValueKey(
+                                      'permission-option-' + mode.name,
+                                    ),
+                                    leading: DshPermissionIcon(
+                                      glyph: switch (mode) {
+                                        ComposerPermission.readOnly =>
+                                          DshPermissionGlyph.readOnly,
+                                        ComposerPermission.workspaceWrite =>
+                                          DshPermissionGlyph.workspaceWrite,
+                                        ComposerPermission.fullAccess =>
+                                          DshPermissionGlyph.fullAccess,
+                                      },
+                                      size: 20,
+                                    ),
+                                    title: mode.label,
+                                    detail: controller.supportsPermission(mode)
+                                        ? mode.description
+                                        : '当前引擎未提供此模式，请使用 Web 版查看。',
+                                    // A settings write names the value the Host
+                                    // actually holds; the composer sheet shows
+                                    // the draft that the next send applies.
+                                    selected: controller.permissionKnown &&
+                                        (persist
+                                            ? controller.sessionPermission ==
+                                                  mode
+                                            : controller.permission == mode),
+                                    onTap:
+                                        !controller.supportsPermission(mode) ||
+                                            (persist &&
+                                                !controller
+                                                    .canApplySessionPermission)
+                                        ? null
+                                        : () {
+                                            if (!persist) {
+                                              controller.selectPermission(
+                                                mode,
+                                              );
+                                              Navigator.of(sheetContext).pop();
+                                              return;
+                                            }
+                                            unawaited(
+                                              _persist(
+                                                sheetContext,
+                                                controller,
+                                                mode,
+                                              ),
+                                            );
+                                          },
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          if (persist) _writeStatus(context, controller),
+                        ],
                       ),
                     ),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// One settings write. A success closes the sheet; a failure keeps it open so
+/// the reader can see which value the Host kept and pick again.
+Future<void> _persist(
+  BuildContext context,
+  ChatController controller,
+  ComposerPermission mode,
+) async {
+  final applied = await controller.applySessionPermission(mode);
+  if (applied && context.mounted) Navigator.of(context).pop();
+}
+
+Widget _writeStatus(BuildContext context, ChatController controller) {
+  final writing = controller.permissionWriteInFlight;
+  final error = controller.permissionWriteError;
+  if (!writing && error == null) return const SizedBox.shrink();
+  final colors = DshPalette.of(context);
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+    child: Semantics(
+      key: const ValueKey('session-permission-status'),
+      container: true,
+      liveRegion: true,
+      child: Text(
+        writing ? '正在写入当前会话…' : error!,
+        style: TextStyle(
+          color: writing ? colors.inkSoft : colors.bad,
+          fontSize: 13,
+          height: 1.5,
         ),
       ),
     ),

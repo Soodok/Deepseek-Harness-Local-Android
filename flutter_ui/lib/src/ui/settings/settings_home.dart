@@ -42,11 +42,7 @@ class _SettingsHome extends StatelessWidget {
             );
             return;
           case SettingsDestination.models:
-            await Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => ModelConfigurationPage(controller: chat),
-              ),
-            );
+            await showModelConfiguration(context, chat);
             return;
           case SettingsDestination.permissions:
             await Navigator.of(context).push<void>(
@@ -55,43 +51,44 @@ class _SettingsHome extends StatelessWidget {
               ),
             );
             return;
+          case SettingsDestination.connections:
+            // 连接状态要能在这里读清楚：原生入口只负责打开，判断"连着什么"
+            // 必须留给这一页，而不是交给一个看不到结果的系统弹层。
+            await Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const ConnectionsPage()),
+            );
+            return;
           case SettingsDestination.webUi:
             await openSettingsWeb(context);
             return;
           default:
-            final opened = await HostBridge.openSettingsSection(destination);
-            if (!opened && context.mounted) {
-              if (destination == SettingsDestination.about) {
-                showLicensePage(
-                  context: context,
-                  applicationName: 'DSH Mobile · Flutter',
-                  applicationVersion: '原生聊天预览',
-                );
-              } else
-                await showDialog<void>(
-                  context: context,
-                  builder: (dialog) => AlertDialog(
-                    title: Text(destination.title),
-                    content: Text(
-                      destination == SettingsDestination.language
-                          ? 'Android 管理界面支持中文、English、Deutsch、Português、ไทย、Русский。Flutter 对话界面当前为中文；请在 Android 应用中调整管理界面语言。'
-                          : '此管理页由 Android 应用提供。在手机中可打开已有的' +
-                                destination.title +
-                                '页面。',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialog).pop(),
-                        child: const Text('知道了'),
-                      ),
-                    ],
-                  ),
-                );
+            if (!c.isDemo) {
+              if (await HostBridge.openSettingsSection(destination)) return;
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('无法打开${destination.title}，请从 Android 设置重试。')),
+              );
+              return;
             }
+            if (!context.mounted) return;
+            await Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => UnavailableSettingsPage(destination: destination),
+              ),
+            );
+            return;
         }
       },
     );
   }
+}
+
+Future<void> showModelConfiguration(BuildContext context, ChatController chat) async {
+  final service = SettingsScope.maybeOf(context)?.service;
+  final providers = service is ModelProviderSettings ? service as ModelProviderSettings : null;
+  await Navigator.of(context).push<void>(MaterialPageRoute(
+    builder: (_) => ModelConfigurationPage(controller: chat, providers: providers),
+  ));
 }
 
 Future<void> openSettingsWeb(BuildContext context) async {

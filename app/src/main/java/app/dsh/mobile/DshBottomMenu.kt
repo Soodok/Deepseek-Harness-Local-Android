@@ -20,6 +20,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
  */
 class DshBottomMenu(private val activity: Activity) {
     var onRunMode: (() -> Unit)? = null
+    var onNativeChat: (() -> Unit)? = null
     var onRestart: (() -> Unit)? = null
     var onStatus: (() -> Unit)? = null
 
@@ -38,6 +39,12 @@ class DshBottomMenu(private val activity: Activity) {
         val sheet = BottomSheetDialog(activity)
         val sidePanel = IslandSidePanel(activity, IslandDock.BOTTOM).apply {
             onCollapse = { sheet.dismiss() }
+            onNativeChat = this@DshBottomMenu.onNativeChat?.let { open ->
+                {
+                    sheet.dismiss()
+                    open()
+                }
+            }
             onRunMode = {
                 sheet.dismiss()
                 this@DshBottomMenu.onRunMode?.invoke()

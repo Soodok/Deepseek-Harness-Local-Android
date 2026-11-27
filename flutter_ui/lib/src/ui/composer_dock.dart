@@ -16,10 +16,12 @@ class ComposerDock extends StatefulWidget {
     super.key,
     required this.controller,
     this.availableHeight,
+    this.showApproval = true,
   });
 
   final ChatController controller;
   final double? availableHeight;
+  final bool showApproval;
 
   @override
   State<ComposerDock> createState() => _ComposerDockState();
@@ -131,7 +133,7 @@ class _ComposerDockState extends State<ComposerDock> {
     final controller = widget.controller;
     final state = controller.state;
     final question = state.question;
-    final approval = state.approval;
+    final approval = widget.showApproval ? state.approval : null;
     final plan = _plan;
     if (plan == null && question == null && approval == null) {
       return const SizedBox.shrink();
@@ -190,6 +192,9 @@ class _ComposerDockState extends State<ComposerDock> {
             busy: controller.actionBusy(approval.requestId),
             onApprove: () => controller.approve(approval.requestId),
             onStop: controller.stop,
+            onReject: controller.canRejectApproval
+                ? () => controller.rejectApproval(approval.requestId)
+                : null,
           ),
         ),
       if (plan != null) _buildPlan(plan, duration),

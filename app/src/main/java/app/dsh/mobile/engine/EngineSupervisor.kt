@@ -1,6 +1,8 @@
 package app.dsh.mobile.engine
 
 import app.dsh.mobile.R
+import app.dsh.mobile.coldentry.HostPhase
+import app.dsh.mobile.coldentry.HostSnapshot
 
 import android.content.Context
 import android.util.Log
@@ -61,6 +63,8 @@ class EngineSupervisor(private val ctx: Context) {
              * 「有些事我根本不知道是什么 bug」的那一类。
              */
             val degraded: Degraded? = null,
+            /** Opaque identity generated for this actual spawn; copy retains it. */
+            val bootId: String? = null,
         ) : State
 
         /** 安全模式：配置被隔离后以空配置拉起，功能受限但可用 */
@@ -69,6 +73,8 @@ class EngineSupervisor(private val ctx: Context) {
             val tokenUrl: String? = null,
             val recoveredPlugin: String? = null,
             val degraded: Degraded? = null,
+            /** Opaque identity generated for this actual spawn; copy retains it. */
+            val bootId: String? = null,
         ) : State
 
         /**
@@ -100,10 +106,24 @@ class EngineSupervisor(private val ctx: Context) {
             val diagnosis: app.dsh.mobile.engine.EngineTriage.Diagnosis? = null,
         ) : State
         data object Stopped : State
+
+        /** Phase, identity and loadability are projected from this ONE immutable publication. */
+        fun coldEntrySnapshot(): HostSnapshot = when (this) {
+            is Healthy -> HostSnapshot(bootId, HostPhase.Healthy, !tokenUrl.isNullOrBlank())
+            is SafeMode -> HostSnapshot(bootId, HostPhase.SafeMode, !tokenUrl.isNullOrBlank())
+            Idle -> HostSnapshot(null, HostPhase.Idle, false)
+            Installing -> HostSnapshot(null, HostPhase.Installing, false)
+            Starting -> HostSnapshot(null, HostPhase.Starting, false)
+            is Backoff -> HostSnapshot(null, HostPhase.Backoff, false)
+            is Failed -> HostSnapshot(null, HostPhase.Failed, false)
+            Stopped -> HostSnapshot(null, HostPhase.Stopped, false)
+        }
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
+    private val entryPublicationLock = Any()
+    private var entryBootId: String? = null
 
     /** 运行时解压进度 0f..1f；null = 不在解压中（UI 据此切换 indeterminate） */
     private val _installProgress = MutableStateFlow<Float?>(null)
@@ -181,6 +201,53 @@ class EngineSupervisor(private val ctx: Context) {
     // v1.4.16 审查 P2：以下四个字段被监督协程与主线程/服务线程并发读写，
     // 与 stopping/restarting 同理需要 @Volatile 保证可见性。
     @Volatile private var process: EngineProcess? = null
+    @Volatile private var launchedWorkspaceScope: NativeWorkspaceScope? = null
+
+    /** Immutable native metadata; missing persistence scope must not disable ordinary chat. */
+    class NativeHostSnapshot(
+        val state: State,
+        val webUrl: String,
+        val workspaceScope: NativeWorkspaceScope?,
+    ) {
+        val available: Boolean get() = webUrl.isNotEmpty()
+    }
+
+    /** Capture only published in-memory metadata here; callers perform I/O and channel replies outside the lock. */
+    fun nativeHostSnapshot(): NativeHostSnapshot = synchronized(entryPublicationLock) {
+        val proc = process
+        val scopeAllowed = proc != null && !stopping && !maintenanceStop && !proc.exitFuture.isDone
+        val publishedState = _state.value
+        val webUrl = when (publishedState) {
+            is State.Healthy -> publishedState.tokenUrl.orEmpty()
+            is State.SafeMode -> publishedState.tokenUrl.orEmpty()
+            else -> ""
+        }
+        val ready = publishedState.coldEntrySnapshot()
+        val bootId = ready.epoch?.takeIf { it.isNotBlank() }
+        val workspaceScope = if (scopeAllowed && ready.hasLoadableUrl && bootId != null && entryBootId == bootId) {
+            launchedWorkspaceScope?.takeIf { it.generation == bootId }
+        } else null
+        NativeHostSnapshot(publishedState, webUrl, workspaceScope)
+    }
+
+    /** Read ownership, readiness and scope under the same publication lock. */
+    fun nativeWorkspaceScope(): NativeWorkspaceScope? = synchronized(entryPublicationLock) {
+        val proc = process ?: return@synchronized null
+        if (stopping || maintenanceStop || proc.exitFuture.isDone) return@synchronized null
+        val ready = _state.value.coldEntrySnapshot()
+        val bootId = ready.epoch?.takeIf { it.isNotBlank() } ?: return@synchronized null
+        if (!ready.hasLoadableUrl || entryBootId != bootId) return@synchronized null
+        launchedWorkspaceScope?.takeIf { it.generation == bootId }
+    }
+
+    /** A late spawn must not overwrite the storage identity of a newer or stopped Host. */
+    private fun publishWorkspaceScope(bootId: String, domain: String?) {
+        synchronized(entryPublicationLock) {
+            if (entryBootId == bootId && !stopping && !maintenanceStop) {
+                launchedWorkspaceScope = domain?.let { NativeWorkspaceScope(it, bootId) }
+            }
+        }
+    }
     /** 启动前摘掉的插件名；恢复成功后的首个 Healthy 状态会带上它，随后清空。 */
     @Volatile private var recoveredPlugin: String? = null
     /** 本次引擎启动时 engine.log 的长度：extractTokenUrl 只搜此偏移之后的日志段 */
@@ -346,11 +413,15 @@ class EngineSupervisor(private val ctx: Context) {
         // EngineService.start() 与保活看门狗都被它拦住，引擎**永久不再启动**，
         // 直到用户手动点「重启」。用户感知是「打开 App 也不转、一直空转」。
         if (explicit) userStop = true
-        stopping = true
+        val proc = synchronized(entryPublicationLock) {
+            stopping = true
+            entryBootId = null
+            launchedWorkspaceScope = null
+            _state.value = State.Stopped
+            process.also { process = null }
+        }
         loopJob?.cancel()
-        val proc = process
         proc?.stop(graceMs)
-        process = null
         // v1.2.188（审查 P2）：stop() 只 cancel 不 join 监督循环 —— 若恰好在
         // spawnEngine() 的阻塞段里，已 fork 的 node 可能没有引用、无人 stop。
         // 这里补一次孤儿清理（端口占用检测 + 同 uid pkill），覆盖该窗口。
@@ -370,7 +441,7 @@ class EngineSupervisor(private val ctx: Context) {
                 if (killed > 0) Log.i(TAG, "explicit exit: reaped $killed orphan process(es)")
             }.onFailure { Log.w(TAG, "explicit exit orphan reap failed: ${it.message}") }
         }
-        _state.value = State.Stopped
+        // Invalidation was published before blocking cleanup; do not overwrite a newer spawn here.
         if (explicit) dispatchExplicitExit()
         // v1.4.26：给「是否真的停干净」一个确定的答案。上面的 cleanupOrphanEngine
         // 已经是尽力而为，这里再等一小段端口释放 —— 换运行时那种「文件要被整体
@@ -474,16 +545,16 @@ class EngineSupervisor(private val ctx: Context) {
     fun stopForMaintenance(graceMs: Long = 4_000) {
         maintenanceStop = true
         Log.i(TAG, "maintenance stop: halting engine before dsh-home surgery")
-        val proc = process
-        if (proc == null) {
+        val proc = synchronized(entryPublicationLock) {
+            entryBootId = null
             _state.value = State.Stopped
-            return
+            process.also { process = null }
         }
+        if (proc == null) return
         // 直接在当前线程等它退干净（调用方已在后台线程）
         runCatching { proc.stop(graceMs) }
             .onFailure { Log.w(TAG, "maintenance stop: ${it.message}") }
-        process = null
-        _state.value = State.Stopped
+        // Ownership and readiness were revoked before waiting; no late clear of a newer process.
         // 释放端口，避免重启时抢不到
         runCatching { reclaimPort() }
         Log.i(TAG, "maintenance stop: engine is down, safe to modify dsh-home")
@@ -943,6 +1014,10 @@ class EngineSupervisor(private val ctx: Context) {
                     )
                 }
                 val bootId = java.util.UUID.randomUUID().toString()
+                val ownsSpawn = synchronized(entryPublicationLock) {
+                    if (stopping || maintenanceStop) false else { entryBootId = bootId; true }
+                }
+                if (!ownsSpawn) break
                 // v1.5.0：内置「用户态插件」预装（mobile-layout 等）。
                 // 必须在这里：引擎此刻必定没在跑 —— `dsh plugin add` 会改写
                 // profiles/web/package.json，引擎运行中改会被退出时的写回吞掉。
@@ -953,7 +1028,24 @@ class EngineSupervisor(private val ctx: Context) {
                 step("profile-plugins")
                 mark("spawn")
                 val proc = withContext(Dispatchers.IO) { spawnEngine(bootId) }
-                process = proc
+                val attached = synchronized(entryPublicationLock) {
+                    if (entryBootId == bootId && !stopping && !maintenanceStop) {
+                        process = proc
+                        true
+                    } else false
+                }
+                if (!attached) {
+                    withContext(Dispatchers.IO) { proc.stop() }
+                    break
+                }
+                proc.exitFuture.whenComplete { _, _ ->
+                    synchronized(entryPublicationLock) {
+                        if (entryBootId == bootId && process === proc) {
+                            entryBootId = null
+                            _state.value = State.Starting
+                        }
+                    }
+                }
                 step("spawn")
 
                 mark("health-poll")
@@ -1075,9 +1167,18 @@ class EngineSupervisor(private val ctx: Context) {
                                     "capability(ies) missing — surfacing to UI so it is visible",
                             )
                         }
-                        _state.value =
-                            if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice, degradedNow)
-                            else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice, degradedNow)
+                        val published = synchronized(entryPublicationLock) {
+                            if (entryBootId == bootId && process === proc && !stopping && !maintenanceStop && !proc.exitFuture.isDone) {
+                                _state.value =
+                                    if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice, degradedNow, bootId)
+                                    else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice, degradedNow, bootId)
+                                true
+                            } else false
+                        }
+                        if (!published) {
+                            withContext(Dispatchers.IO) { proc.stop() }
+                            break
+                        }
                         // 新运行时首次 Healthy：确认安装成功，释放 engine.old 回滚备份。
                         runCatching { RuntimeInstaller(ctx).markHealthy() }
                             .onFailure { Log.w(TAG, "runtime markHealthy failed: ${it.message}") }
@@ -1351,6 +1452,7 @@ class EngineSupervisor(private val ctx: Context) {
         get() = process?.exitFuture?.takeIf { it.isDone }?.get()
 
     private fun spawnEngine(bootId: String): EngineProcess {
+        publishWorkspaceScope(bootId, null)
         // spawn 内部逐项打点：boot step 只报「spawn 合计」，不细分就看不出
         // 236ms 花在哪（本轮压缩冷启时正是靠这些数才知道 su 只占 20ms、
         // 大头在文件自愈与 patch 生成）。日志级别 D，正常使用不可见。
@@ -1475,7 +1577,9 @@ class EngineSupervisor(private val ctx: Context) {
                     // 容器直接以 App uid 起 —— 免 root 能力不受影响。
                     suPath = suPath,
                     override = EngineProcess.Companion.Override(argv = spec.argv, cwd = spec.cwd),
-                )
+                ).also {
+                    publishWorkspaceScope(bootId, spec.nativeWorkspaceDomain)
+                }
             }.onFailure { e ->
                 // 容器启动失败 → 回退原生（可观测，不静默）
                 Log.e(TAG, "linux container spawn failed, falling back to native: ${e.message}", e)
@@ -1497,11 +1601,14 @@ class EngineSupervisor(private val ctx: Context) {
         val nativeFlusher = runCatching {
             EngineConfig.deployCompileCacheFlusher(ctx, forContainer = false)
         }.getOrNull()
+        val nativeEnv = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT, bootId)
+        val nativeDomain = nativeEnv.singleOrNull { it.startsWith("DSH_HOME=") }
+            ?.substringAfter('=')?.let { NativeWorkspaceScope.domain("android-posix", File(it)) }
         return EngineProcess.spawn(
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
             cwd = EngineConfig.workspaces(ctx),
-            env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT, bootId),
+            env = nativeEnv,
             logFile = logFile(),
             suPath = suPath,
             patchPaths = patchPaths,
@@ -1514,7 +1621,9 @@ class EngineSupervisor(private val ctx: Context) {
                 add(EngineConfig.engineHeapFlag(ctx))
                 nativeFlusher?.let { add("--require"); add(it) }
             },
-        )
+        ).also {
+            publishWorkspaceScope(bootId, nativeDomain)
+        }
     }
 
     /** 最近一次 Linux 容器启动失败的原因（回退原生时留痕，供 UI/日志排查） */

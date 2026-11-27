@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+const double _scrollSpeed = 28;
+const Duration _pause = Duration(milliseconds: 1500);
+
 /// A single-line title that pans only when its measured text exceeds its width.
 class OverflowTitle extends StatefulWidget {
   const OverflowTitle({
@@ -10,9 +13,11 @@ class OverflowTitle extends StatefulWidget {
     this.style,
     this.textAlign = TextAlign.start,
   });
+
   final String text;
   final TextStyle? style;
   final TextAlign textAlign;
+
   @override
   State<OverflowTitle> createState() => _OverflowTitleState();
 }
@@ -21,11 +26,14 @@ class _OverflowTitleState extends State<OverflowTitle>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _controller;
   Object? _configuration;
-  double _distance = 0, _travelSeconds = 0;
-  bool _foreground = true, _tickerEnabled = true, _reduceMotion = false;
+  double _textWidth = 0;
+  double _gap = 0;
+  double _travelSeconds = 0;
+  Timer? _pauseTimer;
+  bool _foreground = true;
+  bool _tickerEnabled = true;
+  bool _reduceMotion = false;
   bool _restartPending = false;
-  int _generation = 0;
-  int? _activeGeneration;
 
   @override
   void initState() {
@@ -34,6 +42,7 @@ class _OverflowTitleState extends State<OverflowTitle>
       vsync: this,
       animationBehavior: AnimationBehavior.preserve,
     );
+    _controller.addStatusListener(_onAnimationStatus);
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
@@ -54,77 +63,63 @@ class _OverflowTitleState extends State<OverflowTitle>
   }
 
   void _syncMotion() {
-    final reset = _reduceMotion || _distance <= 0;
+    final reset = _reduceMotion || _travelSeconds <= 0;
     if (reset || !_foreground || !_tickerEnabled || _restartPending) {
       _cancelMotion(reset: reset);
-    } else if (_activeGeneration == null) {
-      final generation = _generation;
-      _activeGeneration = generation;
-      unawaited(_play(generation));
+      return;
+    }
+    if (_controller.isAnimating || _pauseTimer != null) return;
+    if (_controller.value == 0) {
+      _pauseTimer = Timer(_pause, () {
+        _pauseTimer = null;
+        _controller.forward();
+      });
+    } else {
+      _controller.forward();
     }
   }
 
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    // The second copy is now exactly where the first copy started.
+    _controller.value = 0;
+    _syncMotion();
+  }
+
   void _cancelMotion({bool reset = false}) {
-    _generation++;
-    _activeGeneration = null;
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
     _controller.stop();
     if (reset && _controller.value != 0) _controller.value = 0;
   }
 
-  Future<void> _play(int generation) async {
-    try {
-      while (mounted && generation == _generation) {
-        final remaining = (3 + 2 * _travelSeconds) * (1 - _controller.value);
-        await _controller
-            .animateTo(
-              1,
-              duration: Duration(microseconds: (remaining * 1000000).round()),
-            )
-            .orCancel;
-        if (generation != _generation) return;
-        _controller.value = 0;
-      }
-    } on TickerCanceled {
-      // stop() deliberately cancels this generation during pause or rebuild.
-    } finally {
-      if (_activeGeneration == generation) _activeGeneration = null;
-    }
-  }
-
-  void _configure(Object configuration, double distance) {
-    if (_configuration == configuration && _distance == distance) return;
+  void _configure(Object configuration, double textWidth, double gap) {
+    final travel = textWidth <= 0 ? 0.0 : (textWidth + gap) / _scrollSpeed;
+    if (_configuration == configuration && _travelSeconds == travel) return;
     _configuration = configuration;
-    _distance = distance;
-    _travelSeconds = distance / 28;
+    _textWidth = textWidth;
+    _gap = gap;
+    _travelSeconds = travel;
     if (_restartPending) return;
     _restartPending = true;
-    _generation++;
-    _activeGeneration = null;
-    // Layout only records geometry; controller notifications happen after layout.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _restartPending = false;
-      _controller.stop();
-      _controller.value = 0;
+      _cancelMotion(reset: true);
+      _controller.duration = Duration(microseconds: (_travelSeconds * 1000000).round());
       _syncMotion();
     });
   }
 
-  double get _progress {
-    if (_restartPending || _reduceMotion || _distance <= 0) return 0;
-    final seconds = _controller.value * (3 + 2 * _travelSeconds);
-    if (seconds < 1.5) return 0;
-    if (seconds < 1.5 + _travelSeconds) {
-      return (seconds - 1.5) / _travelSeconds;
-    }
-    if (seconds < 3 + _travelSeconds) return 1;
-    return (3 + 2 * _travelSeconds - seconds) / _travelSeconds;
+  double get _offset {
+    if (_restartPending || _reduceMotion || _travelSeconds <= 0) return 0;
+    return _controller.value * (_textWidth + _gap);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _generation++;
+    _pauseTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -155,24 +150,39 @@ class _OverflowTitleState extends State<OverflowTitle>
           )..layout();
           final textWidth = painter.width;
           final height = painter.height;
+          final gap = TextPainter(
+            text: TextSpan(text: '  ', style: style),
+            textDirection: direction,
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          final gapWidth = gap.width;
           painter.dispose();
+          gap.dispose();
           final width = constraints.hasBoundedWidth
               ? constraints.maxWidth
               : constraints.constrainWidth(textWidth);
-          final distance = width > 0
-              ? (textWidth - width).clamp(0.0, double.infinity).toDouble()
-              : 0.0;
-          _configure((
-            widget.text,
-            style,
-            widget.textAlign,
-            direction,
-            scaler,
-            width,
-          ), distance);
+          final overflowing = width > 0 && textWidth > width;
+          _configure(
+            (widget.text, style, widget.textAlign, direction, scaler, width),
+            overflowing ? textWidth : 0,
+            gapWidth,
+          );
           final text = RichText(
             text: span,
             textAlign: widget.textAlign,
+            textDirection: direction,
+            textScaler: scaler,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.clip,
+          );
+          if (!overflowing) {
+            return SizedBox(width: width, height: height, child: text);
+          }
+          final copy = RichText(
+            text: span,
+            textAlign: TextAlign.start,
             textDirection: direction,
             textScaler: scaler,
             maxLines: 1,
@@ -185,20 +195,28 @@ class _OverflowTitleState extends State<OverflowTitle>
             child: ClipRect(
               child: OverflowBox(
                 alignment: AlignmentDirectional.centerStart,
-                minWidth: distance > 0 ? textWidth : width,
-                maxWidth: distance > 0 ? textWidth : width,
+                minWidth: textWidth * 2 + gapWidth,
+                maxWidth: textWidth * 2 + gapWidth,
                 child: AnimatedBuilder(
                   animation: _controller,
-                  child: text,
-                  builder: (context, child) => Transform.translate(
-                    offset: Offset(
-                      (direction == TextDirection.rtl ? 1 : -1) *
-                          _distance *
-                          _progress,
-                      0,
-                    ),
-                    child: child,
-                  ),
+                  builder: (context, _) {
+                    final offset = _offset;
+                    final signed = direction == TextDirection.rtl
+                        ? offset
+                        : -offset;
+                    return Transform.translate(
+                      offset: Offset(signed, 0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        textDirection: direction,
+                        children: [
+                          text,
+                          SizedBox(width: gapWidth),
+                          copy,
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

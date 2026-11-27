@@ -28,6 +28,7 @@ class ComposerViewport extends StatelessWidget {
         key: scrollKey,
         reverse: true,
         child: Padding(
+          key: const ValueKey('composer-viewport-content'),
           padding: EdgeInsets.fromLTRB(gutter - 2, 8, gutter - 2, 12),
           child: Center(
             child: ConstrainedBox(
@@ -54,11 +55,15 @@ class ComposerSurface extends StatelessWidget {
     this.onSubmitted,
     this.onChanged,
     this.leading = const [],
+    this.inputTrailing,
+    this.maxInputLines = 6,
   });
   final TextEditingController textController;
   final Key inputKey;
   final String hintText;
   final List<Widget> controls, leading;
+  final Widget? inputTrailing;
+  final int maxInputLines;
   final FocusNode? focusNode;
   final VoidCallback? onSubmitted;
 
@@ -77,35 +82,50 @@ class ComposerSurface extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ...leading,
-          TextField(
-            key: inputKey,
-            controller: textController,
-            focusNode: focusNode,
-            enabled: true,
-            minLines: 1,
-            maxLines: 6,
-            keyboardType: TextInputType.multiline,
-            cursorColor: DshPalette.of(context).ink,
-            style: TextStyle(
-              fontSize: 17,
-              height: 1.5,
-              color: DshPalette.of(context).ink,
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: DshDisplayScope.minTargetOf(context),
             ),
-            decoration: InputDecoration(
-              hintText: hintText,
-              hintStyle: TextStyle(color: DshPalette.of(context).inkFaint),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              disabledBorder: InputBorder.none,
-              filled: false,
-              isDense: true,
-              contentPadding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: inputKey,
+                    controller: textController,
+                    focusNode: focusNode,
+                    enabled: true,
+                    minLines: 1,
+                    maxLines: maxInputLines,
+                    keyboardType: TextInputType.multiline,
+                    cursorColor: DshPalette.of(context).ink,
+                    style: TextStyle(
+                      fontSize: 17,
+                      height: 1.5,
+                      color: DshPalette.of(context).ink,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: hintText,
+                      hintStyle: TextStyle(
+                        color: DshPalette.of(context).inkFaint,
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      filled: false,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                    ),
+                    onChanged: onChanged,
+                    onSubmitted: onSubmitted == null
+                        ? null
+                        : (_) => onSubmitted!(),
+                  ),
+                ),
+                ?inputTrailing,
+              ],
             ),
-            onChanged: onChanged,
-            onSubmitted: onSubmitted == null ? null : (_) => onSubmitted!(),
           ),
-          const SizedBox(height: 14),
           Row(children: controls),
         ],
       ),
@@ -175,14 +195,14 @@ class ComposerActionButton extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : Container(
-                width: 36,
-                height: 36,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: DshPalette.of(context).ink.withValues(alpha: .10),
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
-                child: const Icon(Icons.stop_rounded, size: 20),
+                child: const Icon(Icons.stop_rounded, size: 21),
               ),
       );
     }
@@ -201,8 +221,8 @@ class ComposerActionButton extends StatelessWidget {
           padding: EdgeInsets.zero,
         ),
         icon: Container(
-          width: 36,
-          height: 36,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: !waitingOnlyStop && canSend && hasContent
                 ? DshPalette.of(context).sendBlue
@@ -210,7 +230,7 @@ class ComposerActionButton extends StatelessWidget {
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
-          child: const Icon(Icons.arrow_upward_rounded, size: 20),
+          child: const Icon(Icons.arrow_upward_rounded, size: 21),
         ),
       ),
     );

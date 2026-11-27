@@ -1,10 +1,35 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../model/engine_session.dart';
+import '../model/engine_workspace.dart';
 import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import 'overflow_title.dart';
 import 'settings/account_footer.dart';
+
+/// The hosted drawer receives live grouping without coupling the ChatShell
+/// to the workspace feed or its connection lifecycle.
+class SessionWorkspaceScope extends InheritedWidget {
+  const SessionWorkspaceScope({
+    super.key,
+    required this.catalog,
+    required this.online,
+    required this.error,
+    required this.onCreate,
+    required super.child,
+  });
+
+  final EngineWorkspaceCatalog catalog;
+  final bool online;
+  final String? error;
+  final ValueChanged<EngineWorkspace?>? onCreate;
+
+  static SessionWorkspaceScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SessionWorkspaceScope>();
+
+  @override
+  bool updateShouldNotify(SessionWorkspaceScope oldWidget) => true;
+}
 
 /// Session navigation over the Host's real Session catalogue.
 ///
@@ -52,6 +77,7 @@ class SessionDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final workspaces = SessionWorkspaceScope.maybeOf(context);
     final width = MediaQuery.sizeOf(context).width;
     final title = (currentTitle == null || currentTitle!.trim().isEmpty)
         ? '新的对话'
@@ -64,18 +90,19 @@ class SessionDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 品牌标题固定且克制；当前会话名称保留在列表首行，避免重复占据顶部。
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 8, 6),
+              padding: const EdgeInsets.fromLTRB(20, 14, 8, 4),
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'DSH',
+                    child: OverflowTitle(
+                      key: const ValueKey('drawer-title'),
+                      text: 'DSH Mobile',
                       style: TextStyle(
                         color: DshPalette.of(context).ink,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -87,16 +114,17 @@ class SessionDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
-              child: Text(
-                isFixture ? '本机演示 · 尚未连接真实引擎' : '本机引擎',
-                style: TextStyle(
-                  color: DshPalette.of(context).inkFaint,
-                  fontSize: 12,
+            if (isFixture)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+                child: Text(
+                  '本机演示 · 尚未连接真实引擎',
+                  style: TextStyle(
+                    color: DshPalette.of(context).inkFaint,
+                    fontSize: 12,
+                  ),
                 ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: TextButton.icon(
@@ -119,7 +147,7 @@ class SessionDrawer extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(22, 18, 22, 8),
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 4),
               child: Row(
                 children: [
                   Expanded(
@@ -152,8 +180,18 @@ class SessionDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            Flexible(
-              flex: 2,
+            if (workspaces?.error case final error?)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 4),
+                child: Text(
+                  error,
+                  style: TextStyle(
+                    color: DshPalette.of(context).bad,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            Expanded(
               child: _SessionList(
                 sessions: sessions,
                 currentSessionId: currentSessionId,
@@ -162,136 +200,52 @@ class SessionDrawer extends StatelessWidget {
                 error: sessionsError,
                 onOpen: onOpenSession,
                 onRetry: onRefreshSessions,
+                workspaceScope: workspaces,
               ),
             ),
+            // 抽屉只留「新建会话 + 会话列表」：工具展示、引擎跳转这类入口
+            // 不属于「我在哪个会话」，混进来只会让列表变矮。
             if (onShowcase != null)
-              ListTile(
-                key: const ValueKey('tool-showcase'),
-                leading: const Icon(Icons.widgets_outlined, size: 20),
-                title: const Text('工具展示演示', style: TextStyle(fontSize: 14)),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onShowcase!();
-                },
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 4, 22, 0),
+                child: TextButton(
+                  key: const ValueKey('tool-showcase'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    onShowcase!();
+                  },
+                  child: const Text('工具展示演示'),
+                ),
               ),
             if (onOpenEngineSessions != null)
-              ListTile(
-                key: const ValueKey('engine-sessions'),
-                leading: const Icon(Icons.hub_outlined),
-                title: Text(sessionsLabel),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onOpenEngineSessions!();
-                },
-              ),
-            const Spacer(),
-            if (DshAppearance.maybeOf(context) case final appearance?)
-              PopupMenuButton<ThemeMode>(
-                key: const ValueKey('theme-selector'),
-                tooltip: '外观',
-                onSelected: appearance.onChanged,
-                itemBuilder: (context) => [
-                  for (final mode in ThemeMode.values)
-                    PopupMenuItem<ThemeMode>(
-                      key: ValueKey('theme-' + mode.name),
-                      value: mode,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(switch (mode) {
-                              ThemeMode.light => '浅色',
-                              ThemeMode.dark => '深色',
-                              ThemeMode.system => '跟随系统',
-                            }),
-                          ),
-                          if (appearance.mode == mode)
-                            const Icon(Icons.check_rounded, size: 18),
-                        ],
-                      ),
-                    ),
-                ],
-                child: ListTile(
-                  leading: const Icon(Icons.palette_outlined),
-                  title: const Text('外观'),
-                  subtitle: Text(switch (appearance.mode) {
-                    ThemeMode.light => '浅色',
-                    ThemeMode.dark => '深色',
-                    ThemeMode.system => '跟随系统',
-                  }),
-                  trailing: const Icon(Icons.unfold_more_rounded, size: 18),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 4),
+                child: TextButton(
+                  key: const ValueKey('engine-sessions'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    onOpenEngineSessions!();
+                  },
+                  child: Text(sessionsLabel),
                 ),
               ),
-            if (DshAppearance.maybeOf(context) case final appearance?)
-              PopupMenuButton<DshMood>(
-                key: const ValueKey('mood-selector'),
-                tooltip: '配色',
-                onSelected: appearance.onMoodChanged,
-                itemBuilder: (context) => [
-                  for (final mood in DshMood.values)
-                    PopupMenuItem<DshMood>(
-                      key: ValueKey('mood-' + mood.name),
-                      value: mood,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              color: DshPalette.colorsFor(
-                                mood,
-                                Theme.of(context).brightness,
-                              ).userWash,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: DshPalette.colorsFor(
-                                  mood,
-                                  Theme.of(context).brightness,
-                                ).ice,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(mood.label)),
-                          if (appearance.mood == mood)
-                            const Icon(Icons.check_rounded, size: 18),
-                        ],
-                      ),
-                    ),
-                ],
-                child: ListTile(
-                  leading: const Icon(Icons.color_lens_outlined),
-                  title: const Text('自然配色'),
-                  subtitle: Text(appearance.mood.label),
-                  trailing: const Icon(Icons.unfold_more_rounded, size: 18),
-                ),
-              ),
+            // 外观与自然配色已经搬进「设置 · 个性化主题」，这里不再重复一份：
+            // 同一个开关有两个入口，两边显示的当前值迟早会不一致。
             if (onOpenSettings != null)
               AccountFooter(onOpenSettings: onOpenSettings!),
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
-              child: Text(
-                isFixture
-                    ? '演示数据 · 尚未连接真实引擎'
-                    : (sessionsError == null ? '会话来自本机引擎' : '会话列表读取失败'),
-                style: TextStyle(
-                  color: DshPalette.of(context).inkFaint,
-                  fontSize: 12,
-                  height: 1.5,
-                ),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
 }
+
 /// The catalogue rows plus their loading, empty, and failure states.
 ///
 /// A failure keeps the retry entry instead of rendering an empty success: an
 /// unreadable catalogue is reported as such.
-class _SessionList extends StatelessWidget {
+class _SessionList extends StatefulWidget {
   const _SessionList({
     required this.sessions,
     required this.currentSessionId,
@@ -300,6 +254,7 @@ class _SessionList extends StatelessWidget {
     required this.error,
     required this.onOpen,
     required this.onRetry,
+    required this.workspaceScope,
   });
 
   final List<EngineSession> sessions;
@@ -309,11 +264,20 @@ class _SessionList extends StatelessWidget {
   final String? error;
   final ValueChanged<EngineSession>? onOpen;
   final VoidCallback? onRetry;
+  final SessionWorkspaceScope? workspaceScope;
+
+  @override
+  State<_SessionList> createState() => _SessionListState();
+}
+
+class _SessionListState extends State<_SessionList> {
+  final _collapsed = <String>{};
 
   @override
   Widget build(BuildContext context) {
     final palette = DshPalette.of(context);
-    if (error != null && sessions.isEmpty) {
+    final error = widget.error;
+    if (error != null && widget.sessions.isEmpty) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
         child: Column(
@@ -321,38 +285,125 @@ class _SessionList extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              error!,
+              error,
               key: const ValueKey('sessions-error'),
               style: TextStyle(color: palette.bad, fontSize: 12.5, height: 1.5),
             ),
-            if (onRetry != null)
+            if (widget.onRetry != null)
               TextButton(
                 key: const ValueKey('sessions-retry'),
-                onPressed: loading ? null : onRetry,
+                onPressed: widget.loading ? null : widget.onRetry,
                 child: const Text('重试'),
               ),
           ],
         ),
       );
     }
-    if (sessions.isEmpty) {
+    final scope = widget.workspaceScope;
+    final workspaces = scope?.catalog.workspaces ?? const <EngineWorkspace>[];
+    if (widget.sessions.isEmpty && workspaces.isEmpty) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
         child: Text(
-          loading ? '正在读取会话…' : '还没有会话，新建一个就开始吧',
+          widget.loading ? '正在读取会话…' : '还没有会话，新建一个就开始吧',
           style: TextStyle(color: palette.inkFaint, fontSize: 12.5),
         ),
       );
     }
+    final byId = {for (final row in widget.sessions) row.id: row};
+    final archived = scope?.catalog.archived ?? const <String>{};
+    final listed = <String>{};
+    final entries = <({EngineWorkspace? workspace, EngineSession? session})>[];
+    for (final workspace in workspaces) {
+      entries.add((workspace: workspace, session: null));
+      final collapsed = _collapsed.contains(workspace.id);
+      for (final id in workspace.sessionIds) {
+        final session = byId[id];
+        if (session != null && !archived.contains(id) && listed.add(id)) {
+          if (!collapsed) entries.add((workspace: null, session: session));
+        }
+      }
+    }
+    final ungrouped = widget.sessions.where(
+      (row) => !archived.contains(row.id) && !listed.contains(row.id),
+    );
+    if (workspaces.isNotEmpty && ungrouped.isNotEmpty) {
+      entries.add((workspace: null, session: null));
+    }
+    entries.addAll(ungrouped.map((row) => (workspace: null, session: row)));
     return ListView.builder(
       key: const ValueKey('session-rows'),
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      itemCount: sessions.length,
+      itemCount: entries.length,
       itemBuilder: (context, index) {
-        final row = sessions[index];
-        final current = row.id == currentSessionId;
+        final entry = entries[index];
+        final row = entry.session;
+        if (row == null) {
+          final workspace = entry.workspace;
+          final label = workspace?.title ?? '未分组';
+          final create = scope?.online == true ? scope?.onCreate : null;
+          final workspaceId = workspace?.id ?? 'ungrouped';
+          final collapsed =
+              workspace != null && _collapsed.contains(workspace.id);
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              key: ValueKey('workspace-collapse-' + workspaceId),
+              onTap: workspace == null
+                  ? null
+                  : () => setState(() {
+                      if (collapsed) {
+                        _collapsed.remove(workspace.id);
+                      } else {
+                        _collapsed.add(workspace.id);
+                      }
+                    }),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      collapsed
+                          ? Icons.chevron_right_rounded
+                          : Icons.expand_more_rounded,
+                      size: 18,
+                      color: palette.inkFaint,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          label,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.inkFaint,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: ValueKey('new-session-workspace-' + workspaceId),
+                      tooltip: '在「' + label + '」新建会话',
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      onPressed: create == null
+                          ? null
+                          : () {
+                              Navigator.of(context).pop();
+                              create(workspace);
+                            },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        final current = row.id == widget.currentSessionId;
         final name = current && (row.title ?? '').trim().isEmpty
-            ? currentTitle
+            ? widget.currentTitle
             : row.displayName;
         return Padding(
           padding: const EdgeInsets.only(bottom: 2),
@@ -362,11 +413,11 @@ class _SessionList extends StatelessWidget {
             child: InkWell(
               key: ValueKey('session-row-' + row.id),
               borderRadius: BorderRadius.circular(9),
-              onTap: onOpen == null
+              onTap: widget.onOpen == null || !row.openable
                   ? null
                   : () {
                       Navigator.of(context).pop();
-                      onOpen!(row);
+                      widget.onOpen!(row);
                     },
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -395,7 +446,9 @@ class _SessionList extends StatelessWidget {
                         style: TextStyle(
                           color: current ? palette.ink : palette.inkSoft,
                           fontSize: 14,
-                          fontWeight: current ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: current
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                     ),

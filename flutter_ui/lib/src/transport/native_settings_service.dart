@@ -5,9 +5,9 @@ import '../state/settings_controller.dart';
 import 'dsh_rpc_connection.dart';
 import 'local_usage_reader.dart';
 
-/// Client-safe account RPC only. Platform credentials remain in the DSH Host.
+/// Platform credentials remain in the DSH Host.
 class NativeSettingsService
-    implements SettingsService, CancelableSignIn, AccountUsageLink {
+    implements SettingsService, CancelableSignIn, AccountUsageLink, ModelProviderSettings {
   NativeSettingsService({
     required this.rpc,
     required this.callbackOrigin,
@@ -50,6 +50,238 @@ class NativeSettingsService
             uri.userInfo.isEmpty
         ? uri
         : null;
+  }
+
+  static const _providerNamespace = 'llm-pi-ai';
+  static final _credentialPattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+  @override
+  Future<ProviderSettingsSnapshot?> loadModelProviders() async {
+    final raw = await rpc.call('settings/describe', {});
+    if (raw is! Map || raw['namespaces'] is! List) {
+      throw const FormatException('Invalid Host settings');
+    }
+    for (final section in raw['namespaces'] as List) {
+      if (section is! Map || section['ns'] != _providerNamespace) continue;
+      final revision = section['revision'], value = section['value'];
+      if (revision is! int || revision < 0 || value is! Map ||
+          value['providers'] is! Map) {
+        throw const FormatException('Invalid Host provider settings');
+      }
+      final providers = <ModelProviderProfile>[];
+      for (final entry in (value['providers'] as Map).entries) {
+        final route = entry.key, fields = entry.value;
+        if (route is! String || fields is! Map) {
+          throw const FormatException('Invalid Host provider');
+        }
+        final models = fields['models'];
+        final ref = fields['apiKeyEnv'];
+        providers.add(ModelProviderProfile(
+          route: route,
+          api: fields['api'] is String ? fields['api'] as String : '',
+          baseUrl: fields['baseURL'] is String ? fields['baseURL'] as String : '',
+          models: List.unmodifiable([
+            if (models is List)
+              for (final entry in models)
+                if (entry is Map && entry['id'] is String) entry['id'] as String,
+          ]),
+          credentialRef: ref is String && _credentialPattern.hasMatch(ref) ? ref : null,
+        ));
+      }
+      return (revision: revision, writable: raw['writable'] == true,
+          providers: List<ModelProviderProfile>.unmodifiable(providers));
+    }
+    return null;
+  }
+
+  @override
+  Future<void> addModelProvider(
+    ProviderSettingsSnapshot snapshot,
+    ModelProviderProfile profile,
+  ) async {
+    final endpoint = _publicUri(profile.baseUrl);
+    final ref = profile.credentialRef;
+    if (!snapshot.writable || snapshot.providers.any((p) => p.route == profile.route)) {
+      throw StateError('Provider cannot be created');
+    }
+    if (!ModelProviderProfile.routePattern.hasMatch(profile.route) ||
+        !ModelProviderProfile.protocols.contains(profile.api) || endpoint == null ||
+        endpoint.hasQuery || endpoint.hasFragment ||
+        profile.models.isEmpty || profile.models.any((id) => id.trim().isEmpty) ||
+        profile.models.toSet().length != profile.models.length ||
+        (ref != null && !_credentialPattern.hasMatch(ref))) {
+      throw const FormatException('Invalid provider configuration');
+    }
+    final result = await rpc.call('settings/mutate', {
+      'ns': _providerNamespace,
+      'expectedRevision': snapshot.revision,
+      'ops': [
+        {
+          'op': 'set',
+          'path': ['providers', profile.route],
+          'value': {
+            'api': profile.api,
+            'baseURL': profile.baseUrl,
+            'models': [for (final id in profile.models) {'id': id}],
+            'apiKeyEnv': ?ref,
+          },
+        },
+      ],
+    });
+    final value = result is Map ? result['value'] : null;
+    final routes = value is Map ? value['providers'] : null;
+    if (result is! Map || result['ns'] != _providerNamespace ||
+        routes is! Map || !routes.containsKey(profile.route)) {
+      throw const FormatException('Host did not confirm the provider');
+    }
+  }
+
+  Future<Map> _mutateProviders(
+    ProviderSettingsSnapshot snapshot,
+    List<Map<String, Object?>> ops,
+  ) async {
+    final result = await rpc.call('settings/mutate', {
+      'ns': _providerNamespace,
+      'expectedRevision': snapshot.revision,
+      'ops': ops,
+    });
+    final value = result is Map ? result['value'] : null;
+    final routes = value is Map ? value['providers'] : null;
+    if (result is! Map || result['ns'] != _providerNamespace || routes is! Map) {
+      throw const FormatException('Invalid Host provider acknowledgement');
+    }
+    return routes;
+  }
+
+  @override
+  Future<void> updateModelProvider(
+    ProviderSettingsSnapshot snapshot,
+    ModelProviderProfile profile,
+  ) async {
+    final previous = snapshot.providers.where((p) => p.route == profile.route).firstOrNull;
+    if (!snapshot.writable || previous == null) {
+      throw StateError('Provider cannot be edited');
+    }
+    final endpoint = _providerEndpoint(profile.baseUrl);
+    final ref = profile.credentialRef;
+    if ((profile.baseUrl != previous.baseUrl && endpoint == null) ||
+        (profile.api != previous.api && !ModelProviderProfile.protocols.contains(profile.api)) ||
+        profile.models.any((id) => id.trim().isEmpty) ||
+        profile.models.toSet().length != profile.models.length ||
+        (ref != null && !_credentialPattern.hasMatch(ref))) {
+      throw const FormatException('Invalid provider configuration');
+    }
+
+    // A versioned re-read supplies exact model records, not just the IDs the form shows.
+    final current = await rpc.call('settings/describe', {});
+    final sections = current is Map ? current['namespaces'] : null;
+    final section = sections is List
+        ? sections.whereType<Map>().where((n) => n['ns'] == _providerNamespace).firstOrNull
+        : null;
+    final value = section?['value'];
+    final routes = value is Map ? value['providers'] : null;
+    final fields = routes is Map ? routes[profile.route] : null;
+    if (current is! Map || current['writable'] != true ||
+        section?['revision'] != snapshot.revision || fields is! Map) {
+      throw const DshRpcException('settings/conflict', 'Provider settings changed');
+    }
+    final changesRef = ref != null && ref != previous.credentialRef;
+    final oldEndpoint = _providerEndpoint(previous.baseUrl);
+    final changesDestination = (profile.baseUrl != previous.baseUrl &&
+        (oldEndpoint == null || endpoint?.origin != oldEndpoint.origin)) ||
+        profile.api != previous.api;
+    if ((changesRef && (endpoint == null || !_canSendProviderKey(endpoint))) ||
+        (changesDestination &&
+            ((fields['headers'] is Map && (fields['headers'] as Map).isNotEmpty) ||
+                (fields['apiKeyEnv'] != null && !changesRef)))) {
+      throw const DshRpcException(
+        'settings/provider-destination', 'Existing authorization cannot be sent to the new destination',
+      );
+    }
+    final storedModels = fields['models'];
+    final records = <String, Map>{
+      if (storedModels is List)
+        for (final record in storedModels.whereType<Map>())
+          if (record['id'] is String) record['id'] as String: record,
+    };
+    final values = <String, Object?>{
+      if (profile.api != previous.api) 'api': profile.api,
+      if (profile.baseUrl != previous.baseUrl) 'baseURL': profile.baseUrl,
+      if (profile.models.length != previous.models.length ||
+          !profile.models.asMap().entries.every((e) => previous.models[e.key] == e.value))
+        'models': [for (final id in profile.models) records[id] ?? {'id': id}],
+      if (changesRef) 'apiKeyEnv': ref,
+    };
+    if (values.isEmpty) return;
+    final updated = await _mutateProviders(snapshot, [
+      for (final entry in values.entries)
+        {'op': 'set', 'path': ['providers', profile.route, entry.key], 'value': entry.value},
+    ]);
+    if (updated[profile.route] is! Map) {
+      throw const FormatException('Host did not confirm the provider edit');
+    }
+  }
+
+  @override
+  Future<void> removeModelProvider(ProviderSettingsSnapshot snapshot, String route) async {
+    if (!snapshot.writable || !snapshot.providers.any((p) => p.route == route)) {
+      throw StateError('Provider cannot be removed');
+    }
+    // The reference can be shared by another provider or namespace.
+    final routes = await _mutateProviders(snapshot, [
+      {'op': 'unset', 'path': ['providers', route]},
+    ]);
+    if (routes.containsKey(route)) {
+      throw const FormatException('Host did not confirm provider removal');
+    }
+  }
+
+  static Uri? _providerEndpoint(String url) {
+    final endpoint = _publicUri(url);
+    return endpoint == null || endpoint.hasQuery || endpoint.hasFragment ? null : endpoint;
+  }
+
+  static bool _canSendProviderKey(Uri endpoint) => endpoint.scheme == 'https' ||
+      const ['127.0.0.1', '::1', 'localhost'].contains(endpoint.host);
+
+  @override
+  Future<List<String>> discoverProviderModels({
+    required String baseUrl,
+    required String api,
+    String? apiKey,
+  }) async {
+    final endpoint = _providerEndpoint(baseUrl);
+    if (endpoint == null || !ModelProviderProfile.protocols.contains(api) ||
+        (apiKey != null && (apiKey.isEmpty || !_canSendProviderKey(endpoint)))) {
+      throw const FormatException('Invalid model discovery configuration');
+    }
+    final raw = await rpc.call('llm/discoverModels', {
+      'settingsNs': _providerNamespace,
+      'request': {'baseURL': baseUrl, 'api': api, 'apiKey': ?apiKey},
+    });
+    if (raw is! List || raw.length > 10000) {
+      throw const FormatException('Invalid model directory');
+    }
+    final ids = <String>{};
+    for (final item in raw) {
+      final id = item is Map ? item['id'] : null;
+      if (id is! String || id.trim().isEmpty || id.trim() != id ||
+          id.contains(RegExp(r'[,，\r\n]'))) {
+        throw const FormatException('Invalid model directory entry');
+      }
+      ids.add(id);
+    }
+    return ids.toList(growable: false);
+  }
+
+  @override
+  Future<void> setModelProviderKey(String reference, String value) async {
+    if (!_credentialPattern.hasMatch(reference) || value.isEmpty) {
+      throw const FormatException('Invalid credential input');
+    }
+    if (await rpc.call('credentials/set', {'ref': reference, 'value': value}) != null) {
+      throw const FormatException('Invalid credential acknowledgement');
+    }
   }
 
   @override

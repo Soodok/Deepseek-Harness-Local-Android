@@ -132,6 +132,7 @@ class RuntimeInstaller(private val ctx: Context) {
         if (complete) {
             // noruntime 版本可长期复用旧磁盘；先修复/确认前端 polyfill，再启动引擎。
             WebViewPolyfill.healInstalled(ctx)
+            WorkspaceSessionVisibility.healInstalled(ctx)
             // 前端语法高亮的启动预热挪到空闲时段（见 FrontendWarmup 的实测说明）。
             FrontendWarmup.healInstalled(ctx)
             val installed = readInstalled()
@@ -1005,6 +1006,7 @@ class RuntimeInstaller(private val ctx: Context) {
             }
             // Also cover first install and explicit runtime updates before the new index is served.
             WebViewPolyfill.healInstalled(ctx)
+            WorkspaceSessionVisibility.healInstalled(ctx)
             FrontendWarmup.healInstalled(ctx)
             assetZip.delete()
             Log.i(TAG, "runtime installed at $root (${entries.size} top-level entries)")

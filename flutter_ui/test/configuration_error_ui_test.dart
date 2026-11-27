@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -14,7 +16,79 @@ class EmptyModelsSession extends SessionFixture {
   List<ComposerModel> get models => const [];
 }
 
+class OpeningSession extends SessionFixture {
+  final connection = Completer<void>();
+
+  @override
+  Future<void> connect() async {
+    publish(const ComposerConfiguration());
+    await connection.future;
+    await super.connect();
+  }
+}
+
 void main() {
+  testWidgets('an unread session permission does not interrupt connection', (
+    tester,
+  ) async {
+    final transport = OpeningSession();
+    final controller = ChatController(transport);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.dark(),
+        home: ChatShell(controller: controller),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.state.status, ChatStatus.connecting);
+    expect(controller.canSend, isFalse);
+    expect(find.text('请确认会话权限'), findsNothing);
+
+    transport.publish(
+      const ComposerConfiguration(permissionPreset: 'read-only'),
+    );
+    transport.connection.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(controller.state.status, ChatStatus.ready);
+    expect(controller.sessionPermission, ComposerPermission.readOnly);
+    expect(controller.canSend, isTrue);
+    expect(find.text('请确认会话权限'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('an unread session permission does not hide a link failure', (
+    tester,
+  ) async {
+    final transport = OpeningSession();
+    final controller = ChatController(transport);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.dark(),
+        home: ChatShell(controller: controller),
+      ),
+    );
+    await tester.pump();
+    transport.connection.completeError(
+      StateError('Host unavailable during connect'),
+    );
+    await tester.pump();
+    transport.publish(const ComposerConfiguration());
+    await tester.pump();
+
+    expect(controller.canSend, isFalse);
+    expect(find.text('引擎连接失败'), findsOneWidget);
+    expect(
+      find.textContaining('Host unavailable during connect'),
+      findsOneWidget,
+    );
+    expect(find.text('请确认会话权限'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets(
     'empty model catalog explains setup and opens the real host configuration',
     (tester) async {
@@ -43,7 +117,8 @@ void main() {
       expect(find.text('还没有可用模型，请先配置模型提供商或登录账号。'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('model-configure')));
       await tester.pumpAndSettle();
-      expect(calls, contains('openWebFallback'));
+      expect(find.text('模型配置'), findsOneWidget);
+      expect(calls, isNot(contains('openWebFallback')));
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
     },
@@ -75,7 +150,10 @@ void main() {
       expect(controller.state.status, ChatStatus.ready);
       expect(controller.canSend, isFalse);
       expect(find.textContaining('当前会话工具权限为 custom'), findsOneWidget);
-      expect(find.byKey(const ValueKey('connection-retry')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('connection-action-retry')),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
       controller.selectPermission(ComposerPermission.readOnly);
       await tester.pump();
