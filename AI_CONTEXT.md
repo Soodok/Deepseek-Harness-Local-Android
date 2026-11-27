@@ -1,5 +1,194 @@
 # DSH Android · 交接文档
 
+## 2026-11-27 私人反馈库两条真实 bug 修复（ask 提问接管 + 移动端插话）
+
+- **反馈来源**：私有反馈库 `soodok.online/bug/report.php` 的 `reports.db`（8 条 reports，3 条是我 11-21 的探针，真实用户反馈 4 条；1 条正文乱码、1 条墓碑已删）。本轮修其中**信息完整、根因可核**的两条，两条都来自同一台 HONOR BKQ-AN90 / Android 17 / beta.31（vC407）：
+  - `65261bd4`（11-22 00:50）ask_user_question 提问后工具必失败（三个子问题）
+  - `82c93406`（11-26 00:05）移动端插话（steer）失效
+- **未修**：`64ae5e8a`「无法选择模型」与 `d1a3a592`「桌宠互动建议」**正文为空**，只有截断日志/无内容，证据不足，不猜着改（日志里见 201 次 model listing 成功、17 次 5s 超时 + 14 次 `plugins.bundle.config` 的 `dsh-m` 槽冲突，均属环境/插件层，不足以认定产品缺陷）。
+
+### 一、ask 提问接管（`65261bd4`）
+
+- **反馈的三个子问题与核对结论**（源码核对，全部成立）：
+  1. 折叠态（`expandLevel===0`）不轮询 `/ask` → 卡片永不出现：旧 `StatusOverlay.scheduleAskPoll()` 第一句就是 `if (expandLevel < 1) return@Runnable`。反馈者实测 91×91 折叠时卡片不出现、784×248 展开约 2s 才出现。
+  2. 返回值不合原生 output schema → 模型拿不到答案：旧 `ask-bridge.mjs` 返回 `{source:"overlay_panel", answers:[string]}`，而 `dsh-tool-ask-user` 的 `output.schema` 是 `{answers:[{id,selected:string[],custom?}]}` + `additionalProperties:false`。我另从桌面引擎包 asar 与移动端 runtime zip 两处独立取到同一 schema 证实。
+  3. `/overlay` 的 `expand`/`show` 是空实现：旧 `AgentBridge.overlay()` 只认 `status`/`action`/`hide`/`complete`，根本不看 `op`。
+- **改动**：
+  - `ask-bridge.mjs`（`app/src/main/assets/android-plugins/`）：`value` 改成严格的 `{answers:[…]}`；点选项 → `selected:[label]`，手打 → `selected:[] + custom`（`/ask/result` 本来就回 `fromOption`，旧实现把它丢了）。提问挂上后再 `POST /overlay {op:"expand"}` 兜底拉起卡片（失败静默，不影响提问）。
+  - `StatusOverlay.kt`：提问区与档位解耦（折叠态也轮询，折叠 6s / 展开 2s 退避）；新增 `raiseForAsk(force)` 自动升档、`snapshot()` 导出真实状态、`collapse()` 供桥收起；新增 `askSuppressedFor` —— 用户主动收起的**同一道题**不再每轮被弹开，换新题（`force=true`）照常弹。
+  - `AgentBridge.kt` 的 `overlay()`：支持 `op=expand|show|collapse|hide`，每个 op 落到真实动作，响应带 `state`（visible/hidden/level/asking）；未知 op 回 400 并列白名单。
+  - `EndpointCatalog.kt`：补 `op` 参数与限制说明（`overlay` 条目 1354-1364 行）。
+- **验证**：`scripts/probes/_test_ask_bridge.mjs` 30/0（新增 4 条契约断言：过 schema、无 `source`、answers 是带 id+selected 的对象、自由文本进 custom；改前 5 条红，最典型是 `"value.source" is not a declared property` + `answers[0] must be an object`）；`_test_ask_overlay_autoraise.py` 28/0（新增探针，改前 15 红；后续补了 raisePending 与 settledSnapshot 断言）。
+
+### 二、移动端插话（`82c93406`）
+
+- **引擎侧两层根因**（反馈者已列四层，另两层是 UI 静默吞失败，已一并改）：
+  - 会话控制器 `dsh-api-session-controller/lib/index.js`：`if (steer && (target !== "next-turn" || …)) throw`，而 `dsh-agent-loop` 的 `steer(input)` 写入的正是 **next-step** —— 引擎自己的插话语义被自家守卫挡死。
+  - 会话 UI `dsh-client-ui-conversation/lib/client.js`：`steerQueue()` 只遍历 `inbox["next-turn"]`；且把 `session/steer-unavailable` 直接 `return` 吞掉 → 用户零提示。
+- **改动**：新增 `scripts/patch-steer-android.py`（单一真源，目录/zip 双模式，与其它 `patch-*.py` 同约定），接入 `scripts/collect-termux-runtime.sh`（`build-runtime.sh` 复用该脚本）。改法：控制器只保留 `agent.status !== "running"`（插话只对正在跑的回合有意义，这条守卫是对的）；UI 遍历 next-turn + next-step，`queue-item-not-found` 仍静默（那是正常竞态），`steer-unavailable` 改为提示一次。**幂等 + fail-fast**（锚点非唯一/全不命中即非零退出）。
+- **验证**：`scripts/probes/_test_steer_patch.py` 13/0（5 个断言维度：改对、保留 running 守卫、幂等、fail-fast 非零、标记存在；改前 8 红）。另在**真实 x86_64 运行时副本**上实打：两文件各命中 1 处锚点、`node --check` 双绿、`target !== "next-turn"` 消失且 `agent.status !== "running"` 仍在。
+
+### 三、门禁（本轮实测）
+
+- `scripts/probes/_test_*.py` **176 个全过 0 失败**（在仓库根跑；本轮新增 2 个探针）。
+- `scripts/probes/_test_*.mjs` 12 个里 7 个失败（新增的 `_test_ask_schema_real.mjs` 15/0），**全部与本轮无关**且是环境缺失：5 个 `Cannot find package 'jsdom'`、1 个引用已删插件 `narrow-sidebar/client.js`、1 个 `_test_apk_installer`（改前即红）。本轮改的 `_test_ask_bridge.mjs` 单独跑 30/0。
+- `gradle :app:compileDebugKotlin -Ppackage=noruntime` **BUILD SUCCESSFUL**（必须带 `-Ppackage=noruntime`：默认 `full` 会校验内嵌 runtime 的 PTC/polyfill 标记，本地 `_runtime_bak` 里两份 zip 都不带，属既有环境限制而非本轮引入）。
+  - 中途有一次编译报 `EngineConfig.kt:882-885 This function must return a value of type Int` —— 那是**并发会话正写到一半**（`healWorkspaceRegistry` 改签名改到中间态）时我恰好触发编译，不是本轮改动、也不是真实缺陷；该会话把 return 补完后重编即 SUCCESS。教训：与并发会话共享工作区时，编译门禁的结果要能区分「我的代码错」和「别人写了一半」。
+- `gradle :app:testDebugUnitTest -Ppackage=noruntime`：**11 个测试类 / 114 tests / 0 failures / 0 errors**（`app/build/test-results` 统计）。
+- `python3 scripts/check-i18n.py`：**All i18n checks passed**（本轮未新增字符串资源，复用既有 `overlay_ask_*`）。
+- **未做**：未构建完整 APK、未装机、未重启 App（本轮只改 App 与引擎补丁，装机属下一步且需授权）。
+
+### 三·补 真机实测（2026-11-27，emulator-5554 / x86_64 / Android 14）
+
+装机：`gradle :app:assembleDebug -Ppackage=noruntime` → 45914583/47141088 B 的 `app-debug.apk`，`adb install -r` 成功（vC412，与仓库同版本，未改版本号）。无障碍服务用 `settings put secure enabled_accessibility_services app.dsh.mobile/app.dsh.mobile.DshAccessibilityService` 打开（模拟器无 UI 手点）。桥用 `adb forward tcp:13083 tcp:3083` + token 取自引擎进程 `/proc/<node>/environ` 的 `DSH_BRIDGE_TOKEN`。
+
+**实测结果（curl 原始响应）**：
+
+| 动作 | 响应 state | 结论 |
+|---|---|---|
+| `POST /overlay {op:"expand"}` | `visible:true, level:1, settled:true` | 真的展开到档位 1（改前是 level:0 不变） |
+| `{op:"collapse"}` | `level:0` | 真的收回球 |
+| `{op:"show"}`（已挂载时） | `level:0`（保持原档） | 只保证窗口在，不动档位，符合设计 |
+| `{hide:true}` | `hidden:true` | 原有语义未破 |
+| `{op:"nope"}` | HTTP 400 + `ops:[expand,show,collapse,hide]` | 未知 op 不再假装成功 |
+
+**折叠态自动弹卡（本条反馈的核心）**：先 `op:collapse` 收成球（level:0），再 `POST /ask` → **3 秒内** `state` 变成 `level:1, asking:true`；截图确认卡片真的画在屏幕上（问题文案 + 两个选项胶囊 + Send/Dismiss），见 `dsh-android/.scratch/ask2.png`。改前这条路径在折叠态**永不出现**。
+
+**答题两条路径**（关键契约）：`POST /ask/answer {text:"B 先出包", fromOption:true}` → `POST /ask/result` 回 `{"answer":"B 先出包","fromOption":true}`；`fromOption:false` 的自由文本回 `{"answer":"我自己写的理由","fromOption":false}`。这两种正是 `ask-bridge.mjs` 分别映射成 `selected` 与 `custom` 的输入。
+
+**实测中发现并修掉的两个真缺陷（静态探针抓不到）**：
+1. `POST /overlay {op:expand}` 当场回 `level:0`、2 秒后才变 1 —— 因为 `show()` 的 `view.post{expandLevel=0}`（初次挂载复位）排在 `raiseForAsk` 之后执行，把刚抬起的一档压回 0。修法：新增 `raisePending` 标记，初次复位让位于「刚被要求抬档」。**这是「ok 但没生效」的第三种成因**（前两种是空实现与轮询档位门槛）。
+2. 桥线程当场读 `snapshot()` 拿到的是**动作前**的值（所有 op 都 post 到主线程）。修法：新增 `settledSnapshot()`（向主线程投空任务 + `CountDownLatch` 等排水，最多 250ms），响应改用它的结果并带 `settled` 字段；等不到时 `settled:false`，让调用方区分「没等到」与「没生效」。
+
+### 三·补1 补测（2026-11-27 收尾，测试一遍）
+
+本轮在"测试一遍"要求下又补了三类证据，都是为了让判据与真实实现同源：
+
+1. **用引擎真实校验器验返回值**（`scripts/probes/_test_ask_schema_real.mjs`，15/0）
+   - 不再手写"差不多"的 schema 校验，而是 `import` 运行时包导出的 `validateJsonSchemaValue`，喂**从 dsh-tool-ask-user 原文抄下来**的 output.schema。
+   - 断言：旧结构 `{source, answers:[string]}` 被真实校验器拒绝并点名 `source`；新的三种（选项 / 自由文本 / 两题批）全过；六种最小破坏（裸字符串、缺 id、缺 selected、selected 塞非字符串、多余字段、custom 非字符串）逐个被抓。
+   - 依赖自举：缺包时自动调 `scripts/probes/_fetch_runtime_js.py` 解出 20574 个 JS（Windows 上 `spawnSync("python3")` 会 ENOENT——那是 Git Bash 的 shell 函数，不是 .exe；代码里按 python/python3/py 顺序试）。
+2. **插话补丁的行为回归**（`scripts/probes/_test_steer_patch_behavior.py`，14/0）
+   - 静态探针只证明"锚点被换成了那串字"，证明不了逻辑对不对。这个探针把补丁后的 `steerQueue` 真的截出来执行：只有 next-step 时也会 steer、两个队列都有时都 steer、空队列零调用。
+   - **对照组**：对未打补丁的原始文件跑同一套 → `step_only == []`（缺陷可复现）。判据因此不是恒绿。
+   - 踩到两个坑并修好：① 它是**类方法**不是函数声明，原样塞进脚本会 `Unexpected identifier`，改写成函数表达式；② 函数体结尾没有分号，紧跟 `(async () => …)()` 会被 ASI 当成调用它，报 `TypeError: (intermediate value)(...) is not a function`，必须显式补 `;`。
+3. **门禁全量复核**：Python 探针 **178 个全过 0 失败**（含本轮 3 个新探针）；关键 Node 探针 `_test_ask_bridge.mjs` 30/0、`_test_ask_schema_real.mjs` 15/0。
+
+### 三·补1·b 第二轮设备验收（重启后复测，token 会随引擎重启变化）
+
+引擎重启后桥 token 变了（`ab090b84…` → `4b2c3752…`）——这是设计使然（每进程重新生成），但**验收脚本必须重新取 token**，否则会看到 `KeyError: 'state'` 这种"假故障"。取法：`run-as app.dsh.mobile sh -c 'tr "\\000" "\\n" < /proc/<node pid>/environ | grep DSH_BRIDGE_TOKEN'`。
+
+完整序列（一条命令跑完，原始响应）：
+
+```
+show   : {"ok":true,"op":"show","state":{"visible":true,"hidden":false,"level":0,"asking":false,"settled":true}}
+expand : {"ok":true,"op":"expand","state":{"visible":true,"hidden":false,"level":1,"asking":false,"settled":true}}
+ask    : {"ok":true,"id":1,"asked":true,…}
++4s    : {"visible":true,"level":1,"asking":true,"settled":true}
+answer : {"ok":true}
+result : {"ok":true,"state":"ANSWERED","answer":"正常","fromOption":true}
++8s    : {"visible":true,"level":1,"asking":false,"settled":true}   ← 卡片按轮询周期回收
+```
+
+结论：**档位、可见性、提问、答题、回收五段全部按预期变化**，且每一步的响应都带 `settled:true`（证明不是"动作还没跑就读"）。
+
+### 三·补1·c 门禁复核时踩到的两个**环境**坑（不是代码缺陷，但下次会再撞）
+
+1. **Gradle 并发写 build 目录**：`processDebugResources` 报 `Unable to delete ... R.jar` —— 并发会话的 Gradle 正持有同一个 `app/build`。过几秒重跑就过，别当成自己改坏了。
+2. **Kotlin 编译 daemon 崩掉**：报 `e: Daemon compilation failed: null` + `Gradle build daemon disappeared unexpectedly`。这是 daemon 侧的资源/崩溃问题，与被测代码无关。修法是 `gradle --stop` 后加 `--no-daemon` 重跑 —— 本轮据此得到 **BUILD SUCCESSFUL in 3m 44s / EXIT=0 / 0 个 e:**。
+   - 判断依据：`^e: ` 的行内容为 `Daemon compilation failed: null`（不是 `file:///...:line` 的源码报错）。**只有以 `file:///` 开头的 e: 才是真编译错误**，这个判据能挡住"把 daemon 崩溃当成代码写错"。
+
+### 三·补3 插话补丁真机注入与「下发字节」验证（2026-11-27，电脑重启后复测）
+
+**做法（临时注入，非产物重建 —— 这点必须说明）**：本地两份 runtime zip 都不带 PTC/polyfill 标记，`full` 包出不来；为把插话这一公里验掉，把设备上**已加载的那两个引擎文件**拉下来 → 打补丁 → 推回 → 重启引擎。备份在 `.scratch/dev-rt-backup/`（`sc-index-lf.js` 159265 B / `conv-client-lf.js` 963351 B，去 CR 后与设备原文件逐字节一致）。
+
+- 打后大小：`index.js` 159265 → **159495**（+230）、`client.js` 963351 → **940548**（−22803）。
+  ⚠️ `client.js` 变小不是丢内容：推回时走 `cat >` 重写，行尾从 CRLF 归一为 LF；设备原文件是 CRLF。改动行数 `diff` 为 5 行 / 9 行，与补丁器报告的 `steer-allow-next-step` + `steer-covers-next-step` + `steer-failure-notice` 三项一致。
+- 重启后 **补丁仍持久**（userdata 未丢）：两文件大小不变、`dsh-android: steer` 标记仍在、`next-step` 出现 2 次。
+- 设备上现跑的守卫（从**部署文件**里取出并求值，不是看本地副本）：`agent.status !== "running"`（不含 target 判断）；`{running: 放行, idle: 拒绝}`。
+- 设备上现跑的 `steerQueue`（同样从部署文件里截出执行）：`{"step_only":[["s1","steer"]],"both":[["t1","steer"],["s1","steer"]]}` —— next-step 里的行**真的会被 steer**。
+
+**关键取证：浏览器实际收到的字节里含补丁**
+- HTTP 直接拉 `/plugins/??…` 恒 404，手拼 `rev` 还会挂起 —— 那**不是**补丁问题，是该路由只服务页面同源请求 + 自己的 rev。
+- 改用 WebView 远程调试（CDP：`adb forward tcp:19222 localabstract:webview_devtools_remote_<app pid>` → `/json/list` → ws），在**页面上下文里** `fetch` 它自己 `performance.getEntriesByType("resource")` 里那条真实 combo URL：
+  ```
+  {"status":200,"bytes":7130019,"marker":true,"nextStep":true,"hasSteerQueue":true,"rev":"rev=c60deec851c6"}
+  VERIFY_OK_PATCH_IS_LIVE
+  ```
+  7130019 字节是 60 个插件的合并包，`marker:true` 证明**引擎下发给浏览器的代码里确实带我的补丁**——这比"文件在磁盘上被改了"强一层。
+- 探针落盘：`scripts/probes/cdp-served-exact.cjs`（取真实资源 URL，不猜 rev）、`scripts/probes/cdp-loaded-plugin.cjs`（扫描页面模块注册表，本轮没扫到，留作备用）。
+
+**回滚命令（要退回原版时）**：
+```bash
+adb -s emulator-5554 push .scratch/dev-rt-backup/sc-index-lf.js /data/local/tmp/sc.js
+adb -s emulator-5554 shell "run-as app.dsh.mobile sh -c 'cat /data/local/tmp/sc.js > files/engine/lib/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js'"
+# client.js 同理，路径换成 dsh-client-ui-conversation/lib/client.js
+adb -s emulator-5554 shell 'am force-stop app.dsh.mobile; am start -n app.dsh.mobile/app.dsh.mobile.MainActivity'
+```
+
+**为什么仍是"临时注入"而不是产物**：这是直接改私有目录的引擎文件，绕过了 `scripts/build-runtime.sh` 的正规重建。用于验证可以，**不能**当作发布形态 —— 正式出包必须走 build-runtime.sh（它内部会调 `patch-steer-android.py`，所以同一份补丁逻辑，只是分发路径正确）。
+
+### 三·补4 重启后复测（2026-11-27 23:0x，宿主机重启 → 模拟器冷启）
+
+宿主机重启把模拟器与 ADB 都清了，冷启 `dsh34`（x86_64 / Android 14 / vC412）后逐项复验，**所有补丁与配置都还在**（userdata 持久化，不是靠进程内存）：
+
+| 项 | 结果 |
+|---|---|
+| 两文件补丁 | `index.js` 159495 B、`client.js` 940548 B，`dsh-android: steer` 标记仍在、`next-step` 出现 2 次 |
+| 桥 | `GET /dev/chats` → `{"ok":true,"count":1,…}`（token 每进程重生成，本次 `20be557d…`） |
+| `/overlay expand` | `{"visible":true,"level":1,"asking":false,"settled":true}` |
+| 提问链路 | `POST /ask` → 4 秒后 `{"level":1,"asking":true,"settled":true}`，截图确认卡片画出（`.scratch/r4.png`：问题文案 + "正常/乱码" 两个胶囊 + Send/Dismiss） |
+| 插件下发字节 | CDP 在页面里 fetch 真实 combo URL → `{"status":200,"bytes":7130019,"marker":true,"nextStep":true,"hasSteerQueue":true,"rev":"rev=c60deec851c6"}` |
+
+**踩到的两个坑（都不是产品缺陷）**：
+1. **curl `-d '中文'` 会变乱码**：Git Bash 把中文按本地代码页送出去，截图里问题文案成了一串 `�`。换 python `urllib`（`ensure_ascii=False` + `charset=utf-8`）后完全正常。**验收中文内容一律走 python/文件，不用 curl -d。**
+2. **`adb push` 后 `run-as cat >` 会把 CRLF 归一成 LF**：`client.js` 963351 → 940548 B。判定不靠字节数，靠 `diff` 行数、`node --check`、关键标记三项。
+
+**设备当前状态**：模拟器 `emulator-5554` 仍在跑，App 引擎正常，两处补丁在位；卡在 `Get started`（无模型凭据 → 无法跑真模型回合）。**因此"真模型发起 ask → 插件接管 → 返回值过校验"这一段仍未端到端验证**，与 `三·补2` 的记录一致。
+
+### 三·补5 重启后最终门禁（2026-11-27 23:1x）
+
+| 项 | 结果 |
+|---|---|
+| `gradle :app:compileDebugKotlin --offline -Ppackage=noruntime` | **BUILD SUCCESSFUL in 6m 4s**；`e:` 行 0 条，`e: file:///` 0 条 |
+| `gradle :app:testDebugUnitTest --offline -Ppackage=noruntime` | JUnit XML 直读：**11 files / 114 tests / 0 failures / 0 errors / 0 skipped** |
+| Python 探针全量 | **178 个全过，0 失败** |
+
+**新踩的坑（重要，别信 /tmp）**：并发会话也用 `/tmp/ft.log` 这个名字写日志，我 `tail` 到的其实是 `E:/tmp/wt-flutter-native-chat/flutter_ui` 的 Flutter 测试（`session_permission_persistence_test.dart` 一条红），差点误判本项目单测失败。**判据：本项目单测结果只认 `app/build/test-results/testDebugUnitTest/*.xml` 的 `tests/failures/errors` 计数，不认任何共享路径的日志文本。**
+
+**提交状态（未提交，原因如下，不是遗漏）**：
+- 工作区里同时有**另一并发会话**的在途改动（`FullRepair.kt` 未跟踪、`MaintenanceActivity.kt`/`RepairActions.kt`/`activity_maintenance.xml`/多语言 `strings.xml`/`EngineConfig.kt` 已改）。
+- 我的 `AgentBridge.kt` 改动与它的 `/repair/full` 代码在**同一文件**里（我的 hunk：`-672,0 +673,6`、`-3880/-3883/-3888/-3890` 段的 overlay op；它的 hunk：`-1912,0 +1919,77` 的 repair/full）。
+- 只提交我的 hunk 会得到一个**引用未跟踪 `FullRepair.kt`** 的 HEAD（编译不过）。因此本轮**不提交**，等并发会话收工后再按 hunk 归属分次提交。
+
+### 三·补6 提交拆分（2026-11-28 00:0x）
+
+并发会话已于 `d62724f5`（feat(repair): 一键全面修复）提交了自己的那批，我的改动与它的 hunk 不再交错，于是本轮按「一条逻辑一个提交」分两次落库：
+
+1. `fix(overlay+ask)` —— ask 接管三处（`ask-bridge.mjs` 返回严格 schema、`StatusOverlay.kt` 折叠态轮询与自动升档、`AgentBridge.kt` `/overlay` 真支持 op 并回动作后状态）+ `EndpointCatalog.kt` 文档 + `_test_ask_bridge.mjs` 扩测 + 新探针 3 个。
+2. `feat(steer)` —— `scripts/patch-steer-android.py` 补丁器 + `collect-termux-runtime.sh` 接线 + 探针 3 个 + CI 显式跳过（依赖 `_runtime_bak/rt-*.zip`，CI 上只会假红）。
+
+**提交前补的两处工程欠账**（不补就会被下一位当成"探针丢了"）：
+- `.gitignore` 原规则是 `/scripts/probes/*` + 逐条 `!` 白名单，本轮 6 个新探针默认全被忽略。已追加白名单段（`cdp-served-exact.cjs` / `_test_ask_schema_real.mjs` / `_test_steer_patch.py` / `_test_steer_patch_behavior.py` / `_test_ask_overlay_autoraise.py` / `_fetch_runtime_js.py`）。
+- `cdp-served-plugin.cjs` 被 `cdp-served-exact.cjs` 取代（前者要人手拼 `rev`，实测会 404/挂起），已删除，不留两份近似探针。
+- CI（`i18n-check.yml`）显式跳过 `*steer_patch*`：这两个探针读 `_runtime_bak/rt-*.zip`（构建产物，不在仓库），CI 上只能报 `FAIL runtime zip missing` 长期假红；判据在**本地有 zip 时是真红**（改前 8 红 / 14 红），已在注释里写明「本地必须跑」。
+
+### 三·补2 仍未覆盖的部分（明确列出，不要当成已完成）
+
+- **`ask-bridge.mjs` 在真实引擎里的端到端**：本轮只验证到桥 API 与卡片显示，没跑"模型发起 `ask_user_question` → 插件接管 → 返回值过 `validateJsonSchemaValue`"这一整条。原因：需要真会话 + 真模型回合，模拟器里没有可用的 API key 会话。
+- **插话（steer）**：已在 `emulator-5554` 上**临时注入并验证到下发字节**（见 `三·补3`：设备文件补丁在位、`steerQueue` 执行含 next-step、CDP 取到的 combo 包 `marker:true`）。但**仍不是产物形态**——是直接改私有目录的引擎文件，正式出包必须走 `build-runtime.sh`；且**尚未在有真实模型回合的会话里验证"运行中插话真的进入下一步"**（设备无模型凭据）。
+- `64ae5e8a` / `d1a3a592` 两条反馈正文为空，仍待用户补信息。
+
+### 四、提交注意（重要）
+
+- `.gitignore:79` 是 `/scripts/probes/*` —— 本轮两个**新探针**（`_test_ask_overlay_autoraise.py`、`_test_steer_patch.py`）默认被忽略，提交时必须 `git add -f`，否则只在本机存在，下一位接手人看不到。`_test_ask_bridge.mjs` 早已 tracked，不受影响。
+- 本轮我**只动了**这 6 个文件：`ask-bridge.mjs` / `StatusOverlay.kt` / `AgentBridge.kt` / `EndpointCatalog.kt` / `collect-termux-runtime.sh` / `AI_CONTEXT.md`，另加新文件 `scripts/patch-steer-android.py`。工作区里的 `EngineConfig.kt` 与 `FullRepair.kt` 是**并发会话**的改动，不是本轮的，提交前按 `git status` 逐文件核对归属。
+
+### 五、下一步
+
+1. 出包（`full` 需要一份带 PTC/polyfill 标记的 runtime：走 `scripts/build-runtime.sh` 或在 CI 上重编；本地两份 zip 都不合格），装机后在 HONOR/Android 17 类设备或模拟器上验：折叠态提问能否自动弹卡、`POST /overlay {op:"expand"}` 是否真改档位、运行中插话是否进会话。
+2. 桌面端（DSH Web）只需手机桥升级，`ask-bridge` 随 APK 走；插话补丁在 runtime 里，出包才会生效。
+
 ## 2026-11-26 issue #134：宿主 PYTHONHOME 泄漏进容器（代码已落地，未提交未推送）
 
 - **验证环境（务必带上）**：`emulator-5554` / **x86_64** / **Android 14** / 全新 `ubuntu` rootfs（24.04 base，glibc 2.39，apt 2.8.3）。**不是 arm64 真机**。
