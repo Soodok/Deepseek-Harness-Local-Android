@@ -1498,6 +1498,25 @@ object EndpointCatalog {
                     limits = "① 破坏性：部分 kind 会重置引擎依赖或 profile，先跑 diagnose 看清原因。\n② 没有 confirm 一律 400，这是刻意的二次确认。",
                 ),
                 e(
+                    "repair/full", "GET", "/repair/full",
+                    "一键全面修复的**预览**：返回会执行哪些步骤、哪些需要先停引擎",
+                    examples = listOf(
+                        "dev api GET /repair/full",
+                    ),
+                    limits = "① 只读，不写盘也不动引擎；要不要真跑由调用方决定。\n② 与 /repair/apply 的分工：那条只做归因器列出的 9 种 kind，这条不看 cause，按固定顺序跑全部步骤。",
+                ),
+                e(
+                    "repair/full", "POST", "/repair/full",
+                    "一键全面修复：按固定顺序跑完全部步骤（属主/锁/日志/注册表/插件/扩展/孤儿/覆盖层），返回逐步结果",
+                    body = "{\"confirm\":true}",
+                    params = "confirm=true（必填）；skipSelfCheck=true 可省掉前后两次体检；includeReset=true 追加深度清理",
+                    examples = listOf(
+                        "dev api POST /repair/full '{\"confirm\":true}'",
+                        "dev api POST /repair/full '{\"confirm\":true,\"skipSelfCheck\":true}'",
+                    ),
+                    limits = "① 派生性动作：会改磁盘、可能重启引擎，必须带 confirm。\n② workspace-registry / staged-tgz / pnpm / kill-switch 改的是引擎独占文件，引擎在跑时可能被它退出时覆盖。\n③ 每步自身幂等，重复跑不会越修越坏；失败返回 207 并逐条给原因。",
+                ),
+                e(
                     "local/status", "GET", "/local/status",
                     "本地小模型（嵌入/快速选择器）的就绪状态与统计",
                     examples = listOf(

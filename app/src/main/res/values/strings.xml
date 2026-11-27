@@ -2019,4 +2019,14 @@ Only the developer can read it. Not public, not indexed, deleted after 30 days.<
     <string name="report_consent_deny">Decline</string>
     <string name="about_report_off_title">Turn off bug reporting</string>
     <string name="about_report_off_sub">Once off, the AI report command is refused outright and no consent dialog appears.</string>
+    <string name="full_repair_headline_partial">Full repair: %1$d fixed, %2$d need attention</string>
+    <string name="full_repair_headline_fixed">Full repair: %1$d item(s) fixed</string>
+    <string name="full_repair_headline_clean">Full repair: everything already healthy</string>
+    <string name="full_repair_title">Full repair (one tap)</string>
+    <string name="full_repair_sub">Runs every repair step in order: ownership, locks, logs, workspace registry, plugins, extensions, orphans, overlays.</string>
+    <string name="full_repair_confirm_body">This runs every repair step in order (permissions, locks, logs, workspace registry, plugins, extensions, orphans, overlays). It may restart the engine. Conversations and API keys are never deleted.</string>
+    <string name="full_repair_go">Run</string>
+    <string name="full_repair_progress">Repairing... (this can take up to a minute)</string>
+    <string name="full_repair_restart">Restart engine</string>
+    <string name="full_repair_failed">Repair aborted unexpectedly; see full-repair-last.txt</string>
 </resources>

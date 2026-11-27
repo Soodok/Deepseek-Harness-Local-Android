@@ -1979,4 +1979,14 @@ Somente o desenvolvedor lê. Não é público, não é indexado, é apagado apó
     <string name="report_consent_deny">Recusar</string>
     <string name="about_report_off_title">Desativar relatórios de problemas</string>
     <string name="about_report_off_sub">Quando desativado, o comando report da IA é recusado e nenhum diálogo de consentimento aparece.</string>
+    <string name="full_repair_headline_partial">Reparo completo: %1$d corrigidos, %2$d precisam de atenção</string>
+    <string name="full_repair_headline_fixed">Reparo completo: %1$d item(ns) corrigido(s)</string>
+    <string name="full_repair_headline_clean">Reparo completo: tudo já está saudável</string>
+    <string name="full_repair_title">Reparo completo (um toque)</string>
+    <string name="full_repair_sub">Executa todas as etapas em ordem: permissao de arquivos, travas, logs, registro de areas de trabalho, plugins, extensoes, processos orfaos, sobreposicoes.</string>
+    <string name="full_repair_confirm_body">Executa todas as etapas em ordem (permissoes, travas, logs, registro de areas, plugins, extensoes, processos orfaos, sobreposicoes). Pode reiniciar o motor. Conversas e chaves de API nunca sao apagadas.</string>
+    <string name="full_repair_go">Executar</string>
+    <string name="full_repair_progress">Reparando... (ate um minuto)</string>
+    <string name="full_repair_restart">Reiniciar motor</string>
+    <string name="full_repair_failed">Reparo interrompido; veja full-repair-last.txt</string>
 </resources>

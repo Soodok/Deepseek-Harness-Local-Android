@@ -177,24 +177,4 @@ object RepairActions {
                 restartNeeded = true,
             )
     }
-
-    /**
-     * 连做多个动作，遇到「需要重启」就停下。
-     *
-     * 为什么在这里停：几个动作里只要有改磁盘的（回滚/清残渣/修属主），
-     * 后续动作在旧状态上执行就是白做甚至有害。停下比「全做完再重启」安全。
-     */
-    fun runAll(
-        ctx: Context,
-        supervisor: EngineSupervisor,
-        fixes: List<EngineTriage.Fix>,
-    ): List<Outcome> {
-        val out = mutableListOf<Outcome>()
-        for (f in fixes) {
-            val o = run(ctx, supervisor, f)
-            out += o
-            if (o.restartNeeded) break
-        }
-        return out
-    }
 }

@@ -118,6 +118,12 @@ scripts/probes/*.bin
 # 而 home-owner-check 报 0ms / 无告警 —— 整段属主自愈永远不会执行。
 # 根因是 hasUnreadableEntries 用 roots[1] 而唯一调用点只传 listOf(home)（长度 1）。
 !/scripts/probes/_test_privilege_ownership_probe.py
+# 「一键全面修复」收敛（2026-11-27 用户诉求）：
+# 修复途径原先散在 5 处（启动链 18 处自愈 / MaintenanceActivity 14 个按钮 /
+# /repair/apply 9 种 FixKind 受归因白名单约束 / 扩展中心只修扩展 / 离线 python
+# 脚本），用户不知道点哪个，AI 手里只有会被 409 挡掉的那条。
+# FullRepair 按固定顺序把既有动作串成一条；本探针守顺序、容错、接线与「不再新增途径」。
+!/scripts/probes/_test_full_repair.py
 !/scripts/probes/linux-bash-device.cjs
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py

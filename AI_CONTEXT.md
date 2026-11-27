@@ -18180,3 +18180,99 @@ round 1 iU=7  →  round 2 iU=2  →  round 3 iU=2  →  round 4 iU=2
 - **两条容器入口都要改**：`LinuxContainerRunner`（ProcessBuilder 继承 App 进程）与
   `dsh_alpine.c` 的 `env_drop_host`（loader）。只改一处就漏一半场景，而且漏的那一半
   （产品链路装包）正是用户最常走的那条。
+
+## 第一百六十六章（v1.8.x · 2026-11-27）修复途径从 5 条收敛成 1 条：`FullRepair` 一键全面修复
+
+### 一、起因（用户原话）
+
+> 「看一下目前有多少个修复代码，以及可修复的选项，能不能把它统合成一个一键全面修复，不要留那么多修复途径」
+
+清点后发现**5 类互不相通**的入口：
+
+| 位置 | 形态 | 谁能用 | 数量 |
+|---|---|---|---|
+| `EngineSupervisor` 启动链 | 自动跑的自愈 | 只有重启时 | 18 处 |
+| `MaintenanceActivity` | 按钮 | 用户手点 | 14 个 |
+| `POST /repair/apply` | `FixKind` | 引擎内 AI | 9 种（受归因白名单约束） |
+| `ExtensionStoreActivity` | 「一键修复」 | 用户手点 | 只修扩展 |
+| `SelfCheck` | 检查 | 用户手点 | 12 类，**只报告不修** |
+| `scripts/fix-workspace-registry.py` | 离线脚本 | 电脑 + adb | 1 个 |
+
+后果三重：用户不知道该点哪个；AI 手里只有 `/repair/apply` 而它的白名单常把真正需要的动作挡成 `409 action not applicable`；每个入口各自实现一遍「我做完了」，口径还不一样。
+
+另发现死代码 `RepairActions.runAll()`（全仓 **0 调用者**）—— 等于又多留了一个没人用的入口。
+
+### 二、做法
+
+新建 `engine/FullRepair.kt`（451 行，纯编排）。**不写新的文件操作逻辑**，只按固定顺序把既有函数串起来，每步如实记录跑了 / 跳过了（为什么）/ 修了 N 项 / 失败。
+
+14 步顺序，以及**为什么是这个顺序**（顺序错了会白做甚至更糟）：
+
+```
+① ownership            属主/权限最先 —— 后面每步都要读写 dsh-home
+② stale-locks          锁还在时任何插件操作都撞 EACCES/ELOCKED
+③ logs                 先腾空间，避免后面装包 ENOSPC
+④ workspace-registry   同 path 多认领会让引擎根本起不来（上游 validateStoredState 直接 throw）
+⑤ session-trash        旧 .trash-* 留在 sessions/ 会让引擎判 corrupt session log
+⑥ shebangs / ⑦ corepack  「装好了但跑不起来」
+⑧ frontend / ⑨ pnpm / ⑩ staged-tgz / ⑪ extensions / ⑫ orphans / ⑬ guardian / ⑭ kill-switch
+⑮（可选）deep-clean     破坏性，默认不做，需 includeReset=true
+```
+
+**不先探测再修**：每个动作本身幂等（chown 已经对就是空操作、锁不存在就没可删的）。先探测反而引入两类假象——探测实现漏报（真机上 `dshHomeNeedsOwnershipFix` 曾恒返回 false，见第一百六十七章的根因其实是同一条链），以及「探测说没有 → 用户以为没问题」。一律**直接执行再复检**。
+
+`runStep()` 把每步包进 `runCatching`：单步失败不影响其余。修复要尽量多做，不能因为第 3 步失败就放弃第 7 步。
+
+### 三、接线（端点 + UI + 目录，三处都接）
+
+- `GET /repair/full` —— 预览：返回 `steps[]` 与 `requires_engine_stopped[]`，**不写盘**。
+- `POST /repair/full` —— `{"confirm":true}` 必填才真跑；可选 `skipSelfCheck` / `includeReset`；部分失败返回 **207**。
+- `MaintenanceActivity` 顶部新增 `rowFullRepair`（复用 `ic_health` + `Md3ButtonText`），确认弹窗写明「会重启引擎」「会话与 API key 绝不会删」；跑完逐条列结果，`restartNeeded` 时给「重启引擎」按钮。
+- 结果落 `files/full-repair-last.txt`（崩溃/重启后还能看）。
+- `EndpointCatalog` 加 GET/POST 两条目录条目（否则 `_test_device_caps_new.py` 的 I1 漂移检测红）。
+- 六语 strings 各 10 条（`full_repair_*`），`check-i18n.py` All passed。
+- 删掉 `RepairActions.runAll()` 死代码（`run`/`Outcome` 保留，`/repair/apply` 与 `FailureDialog` 在用）。
+
+### 四、模拟器实测（emulator-5554 / x86_64 / Android 14 / vc412）
+
+| 场景 | 结果 |
+|---|---|
+| `GET /repair/full` | `dry_run:true`，14 步 + 5 个 `requires_engine_stopped` |
+| `POST` 不带 confirm | 仍 `dry_run:true`，磁盘未被改（护栏生效） |
+| `POST confirm:true`（坏态：`chmod 000` 两个关键文件） | `fixed=1 clean=13 failed=0`，2613ms → `stat` 回读 `600 u0_a198:u0_a198` ×2 |
+| UI 路径（点 Repair → 确认 → Run） | 弹框列出 14 条结果，`before: issues=2`，`Restart engine`/`OK` 两个按钮 |
+
+**首版踩的假失败**：`healPnpmWorkspace` 的返回值语义是「**有没有真的改写文件**」，不是「工作区是否健康」。首版把 `false` 一律记 `FAILED`，模拟器上干净机器弹出 `pnpm=FAILED(heal returned false)`。现在映射为：改写了→FIXED / 没改写→CLEAN / 文件不存在→SKIPPED。
+
+### 五、探针 `scripts/probes/_test_full_repair.py`（新，44 条）
+
+A 动作全集覆盖（`stepIds()` 与实现分支一一对应、不多不少）+ 复用既有实现 + 不许自己 `deleteRecursively`/`ProcessBuilder`
+A2 **返回值语义**（pnpm 步不许有 FAILED 分支；shebangs/corepack 按改动条数区分 FIXED/CLEAN）
+B 顺序（属主第一步 / 锁在注册表前 / 注册表在插件前 / 体检在所有动作之后）
+C 容错（每步都走 `runStep`、内部 `runCatching` + `getOrElse`、主体不整体包一层吞异常、有 FAILED 状态）
+D 接线（GET+POST 都注册、`confirm` 必读、UI 入口、落盘、207、目录两条）
+E 不再新增途径（`runAll` 已清、全仓 0 引用、`repair/apply` 那条仍是活的）
+
+**六组变异全部真红、恢复后 `cmp` 字节一致**：删 extensions 步骤块→A2；属主挪到最后→B1/B2；`runStep` 去 `runCatching`→C2b；摘掉 POST 路由→D1b；`runAll` 加回→E1；pnpm 的 CLEAN 改回 FAILED→A6。
+
+### 六、连带修的两处
+
+1. **`_test_corepack_hardlink.py` 的假绿**：原判据是「整个 `EngineConfig` 里出现过 `healClobberedCorepackEntry(ctx)`」—— 函数定义本身在就恒绿，哪怕启动链那句调用被删也照绿。改成按 `fun healTermuxShebangs` 函数体切，必须体内出现调用。变异（删掉末尾那句）→ 真红。
+   **这条差点真的踩上**：本轮把 `healTermuxShebangs` 从 `Unit` 改成返回计数时，我一度把末尾的 `healClobberedCorepackEntry(ctx)` 换成了 `return fixed` —— 启动链会静默丢掉 corepack 自愈（已装出去的旧包再也不会被兜底修好）。探针把它抓了回来。
+2. `healTermuxShebangs` / `healClobberedCorepackEntry` 改为返回**改动计数**（原 `Unit` 只打日志）。首版 FullRepair 按「跑过了就 CLEAN」写，报告里这两步永远「scan finished」，用户「修完了还是不行」时看不出到底改没改。
+
+### 七、门禁
+
+| 项 | 结果 |
+|---|---|
+| 全量已跟踪探针（177） | **PASS=163 / FAIL=4 / SKIP=14** —— 4 个红是基线既有（`_kstrip.py` 缺 argv、三个 `_verify_*_backwards.py` 是反向变异自检脚本自身有 STILL_GREEN），干净 HEAD 上同样红 |
+| `check-i18n.py` | All passed |
+| `run-a11y-jvm-test.sh` | **passed=2509 failed=0** |
+| `compileDebugKotlin -Pabi=x86_64` | BUILD SUCCESSFUL |
+| `assembleDebug -Pabi=x86_64 -Ppackage=noruntime` | BUILD SUCCESSFUL，46,520,725 B |
+
+### 八、尚未验证
+
+- **引擎 Healthy 状态下跑 `requires_engine_stopped` 的那几步**（`workspace-registry` / `staged-tgz` / `pnpm` / `kill-switch` / `deep-clean` 改的是引擎独占文件，引擎退出时可能被内存态整份覆盖）。本轮实测是启动后跑的，引擎在跑但没做写盘型动作（`workspace-registry` 那步当时本来就没重复认领可合）。
+- **`includeReset=true`（deep-clean 那步）**：`HomeResetter.run(DEEP)` 的调用在 UI 上还没给入口，只走 API；未实测。
+- **真机 PLZ110**：已装 vc486/beta.111（并发分支），本仓 vc412 装上去是降级，故未装机。属主被 root 占住的「需要特权通道」分支在模拟器上无 su，也仍未有自动验证（见第一百六十七章）。

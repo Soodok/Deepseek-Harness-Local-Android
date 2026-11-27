@@ -2022,4 +2022,14 @@
     <string name="report_consent_deny">拒绝</string>
     <string name="about_report_off_title">永久关闭问题反馈</string>
     <string name="about_report_off_sub">关掉之后 AI 的 report 命令会被直接拒绝，也不会再弹同意窗口。</string>
+    <string name="full_repair_headline_partial">一键修复：修好 %1$d 项，%2$d 项仍需处理</string>
+    <string name="full_repair_headline_fixed">一键修复：修好 %1$d 项</string>
+    <string name="full_repair_headline_clean">一键修复：各项都正常，无需处理</string>
+    <string name="full_repair_title">一键全面修复</string>
+    <string name="full_repair_sub">按固定顺序跑完全部修复：属主权限、陈旧锁、日志缓存、工作区注册表、插件、扩展、孤儿进程、被隔离的覆盖层。</string>
+    <string name="full_repair_confirm_body">将按固定顺序跑完全部修复步骤（权限、陈旧锁、日志、工作区注册表、插件、扩展、孤儿进程、被隔离的覆盖层），过程中可能重启引擎。不会删除对话与 API Key。</string>
+    <string name="full_repair_go">开始</string>
+    <string name="full_repair_progress">正在修复…（最长约一分钟）</string>
+    <string name="full_repair_restart">重启引擎</string>
+    <string name="full_repair_failed">修复异常中断，详见 full-repair-last.txt</string>
 </resources>

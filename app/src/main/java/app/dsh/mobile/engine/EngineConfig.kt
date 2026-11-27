@@ -865,12 +865,24 @@ object EngineConfig {
      *
      * v1.7.6：先做容器视角拼写翻译（见 [GuestPaths]），再走 basename 兜底。
      */
-    private fun healWorkspaceRegistry(ctx: android.content.Context) {
+    /**
+     * 公开包装：供 [FullRepair] 与「一键修复」调用。
+     *
+     * 内部实现见 [healWorkspaceRegistry]（private，因为它只应在启动链里跑）。
+     * 这里开一个薄壳而不是把实现改成 public：调用方不该关心它内部还修了
+     * 什么，也不该绕过「引擎未运行」这个前提（见 [FullRepair.requiresEngineStopped]）。
+     *
+     * @return 本次改动条目数（合并掉的重复 path + 重指的失效路径；0 = 干净）
+     */
+    fun healWorkspaceRegistryPublic(ctx: android.content.Context): Int =
+        runCatching { healWorkspaceRegistry(ctx) }.getOrDefault(0)
+
+    private fun healWorkspaceRegistry(ctx: android.content.Context): Int {
         val registry = File(dshHome(ctx), "storages/workspace.json")
-        if (!registry.isFile) return
-        val text = runCatching { registry.readText() }.getOrNull() ?: return
-        val root = runCatching { org.json.JSONObject(text) }.getOrNull() ?: return
-        val tables = root.optJSONObject("tables")?.optJSONObject("workspaces") ?: return
+        if (!registry.isFile) return 0
+        val text = runCatching { registry.readText() }.getOrNull() ?: return 0
+        val root = runCatching { org.json.JSONObject(text) }.getOrNull() ?: return 0
+        val tables = root.optJSONObject("tables")?.optJSONObject("workspaces") ?: return 0
         val wsRoot = File(dshHome(ctx), "workspaces")
 
         // ★v1.7.x：先做「同 path 多认领」合并，再修路径。
@@ -889,6 +901,7 @@ object EngineConfig {
             .getOrDefault(0)
 
         var changed = dedupeChanged
+        var dedupCount = dedupeChanged
         for (id in tables.keys().asSequence().toList()) {
             val ws = tables.optJSONObject(id) ?: continue
             val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
@@ -925,7 +938,7 @@ object EngineConfig {
             Log.i(TAG, "workspace $id repointed: $path -> ${replacement.absolutePath}")
         }
 
-        if (changed == 0) return
+        if (changed == 0) return dedupCount
         // 原子写：同目录临时文件 + rename，避免写到一半留下坏 JSON
         val tmp = File(registry.parentFile, ".workspace.json.tmp")
         try {
@@ -939,6 +952,7 @@ object EngineConfig {
             runCatching { tmp.delete() }
             throw e
         }
+        return changed
     }
 
     /**
@@ -1160,11 +1174,12 @@ object EngineConfig {
      * 这里做幂等自愈：只改第一行 shebang，其余内容一字不动（那些 shim 遮蔽系统命令是
      * **有意的**，见打包脚本注释，不能删）。
      */
-    fun healTermuxShebangs(ctx: android.content.Context) {
+    fun healTermuxShebangs(ctx: android.content.Context): Int {
+        var fixed = 0
         runCatching {
             val bin = File(engineRoot(ctx), "bin")
-            if (!bin.isDirectory) return
-            var fixed = 0
+            if (!bin.isDirectory) return@runCatching
+            var f0 = 0
             bin.listFiles()?.forEach { f ->
                 if (!f.isFile) return@forEach
                 val head = f.inputStream().use { ins ->
@@ -1177,12 +1192,22 @@ object EngineConfig {
                     val rest = f.readLines().drop(1)
                     f.writeText("#!/system/bin/sh\n" + rest.joinToString("\n") + "\n")
                     f.setExecutable(true, false)
-                    fixed++
+                    f0++
                 }
             }
-            if (fixed > 0) Log.i(TAG, "healed $fixed Termux shebang(s) in engine/bin")
+            fixed = f0
+            if (f0 > 0) Log.i(TAG, "healed $f0 Termux shebang(s) in engine/bin")
         }.onFailure { Log.w(TAG, "shebang heal failed: ${it.message}") }
+        // ★不许把这一句删掉（2026-11-27 差点犯的错）。
+        //
+        // 自 v1.4.9 起，启动链（EngineSupervisor）只显式调 healTermuxShebangs 这一个
+        // 入口，corepack 那道自愈（`dist/*.js` 被硬链接写穿）是**在这里末尾顺带跑**的。
+        // 本轮把本函数从 `Unit` 改成返回改动计数时，我一度把末尾这句换成了 `return fixed`，
+        // 于是启动链悄悄丢掉了 corepack 自愈 —— 已装出去的旧包再也不会被兜底修好。
+        // 探针 `_test_corepack_hardlink.py` 的「启动时调用自愈」当场转红，把它抓了回来。
+        // 幂等：内容正确时一个字节都不动，所以 FullRepair 里再显式调一次也无害。
         healClobberedCorepackEntry(ctx)
+        return fixed
     }
 
     /**
@@ -1204,7 +1229,8 @@ object EngineConfig {
      *
      * 幂等：内容正确时不动任何文件。
      */
-    fun healClobberedCorepackEntry(ctx: android.content.Context) {
+    fun healClobberedCorepackEntry(ctx: android.content.Context): Int {
+        var healedTotal = 0
         runCatching {
             val dist = File(engineRoot(ctx), "lib/node_modules/corepack/dist")
             if (!dist.isDirectory) return@runCatching
@@ -1235,7 +1261,9 @@ object EngineConfig {
                 )
             }
             if (healed > 0) Log.i(TAG, "healed $healed clobbered corepack entry/entries")
+            healedTotal = healed
         }.onFailure { Log.w(TAG, "corepack heal failed: ${it.message}") }
+        return healedTotal
     }
 
     /**

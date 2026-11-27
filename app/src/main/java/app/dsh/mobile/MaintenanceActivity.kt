@@ -180,6 +180,12 @@ class MaintenanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.btnDeepClean)?.setOnClickListener {
             confirmClean(HomeResetter.Mode.DEEP)
         }
+        // —— 一键全面修复（v1.8.x）——
+        // 之前用户要修东西得在 14 个按钮里挑、AI 只能走 /repair/apply 的 9 种动作
+        // （且常被归因白名单 409 挡住），扩展中心还有第三个「一键修复」只修扩展。
+        // 这里给一条统一的入口：按固定顺序跑全部步骤，逐条报结果。
+        findViewById<LinearLayout>(R.id.rowFullRepair)?.setOnClickListener { confirmFullRepair() }
+        findViewById<android.widget.TextView>(R.id.btnFullRepair)?.setOnClickListener { confirmFullRepair() }
         // —— 修复文件属主（v1.4.70）——
         findViewById<LinearLayout>(R.id.rowFixOwner)?.setOnClickListener { runFixOwner() }
         findViewById<LinearLayout>(R.id.rowGrantPerms)?.setOnClickListener { runGrantPerms() }
@@ -187,6 +193,69 @@ class MaintenanceActivity : ThemedActivity() {
         refreshGrantSub()
         findViewById<TextView>(R.id.btnFixOwner)?.setOnClickListener { runFixOwner() }
         refreshHomeUsage()
+    }
+
+    /**
+     * 一键全面修复：确认 → 后台跑 → 逐条呈现。
+     *
+     * ## 为什么先确认
+     *
+     * 它会动的东西里有「引擎独占」的：`workspace.json`、插件画像、bundles。
+     * 引擎正在跑时改这些会被它退出时的内存态整份覆盖（v1.4.7 用户实测过的
+     * 「恢复成功、重启后全没了」）。所以先明确告诉用户「会重启引擎」，再往下走。
+     *
+     * ## 为什么不停引擎
+     *
+     * 停引擎是有副作用的动作（用户可能正在对话），该由用户决定时机。默认
+     * 一步一步跑（大部分步骤在引擎运行时也安全），只在需要时提示重启。
+     * 详情见 [FullRepair.requiresEngineStopped]。
+     */
+    private fun confirmFullRepair() {
+        val sub = findViewById<android.widget.TextView>(R.id.txtFullRepairSub)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.full_repair_title)
+            .setMessage(R.string.full_repair_confirm_body)
+            .setPositiveButton(R.string.full_repair_go) { _, _ -> runFullRepair() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        sub?.text = getString(R.string.full_repair_sub)
+    }
+
+    private fun runFullRepair() {
+        val sub = findViewById<android.widget.TextView>(R.id.txtFullRepairSub)
+        val btn = findViewById<android.widget.TextView>(R.id.btnFullRepair)
+        btn?.isEnabled = false
+        sub?.text = getString(R.string.full_repair_progress)
+        Thread {
+            val report = runCatching {
+                app.dsh.mobile.engine.FullRepair.run(this)
+            }.getOrNull()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                btn?.isEnabled = true
+                if (report == null) {
+                    sub?.text = getString(R.string.full_repair_failed)
+                    return@runOnUiThread
+                }
+                // 落一份完整报告到 filesDir：用户反馈时直接把这个文件发出来，
+                // 比让他描述「点了修复之后还是不行」有用得多。
+                runCatching {
+                    java.io.File(filesDir, "full-repair-last.txt")
+                        .writeText(app.dsh.mobile.engine.FullRepair.detail(report))
+                }
+                sub?.text = app.dsh.mobile.engine.FullRepair.headline(this, report)
+                val b = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.full_repair_title)
+                    .setMessage(app.dsh.mobile.engine.FullRepair.detail(report))
+                    .setPositiveButton(android.R.string.ok, null)
+                if (report.restartNeeded) {
+                    b.setNeutralButton(R.string.full_repair_restart) { _, _ ->
+                        (application as DshApp).supervisor.restart()
+                    }
+                }
+                b.show()
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     /**
