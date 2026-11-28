@@ -528,8 +528,9 @@ class _ConversationFlowState extends State<ConversationFlow> {
       ));
     }
 
-    void addTools(List<ToolRun> tools) {
-      for (final tool in tools) {
+    void addTools(List<ToolRun> tools, {String? executionReasoning}) {
+      for (var i = 0; i < tools.length; i++) {
+        final tool = tools[i];
         rows.add((
           key: ValueKey('row-tool-' + tool.id),
           build: (context) => Padding(
@@ -546,6 +547,7 @@ class _ConversationFlowState extends State<ConversationFlow> {
                   tool: tool,
                   showPlan: tool.id != activePlanId,
                   compact: true,
+                  executionReasoning: i == 0 ? executionReasoning : null,
                 ),
               ),
             ),
@@ -583,18 +585,26 @@ class _ConversationFlowState extends State<ConversationFlow> {
             .toList(),
       );
       for (final message in fragments) {
-        // The outer disclosure owns the entire execution trace; each visible
-        // thought still has its own disclosure and copy action. Search hits
-        // remain reachable without changing the user's stored expansion.
-        if (tools.isEmpty ||
-            expanded ||
-            searchHits.containsKey(ValueKey('message-' + message.id))) {
-          addMessage(message, compactExecution: true);
+        final messageTools = (byMessage[message.id] ?? const [])
+            .where((tool) => expanded || matchingTools.contains(tool.id))
+            .toList();
+        final messageKey = ValueKey('message-' + message.id);
+        final attachReasoning =
+            message.text.trim().isEmpty &&
+            message.reasoning.trim().isNotEmpty &&
+            messageTools.isNotEmpty &&
+            !searchHits.containsKey(messageKey) &&
+            widget.editingMessageId != message.id;
+        // Fold a message's thought into its first visible tool row. A matching
+        // search result keeps the original message row so its hit stays indexed.
+        if (tools.isEmpty || expanded || searchHits.containsKey(messageKey)) {
+          if (!attachReasoning) {
+            addMessage(message, compactExecution: true);
+          }
         }
         addTools(
-          (byMessage[message.id] ?? const [])
-              .where((tool) => expanded || matchingTools.contains(tool.id))
-              .toList(),
+          messageTools,
+          executionReasoning: attachReasoning ? message.reasoning : null,
         );
       }
     }

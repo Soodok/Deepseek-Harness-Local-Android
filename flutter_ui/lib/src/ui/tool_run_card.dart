@@ -14,11 +14,13 @@ class ToolRunCard extends StatefulWidget {
     this.showDivider = false,
     this.showPlan = true,
     this.compact = false,
+    this.executionReasoning,
   });
   final ToolRun tool;
   final bool showDivider;
   final bool showPlan;
   final bool compact;
+  final String? executionReasoning;
   @override
   State<ToolRunCard> createState() => _ToolRunCardState();
 }
@@ -36,7 +38,11 @@ class _ToolRunCardState extends State<ToolRunCard> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ToolProcessCard(tool: tool, compact: widget.compact),
+          ToolProcessCard(
+            tool: tool,
+            compact: widget.compact,
+            executionReasoning: widget.executionReasoning,
+          ),
           if (content.resources.isNotEmpty ||
               (widget.showPlan && content.steps.isNotEmpty))
             ToolContentView(
@@ -165,6 +171,12 @@ class _ToolRunCardState extends State<ToolRunCard> {
                       ),
                       child: const Text('查看完整输出'),
                     ),
+                  ),
+                if (widget.executionReasoning?.isNotEmpty == true)
+                  ToolExecutionReasoningDetail(
+                    id: tool.id + '-execution-reasoning',
+                    text: widget.executionReasoning!,
+                    compact: widget.compact,
                   ),
                 if (detail.isEmpty && tool.content == null)
                   Text(

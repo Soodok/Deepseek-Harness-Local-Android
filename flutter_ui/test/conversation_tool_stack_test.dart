@@ -429,25 +429,19 @@ void main() {
       for (final id in ['projected-one', 'projected-two', 'projected-three']) {
         expect(_card(id), findsOneWidget);
       }
-      final secondThought = _thought(journal, 'STEP-2-THOUGHT');
-      final thirdThought = _thought(journal, 'STEP-3-THOUGHT');
-      expect(secondThought, findsOneWidget);
-      expect(thirdThought, findsOneWidget);
+      expect(_thought(journal, 'STEP-2-THOUGHT'), findsNothing);
+      expect(_thought(journal, 'STEP-3-THOUGHT'), findsNothing);
+      expect(
+        tester.widget<ToolRunCard>(_card('projected-two')).executionReasoning,
+        'STEP-2-THOUGHT',
+      );
+      expect(
+        tester.widget<ToolRunCard>(_card('projected-three')).executionReasoning,
+        'STEP-3-THOUGHT',
+      );
       expect(
         tester.getRect(_card('projected-one')).bottom,
-        lessThanOrEqualTo(tester.getRect(secondThought).top),
-      );
-      expect(
-        tester.getRect(secondThought).bottom,
         lessThanOrEqualTo(tester.getRect(_card('projected-two')).top),
-      );
-      expect(
-        tester.getRect(_card('projected-two')).bottom,
-        lessThanOrEqualTo(tester.getRect(thirdThought).top),
-      );
-      expect(
-        tester.getRect(thirdThought).bottom,
-        lessThanOrEqualTo(tester.getRect(_card('projected-three')).top),
       );
       expect(
         tester.getRect(_card('projected-three')).bottom,
@@ -456,8 +450,8 @@ void main() {
       await tester.tap(toggle);
       await tester.pumpAndSettle();
       expect(find.byType(ToolRunCard), findsNothing);
-      expect(secondThought, findsNothing);
-      expect(thirdThought, findsNothing);
+      expect(_thought(journal, 'STEP-2-THOUGHT'), findsNothing);
+      expect(_thought(journal, 'STEP-3-THOUGHT'), findsNothing);
       expect(find.text('PROJECTED-FINAL'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -471,26 +465,10 @@ void main() {
       // Deliberately open all old summaries so this is a geometry assertion, not
       // an early failure caused by an unopened second group.
       await _openGroups(tester);
-      _expectGap(
-        tester,
-        _card('projected-one'),
-        _thought(journal, 'STEP-2-THOUGHT'),
-      );
-      _expectGap(
-        tester,
-        _thought(journal, 'STEP-2-THOUGHT'),
-        _card('projected-two'),
-      );
-      _expectGap(
-        tester,
-        _card('projected-two'),
-        _thought(journal, 'STEP-3-THOUGHT'),
-      );
-      _expectGap(
-        tester,
-        _thought(journal, 'STEP-3-THOUGHT'),
-        _card('projected-three'),
-      );
+      _expectGap(tester, _card('projected-one'), _card('projected-two'));
+      _expectGap(tester, _card('projected-two'), _card('projected-three'));
+      expect(_thought(journal, 'STEP-2-THOUGHT'), findsNothing);
+      expect(_thought(journal, 'STEP-3-THOUGHT'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -530,28 +508,42 @@ void main() {
       await _pumpJournal(tester, journal);
       await _openGroups(tester);
 
-      final toggle = find.byKey(
-        ValueKey(
-          'message-reasoning-toggle-' +
-              journal.state.messages
-                  .singleWhere((message) => message.reasoning == _longThought())
-                  .id,
+      await tester.tap(
+        find.byKey(const ValueKey('process-command-compact-thought-tool')),
+      );
+      await tester.pumpAndSettle();
+      final thought = find.byKey(
+        const ValueKey(
+          'process-output-compact-thought-tool-execution-reasoning',
         ),
       );
-      expect(toggle, findsOneWidget);
-      expect(tester.widget<Text>(find.text('思考过程')).style?.fontSize, 12);
-
-      await tester.tap(toggle);
+      expect(thought, findsOneWidget);
+      expect(tester.widget<Text>(thought).maxLines, 3);
+      expect(tester.widget<Text>(thought).style?.fontSize, 12);
+      expect(find.text('THOUGHT-4'), findsNothing);
+      final command = find.byKey(
+        const ValueKey('process-output-compact-thought-tool-command'),
+      );
+      expect(
+        tester.getTopLeft(command).dy - tester.getBottomLeft(thought).dy,
+        inInclusiveRange(0, 4),
+        reason: 'Read-only previews must not reserve space for action rows',
+      );
+      final menu = find.byKey(
+        const ValueKey('process-menu-compact-thought-tool-command'),
+      );
+      expect(tester.getSize(menu).shortestSide, greaterThanOrEqualTo(48));
+      await tester.tap(menu);
       await tester.pumpAndSettle();
-      final thought = find.byWidgetPredicate(
+      expect(find.text('复制思考过程'), findsOneWidget);
+      await tester.tap(find.text('查看完整思考过程'));
+      await tester.pumpAndSettle();
+      final fullThought = find.byWidgetPredicate(
         (widget) =>
             widget is SelectableText &&
-            widget.data?.startsWith('THOUGHT-1') == true,
+            widget.data?.contains('THOUGHT-4') == true,
       );
-      expect(thought, findsOneWidget);
-      expect(tester.widget<SelectableText>(thought).maxLines, 3);
-      expect(tester.widget<SelectableText>(thought).style?.fontSize, 12);
-      expect(find.text('THOUGHT-4'), findsNothing);
+      expect(fullThought, findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -713,17 +705,9 @@ void main() {
         find.byKey(ValueKey('execution-toggle-' + original.groupId)),
       );
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: _thought(journal, 'WINDOW-R1'),
-          matching: find.byType(TextButton),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final reasoningState = tester.state(_thought(journal, 'WINDOW-R1'));
-      expect(find.text('WINDOW-R1'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('process-command-window-b')));
       await tester.pumpAndSettle();
+      expect(find.text('WINDOW-R1'), findsOneWidget);
       final toolState = tester.state(_card('window-b'));
       final output = find.byKey(
         const ValueKey('process-output-window-b-stdout'),
@@ -760,11 +744,7 @@ void main() {
       expect(_card('window-a'), findsNothing);
       expect(find.byType(ExecutionGroupHeader), findsNothing);
       expect(_card('window-b'), findsOneWidget);
-      expect(_thought(journal, 'WINDOW-R1'), findsOneWidget);
-      expect(
-        tester.state(_thought(journal, 'WINDOW-R1')),
-        same(reasoningState),
-      );
+      expect(_thought(journal, 'WINDOW-R1'), findsNothing);
       expect(find.text('WINDOW-R1'), findsOneWidget);
       expect(tester.state(_card('window-b')), same(toolState));
       expect(_thought(journal, 'WINDOW-R2'), findsOneWidget);
@@ -979,17 +959,23 @@ void main() {
           ),
         ],
         tools: [
-          for (final id in ['read-one', 'read-two'])
-            ToolRun(
-              id: id,
-              name: 'read',
-              messageId: id + '-message',
-              status: ToolStatus.complete,
-              content: ToolContent(
-                title: 'read',
-                reasoning: 'TOOL-DETAIL-' + id,
-              ),
+          ToolRun(
+            id: 'read-one',
+            name: 'read',
+            messageId: 'read-one-message',
+            status: ToolStatus.complete,
+            content: ToolContent(
+              title: 'read',
+              reasoning: 'TOOL-DETAIL-read-one',
             ),
+          ),
+          const ToolRun(
+            id: 'read-two',
+            name: 'read',
+            messageId: 'read-two-message',
+            status: ToolStatus.complete,
+            detail: 'TOOL-DETAIL-read-two',
+          ),
         ],
       );
       await _openGroups(tester);
@@ -1002,10 +988,7 @@ void main() {
         tester.getRect(_card('read-one')).height,
         greaterThanOrEqualTo(48),
       );
-      expect(
-        tester.getRect(_card('read-one')).height,
-        lessThanOrEqualTo(48),
-      );
+      expect(tester.getRect(_card('read-one')).height, lessThanOrEqualTo(48));
       expect(
         tester.getRect(_card('read-two')).top -
             tester.getRect(_card('read-one')).top,
@@ -1019,6 +1002,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('ASSISTANT-THOUGHT-ONE'), findsOneWidget);
       expect(find.text('TOOL-DETAIL-read-one'), findsOneWidget);
+      expect(
+        tester.getTopLeft(_card('read-two')).dy -
+            tester.getBottomLeft(find.text('ASSISTANT-THOUGHT-ONE')).dy,
+        inInclusiveRange(0, 4),
+      );
+      await tester.tap(find.byKey(const ValueKey('tool-card-read-two')));
+      await tester.pumpAndSettle();
+      expect(find.text('ASSISTANT-THOUGHT-TWO'), findsOneWidget);
+      expect(find.text('TOOL-DETAIL-read-two'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -1052,13 +1044,13 @@ void main() {
         tools: [_command('one', 'first'), _command('two', 'second')],
       );
       await _openGroups(tester);
-      final firstThought = find.byKey(const ValueKey(('reasoning', 'first')));
       final betweenThought = find.byKey(
         const ValueKey(('reasoning', 'between')),
       );
+      expect(find.byKey(const ValueKey(('reasoning', 'first'))), findsNothing);
       expect(
-        tester.getRect(firstThought).bottom,
-        lessThanOrEqualTo(tester.getRect(_card('one')).top),
+        tester.widget<ToolRunCard>(_card('one')).executionReasoning,
+        'FIRST-THOUGHT',
       );
       _expectGap(tester, _card('one'), betweenThought);
       _expectGap(tester, betweenThought, _card('two'));

@@ -25,10 +25,16 @@ TextStyle _codeStyle(BuildContext context) => TextStyle(
 /// Compact presentation of explicit reasoning, command results and code edits.
 /// Tool status and the command's exit code are independent observations.
 class ToolProcessCard extends StatefulWidget {
-  const ToolProcessCard({super.key, required this.tool, this.compact = false});
+  const ToolProcessCard({
+    super.key,
+    required this.tool,
+    this.compact = false,
+    this.executionReasoning,
+  });
 
   final ToolRun tool;
   final bool compact;
+  final String? executionReasoning;
 
   @override
   State<ToolProcessCard> createState() => _ToolProcessCardState();
@@ -52,6 +58,7 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
     final tool = widget.tool;
     final content = tool.content;
     final command = content?.command;
+    final executionReasoning = widget.executionReasoning ?? '';
     final running = tool.status == ToolStatus.running;
     final statusColor = switch (tool.status) {
       ToolStatus.running => DshPalette.of(context).inkSoft,
@@ -150,7 +157,7 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
             ),
           ),
         if (content != null &&
-            content.reasoning.isNotEmpty &&
+            (content.reasoning.isNotEmpty || executionReasoning.isNotEmpty) &&
             !(widget.compact && command != null) &&
             !generatedCommandDetail)
           _ProcessSection(
@@ -174,10 +181,17 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                     id: tool.id + '-reasoning',
                     label: '参数与结果操作',
                     entries: [
-                      _ProcessMenuEntry(
-                        value: 'copy-reasoning',
-                        label: '复制参数与结果',
-                        onSelected: () => _copyText(context, content.reasoning),
+                      if (content.reasoning.isNotEmpty)
+                        _ProcessMenuEntry(
+                          value: 'copy-reasoning',
+                          label: '复制参数与结果',
+                          onSelected: () =>
+                              _copyText(context, content.reasoning),
+                        ),
+                      ..._executionReasoningActions(
+                        context,
+                        tool.id,
+                        executionReasoning,
                       ),
                       if (_previewTruncated(content.reasoning, lines: 12))
                         _ProcessMenuEntry(
@@ -195,20 +209,33 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                   )
                 : null,
             onToggle: () => _toggle('reasoning'),
-            body: () => _TextOutput(
-              id: tool.id + '-reasoning',
-              label: compactStandaloneDetail
-                  ? '参数与结果'
-                  : widget.compact
-                  ? '思考内容'
-                  : '思考过程',
-              compact: widget.compact,
-              showCopy: !widget.compact,
-              text: content.reasoning,
-              accent: widget.compact
-                  ? DshPalette.of(context).terminal
-                  : DshPalette.of(context).thought,
-              monospace: false,
+            body: () => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (content.reasoning.isNotEmpty)
+                  _TextOutput(
+                    id: tool.id + '-reasoning',
+                    label: compactStandaloneDetail
+                        ? '参数与结果'
+                        : widget.compact
+                        ? '思考内容'
+                        : '思考过程',
+                    compact: widget.compact,
+                    showCopy: !widget.compact,
+                    text: content.reasoning,
+                    accent: widget.compact
+                        ? DshPalette.of(context).terminal
+                        : DshPalette.of(context).thought,
+                    monospace: false,
+                  ),
+                if (executionReasoning.isNotEmpty)
+                  ToolExecutionReasoningDetail(
+                    id: tool.id + '-execution-reasoning',
+                    text: executionReasoning,
+                    compact: widget.compact,
+                    actionsInMenu: widget.compact,
+                  ),
+              ],
             ),
           ),
         if (command != null)
@@ -256,6 +283,11 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                           onSelected: () =>
                               _copyText(context, content!.reasoning),
                         ),
+                      ..._executionReasoningActions(
+                        context,
+                        tool.id,
+                        executionReasoning,
+                      ),
                       if (content?.reasoning.isNotEmpty == true &&
                           !generatedCommandDetail &&
                           _previewTruncated(
@@ -298,9 +330,12 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                         onSelected: () => _copyText(
                           context,
                           _commandDigest(
-                            command,
-                            extraDetail: content?.reasoning ?? '',
-                          ),
+                                command,
+                                extraDetail: content?.reasoning ?? '',
+                              ) +
+                              (executionReasoning.isEmpty
+                                  ? ''
+                                  : '\n\n[思考过程]\n' + executionReasoning),
                         ),
                       ),
                       if (_previewTruncated(
@@ -337,6 +372,7 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                             context,
                             tool: tool,
                             command: command,
+                            executionReasoning: executionReasoning,
                           ),
                         ),
                     ],
@@ -353,6 +389,7 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                     reasoning: generatedCommandDetail
                         ? null
                         : content?.reasoning,
+                    executionReasoning: executionReasoning,
                     structuredDetail:
                         generatedCommandDetail &&
                             command.stdout.isEmpty &&
@@ -361,6 +398,11 @@ class _ToolProcessCardState extends State<ToolProcessCard> {
                         : null,
                   )
                 else ...[
+                  if (executionReasoning.isNotEmpty)
+                    ToolExecutionReasoningDetail(
+                      id: tool.id + '-execution-reasoning',
+                      text: executionReasoning,
+                    ),
                   _TextOutput(
                     id: tool.id + '-command',
                     label: 'command',
@@ -864,6 +906,83 @@ bool _previewTruncated(
   return false;
 }
 
+List<_ProcessMenuEntry> _executionReasoningActions(
+  BuildContext context,
+  String toolId,
+  String text,
+) => [
+  if (text.isNotEmpty) ...[
+    _ProcessMenuEntry(
+      value: 'copy-execution-reasoning',
+      label: '复制思考过程',
+      onSelected: () => _copyText(context, text),
+    ),
+    _ProcessMenuEntry(
+      value: 'full-execution-reasoning',
+      label: '查看完整思考过程',
+      onSelected: () => _openFullOutput(
+        context,
+        id: toolId + '-execution-reasoning',
+        label: '思考过程',
+        text: text,
+        monospace: false,
+      ),
+    ),
+  ],
+];
+
+class ToolExecutionReasoningDetail extends StatelessWidget {
+  const ToolExecutionReasoningDetail({
+    super.key,
+    required this.id,
+    required this.text,
+    this.compact = false,
+    this.actionsInMenu = false,
+  });
+
+  final String id;
+  final String text;
+  final bool compact;
+  final bool actionsInMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _TextOutput(
+          id: id,
+          label: '思考过程',
+          text: text,
+          accent: DshPalette.of(context).thought,
+          monospace: false,
+          compact: compact,
+          compactMaxLines: 3,
+          showCopy: !actionsInMenu,
+        ),
+        if (compact &&
+            !actionsInMenu &&
+            _previewTruncated(text, lines: 3, maxCharacters: 280))
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: ValueKey('execution-reasoning-full-' + id),
+              style: _actionStyle(context),
+              onPressed: () => _openFullOutput(
+                context,
+                id: id,
+                label: '思考过程',
+                text: text,
+                monospace: false,
+              ),
+              child: const Text('查看完整思考过程'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 void _openFullOutput(
   BuildContext context, {
   required String id,
@@ -886,14 +1005,20 @@ void _openCommandFullOutput(
   BuildContext context, {
   required ToolRun tool,
   required CommandResult command,
+  String executionReasoning = '',
 }) {
   final reasoning = tool.content?.reasoning ?? '';
   final digest = _commandDigest(command);
+  final fullText = [
+    digest,
+    if (reasoning.isNotEmpty) '\n\n[参数与结果]\n' + reasoning,
+    if (executionReasoning.isNotEmpty) '\n\n[思考过程]\n' + executionReasoning,
+  ].join();
   _openFullOutput(
     context,
     id: tool.id + '-command-full',
     label: tool.name,
-    text: reasoning.isEmpty ? digest : digest + '\n\n[参数与结果]\n' + reasoning,
+    text: fullText,
   );
 }
 
@@ -901,19 +1026,20 @@ void _openCommandFullOutput(
 ///
 /// Order is deliberate. A failure shows its error first, the invocation second,
 /// and the streams last, so the first line after the header answers "what ran".
-/// Each field keeps its own 48dp copy target and the existing full-content path,
-/// so nothing that used to be reachable became a menu-only action.
+/// The header menu shares one touch target for copy and full-content actions.
 class _CompactCommandFields extends StatelessWidget {
   const _CompactCommandFields({
     required this.tool,
     required this.command,
     this.reasoning,
+    this.executionReasoning = '',
     this.structuredDetail,
   });
 
   final ToolRun tool;
   final CommandResult command;
   final String? reasoning;
+  final String executionReasoning;
   final String? structuredDetail;
 
   @override
@@ -943,6 +1069,15 @@ class _CompactCommandFields extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (failed && stderrField != null) stderrField,
+        if (executionReasoning.isNotEmpty) ...[
+          ToolExecutionReasoningDetail(
+            id: tool.id + '-execution-reasoning',
+            text: executionReasoning,
+            compact: true,
+            actionsInMenu: true,
+          ),
+          const SizedBox(height: 2),
+        ],
         commandField,
         if (reasoning?.isNotEmpty == true) ...[
           const SizedBox(height: 2),

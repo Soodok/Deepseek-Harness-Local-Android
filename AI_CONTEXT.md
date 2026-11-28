@@ -1,5 +1,23 @@
 # DSH Android · 交接文档
 
+## 2026-11-28 分支统一与验证状态
+
+- 更新时间为 `2026-11-28 10:52:32 +08:00`。当前工作分支为 `feat/flutter-native-chat`，HEAD 为 `f81c726e`。
+- `main` 与 `origin/main` 均为 `3eb2fa5c`。`git rev-list --left-right --count feat/flutter-native-chat...main` 输出 `40 0`，当前分支包含主线且主线没有独有提交。
+- 当前分支包含同步主线的提交 `6e4a51e5`、Flutter 测试 WIP 快照 `26280921`、引擎门禁整合提交 `82840ab1` 和重复状态分支修复提交 `f81c726e`。
+- `wip/ui-btn-20261128`、`wip/ui-report-20261128`、`wip/ui-shots-20261128`、`wip/engine-gate-20261128` 均保留在各自 worktree。相对当前分支的 `git rev-list --left-right --count` 分别为 `346 2`、`96 1`、`141 1`、`356 2`，它们的主体差异已按当前较新实现统一到当前分支，原分支快照没有被删除。
+- `spike/pi-fast-mode` 暂不合并，仍保留在 `E:/tmp/wt-pi-fast-mode`。相对当前分支的计数为 `2 3`，且 `git merge-base --is-ancestor spike/pi-fast-mode HEAD` 返回 `1`，确认该 spike 没有并入当前分支。
+- `main` 工作树 `E:/Deepeek harness/dsh-android` 仍停在 `3eb2fa5c`，只保留原先未跟踪文件 `docs/ui-preview/probe-opacity.mjs`，本轮没有修改主仓。
+- 当前目标工作树的 7 个已修改文件为 `AI_CONTEXT.md`、`app/build.gradle.kts`、`app/src/main/java/app/dsh/mobile/RepoCredits.kt`、`flutter_ui/lib/src/ui/conversation_flow.dart`、`flutter_ui/lib/src/ui/tool_process_card.dart`、`flutter_ui/lib/src/ui/tool_run_card.dart` 和 `flutter_ui/test/conversation_tool_stack_test.dart`。另有 Gradle 生成的未跟踪错误日志 `.kotlin/errors/errors-1795833908639.log`，本轮未删除。
+- 当前版本载体在 `app/build.gradle.kts` 中为 `1.6.0-beta.145` / `versionCode 520`，记录时间为 `2026-11-28`，摘要为“将步骤思考内容折叠进紧凑工具行”。
+- `RepoCredits.kt` 已移除重复的 Kotlin Coroutines、Java-WebSocket、Apache MINA SSHD、XZ、Material Components 和 Edge TTS 条目，简单名称重复检查输出为 `0 duplicates across 29 one-line entries`。
+- 已验证当前目标工作树无冲突标记，`git diff --check` 无输出。临时整合 worktree `E:/tmp/wt-unify-flutter-native-chat` 仍为 detached `f81c726e`，其中保留一份已暂存的 `RepoCredits.kt` WIP。
+- Flutter 验证：`E:/tools/flutter/bin/flutter.bat analyze` 输出 `No issues found!`；`flutter test --no-pub --concurrency=1 test/conversation_tool_stack_test.dart` 输出 `17` 项全部通过。
+- Android 验证：`gradle :app:compileDebugKotlin -Ppackage=noruntime -Pkotlin.incremental=false --no-daemon --console=plain` 输出 `BUILD SUCCESSFUL in 2m 48s`。
+- Android 单测：`gradle :app:testDebugUnitTest -Ppackage=noruntime -Pkotlin.incremental=false --no-daemon --console=plain` 输出 `231 tests completed, 3 failed`。失败均为 `NativeWorkspacePathsTest` 在 `NativeWorkspacePathsTest.kt:38`、`:90`、`:125` 创建 Windows 符号链接时的 `FileSystemException`，系统提示“客户端没有所需的特权”，未进入业务断言。
+- 当前没有待执行的分支合并动作。后续修改应继续保留当前 7 个 WIP 文件，不提交、不推送、不重置、不 stash、不执行 Git clean，也不合并 `spike/pi-fast-mode`。
+- 关键分支路径为 `E:/tmp/wt-flutter-native-chat`、`E:/tmp/wt-btn`、`E:/tmp/wt-rep`、`E:/tmp/wt-shots`、`E:/tmp/wt-gate` 和 `E:/tmp/wt-pi-fast-mode`。
+
 ## 2026-11-27 私人反馈库两条真实 bug 修复（ask 提问接管 + 移动端插话）
 
 - **反馈来源**：私有反馈库 `soodok.online/bug/report.php` 的 `reports.db`（8 条 reports，3 条是我 11-21 的探针，真实用户反馈 4 条；1 条正文乱码、1 条墓碑已删）。本轮修其中**信息完整、根因可核**的两条，两条都来自同一台 HONOR BKQ-AN90 / Android 17 / beta.31（vC407）：
@@ -19456,3 +19474,13 @@ E 不再新增途径（`runAll` 已清、全仓 0 引用、`repair/apply` 那条
 - **引擎 Healthy 状态下跑 `requires_engine_stopped` 的那几步**（`workspace-registry` / `staged-tgz` / `pnpm` / `kill-switch` / `deep-clean` 改的是引擎独占文件，引擎退出时可能被内存态整份覆盖）。本轮实测是启动后跑的，引擎在跑但没做写盘型动作（`workspace-registry` 那步当时本来就没重复认领可合）。
 - **`includeReset=true`（deep-clean 那步）**：`HomeResetter.run(DEEP)` 的调用在 UI 上还没给入口，只走 API；未实测。
 - **真机 PLZ110**：已装 vc486/beta.111（并发分支），本仓 vc412 装上去是降级，故未装机。属主被 root 占住的「需要特权通道」分支在模拟器上无 su，也仍未有自动验证（见第一百六十七章）。
+
+## 2026-11-28 beta145 原生聊天现场复核
+
+- 设备为 `emulator-5570`，AVD 名为 `dsh_flutter_20261116`。未操作 `emulator-5554`。
+- 已安装包版本为 `1.6.0-beta.145`，`versionCode=520`。
+- `dumpsys activity activities` 确认前台为 `app.dsh.mobile/.NativeChatActivity`，当前焦点窗口也是 `NativeChatActivity`。
+- 原生页面截图保存在 `E:/tmp/wt-flutter-native-chat/.scratch/beta145-native-current.png`、`E:/tmp/wt-flutter-native-chat/.scratch/beta145-native-tool-expanded.png` 和 `E:/tmp/wt-flutter-native-chat/.scratch/beta145-native-tool-row-tap.png`。
+- 截图可见原生顶部栏、引擎状态、消息区、工具汇总行、回答操作区和原生输入栏。当前历史样本中工具明细未呈现可读的命令文本，点击工具汇总行及明细行后截图未出现可读命令内容。
+- 该样本显示“模型请求失败，正在重试（第 1/5 次）”，服务端返回 `503`，响应文本为 `QA temporary failure`。
+- **未验证**：当前截图样本未能用于量测多条结构化工具命令的实际垂直间距。

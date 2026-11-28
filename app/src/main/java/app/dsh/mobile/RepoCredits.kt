@@ -58,6 +58,8 @@ object RepoCredits {
             "bge-small-zh-v1.5 GGUF (on-device embedding model)",
             "https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf",
         ),
+        Repo("sherpa-onnx (offline ASR engine)", "https://github.com/k2-fsa/sherpa-onnx"),
+        Repo("ONNX Runtime (inference runtime)", "https://github.com/microsoft/onnxruntime"),
 
         // —— 工具链与 rootfs ——
         // 扩展中心那 58 个扩展**全部**从 Termux 仓库实时取（不预打包），
@@ -77,6 +79,7 @@ object RepoCredits {
         // —— 系统集成：应用直接调用的能力来源 ——
         Repo("Shizuku (rootless privileged channel)", "https://github.com/RikkaApps/Shizuku"),
         Repo("KernelSU (root solution)", "https://github.com/tiann/KernelSU"),
+        Repo("cloudflared (tunnel extension)", "https://github.com/cloudflare/cloudflared"),
 
         // —— 直接依赖的 Android 库 ——
         Repo("Kotlin Coroutines", "https://github.com/Kotlin/kotlinx.coroutines"),
@@ -104,5 +107,12 @@ object RepoCredits {
         Repo("dsh-pet-mobile-assets (pet assets)", "https://github.com/XiaoPb/dsh-pet-mobile-assets"),
         Repo("dsh-solution-explorer (solution explorer plugin)", "https://github.com/XiaoPb/dsh-solution-explorer"),
         Repo("dsh-hardssh (hardened SSH plugin)", "https://github.com/XiaoPb/dsh-hardssh"),
+        Repo("dsh-web-mobile-fix (mobile WebView fixes)", "https://github.com/AcidGr/dsh-web-mobile-fix"),
+        Repo("dsh-ai-providers (model providers)", "https://github.com/Firefox2100/dsh-ai-providers"),
+        Repo("dsh-plugin-kit (plugin SDK)", "https://github.com/hyzyn/dsh-plugin-kit"),
+        Repo(
+            "DeepSeek-Harness-Desktop-Ultra (desktop variant)",
+            "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra",
+        ),
     )
 }
