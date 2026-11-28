@@ -188,6 +188,100 @@ adb -s emulator-5554 shell 'am force-stop app.dsh.mobile; am start -n app.dsh.mo
 注意：`git-hygiene.py` 在 GBK 控制台会因 `✓` 抛 UnicodeEncodeError（看起来像脚本坏了，其实只是输出编码），
 跑法用 `PYTHONIOENCODING=utf-8 python3 scripts/git-hygiene.py`。
 
+### 三·补7 git 源插件「批准并重试」永远不出现（2026-11-28，用户截图 dsh-market）
+
+**反馈现场**：插件页安装 `https://github.com/dsh-market/dsh-market` 失败，弹窗只有一句
+「有依赖的安装脚本被 pnpm 拦下，请在 profile 的 pnpm-workspace.yaml 的 allowBuilds 中放行后重试」，
+**没有「批准并重试」按钮**。截图原图在会话里（873×1920）。
+
+**根因（两层，都是本机实测，不是推测）**
+
+1. **错误码不对路**。git 源包（带 prepare 脚本）被 pnpm 拒绝时报
+   `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，不是注册源的 `ERR_PNPM_IGNORED_BUILDS`。
+   运行时 0.2.1-rc.2（仓库内 `_runtime_bak/rt-x86_64-current.zip`）的 `LOG_KINDS` 里
+   **完全没有这个码** → 失败被归成 `unknown`；App 侧的 `isIgnoredBuildsError()` 也漏了它。
+2. **建议的 allowBuilds 键解析不出来**。pnpm 在 help 段里把 `allowBuilds:` **缩进写**、
+   把长 URL 键在 74 列处**折成两行**：
+   ```
+     help: Add the package to "allowBuilds" in your project's pnpm-workspace.yaml
+           to allow it to run scripts. For example:
+           allowBuilds:
+             dshmarket@https://codeload.github.com/dsh-market/dsh-market/
+           tar.gz/18004a19b1c5bca1cd3ea405e2171a5fb3c089ce: true
+   ```
+   运行时 0.2.2-rc.2 的 `GIT_DEP_PREPARE` 正则要求**顶格 `^allowBuilds:` + 单行**，
+   对这段真实输出实测返回 `undefined` → `pendingBuilds` 恒为空 →
+   UI 只能回落到 `installFailureBuildBlockedManual`（就是截图那句话）。
+
+**取证方法与证据**
+
+| 步骤 | 结果 |
+|---|---|
+| 宿主机复现 `pnpm 12.21.0 add https://github.com/dsh-market/dsh-market` | `Error: ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`（夹具 `scripts/probes/data/pnpm-git-dep-prepare.txt`，601 B 原文） |
+| 同一命令改跑设备 pnpm 12.21.0 | 同样错误码（措辞一致，非环境差异） |
+| 上游正则对夹具 | `None`（正向对照：注册源输出仍能取到 `esbuild@0.28.2`） |
+| 把 pnpm help 里那个**完整 URL 键**写成 `: true` 再装 | **RC=0，`+ dshmarket 1.82.0`，Done in 8m41s** —— 证明这个键是唯一正确写法 |
+| 只写裸包名 `dshmarket: true` | 仍报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`（**不行**） |
+| 写 `dshmarket@https://github.com/dsh-market/dsh-market`（无 sha） | 仍报同一错误（**不行**） |
+| 运行时自带 yaml 库序列化长键（**无引号**） | pnpm 接受（RC=0），所以上游 `document.setIn` 写法本身没问题，坏的只是解析 |
+
+**改动清单**
+
+1. `scripts/patch-plugin-build-approval.py`（新增，单一真源，目录/zip 双模式，幂等标记
+   `[dsh-android: build-approval]`）：
+   - 形态 A（0.2.2-rc.*）：把坏正则换成 `gitDepPrepareKey(output)` 逐行累加解析
+     （缩进不管、键跨行拼接、遇 `: true` / `: false` 收尾、空行未收尾即返回 null 不猜）；
+   - 形态 B（0.2.1-rc.2）：补 `LOG_KINDS` 错误码 + `gitDepPrepareKey` + `carriesCredential`
+     （带 `user:pass` 的 git 键不落盘、不进待批名单）。
+   - 锚点唯一命中，0 次或 >1 次都非零退出。
+2. `scripts/collect-termux-runtime.sh`：紧接 steer 补丁之后接线，失败即中止构建。
+3. `app/src/main/java/app/dsh/mobile/engine/PluginCenter.kt`：
+   - `isIgnoredBuildsError()` 认 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`；
+   - 新增 `gitDepPrepareKey()`（与运行时同一口径）与 `isSafeAllowBuildsKey()`；
+   - `recordPendingBuilds` / `markPendingBuilds` / `allowBuildsFor` / `approveBuilds` /
+     `probeIgnoredBuilds` 五处都改成「两形态键」判据（裸名 or `<name>@<URL>`，另兼容 `<name>@<版本>`）；
+   - `install()` 的 ignored-builds 分支：自动放行没成功时**记录待批并回 `ignored-builds:<names>` 前缀**
+     —— 这是 `PluginStoreActivity.offerBuildApproval` 唯一认的触发条件，旧实现从不产生它，
+     所以连注册源插件其实也没有批准入口（本轮顺带补上）。
+4. `app/src/main/java/app/dsh/mobile/PluginStoreActivity.kt`：`offerBuildApproval` 先
+   `substringBefore(IGNORED_BUILDS_RAW)` 切出键段再逐键过 `isSafeAllowBuildsKey`
+   （原文段里的 "For example:" 之类文字否则会被当成键），并给按钮补回长按查看完整原文。
+5. `app/src/test/java/app/dsh/mobile/engine/GitDepPrepareKeyTest.kt`（新增 12 例）：喂真实 pnpm 原文，
+   钉死键解析（含折行/缩进/截断不给猜/凭据过滤）、键合法性、以及**写盘往返**
+   （`mergeAllowBuilds` → `pendingFromAllowBuilds` 必须原样读回，否则「批准」点了也判 stale）。
+
+**验收（全部实跑）**
+
+| 项 | 结果 |
+|---|---|
+| `_test_plugin_build_approval.py`（新增） | **40 passed / 0 failed**；负对照有：旧 0.2.2 正则必须 `None`、0.2.1 必须没有该错误码/git 解析；锚点缺失必须非零退出 |
+| `_test_plugin_install_errors.py`（既有，判据升级 + 批准入口 4 条新断言） | **78 passed / 0 failed** |
+| Python 探针全量 | **179 个全过，0 失败** |
+| `testDebugUnitTest` | **12 files / 126 tests / 0 failures / 0 errors / 0 skipped** |
+| `compileDebugKotlin --offline -Ppackage=noruntime` | RC=0，`e: file:///` **0 条** |
+| `check-i18n.py` | All checks passed |
+| 设备端（模拟器 emulator-5570 / 0.2.2-rc.2）临时注入后跑真实运行时函数 | `PENDING=["dshmarket@https://codeload.github.com/dsh-market/dsh-market/tar.gz/18004a19b1c5bca1cd3ea405e2171a5fb3c089ce"]`，YAML 落盘为 `set this to true or false` |
+
+**未验证 / 明确边界**
+
+- **没有跑真机的完整安装**：模拟器无外网（`ping 8.8.8.8` 100% 丢包），真机 `192.168.101.21:9000`
+  在本轮中途掉线（`adb connect` 连续三次 10060），只在**宿主机**跑通了
+  「写键 → `pnpm add` RC=0」这一整条。所以「App 点批准 → 装上」这一步仍是**未端到端验证**。
+- 模拟器上的运行时补丁是**临时注入**（备份在 `.scratch/dev-backup/`），验完已**回滚成原文件**
+  （`index.js` 150898 B、`build-approval.js` 5202 B、`gitDepPrepareKey` 计数 0）。
+  正式生效必须走 `build-runtime.sh` 出包。
+- `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 的**其它子形态**（子目录键、`#path:` 后缀）只有注释与
+  `carriesCredential` 覆盖，没有真实产物夹具。
+
+**踩到的两个坑（工具链，不是产品缺陷）**
+
+1. **Python `r"""..."""` 里写 `\t` 会原样落成字面反斜杠 t**，写出的 JS 变成非法代码。
+   `node --check` 当时居然报 `RC=0`（因为 Windows 下 `node --check` 对含字面 `\t` 的
+   ESM 文件路径解析异常），换成 `node --input-type=module --check < file` 才真报
+   `SyntaxError: Invalid or unexpected token`。**判据：语法检查要拿真实退出码且换一种入口复核一次。**
+2. **`adb push` 到 `/data/local/tmp` 后 `run-as` 删不掉**（`rm: Permission denied`）——
+   app uid 对 `/data/local/tmp` 里的文件没有删除权。清理要 `adb shell rm`（shell uid）而不是 `run-as`。
+
 ### 三·补2 仍未覆盖的部分（明确列出，不要当成已完成）
 
 - **`ask-bridge.mjs` 在真实引擎里的端到端**：本轮只验证到桥 API 与卡片显示，没跑"模型发起 `ask_user_question` → 插件接管 → 返回值过 `validateJsonSchemaValue`"这一整条。原因：需要真会话 + 真模型回合，模拟器里没有可用的 API key 会话。

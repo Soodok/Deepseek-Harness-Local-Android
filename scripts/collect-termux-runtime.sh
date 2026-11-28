@@ -344,6 +344,18 @@ python3 "$SCRIPTS_DIR/patch-steer-android.py" "$ROOT" || {
   exit 1
 }
 
+# [dsh-plugin-manager] git 源插件的「批准并重试」永远不出现（2026-11-28 用户截图）：
+#   安装 https://github.com/dsh-market/dsh-market 失败，弹窗只说「请在 allowBuilds
+#   中放行后重试」，没有批准按钮。根因在运行时：pnpm 12 的 ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED
+#   段里 allowBuilds: 是缩进的、长 URL 键被折成两行，而 0.2.2 的单行正则要求顶格 →
+#   永远解析不到 → pendingBuilds 恒为空 → UI 回落到「手动改 YAML」文案。
+#   补丁换成逐行累加的解析函数（同时补 0.2.1 缺失的错误码识别与凭据过滤）。
+#   失败即中止构建。详见 scripts/patch-plugin-build-approval.py。
+python3 "$SCRIPTS_DIR/patch-plugin-build-approval.py" "$ROOT" || {
+  echo "错误：插件构建批准（git 源）补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [dsh-ptc-runtime-node] PTC run_code 子进程保留 LD_LIBRARY_PATH（issue #29）：
 # 该包拉子进程时清空继承环境、只留 STARTUP_ENVIRONMENT_NAMES 白名单
 # （PATH/PATHEXT/SYSTEMROOT/WINDIR/TEMP/TMP）。Linux 靠 ldconfig 找 libz，

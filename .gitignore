@@ -449,3 +449,14 @@ docs/ui-preview/.preview-server.json
 !/scripts/probes/_test_steer_patch_behavior.py
 !/scripts/probes/_fetch_runtime_js.py
 !/scripts/probes/cdp-served-exact.cjs
+
+# v1.8.x：git 源插件的「批准并重试」永远不出现（2026-11-28 用户截图 dsh-market）：
+# pnpm 12 的 git 准备脚本拒绝段里 allowBuilds: 是缩进的、长 URL 键折成两行，
+# 上游单行正则实测取不到键 → pendingBuilds 恒空 → UI 只剩「请手动改 YAML」。
+# 探针用三份**真实产物**夹具做负对照（旧实现必须红）＋行为层真跑解析函数。
+!/scripts/probes/_test_plugin_build_approval.py
+!/scripts/probes/data/pnpm-git-dep-prepare.txt
+!/scripts/probes/data/pm-0.2.2-rc.2-index-slice.js
+!/scripts/probes/data/pm-0.2.2-rc.2-build-approval.js
+!/scripts/probes/data/pm-0.2.1-rc.2-index-slice.js
+!/scripts/probes/data/pm-0.2.1-rc.2-build-approval.js

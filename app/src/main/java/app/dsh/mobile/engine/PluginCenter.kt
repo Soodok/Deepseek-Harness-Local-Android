@@ -32,6 +32,15 @@ object PluginCenter {
     private const val TAG = "PluginCenter"
 
     /**
+     * `install()` 失败回调里「待批准键列表」与 `pnpm 原文` 之间的分隔符（v1.7.40）。
+     *
+     * UI（`PluginStoreActivity.offerBuildApproval`）按逗号切前缀段拿键，原文段只用于
+     * 长按弹窗与复制 —— 两者都不能丢：前者决定按钮变成「批准并重试」，后者是用户
+     * 报障时唯一可查的证据。
+     */
+    const val IGNORED_BUILDS_RAW = "\n---pnpm---\n"
+
+    /**
      * `dsh plugin add/remove` 的**无输出**超时（v1.7.32）。
      *
      * 真机实测：pnpm 在下载期间每 2~3 秒必打一行进度（最大间隔 3s）。
@@ -491,13 +500,33 @@ object PluginCenter {
                 // 安全性：放行范围严格等于 pnpm 自己报告的那几个包，不扩权。
                 // ══════════════════════════════════════════════════════════
                 if (!ok && isIgnoredBuildsError(msg)) {
-                    val names = ignoredBuildNames(msg)
-                        .ifEmpty { probeIgnoredBuilds(ctx, spec) }
+                    // v1.7.40（2026-11-28 截图：git 源插件失败且**没有批准按钮**）：
+                    // 键有两种形态 —— 注册源报 `Ignored build scripts: esbuild@1.2"`，
+                    // git 源报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` + help 段里一个
+                    // 折成两行的 `<name>@<codeload URL>/tar.gz/<sha>` 键。
+                    val reported = ignoredBuildNames(msg) + listOfNotNull(gitDepPrepareKey(msg))
+                    val names = reported.ifEmpty { probeIgnoredBuilds(ctx, spec) }
                     if (names.isNotEmpty() && allowBuildsFor(ctx, names)) {
                         Log.i(TAG, "install $pkg: pnpm ignored builds for ${names.joinToString(",")}; allowed+retrying")
                         val r3 = runDshPluginCli(ctx, "add", spec)
                         ok = r3.first
-                        msg = if (ok) r3.second else r3.second
+                        msg = r3.second
+                    }
+                    // 自动放行没成功（或报告里根本没点名）：把待批键**记进**策略文件，
+                    // 并给 UI 一个 `ignored-builds:` 前缀 —— PluginStoreActivity 只认
+                    // 这个前缀才弹「批准并重试」。旧实现从不产生这个前缀，
+                    // 于是连注册源插件也没有批准入口（用户看到的正是那句
+                    // 「请在 allowBuilds 中放行后重试」）。
+                    if (!ok) {
+                        val pending = recordPendingBuilds(ctx, msg)
+                        if (pending.isNotEmpty()) {
+                            // 键列表走前缀（UI 只认它才弹「批准并重试」），原始 pnpm 原文
+                            // 附在 [IGNORED_BUILDS_RAW] 之后 —— 长按弹窗仍能看全，
+                            // 用户反馈时那句 help 段原样可查。
+                            msg = "ignored-builds:" + pending.joinToString(",") +
+                                IGNORED_BUILDS_RAW + msg
+                            Log.i(TAG, "install $pkg: pending builds -> ${pending.joinToString(",")}")
+                        }
                     }
                 }
                 // v1.4.37（用户反馈「插件下不了」）：引擎的插件管理器在安装前会做
@@ -632,7 +661,9 @@ object PluginCenter {
         runCatching { errT.join(2000) }
         val combined = synchronized(outBuf) { outBuf.toString() } +
             "\n" + synchronized(errBuf) { errBuf.toString() }
-        val names = ignoredBuildNames(combined)
+        // v1.7.40：直连 pnpm 才能看到 git 源的真实错误段（引擎 CLI 只回一行摘要），
+        // 所以这里也必须认 git 形态的键，否则「自动放行」这条自愈路径对 git 源失效。
+        val names = ignoredBuildNames(combined) + listOfNotNull(gitDepPrepareKey(combined))
         Log.i(
             TAG,
             "probeIgnoredBuilds: exit=" + p.exitValue() +
@@ -910,7 +941,10 @@ object PluginCenter {
      * `allowBuilds` 取代），改为同时认 allowBuilds。
      */
     private fun isIgnoredBuildsError(msg: String): Boolean =
-        msg.contains("ERR_PNPM_IGNORED_BUILDS", ignoreCase = true) ||
+        // 2026-11-28（用户截图：git 源插件 dsh-market 安装失败、没有批准按钮）：
+        // git 源包（含 prepare 脚本）走的是另一条错误码，旧判据完全漏掉它。
+        msg.contains("ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED", ignoreCase = true) ||
+            msg.contains("ERR_PNPM_IGNORED_BUILDS", ignoreCase = true) ||
             msg.contains("ERR_PNPM_IGNORED_BUILD", ignoreCase = true) ||
             (msg.contains("ignored build", ignoreCase = true) &&
                 (msg.contains("allowBuilds", ignoreCase = true) ||
@@ -1113,8 +1147,74 @@ object PluginCenter {
         return lines.joinToString("\n")
     }
 
+    /**
+     * pnpm 拒绝 prepare git 源包时建议的 `allowBuilds` 键（v1.7.40）。
+     *
+     * ## 为什么不能用一条正则（2026-11-28 用户截图，两个真实产物都实测过）
+     *
+     * pnpm 12.21.0 对 `add https://github.com/dsh-market/dsh-market` 的真实输出：
+     *
+     * ```
+     * Error: ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED
+     *   ╰─▶ The git-hosted package "dshmarket@1.82.0" needs to execute build scripts
+     *       but is not in the "allowBuilds" allowlist.
+     *   help: Add the package to "allowBuilds" in your project's pnpm-workspace.yaml
+     *         to allow it to run scripts. For example:
+     *         allowBuilds:
+     *           dshmarket@https://codeload.github.com/dsh-market/dsh-market/
+     *         tar.gz/18004a19b1c5bca1cd3ea405e2171a5fb3c089ce: true
+     * ```
+     *
+     * 两个形态让「顶格 + 单行」的写法必然失败：`allowBuilds:` 是**缩进**的；
+     * 长 URL 键被 pnpm 在 74 列处**折成两行**（续行还有 8 空格缩进）。
+     * 上游 0.2.2 的 GIT_DEP_PREPARE 正则实测对这段输出返回 undefined。
+     *
+     * ## 口径
+     * - 缩进不管，从 `allowBuilds:` 之后逐行累加，遇到 `: true` / `: false` 收尾；
+     * - 折行处直接拼接（pnpm 的折行不插空格，续行缩进只是排版）；
+     * - 只看 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 之后的内容，别的错误码不解析；
+     * - 取不到就返回 null，调用方不要硬写。
+     *
+     * @return 完整的 allowBuilds 键（如 `dshmarket@https://…/tar.gz/<sha>`），或 null
+     */
+    internal fun gitDepPrepareKey(output: String): String? {
+        val code = "ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED"
+        val at = output.indexOf(code)
+        if (at < 0) return null
+        val head = output.indexOf("allowBuilds:", at)
+        if (head < 0) return null
+        val rest = output.substring(head + "allowBuilds:".length).split('\n')
+        var key = StringBuilder()
+        for ((index, raw) in rest.withIndex()) {
+            // 段头那一行自己也在 rest[0] 里（"allowBuilds:" 之后是空串），跳过。
+            if (index == 0) continue
+            val line = raw.trim()
+            if (line.isEmpty()) {
+                if (key.isEmpty()) continue
+                // 空行 = 段结束，键还没收尾 → 说明被截断了，不要猜。
+                return null
+            }
+            val suffix = when {
+                line.endsWith(": true") -> ": true"
+                line.endsWith(": false") -> ": false"
+                else -> null
+            }
+            if (suffix == null) {
+                key.append(line)
+                continue
+            }
+            key.append(line.removeSuffix(suffix))
+            val merged = key.toString().trim()
+            return merged.ifEmpty { null }
+        }
+        return null
+    }
+
     /** 解析 pnpm 报告里被跳过的构建脚本包名（上游 ignoredBuildNames 原文语义）。 */
     fun ignoredBuildNames(output: String): List<String> {
+        // 上游口径：没有这一行就是空列表。**不要**在这里顺手去解析 git 形态的键 ——
+        // 调用方会把 [gitDepPrepareKey] 的结果并进来，两个解析器各管一种错误码，
+        // 混在一起会让「注册源没有这一行」也被当成「解析失败」而静默吞掉。
         val reported = IGNORED_BUILDS.find(output)?.groupValues?.get(1) ?: return emptyList()
         return reported.split(',')
             // v1.4.64：剥掉每个包名后面的句号/分号。pnpm 的原文是一句英文：
@@ -1312,10 +1412,15 @@ object PluginCenter {
         val text = if (f.isFile) f.readText() else "{}\n"
         val pending = pendingFromAllowBuilds(text)
         val known = keysFromAllowBuilds(text).toSet()
-        val added = ignoredBuildNames(output).filter { it !in known }
+        // v1.7.40：git 源插件走另一个错误码，键也不是裸包名而是
+        // `<name>@<codeload URL>/tar.gz/<sha>`，旧实现只收 NPM_PACKAGE_NAME
+        // → 这类键整条被丢掉 → 失败页拿不到 pendingBuilds → 没有「批准」按钮。
+        val added = (ignoredBuildNames(output) + listOfNotNull(gitDepPrepareKey(output)))
+            .filter { it !in known }
         if (added.isEmpty()) return@runCatching pending
-        // 只认报告里明确列出的合法包名，防止把 pnpm 的说明性文字写成 YAML 键
-        val safe = added.filter { it.matches(NPM_PACKAGE_NAME) }
+        // 只认报告里明确列出的合法键（两种形态，见 [isSafeAllowBuildsKey]），
+        // 防止把 pnpm 的说明性文字写成 YAML 键。
+        val safe = added.filter { isSafeAllowBuildsKey(it) }.distinct()
         if (safe.isEmpty()) return@runCatching pending
         val merged = mergeAllowBuilds(text, safe.associateWith { UNDECIDED_BUILD })
             ?: run {
@@ -1341,8 +1446,14 @@ object PluginCenter {
         val text = if (f.isFile) f.readText() else "{}\n"
         val pending = pendingFromAllowBuilds(text)
         val known = keysFromAllowBuilds(text).toSet()
-        val safe = names.map { stripVersion(it.trim()) }
-            .filter { it.isNotEmpty() && it.matches(NPM_PACKAGE_NAME) }
+        // v1.7.40：键可以带版本（注册源报告）也可以带 URL（git 源报告）。
+        // stripVersion 只对裸包名有意义，git 形态下把 `: true` 之外的部分原样保留；
+        // 两种形态都必须过 isSafeAllowBuildsKey（它内部已做注入与通配过滤）。
+        val safe = names.map { raw ->
+            val t = raw.trim()
+            if (t.contains("://") || t.startsWith("git+")) t else stripVersion(t)
+        }
+            .filter { isSafeAllowBuildsKey(it) }
             .filter { it !in known }
             .distinct()
         if (safe.isEmpty()) return@runCatching pending
@@ -1374,9 +1485,8 @@ object PluginCenter {
      * @return 是否至少写入了一个包（false = 一个都没写，调用方不要重试）
      */
     private fun allowBuildsFor(ctx: Context, names: List<String>): Boolean = runCatching {
-        val safe = names.map { stripVersion(it.trim()) }
-            .filter { it.isNotEmpty() && !it.contains('*') && !it.contains('?') }
-            .filter { it.matches(NPM_PACKAGE_NAME) }
+        val safe = names.map { it.trim() }
+            .filter { isSafeAllowBuildsKey(it) }
             .distinct()
         if (safe.isEmpty()) {
             Log.w(TAG, "allowBuildsFor: no legal package name in " + names.joinToString(","))
@@ -1432,8 +1542,10 @@ object PluginCenter {
         // 否则可借换行/YAML 指示符注入别的策略（如 dangerouslyAllowAllBuilds）。
         // 校验必须在「是否待定」过滤**之前**，否则非法名字会先被过滤掉，
         // 校验形同虚设（checker v1.4.63 审查指出的顺序缺陷）。
-        if (wanted.any { !it.matches(NPM_PACKAGE_NAME) }) {
-            Log.w(TAG, "approveBuilds: refuse illegal package name")
+        // v1.7.40：git 源插件建议的键是 `<name>@<codeload URL>`，不是裸包名；
+        // 旧判据把它整条拒掉 → 用户点了「批准」也永远装不上。
+        if (wanted.any { !isSafeAllowBuildsKey(it) }) {
+            Log.w(TAG, "approveBuilds: refuse illegal allowBuilds key")
             return@runCatching false
         }
         val text = f.readText()
@@ -2156,4 +2268,52 @@ object PluginCenter {
      */
     private val NPM_PACKAGE_NAME =
         Regex("^(@[a-z0-9-~][a-z0-9-._~]*/)?[a-z0-9-~][a-z0-9-._~]*$")
+
+    /**
+     * pnpm 的 `allowBuilds` 键合法集（v1.7.40）。
+     *
+     * 两种合法形态：
+     *  1. 裸 npm 包名 —— `esbuild`、`@parcel/watcher`（注册源插件被跳过脚本时的键）；
+     *  2. git 源键 —— `dshmarket@https://codeload.github.com/<owner>/<repo>/tar.gz/<sha>`
+     *     （pnpm 在 ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED 里自己给出的建议键）。
+     *
+     * 第二形态必须放行，否则「批准并重试」按钮永远出不来（2026-11-28 截图反馈）。
+     * 但它比裸包名宽得多，所以反过来把注入面收死：
+     *  - 不含空白 / 换行 / 引号 / 反斜杠（YAML 指示符与折行注入都靠这些）；
+     *  - 不含 `*` / `?`（通配等于允许所有传递依赖跑脚本，供应链攻击面）；
+     *  - 长度上限 512，且必须以 `: true` 之外的内容结束（不以冒号收尾）；
+     *  - 若含 `@` 且带协议，只允许 http/https/git/file 四类，且不做凭据透传
+     *    （带 user:pass 的键一律拒，避免把凭据写进 profile 设置）。
+     */
+    /** allowBuilds 键里允许出现的「纯版本号」尾段（`esbuild@0.28.2` 的 0.28.2）。 */
+    private val VERSION_ONLY = Regex("^[0-9][0-9A-Za-z.+_-]*$")
+
+    internal fun isSafeAllowBuildsKey(key: String): Boolean {
+        if (key.isEmpty() || key.length > 512) return false
+        if (key.contains('*') || key.contains('?')) return false
+        if (key.any { it.isWhitespace() || it == '"' || it == '\'' || it == '\\' || it == '\r' || it == '\n' }) {
+            return false
+        }
+        // 形态 1：裸包名（注册源）
+        if (key.matches(NPM_PACKAGE_NAME)) return true
+        // 形态 2：<name>@<url>，且 <name> 自己也得是合法 npm 名
+        val at = key.lastIndexOf('@')
+        if (at <= 0) return false
+        val name = key.substring(0, at)
+        val spec = key.substring(at + 1)
+        if (!name.matches(NPM_PACKAGE_NAME)) return false
+        // 形态 3：`<name>@<版本>` —— pnpm 的注册源报告里确实会带版本号
+        // （真机实测 key=`esbuild@0.28.2` 也能正常跑 postinstall），
+        // 旧实现靠 stripVersion 剥掉，这里两种都接受，避免回归。
+        if (spec.matches(VERSION_ONLY)) return true
+        if (!spec.startsWith("https://") && !spec.startsWith("http://") &&
+            !spec.startsWith("git+") && !spec.startsWith("file:")
+        ) {
+            return false
+        }
+        // 凭据（user:pass@）不进配置：上游 carriesCredential 同一口径。
+        val authority = spec.substringAfter("://", "")
+        if (authority.contains('@')) return false
+        return true
+    }
 }

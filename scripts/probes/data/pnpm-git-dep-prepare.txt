@@ -1,0 +1,14 @@
+Progress: resolved 0, reused 0, downloaded 1, added 0
+Progress: resolved 4, reused 1, downloaded 2, added 0
+Error: ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED
+
+  × adding a new package
+  ╰─▶ The git-hosted package "dshmarket@1.82.0" needs to execute build scripts
+      but is not in the "allowBuilds" allowlist.
+  help: Add the package to "allowBuilds" in your project's pnpm-workspace.yaml
+        to allow it to run scripts. For example:
+        allowBuilds:
+          dshmarket@https://codeload.github.com/dsh-market/dsh-market/
+        tar.gz/18004a19b1c5bca1cd3ea405e2171a5fb3c089ce: true
+
+RC=1

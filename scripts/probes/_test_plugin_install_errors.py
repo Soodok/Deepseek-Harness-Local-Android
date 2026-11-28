@@ -129,8 +129,11 @@ check("pnpm：照抄上游 recordPendingBuilds —— 主动把占位值写进�
       _record is not None and "UNDECIDED_BUILD" in _record.group(0)
       and "writePolicyAtomic" in _record.group(0),
       "不做这一步，非交互运行下待批准名单永远是空的")
-check("pnpm：recordPendingBuilds 只写合法 npm 包名",
-      _record is not None and "matches(NPM_PACKAGE_NAME)" in _record.group(0),
+# v1.7.40：键有两形态 —— 注册源是裸包名，git 源是 `<name>@<codeload URL>/tar.gz/<sha>`。
+# 判据从「必须匹配 NPM_PACKAGE_NAME」升级为「必须过 isSafeAllowBuildsKey」，
+# 它内部先做 npm 名匹配、再放行 git 形态，并把注入面（空白/引号/通配/凭据）收死。
+check("pnpm：recordPendingBuilds 只写合法 allowBuilds 键（两形态）",
+      _record is not None and "isSafeAllowBuildsKey" in _record.group(0),
       "把 pnpm 的说明性文字写成 YAML 键会把策略文件写坏")
 check("pnpm：install() 失败分支会自动放行 pnpm 点名的包并重试",
       "allowBuildsFor(ctx, names)" in _install_body.group(0),
@@ -175,12 +178,16 @@ check("pnpm：待定过滤不是部分批准（不能只挑出在 pending 里的
 check("安全：自动放行绝不写通配",
       "!it.contains('*')" in src,
       "通配 = 允许所有传递依赖跑任意 postinstall，经典供应链攻击面")
-check("安全：自动放行的包名必须过 NPM_PACKAGE_NAME",
+check("安全：自动放行的键必须过 isSafeAllowBuildsKey",
       "allowBuildsFor" in src and
       re.search(r"fun allowBuildsFor.*?getOrDefault", src, re.S) is not None and
-      "matches(NPM_PACKAGE_NAME)" in
+      "isSafeAllowBuildsKey" in
       (re.search(r"fun allowBuildsFor.*?getOrDefault", src, re.S).group(0)),
-      "包名可注入 YAML（如换行 + \"*\": true），绕过白名单")
+      "键可注入 YAML（如换行 + \"*\": true），绕过白名单")
+check("安全：git 形态键的注入面单独收死",
+      "isSafeAllowBuildsKey" in src and
+      all(s in src for s in ("it.isWhitespace()", "\"*\"", "contains('@')")),
+      "git 键比裸包名宽，必须挡住空白/通配/凭据")
 check("安全：只写 pnpm 自己点名的包，不放行整个依赖树",
       "ignoredBuildNames(msg)" in _install_body.group(0),
       "凭空放大放行范围 = 静默批准用户没同意的包")
@@ -264,6 +271,27 @@ check("lock：自愈分支在 ignored-builds 之前",
       _install_body.group(0).index("isBrokenLockfileError(msg)") <
       _install_body.group(0).index("isIgnoredBuildsError(msg)"),
       "坏 lockfile 时 pnpm 连解析都过不去，ignored builds 分支永远命中不了")
+
+# ------------------------------------------------ 批准入口的触发条件（v1.7.40）
+# 旧实现从不产生 `ignored-builds:` 前缀 → offerBuildApproval 永远不弹窗，
+# 用户只能看到「请在 allowBuilds 中放行后重试」这句话（2026-11-28 截图）。
+_ui = open(os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile",
+                        "PluginStoreActivity.kt"), encoding="utf-8").read()
+check("批准：install() 真的会产出 ignored-builds 前缀",
+      "ignored-builds:" in _install_body.group(0) and
+      "recordPendingBuilds(ctx, msg)" in _install_body.group(0),
+      "不产出前缀 = 「批准并重试」按钮永远不出现")
+check("批准：前缀之外保留 pnpm 原文",
+      "IGNORED_BUILDS_RAW" in src and "IGNORED_BUILDS_RAW" in _install_body.group(0),
+      "只留键列表会让长按弹窗失去唯一可查的原文证据")
+check("批准：UI 切键时先切掉原文段",
+      "substringBefore(PluginCenter.IGNORED_BUILDS_RAW)" in _ui,
+      "原文里的 For example: 之类文字会被当成键")
+check("批准：UI 切出的键还要再过 isSafeAllowBuildsKey",
+      re.search(r"fun offerBuildApproval[\s\S]*?if \(names\.isEmpty\(\)\)", _ui) is not None and
+      "isSafeAllowBuildsKey(it)" in
+      re.search(r"fun offerBuildApproval[\s\S]*?if \(names\.isEmpty\(\)\)", _ui).group(0),
+      "上游来的字符串不能直接进策略文件")
 
 # ------------------------------------------------ 按钮摘要（v1.7.31）
 # 2026-11-14 用户截图：按钮上只有一串 file:// 路径，真因不可见。

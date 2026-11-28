@@ -992,13 +992,23 @@ class PluginStoreActivity : ThemedActivity() {
         msg: String,
     ): Boolean {
         if (isFinishing || isDestroyed) return false
-        // install() 用 "ignored-builds:" 前缀标记这条失败的种类，并带上包名清单
+        // install() 用 "ignored-builds:" 前缀标记这条失败的种类，并带上键清单；
+        // 键之后可能跟一个 [PluginCenter.IGNORED_BUILDS_RAW] 段（pnpm 原文），
+        // 那段不能拿去切键 —— git 源的键里本身就有逗号之外的 `:` 和 `/`，
+        // 而原文里的 "For example:" 之类文字若混进来会被当成键（v1.7.40）。
         val listed = msg.removePrefix("ignored-builds:").takeIf { it != msg } ?: return false
-        val names = listed.split(',')
+        val names = listed
+            .substringBefore(PluginCenter.IGNORED_BUILDS_RAW)
+            .split(',')
             .map { it.trim() }
-            .filter { it.isNotEmpty() }
+            .filter { it.isNotEmpty() && PluginCenter.isSafeAllowBuildsKey(it) }
         if (names.isEmpty()) return false
         btn.text = getString(R.string.plugin_build_approve_btn)
+        // 长按仍可看完整原文：前缀段指到键清单，原文段在后面。
+        btn.setOnLongClickListener {
+            showInstallErrorDialog(pkg, msg)
+            true
+        }
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_build_pending_title))
             .setMessage(
