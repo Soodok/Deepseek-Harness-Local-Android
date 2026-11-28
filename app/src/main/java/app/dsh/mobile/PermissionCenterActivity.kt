@@ -920,6 +920,10 @@ class PermissionCenterActivity : ThemedActivity() {
                 st.text = getString(R.string.linux_state_not_deployed)
                 st.setTextColor(dshColor(R.attr.dshWarning, R.color.warning))
             }
+            on && notReady -> {
+                st.text = getString(R.string.linux_state_not_deployed)
+                st.setTextColor(getColor(R.color.warning))
+            }
             on -> {
                 st.text = getString(R.string.state_on)
                 st.setTextColor(dshColor(R.attr.dshSuccess, R.color.success))
