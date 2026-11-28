@@ -4,6 +4,10 @@
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/surface</item>
         <item name="colorPrimaryContainer">@color/accent_soft</item>
+        <item name="colorSecondary">@color/accent_alt</item>
+        <item name="colorOnSecondary">@color/on_accent</item>
+        <item name="colorTertiary">@color/accent_alt</item>
+        <item name="colorOnTertiary">@color/on_accent</item>
         <item name="colorOnPrimaryContainer">@color/text_primary</item>
         <item name="colorSecondaryContainer">@color/accent_soft</item>
         <item name="colorOnSecondaryContainer">@color/text_primary</item>
