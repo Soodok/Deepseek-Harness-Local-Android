@@ -333,6 +333,17 @@ python3 "$SCRIPTS_DIR/patch-llm-deepseek-transport.py" "$ROOT" || {
   exit 1
 }
 
+# [steer] 插话在 Android 上失效（2026-11-26 私人反馈 82c93406）：
+#   ① 会话控制器的 steer 守卫只放行 next-turn，而 agent.steer() 写的正是 next-step
+#      —— 引擎自己的插话语义被这条守卫挡死；
+#   ② 会话 UI 的 steerQueue 只遍历 next-turn，且把 steer-unavailable 直接 return
+#      吞掉 —— 用户看到的是「消息发出去了，AI 像没看见」，一句提示都没有。
+# 两处都只改文本条件，不动控制流结构；失败即中止构建（锚点形态变了必须人工确认）。
+python3 "$SCRIPTS_DIR/patch-steer-android.py" "$ROOT" || {
+  echo "错误：插话（steer）补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [dsh-ptc-runtime-node] PTC run_code 子进程保留 LD_LIBRARY_PATH（issue #29）：
 # 该包拉子进程时清空继承环境、只留 STARTUP_ENVIRONMENT_NAMES 白名单
 # （PATH/PATHEXT/SYSTEMROOT/WINDIR/TEMP/TMP）。Linux 靠 ldconfig 找 libz，

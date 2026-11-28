@@ -82,7 +82,15 @@ check("污染时中止构建", 'exit 1' in fn)
 print("\n=== 2. App 侧运行时自愈 ===")
 cfg = open(CFG, encoding="utf-8").read()
 check("有 healClobberedCorepackEntry", "fun healClobberedCorepackEntry" in cfg)
-check("启动时调用自愈", "healClobberedCorepackEntry(ctx)" in cfg)
+# ★判据必须限定在 healTermuxShebangs 的函数体内（2026-11-27 收紧）。
+# 原判据是「整个 EngineConfig 里出现过 healClobberedCorepackEntry(ctx)」——
+# 只要函数定义本身在，这条就恒绿，哪怕启动链那句调用被删掉也照绿（假绿）。
+# 现在按函数体切：从 fun healTermuxShebangs 到下一个同级 fun 之间必须出现调用。
+h0 = cfg.index("fun healTermuxShebangs")
+h1 = cfg.find(chr(10) + "    }", h0)
+h1 = cfg.find(chr(10) + "    fun ", h0) if h1 < 0 else h1
+sheb = cfg[h0:h1]
+check("启动链入口里真的调了自愈", "healClobberedCorepackEntry(ctx)" in sheb)
 h = cfg.index("fun healClobberedCorepackEntry")
 hseg = cfg[h : h + 2400]
 check("判据是 shell wrapper", "Android corepack" in hseg and "/system/bin/sh" in hseg)

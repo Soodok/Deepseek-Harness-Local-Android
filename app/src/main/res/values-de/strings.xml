@@ -2026,4 +2026,14 @@ Nur der Entwickler kann ihn lesen. Nicht öffentlich, nicht indexiert, nach 30 T
     <string name="report_consent_deny">Ablehnen</string>
     <string name="about_report_off_title">Fehlerberichte dauerhaft abschalten</string>
     <string name="about_report_off_sub">Wenn aus, wird der report-Befehl der KI sofort abgelehnt und es erscheint kein Zustimmungsdialog.</string>
+    <string name="full_repair_headline_partial">Komplettreparatur: %1$d behoben, %2$d require attention</string>
+    <string name="full_repair_headline_fixed">Komplettreparatur: %1$d Punkt(e) behoben</string>
+    <string name="full_repair_headline_clean">Komplettreparatur: alles bereits in Ordnung</string>
+    <string name="full_repair_title">Komplettreparatur (ein Tippen)</string>
+    <string name="full_repair_sub">Fuehrt alle Reparaturschritte der Reihe nach aus: Besitzrechte, Sperren, Logs, Arbeitsbereichsregister, Plugins, Erweiterungen, Waisenprozesse, Overlays.</string>
+    <string name="full_repair_confirm_body">Fuehrt alle Reparaturschritte der Reihe nach aus (Rechte, Sperren, Logs, Arbeitsbereichsregister, Plugins, Erweiterungen, Waisenprozesse, Overlays). Die Engine kann dabei neu gestartet werden. Unterhaltungen und API-Schluessel werden nie geloescht.</string>
+    <string name="full_repair_go">Starten</string>
+    <string name="full_repair_progress">Reparatur laeuft… (bis zu einer Minute)</string>
+    <string name="full_repair_restart">Engine neu starten</string>
+    <string name="full_repair_failed">Reparatur unerwartet abgebrochen; siehe full-repair-last.txt</string>
 </resources>

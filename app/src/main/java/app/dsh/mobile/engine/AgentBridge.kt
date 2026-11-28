@@ -671,6 +671,12 @@ object AgentBridge {
         // /diag 是给人看的 HTML 页面（截图发反馈用），这两条是给 AI 读的 JSON。
         "GET /repair/diagnose" to Route("GET") { c, _, _ -> repairDiagnose(c) },
         "POST /repair/apply" to Route("POST") { c, _, b -> repairApply(c, b) },
+        // 一键全面修复（v1.8.x）：把散落的修复途径收敛成一条，AI 与 UI 共用。
+        // 与 /repair/apply 的分工：那条只做归因器当前列出的 9 种 FixKind（白名单常
+        // 把真正需要的动作挡成 409）；这条按固定顺序跑全部步骤、不依赖先算出 cause，
+        // 并且覆盖归因器够不到的静默自愈（注册表去重 / shebang / 暂存 tgz / 坏扩展）。
+        "GET /repair/full" to Route("GET") { c, q, _ -> fullRepair(c, q) },
+        "POST /repair/full" to Route("POST") { c, _, b -> fullRepair(c, b) },
         "GET /diag" to Route("GET") { c, _, _ -> diag(c) },
         "POST /say" to Route("POST") { c, _, b -> say(c, b) },
         "GET /say" to Route("GET") { c, q, _ -> sayGet(c, q) },
@@ -1909,6 +1915,83 @@ object AgentBridge {
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
+    }
+
+    /**
+     * GET/POST /repair/full —— 一键全面修复（v1.8.x）。
+     *
+     * ## 为什么同时给 GET 和 POST
+     *
+     * GET 是**预览**：返回本次会执行的步骤 id 列表（`steps[]`）与「哪些需要引擎先停」
+     * （`requires_engine_stopped[]`），AI 可以先告诉用户「我要跑这 14 步」再动手。
+     * POST 才真跑。这样 AI 不会在用户没同意的情况下改磁盘。
+     *
+     * 请求体（可省略）：
+     * ```json
+     * {"confirm": true, "skipSelfCheck": false, "includeReset": false}
+     * ```
+     * - `confirm`：**必填 true**。这一步会改磁盘、可能重启引擎，不给护栏就是危险默认。
+     * - `skipSelfCheck`：跳过前后两次体检（省几秒；只要动作结果时用）。
+     * - `includeReset`：把「深度清理」也算一步（删缓存，保留 API key 与会话）。
+     *
+     * ## 与 POST /repair/apply 的取舍
+     *
+     * 后者受归因白名单约束，`{"kind":"fix_ownership"}` 在 `cause=healthy` 时会被
+     * 409 挡掉 —— 用户「我怀疑坏了，帮我修」的意图表达不出来。这一条不看 cause，
+     * 一律按顺序跑（每步自身幂等），如实报告每步 SKIPPED 的原因。
+     *
+     * 同步执行：全部步骤加起来实测在秒级到一分钟（体检占大头），同 [repairApply]
+     * 的取舍 —— 让调用方立刻拿到结果，少一轮往返。
+     */
+    private fun fullRepair(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrDefault(JSONObject())
+        val write = obj.optBoolean("confirm", false)
+        if (!write) {
+            // 预览：不写盘、不动引擎
+            val plan = JSONObject()
+                .put("ok", true)
+                .put("dry_run", true)
+                .put("steps", org.json.JSONArray(FullRepair.stepIds(obj.optBoolean("includeReset", false))))
+                .put("requires_engine_stopped", org.json.JSONArray(FullRepair.requiresEngineStopped()))
+                .put(
+                    "hint",
+                    "resend with {\"confirm\":true} to actually run it; " +
+                        "steps in requires_engine_stopped rewrite files the engine owns, " +
+                        "so stop the engine first or accept that they may be overwritten",
+                )
+            return 200 to plan.toString()
+        }
+        val report = FullRepair.run(
+            ctx,
+            skipSelfCheck = obj.optBoolean("skipSelfCheck", false),
+            includeReset = obj.optBoolean("includeReset", false),
+        )
+        val steps = org.json.JSONArray()
+        report.steps.forEach { s ->
+            steps.put(
+                JSONObject()
+                    .put("id", s.id)
+                    .put("title", s.title)
+                    .put("status", s.status.name.lowercase())
+                    .put("detail", s.detail)
+                    .put("touched", s.touched)
+                    .put("restart_needed", s.restartNeeded),
+            )
+        }
+        val out = JSONObject()
+            .put("ok", report.failed == 0)
+            .put("elapsed_ms", report.elapsedMs)
+            .put("fixed", report.fixed)
+            .put("clean", report.clean)
+            .put("skipped", report.skipped)
+            .put("failed", report.failed)
+            .put("restart_needed", report.restartNeeded)
+            .put("steps", steps)
+            .put("summary", FullRepair.summarize(report))
+        report.before?.let { out.put("before_issues", it.issues) }
+        report.after?.let { out.put("after_issues", it.issues) }
+        val code = if (report.failed == 0) 200 else 207
+        return code to out.toString()
     }
 
     /**
@@ -3897,17 +3980,54 @@ document.getElementById('api').textContent = checks.map(function(c){
      */
     private fun overlay(body: String): Pair<Int, String> {
         return try {
-            val obj = JSONObject(body)
+            val obj = JSONObject(body.ifBlank { "{}" })
+            // ⚠️ 2026-11-26 用户反馈 65261bd4 问题三：
+            //   POST /overlay {"op":"expand"} → {"ok":true,"available":true}
+            //   但窗口尺寸、可见性**零变化** —— 因为这端点原来根本不看 "op"。
+            // 「看起来成功、其实什么都没做」最容易被调用方当成已生效。
+            // 现在每个 op 都落到 StatusOverlay 的真实动作上，并把真实状态回给调用方。
             if (obj.optBoolean("hide", false)) {
                 StatusOverlay.hide(DshAccessibilityService.instance)
-                return 200 to """{"ok":true,"visible":false}"""
+                return 200 to JSONObject()
+                    .put("ok", true)
+                    .put("op", "hide")
+                    .put("available", StatusOverlay.isAvailable())
+                    .put("state", StatusOverlay.settledSnapshot())
+                    .toString()
+            }
+
+            val op = obj.optString("op", "").trim().lowercase()
+            when (op) {
+                // 展开到「看得见问题」的档位；show 顺带确保窗口存在（被自动收起后要能拉回来）
+                "expand", "raise" -> {
+                    StatusOverlay.showForWork(DshAccessibilityService.instance)
+                    StatusOverlay.raiseForAsk()
+                }
+                // 只保证窗口在：不改档位，用于「模型要提问，先把球叫回来」
+                "show" -> StatusOverlay.showForWork(DshAccessibilityService.instance)
+                // 收回到球（不改 hidden 语义，用户没关掉它）
+                "collapse" -> StatusOverlay.collapse()
+                "" -> Unit
+                else -> return 400 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "unknown op '$op'")
+                    .put("ops", JSONArray().put("expand").put("show").put("collapse").put("hide"))
+                    .toString()
             }
             obj.optString("status").takeIf { it.isNotBlank() }?.let { StatusOverlay.setStatus(it) }
             obj.optString("action").takeIf { it.isNotBlank() }?.let { StatusOverlay.setAction(it) }
             if (obj.optBoolean("complete", false)) StatusOverlay.flashCompleteDefault()
-            200 to """{"ok":true,"available":${StatusOverlay.isAvailable()}}"""
+            // 用 settledSnapshot 而不是 snapshot：上面的 op 都是 post 到主线程的，
+            // 当场读会拿到动作前的值（实测 POST expand 回 level:0、2 秒后才变 1，
+            // 调用方会以为又是空实现）。等主线程队列排水后再读，才是真实结果。
+            200 to JSONObject()
+                .put("ok", true)
+                .put("available", StatusOverlay.isAvailable())
+                .put("op", op)
+                .put("state", StatusOverlay.settledSnapshot())
+                .toString()
         } catch (e: Exception) {
-            500 to """{"ok":false,"error":"${e.message}"}"""
+            500 to JSONObject().put("ok", false).put("error", e.message ?: "overlay failed").toString()
         }
     }
 

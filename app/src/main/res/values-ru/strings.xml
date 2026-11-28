@@ -2020,4 +2020,14 @@
     <string name="report_consent_deny">Отклонить</string>
     <string name="about_report_off_title">Навсегда отключить отчёты об ошибках</string>
     <string name="about_report_off_sub">Если выключено, команда report у ИИ отклоняется сразу и окно согласия не появляется.</string>
+    <string name="full_repair_headline_partial">Полное восстановление: исправлено %1$d, требуют внимания %2$d</string>
+    <string name="full_repair_headline_fixed">Полное восстановление: исправлено %1$d</string>
+    <string name="full_repair_headline_clean">Полное восстановление: всё в порядке</string>
+    <string name="full_repair_title">Полное восстановление (одно нажатие)</string>
+    <string name="full_repair_sub">Выполняет все шаги по порядку: права владения, блокировки, логи, реестр рабочих областей, плагины, расширения, потерянные процессы, оверлеи.</string>
+    <string name="full_repair_confirm_body">Выполнит все шаги по порядку (права, блокировки, логи, реестр рабочих областей, плагины, расширения, потерянные процессы, оверлеи). Движок может перезапуститься. Диалоги и API-ключи не удаляются.</string>
+    <string name="full_repair_go">Запустить</string>
+    <string name="full_repair_progress">Идёт восстановление… (до минуты)</string>
+    <string name="full_repair_restart">Перезапустить движок</string>
+    <string name="full_repair_failed">Восстановление прервано; см full-repair-last.txt</string>
 </resources>

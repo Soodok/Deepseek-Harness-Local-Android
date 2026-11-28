@@ -95,7 +95,12 @@ async function overlayReady(signal) {
 
 /**
  * 把一道题送进悬浮窗，等用户答。
- * @returns {Promise<string|null>} 用户答的文本；没答成返回 null。
+ *
+ * 返回值要带上「是点的选项还是手打的字」—— 这不是装饰：原生 output schema 把
+ * 两者放在不同字段里（selected = 选项标签数组，custom = 自由文本），
+ * 混在一起填会让模型分不清「用户选了某一项」还是「用户自己写了句话」。
+ *
+ * @returns {Promise<{answer: string, fromOption: boolean}|null>} 没答成返回 null。
  */
 async function askOne(question, signal) {
   const text = String((question && question.question) || "").trim();
@@ -106,6 +111,11 @@ async function askOne(question, signal) {
     .filter((s) => s.length > 0);
   const started = await call("POST", "/ask", { text, options, freeText: true }, signal);
   if (started.status !== 200 || !started.json || started.json.ok !== true) return null;
+  // 提问已经挂上了 → 主动把悬浮窗抬到能看见它的档位（2026-11-26 反馈 65261bd4）。
+  // 这一步是**兜底**：App 侧现在折叠态也轮询 /ask，本该自己升档；
+  // 但万一轮询被系统掐掉（悬浮窗被隐藏/服务刚重连），让 bridge 也推一把，
+  // 用户就不必自己猜「要点一下那颗球」。失败不致命，忽略即可。
+  try { await call("POST", "/overlay", { op: "expand" }, signal); } catch { /* 拉起失败不影响提问本身 */ }
   const deadline = Date.now() + WAIT_MS;
   while (Date.now() < deadline) {
     if (signal && signal.aborted) return null;
@@ -116,7 +126,11 @@ async function askOne(question, signal) {
     // 已经不 pending 了：取一次答案。取到就是回答，取不到就是超时/取消。
     const res = await call("POST", "/ask/result", {}, signal);
     const answer = res.json && typeof res.json.answer === "string" ? res.json.answer.trim() : "";
-    return answer.length > 0 ? answer : null;
+    if (answer.length === 0) return null;
+    // 桥上 fromOption=true 表示「点了选项胶囊」，false 表示「手打的字」。
+    // 旧实现一律当字符串收，把这个区分丢掉了。
+    const fromOption = res.json && res.json.fromOption === true;
+    return { answer, fromOption };
   }
   return null;
 }
@@ -136,18 +150,37 @@ async function intercept(exec, next) {
     if (questions.length === 0) return next();
     const pairs = [];
     for (const q of questions) {
-      const answer = await askOne(q, exec.signal);
+      const got = await askOne(q, exec.signal);
       // 只要有一题没答成，就整体交回原生实现：
       // 半答半问会让模型拿到残缺答案，比不问更糟。
-      if (answer === null) return next();
-      pairs.push({ question: String((q && q.question) || "").trim(), answer });
+      if (got === null) return next();
+      pairs.push({
+        id: String((q && q.id) || "").trim(),
+        question: String((q && q.question) || "").trim(),
+        answer: got.answer,
+        fromOption: got.fromOption,
+      });
     }
     const text = pairs
       .map((p) => "问：" + p.question + "\n答：" + p.answer)
       .join("\n\n");
+    // ⚠️ value 必须严格符合 dsh-tool-ask-user 的 output.schema：
+    //   { answers: [ { id, selected: string[], custom?: string } ] }
+    // 顶层 only `answers`（additionalProperties:false），不能塞 source；
+    // answers 的元素必须是对象，不能是裸字符串。
+    // 违反任意一条 → validateJsonSchemaValue 抛 ToolOutputError，
+    // 用户侧表现就是「卡片答了、模型拿不到、还报工具失败」。
+    const answers = pairs.map((p) => (
+      p.fromOption
+        // 点了选项：标签进 selected —— 悬浮窗给的选项标签就是 schema 里
+        // selected 的语义（模型据此知道「用户选了某一项」）。
+        ? { id: p.id, selected: [p.answer] }
+        // 手打的字：放进 custom，selected 留空数组（skip 与 custom 的区别见原生说明）
+        : { id: p.id, selected: [], custom: p.answer }
+    ));
     return {
       isError: false,
-      value: { source: "overlay_panel", answers: pairs.map((p) => p.answer) },
+      value: { answers },
       content: [{ type: "text", text: ANSWER_PREFIX + text }],
     };
   } catch {

@@ -1970,4 +1970,14 @@
     <string name="report_consent_deny">ปฏิเสธ</string>
     <string name="about_report_off_title">ปิดการส่งรายงานปัญหาถาวร</string>
     <string name="about_report_off_sub">เมื่อปิดแล้ว คำสั่ง report ของ AI จะถูกปฏิเสธทันที และจะไม่มีหน้าต่างขอความยินยอมอีก</string>
+    <string name="full_repair_headline_partial">ซ่อมทั้งหมด: แก้ไข %1$d รายการ, ต้องดูแลอีก %2$d รายการ</string>
+    <string name="full_repair_headline_fixed">ซ่อมทั้งหมด: แก้ไข %1$d รายการ</string>
+    <string name="full_repair_headline_clean">ซ่อมทั้งหมด: ทุกอย่างปกติแล้ว</string>
+    <string name="full_repair_title">ซ่อมทั้งหมด (แตะครั้งเดียว)</string>
+    <string name="full_repair_sub">รันทุกขั้นตอนตามลำดับ: สิทธิ์ไฟล์, ล็อกค้าง, บันทึกแคช, ทะเบียนเวิร์กสเปซ, ปลั๊กอิน, ส่วนขยาย, โพรเซสกำพร้า, โอเวอร์เลย์</string>
+    <string name="full_repair_confirm_body">จะรันทุกขั้นตอนตามลำดับ (สิทธิ์, ล็อกค้าง, บันทึก, ทะเบียนเวิร์กสเปซ, ปลั๊กอิน, ส่วนขยาย, โพรเซสกำพร้า, โอเวอร์เลย์) อาจรีสตาร์ทเอนจิน บทสนทนาและ API Key จะไม่ถูกลบ</string>
+    <string name="full_repair_go">เริ่ม</string>
+    <string name="full_repair_progress">กำลังซ่อม… (ไม่เกินหนึ่งนาที)</string>
+    <string name="full_repair_restart">รีสตาร์ทเอนจิน</string>
+    <string name="full_repair_failed">การซ่อมหยุดกะทันหัน ดู full-repair-last.txt</string>
 </resources>

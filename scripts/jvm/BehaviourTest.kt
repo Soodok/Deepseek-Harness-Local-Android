@@ -65,6 +65,7 @@ import app.dsh.mobile.engine.MemoryReplay
 import app.dsh.mobile.engine.ExtensionVersionPlan
 import app.dsh.mobile.engine.EntryState
 import app.dsh.mobile.engine.GuestPaths
+import app.dsh.mobile.engine.WorkspaceDedupe
 import app.dsh.mobile.engine.LanAddress
 import app.dsh.mobile.engine.VersionPresence
 
@@ -133,6 +134,7 @@ object BehaviourTest {
         assertUnreplayable()
         navigationEscape()
         assertGuestPaths()
+        assertWorkspaceDedupe()
         assertExtVersionPlan()
         assertStepShots()
         assertStubMatchesService()
@@ -3357,6 +3359,161 @@ object BehaviourTest {
     // 这条断言存在的意义：Linux 模式下引擎把默认工作区记成 /dsh/workspaces，
     // 切回原生后宿主上 /dsh 不可能存在 → ensure project directory 失败。
     // 翻译规则错一个字，用户看到的就是「一打开就空白」。
+    private fun assertWorkspaceDedupe() {
+        println("== WorkspaceDedupe (same path claimed by two workspaces) ==")
+
+        fun rec(
+            id: String,
+            path: String,
+            sessions: List<String> = emptyList(),
+            title: String = "",
+            created: String = "2026-01-01T00:00:00.000Z",
+            updated: String = "2026-01-01T00:00:00.000Z",
+        ) = WorkspaceDedupe.Record(id, path, title, sessions, created, updated)
+
+        // — 干净的表：不许有任何改动（幂等，否则每次开机都白写一次文件） —
+        val clean = WorkspaceDedupe.plan(
+            order = listOf("a", "b"),
+            records = listOf(
+                rec("a", "/storage/emulated/0/x", listOf("s1")),
+                rec("b", "/storage/emulated/0/y", listOf("s2")),
+            ),
+        )
+        check(!clean.changed, "a registry with distinct paths reports no change")
+        check(clean.keep.size == 2, "distinct paths keep both workspaces")
+        check(clean.order == listOf("a", "b"), "distinct paths keep the display order")
+
+        // — 真机现场：同一个 path 两条记录，顺序表里先出现的那个当赢家 —
+        val dup = WorkspaceDedupe.plan(
+            order = listOf("5be6e911", "78455992"),
+            records = listOf(
+                rec("5be6e911", "/storage/emulated/0/-云更新网盘", listOf("s1", "s2"), title = "云更新网盘"),
+                rec("78455992", "/storage/emulated/0/-云更新网盘", listOf("s3"), title = "副本"),
+            ),
+        )
+        check(dup.changed, "identical paths produce a merge")
+        check(dup.merges.size == 1, "exactly one duplicate pair is merged")
+        check(dup.merges[0].winner == "5be6e911", "the earlier entry in order wins")
+        check(dup.merges[0].loser == "78455992", "the later entry is the loser")
+        check(dup.keep.size == 1, "the loser is dropped from the table")
+        check("78455992" !in dup.order, "the loser is removed from the display order")
+        check(dup.order == listOf("5be6e911"), "the winner keeps its slot in order")
+        check(
+            dup.keep[0].sessionIds == listOf("s1", "s2", "s3"),
+            "sessions are unioned with the winner first, so no session loses its owner",
+        )
+        check(dup.keep[0].title == "云更新网盘", "the winner's title survives")
+
+        // — 尾斜杠 / 反斜杠 / 重复斜杠都算同一个 path（上游存的是 realpath 形态） —
+        check(
+            WorkspaceDedupe.normPath("/a/b/") == WorkspaceDedupe.normPath("/a/b"),
+            "trailing slashes normalize away"
+        )
+        check(
+            WorkspaceDedupe.normPath("/a//b") == "/a/b",
+            "duplicate slashes collapse"
+        )
+        check(
+            WorkspaceDedupe.normPath("a\\b") == "a/b",
+            "backslashes normalize to forward slashes"
+        )
+        val slashy = WorkspaceDedupe.plan(
+            order = listOf("p", "q"),
+            records = listOf(rec("p", "/a/b/"), rec("q", "/a/b")),
+        )
+        check(slashy.changed, "a trailing slash still collides with the same path")
+        check(slashy.merges.size == 1, "trailing-slash duplicate merges to one")
+
+        // — 同一会话 id 出现在两条里：只留一份（去重，不清空） —
+        val sameSession = WorkspaceDedupe.plan(
+            order = listOf("m", "n"),
+            records = listOf(
+                rec("m", "/same", listOf("dup", "keep1")),
+                rec("n", "/same", listOf("dup", "keep2")),
+            ),
+        )
+        check(
+            sameSession.keep[0].sessionIds == listOf("dup", "keep1", "keep2"),
+            "a session id present on both sides is recorded once, not duplicated",
+        )
+        check(
+            sameSession.keep[0].sessionIds.count { it == "dup" } == 1,
+            "no session id appears twice after the merge",
+        )
+
+        // — 时间戳：最早创建、最晚更新（同一目录的历史要合起来看） —
+        val times = WorkspaceDedupe.plan(
+            order = listOf("old", "new"),
+            records = listOf(
+                rec("old", "/t", created = "2026-01-01T00:00:00.000Z", updated = "2026-01-05T00:00:00.000Z"),
+                rec("new", "/t", created = "2026-02-01T00:00:00.000Z", updated = "2026-03-01T00:00:00.000Z"),
+            ),
+        )
+        check(
+            times.keep[0].createdAt == "2026-01-01T00:00:00.000Z",
+            "createdAt takes the earlier timestamp (this is the same directory)"
+        )
+        check(
+            times.keep[0].updatedAt == "2026-03-01T00:00:00.000Z",
+            "updatedAt takes the later timestamp"
+        )
+        check(
+            WorkspaceDedupe.earlier("", "2026-01-01") == "2026-01-01",
+            "earlier() falls back to the non-empty side"
+        )
+        check(
+            WorkspaceDedupe.later("2026-01-01", "") == "2026-01-01",
+            "later() falls back to the non-empty side"
+        )
+
+        // — 三条同 path：一次并成一条，不产生连环 merge —
+        val three = WorkspaceDedupe.plan(
+            order = listOf("a", "b", "c"),
+            records = listOf(rec("a", "/3", listOf("x")), rec("b", "/3", listOf("y")), rec("c", "/3", listOf("z"))),
+        )
+        check(three.merges.size == 2, "three records on one path merge twice")
+        check(three.keep.size == 1, "three records on one path collapse to one")
+        check(
+            three.keep[0].sessionIds == listOf("x", "y", "z"),
+            "all three sessions survive the collapse"
+        )
+        check(three.order == listOf("a"), "only the winner stays in order")
+
+        // — 顺序表里有、表里没有的 id：原样保留，本函数不越权删（那是上游另一条校验） —
+        val ghost = WorkspaceDedupe.plan(
+            order = listOf("ghost", "real"),
+            records = listOf(rec("real", "/g")),
+        )
+        check(ghost.order == listOf("ghost", "real"), "an unknown id in order is left alone")
+        check(ghost.keep.size == 1, "records present in the table are all kept")
+
+        // — 空表 / 单条：都不改（启动路径上最常见，不能引入无谓写盘） —
+        check(
+            !WorkspaceDedupe.plan(emptyList(), emptyList()).changed,
+            "an empty registry reports no change"
+        )
+        check(
+            !WorkspaceDedupe.plan(listOf("one"), listOf(rec("one", "/one"))).changed,
+            "a single-workspace registry reports no change"
+        )
+
+        // — 标题为空时借用被并方（赢家没起名，别丢掉唯一的名字） —
+        val noTitle = WorkspaceDedupe.plan(
+            order = listOf("w", "l"),
+            records = listOf(rec("w", "/nt", title = ""), rec("l", "/nt", title = "有名字")),
+        )
+        check(
+            noTitle.keep[0].title == "有名字",
+            "a blank winner title borrows the loser's name"
+        )
+
+        // — 被并方存在的 path 在赢家里必须还能用（合并后 path 不变） —
+        check(
+            dup.keep[0].path == "/storage/emulated/0/-云更新网盘",
+            "the merged record keeps the original path (it is the same directory)"
+        )
+    }
+
     private fun assertGuestPaths() {
         println("== GuestPaths (container spelling -> host) ==")
         val dshHome = File("/data/user/0/app.dsh.mobile/files/dsh-home")

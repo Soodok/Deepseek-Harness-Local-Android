@@ -108,6 +108,23 @@ scripts/probes/*.bin
 # 现场表现是「装了 python3-pip 之后标准库缺一半」，极易误判成装包链路问题；
 # 而 `python3 -V` 仍然正常（-V 不加载 encodings），常规冒烟测试抓不到。
 !/scripts/probes/_test_linux_python_env_leak.py
+# 工作区注册表「同一个 path 被两个 workspace 认领」（真机事故 2026-11-27）：
+# 上游 validateStoredState 直接 throw 在 cordis.init 里 → workspace/storage-domain/
+# session-persistence 全 failed → session-controller/workspace-controller 连带 pending
+# → 用户看到「会话全没了」，而磁盘上 128 个会话文件一个都没少。
+# 污点来自 DataExport.mergeRegistry 的并集口径 + ChatRecovery.recover 的 canonicalPath 判据。
+!/scripts/probes/_test_workspace_registry_dedupe.py
+# 属主自愈判据自己抛异常被 runCatching 吞成 false（真机事故 2026-11-27）：
+# dsh-home/storages/workspace.json 被 root 跑过变成 root:root 600，App 读不动，
+# 而 home-owner-check 报 0ms / 无告警 —— 整段属主自愈永远不会执行。
+# 根因是 hasUnreadableEntries 用 roots[1] 而唯一调用点只传 listOf(home)（长度 1）。
+!/scripts/probes/_test_privilege_ownership_probe.py
+# 「一键全面修复」收敛（2026-11-27 用户诉求）：
+# 修复途径原先散在 5 处（启动链 18 处自愈 / MaintenanceActivity 14 个按钮 /
+# /repair/apply 9 种 FixKind 受归因白名单约束 / 扩展中心只修扩展 / 离线 python
+# 脚本），用户不知道点哪个，AI 手里只有会被 409 挡掉的那条。
+# FullRepair 按固定顺序把既有动作串成一条；本探针守顺序、容错、接线与「不再新增途径」。
+!/scripts/probes/_test_full_repair.py
 !/scripts/probes/linux-bash-device.cjs
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
 !/scripts/probes/_test_linux_cache_seed.py
@@ -425,3 +442,11 @@ docs/ui-preview/.preview-server.json
 # 设置页「行内展开」探针（issue #111）：语言与运行时代理改在行下方就地铺开，
 # 同意类（远程访问/局域网 WebUI）仍保留弹窗 —— 断言要能分辨这两类，不能一刀切。
 !/scripts/probes/_test_settings_inline_panels.py
+
+# v1.8.x：ask 接管 + 插话补丁的守卫探针（各有负对照 / 真实校验器 / 设备下发字节三层）
+!/scripts/probes/_test_ask_overlay_autoraise.py
+!/scripts/probes/_test_ask_schema_real.mjs
+!/scripts/probes/_test_steer_patch.py
+!/scripts/probes/_test_steer_patch_behavior.py
+!/scripts/probes/_fetch_runtime_js.py
+!/scripts/probes/cdp-served-exact.cjs
