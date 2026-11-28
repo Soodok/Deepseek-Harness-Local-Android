@@ -1,0 +1,15 @@
+JUnit version 4.13.2
+...........E......
+Time: 0.135
+There was 1 failure:
+1) missingScopeOwnerOrLoadableUrlFailsClosed(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: expected null, but was:<NativeWorkspaceScope(domain=storage-a, generation=boot-A)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.missingScopeOwnerOrLoadableUrlFailsClosed(NativeWorkspacePublicationTest.kt:131)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+

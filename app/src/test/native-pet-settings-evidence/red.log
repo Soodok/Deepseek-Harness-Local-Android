@@ -1,0 +1,169 @@
+✖ pet is a named settings destination, not an enable toggle (2.1576ms)
+✖ pet appears once in display and personalization with its own icon (0.8375ms)
+✔ the existing bridge forwards the destination name and fails closed (0.266ms)
+✖ Android routes pet to the existing settings Activity only (0.3693ms)
+✔ the shared detector retains all three hard gates and bridge minimum (0.1445ms)
+✔ existing restore requires opt-in, common gates and no running service (0.1363ms)
+﹣ each smallest wiring or gate mutation is rejected without editing the worktree (0.6955ms) # mutation calibration needs a fully wired baseline
+ℹ tests 7
+ℹ suites 0
+ℹ pass 3
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 91.0146
+
+✖ failing tests:
+
+test at app\src\test\native-pet-settings-offline.mjs:55:56
+✖ pet is a named settings destination, not an enable toggle (2.1576ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^\s*pet\('悬浮桌宠',\s*'[^']+'\),/m. Input:
+  
+  'enum SettingsDestination {\n' +
+    "  models('模型配置', '模型与服务提供商'),\n" +
+    "  plugins('插件管理', '管理工具与功能插件'),\n" +
+    "  extensions('扩展编译环境', '编译器、SDK 与命令行工具'),\n" +
+    "  containers('容器环境选择', '本机运行环境与 Linux 发行版'),\n" +
+    "  connections('连接与远程', 'SSH 主机与本机引擎连接'),\n" +
+    "  language('语言', '应用显示语言'),\n" +
+    "  appearance('个性化主题', '配色、深浅模式与显示'),\n" +
+    "  permissions('权限管理', '应用权限与工具访问范围'),\n" +
+    "  webUi('切换 Web UI', '打开完整 Web 界面'),\n" +
+    "  diagnostics('诊断与日志', '查看运行状态与日志'),\n" +
+    "  backup('备份与恢复', '管理本地设置与数据'),\n" +
+    "  about('关于', '版本、许可与项目说明');\n" +
+    '\n' +
+    '  const SettingsDestination(this.title, this.subtitle);\n' +
+    '  final String title, subtitle;\n' +
+    '}\n' +
+    '\n' +
+    'typedef ProviderSettingsSnapshot = ({\n' +
+    '  int revision,\n' +
+    '  bool writable,\n' +
+    '  List<ModelProviderProfile> providers,\n' +
+    '});\n' +
+    '\n' +
+    'class ModelProviderProfile {\n' +
+    '  const ModelProviderProfile({\n' +
+    '    required this.route,\n' +
+    '    required this.api,\n' +
+    '    required this.baseUrl,\n' +
+    '    required this.models,\n' +
+    '    this.credentialRef,\n' +
+    '  });\n' +
+    '\n' +
+    '  static const protocols = <String>[\n' +
+    "    'openai-completions', 'openai-responses', 'anthropic-messages',\n" +
+    '  ];\n' +
+    "  static final routePattern = RegExp(r'^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$');\n" +
+    '  final String route, api, baseUrl;\n' +
+    '  final List<String> models;\n' +
+    '  final String? credentialRef;\n' +
+    '}\n' +
+    '\n' +
+    'class AccountProfile {\n' +
+    '  const AccountProfile({\n' +
+    '    required this.id,\n' +
+    '    required this.displayName,\n' +
+    "    this.email = '',\n" +
+    '    this.avatarUrl,\n' +
+    '  });\n' +
+    '  final String id, displayName, email;\n' +
+    '  final Uri? avatarUrl;\n' +
+    '}\n' +
+    '\n' +
+    'class TokenUsageDay {\n' +
+    '  const TokenUsageDay({\n' +
+    '    required this.date,\n' +
+    '    required this.inputTokens,\n' +
+    '    required this.outputTokens,\n' +
+    '  });\n' +
+    '  final DateTime date;\n' +
+    '  final int inputTokens, outputTokens;\n' +
+    '  int get totalTokens => inputTokens + outputTokens;\n' +
+    '}\n' +
+    '\n' +
+    'class UsageHistory {\n' +
+    '  UsageHistory({\n' +
+    '    required List<TokenUsageDay> days,\n' +
+    '    required this.from,\n' +
+    '    required this.through,\n' +
+    "    this.sourceLabel = '本机会话',\n" +
+    '    this.available = true,\n' +
+    '  }) : days = List.unmodifiable(days);\n' +
+    '  final List<TokenUsageDay> days;\n' +
+    '  final DateTime from, through;\n' +
+    '  final String sourceLabel;\n' +
+    '  final bool available;\n' +
+    '}\n'
+  
+      at pet is a named settings destination, not an enable toggle (file:///E:/tmp/wt-flutter-native-chat/app/src/test/native-pet-settings-offline.mjs:21:12)
+      at TestContext.<anonymous> (file:///E:/tmp/wt-flutter-native-chat/app/src/test/native-pet-settings-offline.mjs:55:73)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.start (node:internal/test_runner/test:1096:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: "enum SettingsDestination {\n  models('模型配置', '模型与服务提供商'),\n  plugins('插件管理', '管理工具与功能插件'),\n  extensions('扩展编译环境', '编译器、SDK 与命令行工具'),\n  containers('容器环境选择', '本机运行环境与 Linux 发行版'),\n  connections('连接与远程', 'SSH 主机与本机引擎连接'),\n  language('语言', '应用显示语言'),\n  appearance('个性化主题', '配色、深浅模式与显示'),\n  permissions('权限管理', '应用权限与工具访问范围'),\n  webUi('切换 Web UI', '打开完整 Web 界面'),\n  diagnostics('诊断与日志', '查看运行状态与日志'),\n  backup('备份与恢复', '管理本地设置与数据'),\n  about('关于', '版本、许可与项目说明');\n\n  const SettingsDestination(this.title, this.subtitle);\n  final String title, subtitle;\n}\n\ntypedef ProviderSettingsSnapshot = ({\n  int revision,\n  bool writable,\n  List<ModelProviderProfile> providers,\n});\n\nclass ModelProviderProfile {\n  const ModelProviderProfile({\n    required this.route,\n    required this.api,\n    required this.baseUrl,\n    required this.models,\n    this.credentialRef,\n  });\n\n  static const protocols = <String>[\n    'openai-completions', 'openai-responses', 'anthropic-messages',\n  ];\n  static final routePattern = RegExp(r'^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$');\n  final String route, api, baseUrl;\n  final List<String> models;\n  final String? credentialRef;\n}\n\nclass AccountProfile {\n  const AccountProfile({\n    required this.id,\n    required this.displayName,\n    this.email = '',\n    this.avatarUrl,\n  });\n  final String id, displayName, email;\n  final Uri? avatarUrl;\n}\n\nclass TokenUsageDay {\n  const TokenUsageDay({\n    required this.date,\n    required this.inputTokens,\n    required this.outputTokens,\n  });\n  final DateTime date;\n  final int inputTokens, outputTokens;\n  int get totalTokens => inputTokens + outputTokens;\n}\n\nclass UsageHistory {\n  UsageHistory({\n    required List<TokenUsageDay> days,\n    required this.from,\n    required this.through,\n    this.sourceLabel = '本机会话',\n    this.available = true,\n  }) : days = List.unmodifiable(days);\n  final List<TokenUsageDay> days;\n  final DateTime from, through;\n  final String sourceLabel;\n  final bool available;\n}\n",
+    expected: /^\s*pet\('悬浮桌宠',\s*'[^']+'\),/m,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at app\src\test\native-pet-settings-offline.mjs:55:56
+✖ pet appears once in display and personalization with its own icon (0.8375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at pet appears once in display and personalization with its own icon (file:///E:/tmp/wt-flutter-native-chat/app/src/test/native-pet-settings-offline.mjs:26:12)
+      at TestContext.<anonymous> (file:///E:/tmp/wt-flutter-native-chat/app/src/test/native-pet-settings-offline.mjs:55:73)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at app\src\test\native-pet-settings-offline.mjs:55:56
+✖ Android routes pet to the existing settings Activity only (0.3693ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /"pet"\s*->\s*Intent\(this, app\.dsh\.mobile\.pet\.PetSettingsActivity::class\.java\)/. Input:
+  
+  '\n' +
+    '        val destination = when (section) {\n' +
+    '            "plugins" -> Intent(this, PluginStoreActivity::class.java)\n' +
+    '            "extensions" -> Intent(this, ExtensionStoreActivity::class.java)\n' +
+    '            "containers" -> Intent(this, LinuxActivity::class.java)\n' +
+    '            "language" -> Intent(this, SettingsActivity::class.java).putExtra("native_chat_open_language", true)\n' +
+    '            "permissions" -> Intent(this, PermissionCenterActivity::class.java)\n' +
+    '            "diagnostics" -> Intent(this, LogViewerActivity::class.java)\n' +
+    '            "backup" -> Intent(this, BackupActivity::class.java)\n' +
+    '            "about" -> Intent(this, AboutActivity::class.java)\n' +
+    '            else -> return false\n' +
+    '        }\n' +
+    '        return runCatching { startActivity(destination) }.isSuccess'
+  
+      at Android routes pet to the existing settings Activity only (file:///E:/tmp/wt-flutter-native-chat/app/src/test/native-pet-settings-offline.mjs:40:12)
+      at TestContext.<anonymous> (file:///E:/tmp/wt-flutter-native-chat/app/src/test/native-pet-settings-offline.mjs:55:73)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '\n        val destination = when (section) {\n            "plugins" -> Intent(this, PluginStoreActivity::class.java)\n            "extensions" -> Intent(this, ExtensionStoreActivity::class.java)\n            "containers" -> Intent(this, LinuxActivity::class.java)\n            "language" -> Intent(this, SettingsActivity::class.java).putExtra("native_chat_open_language", true)\n            "permissions" -> Intent(this, PermissionCenterActivity::class.java)\n            "diagnostics" -> Intent(this, LogViewerActivity::class.java)\n            "backup" -> Intent(this, BackupActivity::class.java)\n            "about" -> Intent(this, AboutActivity::class.java)\n            else -> return false\n        }\n        return runCatching { startActivity(destination) }.isSuccess',
+    expected: /"pet"\s*->\s*Intent\(this, app\.dsh\.mobile\.pet\.PetSettingsActivity::class\.java\)/,
+    operator: 'match',
+    diff: 'simple'
+  }

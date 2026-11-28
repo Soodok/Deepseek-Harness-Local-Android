@@ -1,0 +1,49 @@
+{
+  "task": "task-18",
+  "scope": "E:/tmp/wt-flutter-native-chat/",
+  "layer": "offline source contracts only",
+  "beforeFix": {
+    "exitCode": 1,
+    "passed": 3,
+    "failed": 3,
+    "skipped": 1,
+    "reason": "destination, visible group row and Activity route absent",
+    "log": "red.log"
+  },
+  "afterFix": {
+    "exitCode": 0,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "inMemoryMutationsRejected": 12,
+    "log": "green.log"
+  },
+  "sources": [
+    {
+      "path": "app/src/main/java/app/dsh/mobile/NativeChatActivity.kt",
+      "before": "8c58c1a93470a58c2b5bf57217c2089db7a38dbfa70e8a442f0a9ac64c0ae5cb",
+      "after": "b79a15d15548bf07838b7b0f10721f68be6f984fbfbff8da481587744de30e05",
+      "reverseTaskDeltaMatchesBaseline": true
+    },
+    {
+      "path": "flutter_ui/lib/src/model/settings_model.dart",
+      "before": "fa6ff4e19f94df5b157b52e530d306d3aebdc51030f7011757c94da40f6ac1a7",
+      "after": "dafe095e76d05398a2fbacc824e02ba0de140913a34f36669052b99d4c1faeee",
+      "reverseTaskDeltaMatchesBaseline": true
+    },
+    {
+      "path": "flutter_ui/lib/src/ui/settings/settings_page.dart",
+      "before": "3f09e7ef90acc1ed9890424c7ea5628c2cd88c13d17dac6f2e79cd68d269d020",
+      "after": "4692484c1ce53b756300c6db1901685693dc7b498eda056a5babc652b89b4023",
+      "reverseTaskDeltaMatchesBaseline": true
+    }
+  ],
+  "flutter": {
+    "test": "flutter_ui/test/native_pet_settings_test.dart",
+    "cases": 9,
+    "executed": false,
+    "reason": "Lead owns serial Flutter/Gradle lease"
+  },
+  "unchanged": "HostBridge, both SettingsPage dispatchers, all pet gate/service code and Native onResume",
+  "devicesOrServicesUsed": false
+}

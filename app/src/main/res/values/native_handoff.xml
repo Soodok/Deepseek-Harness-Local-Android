@@ -1,0 +1,3 @@
+<resources>
+    <string name="native_session_handoff_failed">Could not open that conversation. Select it from the session list.</string>
+</resources>

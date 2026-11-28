@@ -272,6 +272,8 @@ void main() {
           messages: const [
             SubagentMessage(id: 'answer', role: 'assistant', text: '真实子会话正文'),
           ],
+          // Two tools are what make the child trace collapsible; a single tool
+          // renders its own row, which the child page must do the same way.
           tools: [
             ToolRun(
               id: 'child-command',
@@ -286,6 +288,13 @@ void main() {
                   exitCode: 0,
                 ),
               ),
+            ),
+            const ToolRun(
+              id: 'child-thought',
+              name: '思考过程',
+              messageId: 'answer',
+              status: ToolStatus.complete,
+              content: null,
             ),
           ],
         ),
@@ -312,7 +321,14 @@ void main() {
       );
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-      expect(find.byType(ToolRunCard), findsOneWidget);
+      // Expanding the trace reveals every tool it holds, not a fixed count.
+      expect(find.byType(ToolRunCard), findsWidgets);
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is ToolRunCard && widget.tool.id == 'child-command',
+        ),
+        findsOneWidget,
+      );
       await tester.ensureVisible(
         find.byKey(const ValueKey('process-command-child-command')),
       );

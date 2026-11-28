@@ -1,0 +1,21 @@
+compile exit=0
+src\test\workspace-publication-evidence\final-mutant-publish-unlocked\EngineSupervisor.kt:1099:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+
+tests exit=1
+JUnit version 4.13.2
+............E.....
+Time: 0.138
+There was 1 failure:
+1) scopePublisherSharesTheExistingProductionPublicationLock(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: scope publication must share the ownership lock expected:<BLOCKED> but was:<TERMINATED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.scopePublisherSharesTheExistingProductionPublicationLock(NativeWorkspacePublicationTest.kt:215)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+
+

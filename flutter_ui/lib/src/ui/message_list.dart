@@ -10,9 +10,80 @@ import '../state/chat_controller.dart';
 import '../state/message_actions.dart';
 import '../theme/dsh_theme.dart';
 import 'action_cards.dart';
+import 'chat_strings.dart';
 import 'conversation_flow.dart';
 import 'file_delivery_card.dart';
 import 'glass_panel.dart';
+
+const _welcomeBrand = Size(60, 45);
+// Brand and greeting are one lockup: the gap is tight enough that they read as
+// a single focal block instead of two centred rows.
+const _welcomeBrandGap = 8.0;
+const _welcomeGreetingSize = 24.0;
+// Must match the greeting's own line height: reserving less than it paints
+// leaves a two-line greeting 2.4dp taller than the space budgeted for it, which
+// is enough to make the first screen scroll at 360x396.
+const _welcomeGreetingHeight = 1.25;
+// The card grid is the only other thing on the page, so it gets a full breath of
+// air instead of the 10dp that visually glued it to the greeting.
+const _welcomeGridTopGap = 22.0;
+const _welcomeCardSize = 132.0;
+const _welcomeCardRadius = 18.0;
+const _welcomeCardGap = 12.0;
+const _welcomeCardLabelGap = 8.0;
+const _welcomeCardLabelSize = 16.0;
+// Secondary controls: smaller type, faded ink, and a gap that separates them
+// from the focus instead of stacking another dashed outline right under it.
+const _welcomePickerGap = 14.0;
+const _welcomeScrollPadding = EdgeInsets.symmetric(horizontal: 18, vertical: 7);
+
+/// Narrowest a workspace pill may get before the pair stops sharing a row.
+///
+/// A capsule narrower than this ellipsises the value down to something like
+/// 「工作区…」, which names nothing: stacking is the better answer there.
+const _welcomeWorkspaceMinWidth = 150.0;
+
+/// Whether both welcome pills can share one row at the current width, text
+/// scale and language.
+///
+/// The mode pill is measured at its full value because it is short and always
+/// meant to be read whole. The workspace pill only needs its minimum readable
+/// width here: a long directory name is a short value plus a semantic label, so
+/// it ellipsises instead of forcing the row apart. What actually stacks the
+/// pair is a narrow screen or a large text scale — the cases where even that
+/// minimum no longer fits beside the mode pill.
+bool _pillsShareOneRow(
+  BuildContext context, {
+  required String modeText,
+  required String workspaceText,
+  required double contentWidth,
+}) {
+  final scaler = MediaQuery.textScalerOf(context);
+  const style = TextStyle(fontSize: kWelcomePickerTextSize);
+  double textWidth(String text) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  const modeChrome = 24.0 + 8 + 20; // padding, gap, chevron
+  const workspaceChrome = 24.0 + 4 + 20;
+  final mode = textWidth(modeText) + modeChrome;
+  // A long name must not push the row apart — that is what the ellipsis and the
+  // semantic label are for — so only the minimum readable width counts here.
+  final workspace = math.max(
+    _welcomeWorkspaceMinWidth,
+    math.min(textWidth(workspaceText) + workspaceChrome, 240.0),
+  );
+  return mode + _welcomePickerGap + workspace <= contentWidth ||
+      mode + _welcomePickerGap + _welcomeWorkspaceMinWidth <= contentWidth;
+}
 
 class MessageList extends StatelessWidget {
   const MessageList({
@@ -23,6 +94,7 @@ class MessageList extends StatelessWidget {
     this.onFileTap,
     this.onFileShare,
     this.padding,
+    this.edgeBlurInsets,
     this.onStarter,
     this.agentPresets = const [],
     this.selectedAgentPresetId,
@@ -30,10 +102,9 @@ class MessageList extends StatelessWidget {
     this.workspaceOptions = const [],
     this.selectedWorkspaceId,
     this.onSelectWorkspace,
-    this.onSaveDefaultWorkspace,
-    this.onClearDefaultWorkspace,
     this.onRetryWorkspace,
     this.workspaceStatus,
+    this.workspaceConfirmed = false,
     this.now = DateTime.now,
   });
   final ChatController controller;
@@ -46,6 +117,7 @@ class MessageList extends StatelessWidget {
 
   /// Room reserved for floating chrome; forwarded straight to the list.
   final EdgeInsets? padding;
+  final EdgeInsets? edgeBlurInsets;
   final ValueChanged<String>? onStarter;
   final List<EngineAgentPreset> agentPresets;
   final String? selectedAgentPresetId;
@@ -53,10 +125,13 @@ class MessageList extends StatelessWidget {
   final List<EngineWorkspace> workspaceOptions;
   final String? selectedWorkspaceId;
   final Future<bool> Function(String?)? onSelectWorkspace;
-  final Future<bool> Function()? onSaveDefaultWorkspace,
-      onClearDefaultWorkspace;
   final VoidCallback? onRetryWorkspace;
   final String? workspaceStatus;
+
+  /// Whether the persisted default workspace was actually read back. A null
+  /// selection only means Home once this is true, so the picker never paints a
+  /// check mark for a value it has not confirmed.
+  final bool workspaceConfirmed;
   final DateTime Function() now;
 
   @override
@@ -78,6 +153,7 @@ class MessageList extends StatelessWidget {
       onFileTap: onFileTap,
       onFileShare: onFileShare,
       padding: padding,
+      edgeBlurInsets: edgeBlurInsets,
       empty:
           state.approval == null && state.question == null && !state.needsResync
           ? _EmptyConversation(
@@ -89,10 +165,9 @@ class MessageList extends StatelessWidget {
               workspaceOptions: workspaceOptions,
               selectedWorkspaceId: selectedWorkspaceId,
               onSelectWorkspace: onSelectWorkspace,
-              onSaveDefaultWorkspace: onSaveDefaultWorkspace,
-              onClearDefaultWorkspace: onClearDefaultWorkspace,
               onRetryWorkspace: onRetryWorkspace,
               workspaceStatus: workspaceStatus,
+              workspaceConfirmed: workspaceConfirmed,
               now: now,
             )
           : null,
@@ -164,10 +239,9 @@ class _EmptyConversation extends StatelessWidget {
     required this.workspaceOptions,
     required this.selectedWorkspaceId,
     required this.onSelectWorkspace,
-    required this.onSaveDefaultWorkspace,
-    required this.onClearDefaultWorkspace,
     required this.onRetryWorkspace,
     required this.workspaceStatus,
+    required this.workspaceConfirmed,
     required this.now,
   });
 
@@ -179,10 +253,9 @@ class _EmptyConversation extends StatelessWidget {
   final List<EngineWorkspace> workspaceOptions;
   final String? selectedWorkspaceId;
   final Future<bool> Function(String?)? onSelectWorkspace;
-  final Future<bool> Function()? onSaveDefaultWorkspace,
-      onClearDefaultWorkspace;
   final VoidCallback? onRetryWorkspace;
   final String? workspaceStatus;
+  final bool workspaceConfirmed;
   final DateTime Function() now;
 
   static const _starters = [
@@ -204,94 +277,137 @@ class _EmptyConversation extends StatelessWidget {
         .firstOrNull;
     return LayoutBuilder(
       builder: (context, bounds) {
+        final strings = DshChatStrings.of(context);
         final availableHeight = math.max(
           0.0,
           bounds.maxHeight - padding.vertical,
         );
         final widthLimit = math.max(
           0.0,
-          bounds.maxWidth - padding.horizontal - 36,
+          bounds.maxWidth - padding.horizontal - _welcomeScrollPadding.horizontal,
         );
-        final labelSize = MediaQuery.textScalerOf(context).scale(16);
-        final largeText = labelSize > 16 * 1.3;
+        final labelSize = MediaQuery.textScalerOf(context).scale(_welcomeCardLabelSize);
+        final largeText = labelSize > _welcomeCardLabelSize * 1.3;
         final hasMode = presets.isNotEmpty || selected != null;
         final hasWorkspace = onSelectWorkspace != null;
         final contentWidth = math.min(420.0, widthLimit);
+        // Measured once, used by both the paint and the reservation: a second
+        // copy of this rule would let the grid be sized for a row the strings do
+        // not actually fit on. A long translation, a long directory name or a
+        // large text scale each stack the pair by itself.
         final stackPickers =
-            hasMode && hasWorkspace && (largeText || contentWidth < 264);
+            hasMode &&
+            hasWorkspace &&
+            !_pillsShareOneRow(
+              context,
+              modeText: strings.agentMode(selected, activePreset?.label),
+              workspaceText: _workspacePillText(context),
+              contentWidth: contentWidth,
+            );
+        // The selectors share the card grid's two edges: the left pill starts
+        // where the first card starts, the right pill ends where the last card
+        // ends.
         Widget pickerBar(List<Widget> pickers) {
-          if (!hasMode || !hasWorkspace || stackPickers) {
-            return Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: pickers,
+          if (pickers.length == 1) {
+            return Align(alignment: Alignment.center, child: pickers.single);
+          }
+          if (stackPickers) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(alignment: Alignment.center, child: pickers[0]),
+                const SizedBox(height: _welcomePickerGap),
+                Align(alignment: Alignment.center, child: pickers[1]),
+              ],
             );
           }
+          // Sharing a row means sharing the remaining width: the workspace name
+          // ellipsises rather than pushing its pill onto a second line, and the
+          // full path stays available through the semantic label and the menu.
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Flexible(flex: 11, child: pickers[0]),
-              const SizedBox(width: 8),
-              Flexible(flex: 9, child: pickers[1]),
+              Flexible(child: pickers[0]),
+              const SizedBox(width: _welcomePickerGap),
+              Flexible(child: pickers[1]),
             ],
           );
         }
 
+        final pillRowBudget = stackPickers
+            ? 2 * kMinInteractiveDimension + _welcomePickerGap
+            : kMinInteractiveDimension;
         final greetingLineHeight =
-            MediaQuery.textScalerOf(context).scale(24) * 1.25;
-        // Reserve two greeting lines, brand, grid gaps, picker and scroll padding.
+            MediaQuery.textScalerOf(context).scale(_welcomeGreetingSize) *
+            _welcomeGreetingHeight;
+        // Reserve two greeting lines, brand lockup, grid gaps, pill row and
+        // scroll padding.
         final chromeHeight =
-            16 +
-            36 +
-            16 +
+            _welcomeScrollPadding.vertical +
+            _welcomeBrand.height +
+            _welcomeBrandGap +
             2 * greetingLineHeight +
-            (onStarter == null ? 0 : 12 + 16) +
-            (hasMode || hasWorkspace ? 8 + 48 : 0) +
-            (stackPickers ? 8 + 48 : 0);
+            (onStarter == null ? 0 : _welcomeGridTopGap + 2 * _welcomeCardGap) +
+            (hasMode || hasWorkspace
+                ? _welcomePickerGap + pillRowBudget
+                : 0);
         final preferredSize = math.min(
-          148.0,
+          _welcomeCardSize,
           (availableHeight - chromeHeight) / 2,
         );
         const regularPadding = 16.0;
         const regularIcon = 28.0;
-        const labelGap = 8.0;
         final regularMin =
-            regularPadding * 2 + regularIcon + labelGap + labelSize * 2;
-        // A short viewport should shed padding before hiding the mode pill.
+            regularPadding * 2 + regularIcon + _welcomeCardLabelGap + labelSize * 2;
+        // A short viewport sheds padding before dropping the decorative icon,
+        // and it must also shed it as soon as the regular metrics cannot hold
+        // icon + label: otherwise a card that is 8dp too short loses its icon
+        // instead of tightening its padding.
+        const tightPadding = 8.0;
+        const tightIcon = 24.0;
+        final preferredCard = math.min(
+          preferredSize,
+          (widthLimit - _welcomeCardGap) / 2,
+        );
         final tight =
             largeText ||
             bounds.maxWidth < 300 ||
-            math.min(preferredSize, (widthLimit - 8) / 2) < regularMin;
-        final starterPadding = tight ? 8.0 : regularPadding;
-        final starterIcon = tight ? 24.0 : regularIcon;
+            preferredCard < regularMin + regularIcon + 8;
+        final starterPadding = tight ? tightPadding : regularPadding;
+        final starterIcon = tight ? tightIcon : regularIcon;
         final contentHeight =
             starterPadding * 2 +
             starterIcon +
-            labelGap +
+            _welcomeCardLabelGap +
             labelSize * (largeText ? 4 : 2);
         final cardLimit = math.max(
           math.max(80.0, contentHeight),
           preferredSize,
         );
-        final gridWidth = math.min(contentWidth, cardLimit * 2 + 8);
-        final cardSize = math.max(0.0, (gridWidth - 8) / 2);
-    // 键盘弹出后可用高度骤减，卡片会被压到 label 放不下两行的地步（实测：
-    // 80dp 卡片里「无障碍操作」折成两行，「作」被裁掉一半）。图标是装饰、文案是信息，
-    // 空间不够时先让图标让位，别去截断用户要读的字。
-    final labelNeeds =
-        starterPadding * 2 + labelGap + labelSize * 2;
-    // 留一点余量：正好等于「图标 + 两行字 + 内边距」时，卡片实际会被字宽挤成三行，
-    // 末行被裁掉（设备实测「无障碍操作」只剩「无障碍操」）。宁可少个图标。
-    final iconFits = cardSize >= labelNeeds + starterIcon + 8;
+        final gridWidth = math.min(
+          contentWidth,
+          cardLimit * 2 + _welcomeCardGap,
+        );
+        final cardSize = math.max(
+          0.0,
+          (gridWidth - _welcomeCardGap) / 2,
+        );
+        // 键盘弹出后可用高度骤减，卡片会被压到 label 放不下两行的地步（实测：
+        // 80dp 卡片里「无障碍操作」折成两行，「作」被裁掉一半）。图标是装饰、文案是信息，
+        // 空间不够时先让图标让位，别去截断用户要读的字。
+        final labelNeeds = starterPadding * 2 + _welcomeCardLabelGap + labelSize * 2;
+        // 留一点余量：正好等于「图标 + 两行字 + 内边距」时，卡片实际会被字宽挤成三行，
+        // 末行被裁掉（设备实测「无障碍操作」只剩「无障碍操」）。宁可少个图标。
+        final iconFits = cardSize >= labelNeeds + starterIcon + 8;
         return Padding(
           padding: padding,
           child: SingleChildScrollView(
             key: const ValueKey('welcome-scroll-viewport'),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+            padding: _welcomeScrollPadding,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: math.max(0.0, availableHeight - 16),
+                minHeight: math.max(0.0, availableHeight - _welcomeScrollPadding.vertical),
               ),
               child: Center(
                 child: ConstrainedBox(
@@ -316,8 +432,8 @@ class _EmptyConversation extends StatelessWidget {
                             label: 'DeepSeek',
                             child: SizedBox(
                               key: const ValueKey('welcome-brand'),
-                              width: 48,
-                              height: 36,
+                              width: _welcomeBrand.width,
+                              height: _welcomeBrand.height,
                               child: CustomPaint(
                                 painter: _DeepSeekWhalePainter(
                                   DshPalette.of(context).sendBlue,
@@ -326,7 +442,7 @@ class _EmptyConversation extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: _welcomeBrandGap),
                         Center(
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 280),
@@ -334,14 +450,14 @@ class _EmptyConversation extends StatelessWidget {
                           ),
                         ),
                         if (onStarter != null) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: _welcomeGridTopGap),
                           for (var i = 0; i < _starters.length; i += 2)
                             Align(
                               alignment: Alignment.center,
                               child: SizedBox(
                                 width: gridWidth,
                                 child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.only(bottom: _welcomeCardGap),
                                   child: Row(
                                     children: [
                                       Expanded(
@@ -354,7 +470,7 @@ class _EmptyConversation extends StatelessWidget {
                                           showIcon: iconFits,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
+                                      const SizedBox(width: _welcomeCardGap),
                                       Expanded(
                                         child: _starter(
                                           context,
@@ -372,7 +488,7 @@ class _EmptyConversation extends StatelessWidget {
                             ),
                         ],
                         if (hasMode || hasWorkspace) ...[
-                          const SizedBox(height: 8),
+                          const SizedBox(height: _welcomePickerGap),
                           Align(
                             alignment: Alignment.center,
                             child: pickerBar([
@@ -382,7 +498,7 @@ class _EmptyConversation extends StatelessWidget {
                                   enabled:
                                       onSelect != null &&
                                       presets.any((p) => p.broken == null),
-                                  tooltip: '选择对话模式',
+                                   tooltip: strings.selectAgentMode,
                                   color: Colors.transparent,
                                   surfaceTintColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
@@ -390,19 +506,24 @@ class _EmptyConversation extends StatelessWidget {
                                   padding: EdgeInsets.zero,
                                   position: PopupMenuPosition.under,
                                   onSelected: (id) async {
-                                    if (await onSelect?.call(id) == true ||
+                                     if (await onSelect?.call(id) == true ||
                                         !context.mounted)
                                       return;
                                     ScaffoldMessenger.maybeOf(
                                       context,
                                     )?.showSnackBar(
-                                      const SnackBar(content: Text('未能切换对话模式')),
+                                       SnackBar(
+                                         content: Text(
+                                           strings.agentModeSwitchFailed,
+                                         ),
+                                       ),
                                     );
                                   },
                                   itemBuilder: (_) => [
                                     _WelcomePresetMenu(
                                       presets: presets,
                                       selected: selected,
+                                      strings: strings,
                                     ),
                                   ],
                                   child: Container(
@@ -410,8 +531,8 @@ class _EmptyConversation extends StatelessWidget {
                                       'welcome-agent-capsule',
                                     ),
                                     constraints: const BoxConstraints(
-                                      minHeight: 48,
-                                      maxWidth: 320,
+                                       minHeight: kMinInteractiveDimension,
+                                       maxWidth: 320,
                                     ),
                                     padding: EdgeInsets.symmetric(
                                       vertical: 10,
@@ -429,10 +550,7 @@ class _EmptyConversation extends StatelessWidget {
                                       children: [
                                         Flexible(
                                           child: Text(
-                                            '对话模式：' +
-                                                (activePreset?.label ??
-                                                    selected ??
-                                                    '未选择'),
+                                            strings.agentMode(selected, activePreset?.label),
                                             maxLines:
                                                 hasWorkspace && !stackPickers
                                                 ? 1
@@ -467,12 +585,24 @@ class _EmptyConversation extends StatelessWidget {
     );
   }
 
+  /// The value the welcome pills measure. It comes from the same rule the
+  /// picker paints, so the two can never disagree about how wide it is.
+  String _workspacePillText(BuildContext context) =>
+      DshChatStrings.of(context).workspaceCapsule(
+        workspaceCapsuleLabels(
+        context,
+        workspaces: workspaceOptions,
+        selected: selectedWorkspaceId,
+          status: workspaceStatus,
+          confirmed: workspaceConfirmed,
+        ).name,
+      );
+
   Widget _workspacePicker(BuildContext context) => NativeWorkspacePicker(
     workspaces: workspaceOptions,
     selected: selectedWorkspaceId,
+    confirmed: workspaceConfirmed,
     onSelect: onSelectWorkspace!,
-    onSaveDefault: onSaveDefaultWorkspace,
-    onClearDefault: onClearDefaultWorkspace,
     onRetry: onRetryWorkspace,
     status: workspaceStatus,
   );
@@ -492,39 +622,46 @@ class _EmptyConversation extends StatelessWidget {
       'plan' => palette.edit,
       _ => palette.warn,
     };
-    return SizedBox(
-      height: cardSize,
-      child: OutlinedButton(
-        key: ValueKey('welcome-suggestion-' + item.$1),
-        style: OutlinedButton.styleFrom(
-          minimumSize: Size.zero,
-          padding: EdgeInsets.all(padding),
-          foregroundColor: palette.ink,
-          backgroundColor: palette.surface,
-          side: BorderSide(color: palette.line),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        onPressed: () => onStarter?.call(item.$4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (showIcon) ...[
-              Icon(item.$2, size: iconSize, color: color),
-              const SizedBox(height: 8),
-            ],
-            Flexible(
-              child: Text(
-                item.$3,
-                textAlign: TextAlign.center,
-                maxLines: 3,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+    return GlassPanel(
+      key: ValueKey('welcome-starter-glass-${item.$1}'),
+      radius: _welcomeCardRadius,
+      blurScale: .5,
+      child: SizedBox(
+        height: cardSize,
+        child: OutlinedButton(
+          key: ValueKey('welcome-suggestion-' + item.$1),
+          style: OutlinedButton.styleFrom(
+            minimumSize: Size.zero,
+            padding: EdgeInsets.all(padding),
+            foregroundColor: palette.ink,
+            backgroundColor: Colors.transparent,
+            side: BorderSide.none,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_welcomeCardRadius),
+            ),
+          ),
+          onPressed: () => onStarter?.call(item.$4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (showIcon) ...[
+                Icon(item.$2, size: iconSize, color: color),
+                const SizedBox(height: _welcomeCardLabelGap),
+              ],
+              Flexible(
+                child: Text(
+                  item.$3,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  style: const TextStyle(
+                    fontSize: _welcomeCardLabelSize,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -628,10 +765,15 @@ class _DeepSeekWhalePainter extends CustomPainter {
 }
 
 class _WelcomePresetMenu extends PopupMenuEntry<String> {
-  const _WelcomePresetMenu({required this.presets, required this.selected});
+  const _WelcomePresetMenu({
+    required this.presets,
+    required this.selected,
+    required this.strings,
+  });
 
   final List<EngineAgentPreset> presets;
   final String? selected;
+  final DshChatStrings strings;
 
   @override
   double get height => presets.length * kMinInteractiveDimension;
@@ -646,31 +788,31 @@ class _WelcomePresetMenu extends PopupMenuEntry<String> {
 class _WelcomePresetMenuState extends State<_WelcomePresetMenu> {
   @override
   Widget build(BuildContext context) => GlassPanel(
-    key: const ValueKey('welcome-agent-glass'),
-    radius: 16,
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final preset in widget.presets)
-          PopupMenuItem<String>(
-            value: preset.id,
-            enabled: preset.broken == null,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    preset.label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+      key: const ValueKey('welcome-agent-glass'),
+      radius: 16,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final preset in widget.presets)
+            PopupMenuItem<String>(
+              value: preset.id,
+              enabled: preset.broken == null,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.strings.agentPresetLabel(preset.id, preset.label),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                if (preset.id == widget.selected)
-                  const Icon(Icons.check_rounded, size: 18),
-              ],
+                  if (preset.id == widget.selected)
+                    const Icon(Icons.check_rounded, size: 18),
+                ],
+              ),
             ),
-          ),
-      ],
-    ),
+        ],
+      ),
   );
 }
 

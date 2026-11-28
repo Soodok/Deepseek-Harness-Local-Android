@@ -12,7 +12,9 @@ import '../../transport/dsh_rpc_connection.dart';
 import '../../theme/display_scale.dart';
 import '../../theme/dsh_theme.dart';
 import '../composer_sheets.dart';
+import '../glass_panel.dart';
 import '../manual_ssh_page.dart';
+import 'settings_page.dart';
 
 class PersonalizationPage extends StatelessWidget {
   const PersonalizationPage({super.key});
@@ -99,10 +101,10 @@ class PersonalizationPage extends StatelessWidget {
                   width: (constraints.maxWidth - 12) / 2,
                   child: Material(
                     color: colors.surfaceRaised,
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(16),
                     child: InkWell(
                       key: ValueKey('settings-mood-' + mood.name),
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(16),
                       onTap: appearance == null
                           ? null
                           : () => appearance.onMoodChanged?.call(mood),
@@ -180,7 +182,11 @@ class PersonalizationPage extends StatelessWidget {
 }
 
 class ModelConfigurationPage extends StatelessWidget {
-  const ModelConfigurationPage({super.key, required this.controller, this.providers});
+  const ModelConfigurationPage({
+    super.key,
+    required this.controller,
+    this.providers,
+  });
   final ChatController controller;
   final ModelProviderSettings? providers;
   @override
@@ -254,8 +260,9 @@ class _ProviderSettingsState extends State<_ProviderSettings> {
   }
 
   Future<void> _openForm(
-    ProviderSettingsSnapshot snapshot, [ModelProviderProfile? profile]
-  ) async {
+    ProviderSettingsSnapshot snapshot, [
+    ModelProviderProfile? profile,
+  ]) async {
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -271,20 +278,11 @@ class _ProviderSettingsState extends State<_ProviderSettings> {
   Future<void> _remove(ProviderSettingsSnapshot snapshot, String route) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('移除服务提供商？'),
-        content: Text('将从模型目录移除「' + route + '」，保留已保存的 API Key。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            key: const ValueKey('provider-confirm-remove'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('移除'),
-          ),
-        ],
+      builder: (_) => SettingsConfirmDialog(
+        title: '移除服务提供商？',
+        message: '将从模型目录移除「' + route + '」，保留已保存的 API Key。',
+        confirmKey: const ValueKey('provider-confirm-remove'),
+        confirmLabel: '移除',
       ),
     );
     if (!mounted || confirmed != true || _removing) return;
@@ -296,7 +294,8 @@ class _ProviderSettingsState extends State<_ProviderSettings> {
       await widget.service.removeModelProvider(snapshot, route);
     } on Object catch (error) {
       if (!mounted) return;
-      _removeError = error is DshRpcException && error.code == 'settings/conflict'
+      _removeError =
+          error is DshRpcException && error.code == 'settings/conflict'
           ? '配置已在其他端更新，未移除服务提供商。'
           : '引擎未确认移除，请核对刷新后的列表。';
     } finally {
@@ -308,7 +307,9 @@ class _ProviderSettingsState extends State<_ProviderSettings> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<ProviderSettingsSnapshot?>(
+  Widget build(
+    BuildContext context,
+  ) => FutureBuilder<ProviderSettingsSnapshot?>(
     future: _snapshot,
     builder: (context, state) {
       if (state.connectionState != ConnectionState.done) {
@@ -317,44 +318,69 @@ class _ProviderSettingsState extends State<_ProviderSettings> {
       if (state.hasError) {
         return ListTile(
           title: const Text('未能读取服务提供商'),
-          trailing: IconButton(tooltip: '重新读取', icon: const Icon(Icons.refresh), onPressed: _reload),
+          trailing: IconButton(
+            tooltip: '重新读取',
+            icon: const Icon(Icons.refresh),
+            onPressed: _reload,
+          ),
         );
       }
       final snapshot = state.data;
       if (snapshot == null) return const ListTile(title: Text('引擎未启用自定义提供商'));
-      return _SettingsGroup(children: [
-        if (_removeError case final error?)
-          Semantics(liveRegion: true, child: ListTile(title: Text(error))),
-        for (final profile in snapshot.providers)
-          ListTile(
-            key: ValueKey('provider-edit-' + profile.route),
-            title: Text(profile.route, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: profile.models.isEmpty ? null : Text(profile.models.join('、'), maxLines: 2, overflow: TextOverflow.ellipsis),
-            onTap: !snapshot.writable || _removing
-                ? null : () => _openForm(snapshot, profile),
-            trailing: !snapshot.writable ? null : IconButton(
-              key: ValueKey('provider-remove-' + profile.route),
-              tooltip: '移除 ' + profile.route,
-              icon: const Icon(Icons.delete_outline_rounded),
-              onPressed: _removing ? null : () => _remove(snapshot, profile.route),
+      return _SettingsGroup(
+        children: [
+          if (_removeError case final error?)
+            Semantics(liveRegion: true, child: ListTile(title: Text(error))),
+          for (final profile in snapshot.providers)
+            ListTile(
+              key: ValueKey('provider-edit-' + profile.route),
+              title: Text(
+                profile.route,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: profile.models.isEmpty
+                  ? null
+                  : Text(
+                      profile.models.join('、'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+              onTap: !snapshot.writable || _removing
+                  ? null
+                  : () => _openForm(snapshot, profile),
+              trailing: !snapshot.writable
+                  ? null
+                  : IconButton(
+                      key: ValueKey('provider-remove-' + profile.route),
+                      tooltip: '移除 ' + profile.route,
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      onPressed: _removing
+                          ? null
+                          : () => _remove(snapshot, profile.route),
+                    ),
             ),
-          ),
-        if (!snapshot.writable)
-          const ListTile(title: Text('引擎配置为只读'))
-        else
-          ListTile(
-            key: const ValueKey('provider-add'),
-            leading: const Icon(Icons.add),
-            title: const Text('添加服务提供商'),
-            onTap: _removing ? null : () => _openForm(snapshot),
-          ),
-      ]);
+          if (!snapshot.writable)
+            const ListTile(title: Text('引擎配置为只读'))
+          else
+            ListTile(
+              key: const ValueKey('provider-add'),
+              leading: const Icon(Icons.add),
+              title: const Text('添加服务提供商'),
+              onTap: _removing ? null : () => _openForm(snapshot),
+            ),
+        ],
+      );
     },
   );
 }
 
 class _ProviderForm extends StatefulWidget {
-  const _ProviderForm({required this.service, required this.snapshot, this.profile});
+  const _ProviderForm({
+    required this.service,
+    required this.snapshot,
+    this.profile,
+  });
   final ModelProviderSettings service;
   final ProviderSettingsSnapshot snapshot;
   final ModelProviderProfile? profile;
@@ -365,7 +391,10 @@ class _ProviderForm extends StatefulWidget {
 
 String _newProviderCredentialRef() {
   final random = Random.secure();
-  final suffix = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+  final suffix = List.generate(
+    16,
+    (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ).join().toUpperCase();
   return 'DSH_NATIVE_${suffix}_API_KEY';
 }
 
@@ -404,7 +433,8 @@ class _ProviderFormState extends State<_ProviderForm> {
 
   List<String> _draftModels() {
     final original = widget.profile?.models;
-    if (original != null && _models.text == original.join(', ')) return original;
+    if (original != null && _models.text == original.join(', '))
+      return original;
     return _models.text
         .split(RegExp(r'[,\r\n，]'))
         .map((id) => id.trim())
@@ -414,12 +444,16 @@ class _ProviderFormState extends State<_ProviderForm> {
 
   String? _endpointError(String url, String key) {
     final endpoint = Uri.tryParse(url);
-    if (endpoint == null || !['https', 'http'].contains(endpoint.scheme) ||
-        endpoint.host.isEmpty || endpoint.userInfo.isNotEmpty ||
-        endpoint.hasQuery || endpoint.hasFragment) {
+    if (endpoint == null ||
+        !['https', 'http'].contains(endpoint.scheme) ||
+        endpoint.host.isEmpty ||
+        endpoint.userInfo.isNotEmpty ||
+        endpoint.hasQuery ||
+        endpoint.hasFragment) {
       return '请输入有效的服务地址，不包含账号、查询参数或片段。';
     }
-    if (key.isNotEmpty && endpoint.scheme == 'http' &&
+    if (key.isNotEmpty &&
+        endpoint.scheme == 'http' &&
         !['127.0.0.1', '::1', 'localhost'].contains(endpoint.host)) {
       return '含 API Key 的非回环服务必须使用 HTTPS。';
     }
@@ -438,16 +472,24 @@ class _ProviderFormState extends State<_ProviderForm> {
     if (error != null) return;
     try {
       final ids = await widget.service.discoverProviderModels(
-        baseUrl: url, api: _api, apiKey: key.isEmpty ? null : key,
+        baseUrl: url,
+        api: _api,
+        apiKey: key.isEmpty ? null : key,
       );
       if (!mounted) return;
       final existing = _draftModels();
       final seen = existing.toSet();
       final added = ids.where(seen.add).toList();
       if (added.isNotEmpty) _models.text = [...existing, ...added].join(', ');
-      setState(() => _discoveryStatus = ids.isEmpty
-          ? '服务未返回模型。'
-          : '发现 ' + ids.length.toString() + ' 个模型，新增 ' + added.length.toString() + ' 个。');
+      setState(
+        () => _discoveryStatus = ids.isEmpty
+            ? '服务未返回模型。'
+            : '发现 ' +
+                  ids.length.toString() +
+                  ' 个模型，新增 ' +
+                  added.length.toString() +
+                  ' 个。',
+      );
     } on Object {
       if (mounted) setState(() => _error = '未能发现模型，请核对服务地址、协议和 API Key。');
     } finally {
@@ -460,10 +502,13 @@ class _ProviderFormState extends State<_ProviderForm> {
     final previous = widget.profile;
     final route = previous?.route ?? _route.text.trim();
     final url = previous != null && _url.text == previous.baseUrl
-        ? previous.baseUrl : _url.text.trim();
+        ? previous.baseUrl
+        : _url.text.trim();
     final models = _draftModels();
-    if (previous == null && (!ModelProviderProfile.routePattern.hasMatch(route) ||
-        widget.snapshot.providers.any((p) => p.route == route) || models.isEmpty)) {
+    if (previous == null &&
+        (!ModelProviderProfile.routePattern.hasMatch(route) ||
+            widget.snapshot.providers.any((p) => p.route == route) ||
+            models.isEmpty)) {
       setState(() => _error = '请输入未使用的小写标识和至少一个模型 ID。');
       return;
     }
@@ -473,7 +518,8 @@ class _ProviderFormState extends State<_ProviderForm> {
     }
     final key = _key.text.trim();
     final error = previous == null || url != previous.baseUrl || key.isNotEmpty
-        ? _endpointError(url, key) : null;
+        ? _endpointError(url, key)
+        : null;
     if (error != null) {
       setState(() => _error = error);
       return;
@@ -482,7 +528,8 @@ class _ProviderFormState extends State<_ProviderForm> {
       setState(() => _error = '请输入 API Key，或关闭并保留已保存的提供商。');
       return;
     }
-    final newRef = _savedRef ?? (key.isEmpty ? null : _newProviderCredentialRef());
+    final newRef =
+        _savedRef ?? (key.isEmpty ? null : _newProviderCredentialRef());
     setState(() {
       _saving = true;
       _error = null;
@@ -491,7 +538,10 @@ class _ProviderFormState extends State<_ProviderForm> {
     try {
       if (_savedRef == null) {
         final profile = ModelProviderProfile(
-          route: route, api: _api, baseUrl: url, models: models,
+          route: route,
+          api: _api,
+          baseUrl: url,
+          models: models,
           credentialRef: newRef ?? previous?.credentialRef,
         );
         if (previous == null) {
@@ -514,7 +564,8 @@ class _ProviderFormState extends State<_ProviderForm> {
             ? '提供商已保存，但 API Key 未确认。可以重试。'
             : switch (code) {
                 'settings/conflict' => '配置已在其他端更新，请关闭后重新打开。',
-                'settings/provider-destination' => '原有授权不能用在新地址或协议上。请使用新密钥，或另建服务提供商。',
+                'settings/provider-destination' =>
+                  '原有授权不能用在新地址或协议上。请使用新密钥，或另建服务提供商。',
                 _ => '引擎未确认保存，请检查配置后重试。',
               };
       });
@@ -523,12 +574,21 @@ class _ProviderFormState extends State<_ProviderForm> {
     }
   }
 
-  Widget _field(String id, String label, TextEditingController controller, {bool secret = false, bool locked = false}) => Padding(
+  Widget _field(
+    String id,
+    String label,
+    TextEditingController controller, {
+    bool secret = false,
+    bool locked = false,
+  }) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: TextField(
-      key: ValueKey('provider-' + id), controller: controller,
+      key: ValueKey('provider-' + id),
+      controller: controller,
       enabled: !_busy && !_conflict && !locked && (secret || _savedRef == null),
-      obscureText: secret, autocorrect: !secret, enableSuggestions: !secret,
+      obscureText: secret,
+      autocorrect: !secret,
+      enableSuggestions: !secret,
       decoration: InputDecoration(labelText: label),
     ),
   );
@@ -538,43 +598,135 @@ class _ProviderFormState extends State<_ProviderForm> {
     final editing = widget.profile != null;
     return PopScope(
       canPop: !_saving && _savedRef == null && !_conflict,
-      child: AlertDialog(
-        scrollable: true,
-        title: Text(editing ? '编辑服务提供商' : '添加服务提供商'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          _field('route', '提供商标识', _route, locked: editing),
-          DropdownButtonFormField<String>(
-            initialValue: _api,
-            decoration: const InputDecoration(labelText: '接口协议'),
-            isExpanded: true,
-            items: [
-              if (!ModelProviderProfile.protocols.contains(_api))
-                DropdownMenuItem(value: _api, child: Text(_api.isEmpty ? '引擎默认' : _api)),
-              for (final api in ModelProviderProfile.protocols)
-                DropdownMenuItem(value: api, child: Text(api)),
-            ],
-            onChanged: _busy || _conflict || _savedRef != null ? null : (api) {
-              if (api != null) setState(() => _api = api);
-            },
+      child: Dialog(
+        key: const ValueKey('settings-provider-form'),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: GlassPanel(
+          radius: 24,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * .86,
+            ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                16,
+                20,
+                12 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          editing ? '编辑服务提供商' : '添加服务提供商',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '关闭',
+                        onPressed: _saving
+                            ? null
+                            : () =>
+                                  Navigator.of(context)
+                                      .pop(_savedRef != null || _conflict),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _field('route', '提供商标识', _route, locked: editing),
+                  DropdownButtonFormField<String>(
+                    initialValue: _api,
+                    decoration: const InputDecoration(labelText: '接口协议'),
+                    isExpanded: true,
+                    items: [
+                      if (!ModelProviderProfile.protocols.contains(_api))
+                        DropdownMenuItem(
+                          value: _api,
+                          child: Text(_api.isEmpty ? '引擎默认' : _api),
+                        ),
+                      for (final api in ModelProviderProfile.protocols)
+                        DropdownMenuItem(value: api, child: Text(api)),
+                    ],
+                    onChanged: _busy || _conflict || _savedRef != null
+                        ? null
+                        : (api) {
+                            if (api != null) setState(() => _api = api);
+                          },
+                  ),
+                  const SizedBox(height: 10),
+                  _field('url', '服务地址', _url),
+                  _field(
+                    'key',
+                    editing ? '新 API Key（留空保留原值）' : 'API Key（可选）',
+                    _key,
+                    secret: true,
+                  ),
+                  _field('models', '模型 ID（逗号分隔）', _models),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('provider-discover'),
+                      onPressed: _busy || _conflict || _savedRef != null
+                          ? null
+                          : _discover,
+                      icon: const Icon(Icons.search_rounded),
+                      label: Text(_discovering ? '发现中…' : '发现模型'),
+                    ),
+                  ),
+                  if (_discoveryStatus case final status?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Semantics(liveRegion: true, child: Text(status)),
+                    ),
+                  if (_error case final error?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          error,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () =>
+                                  Navigator.of(context)
+                                      .pop(_savedRef != null || _conflict),
+                        child: const Text('关闭'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        key: const ValueKey('provider-save'),
+                        onPressed: _busy || _conflict ? null : _save,
+                        child: Text(_saving ? '保存中…' : '保存'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-          _field('url', '服务地址', _url),
-          _field('key', editing ? '新 API Key（留空保留原值）' : 'API Key（可选）', _key, secret: true),
-          _field('models', '模型 ID（逗号分隔）', _models),
-          OutlinedButton.icon(
-            key: const ValueKey('provider-discover'),
-            onPressed: _busy || _conflict || _savedRef != null ? null : _discover,
-            icon: const Icon(Icons.search_rounded),
-            label: Text(_discovering ? '发现中…' : '发现模型'),
-          ),
-          if (_discoveryStatus case final status?)
-            Semantics(liveRegion: true, child: Text(status)),
-          if (_error case final error?)
-            Semantics(liveRegion: true, child: Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error))),
-        ]),
-        actions: [
-          TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(_savedRef != null || _conflict), child: const Text('关闭')),
-          FilledButton(key: const ValueKey('provider-save'), onPressed: _busy || _conflict ? null : _save, child: Text(_saving ? '保存中…' : '保存')),
-        ],
+        ),
       ),
     );
   }
@@ -586,8 +738,7 @@ String _sessionPermissionLine(ChatController controller) {
   if (controller.transport is! SessionPermissionTransport)
     return '当前引擎不支持在此修改，请使用 Web 版';
   final current = controller.sessionPermission;
-  if (!controller.permissionKnown || current == null)
-    return '宿主当前权限未知，请确认后再修改';
+  if (!controller.permissionKnown || current == null) return '宿主当前权限未知，请确认后再修改';
   return current.label;
 }
 
@@ -611,7 +762,8 @@ class PermissionsSettingsPage extends StatefulWidget {
   const PermissionsSettingsPage({super.key, required this.controller});
   final ChatController controller;
   @override
-  State<PermissionsSettingsPage> createState() => _PermissionsSettingsPageState();
+  State<PermissionsSettingsPage> createState() =>
+      _PermissionsSettingsPageState();
 }
 
 class _PermissionsSettingsPageState extends State<PermissionsSettingsPage> {
@@ -775,9 +927,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
               minTileHeight: target,
               leading: Icon(Icons.memory_rounded, color: colors.inkSoft),
               title: const Text('本机引擎'),
-              subtitle: Text(
-                _host == null ? '尚未收到引擎报告' : _host!.runtimeLabel,
-              ),
+              subtitle: Text(_host == null ? '尚未收到引擎报告' : _host!.runtimeLabel),
               trailing: IconButton(
                 key: const ValueKey('connections-refresh'),
                 tooltip: '重新读取引擎状态',
@@ -796,7 +946,11 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
             liveRegion: true,
             child: Text(
               _engineLine,
-              style: TextStyle(color: colors.inkSoft, fontSize: 13, height: 1.55),
+              style: TextStyle(
+                color: colors.inkSoft,
+                fontSize: 13,
+                height: 1.55,
+              ),
             ),
           ),
         ),
@@ -807,7 +961,10 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
             ListTile(
               key: const ValueKey('connections-ssh-windows'),
               minTileHeight: target,
-              leading: Icon(Icons.desktop_windows_outlined, color: colors.inkSoft),
+              leading: Icon(
+                Icons.desktop_windows_outlined,
+                color: colors.inkSoft,
+              ),
               title: const Text('Windows 主机'),
               subtitle: const Text('验证主机指纹 · 密码连接'),
               trailing: const Icon(Icons.chevron_right_rounded),
@@ -937,7 +1094,7 @@ class _SettingsGroup extends StatelessWidget {
     return Material(
       color: colors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: colors.line.withValues(alpha: .42)),
       ),
       clipBehavior: Clip.antiAlias,

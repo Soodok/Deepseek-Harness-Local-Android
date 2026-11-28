@@ -116,6 +116,7 @@ class _ComposerState extends State<Composer> {
         (value.trim().isEmpty && widget.controller.attachments.isEmpty))
       return;
     setState(() => _sending = true);
+    var accepted = false;
     try {
       if (widget.editing) {
         await widget.onSubmitEdit?.call(value);
@@ -127,6 +128,7 @@ class _ComposerState extends State<Composer> {
       // gets a tick: a refused, empty, repeated or failed send returns false and
       // stays silent. The button and the keyboard both arrive here.
       if (sent) InteractionHaptics.sendAccepted();
+      accepted = sent;
       if (sent && _textController.text == value) {
         final draft = widget.draft;
         if (draft != null) {
@@ -135,10 +137,11 @@ class _ComposerState extends State<Composer> {
           _textController.clear();
         }
       }
+      if (sent && _focusNode.hasFocus) _focusNode.unfocus();
     } finally {
       if (mounted) {
         setState(() => _sending = false);
-        _focusNode.requestFocus();
+        if (!accepted || widget.editing) _focusNode.requestFocus();
       }
     }
   }
@@ -386,6 +389,7 @@ class _ComposerState extends State<Composer> {
                       canStop: controller.canStop && !_sending,
                       stopInFlight: controller.stopInFlight,
                       canSend: controller.canSend && !_sending,
+                      sendInFlight: _sending && !widget.editing,
                       hasContent: hasContent,
                       onSend: _send,
                       onStop: _stop,

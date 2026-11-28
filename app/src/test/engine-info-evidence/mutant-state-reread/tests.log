@@ -1,0 +1,32 @@
+JUnit version 4.13.2
+...E..........E..E.E............................
+Time: 0.188
+There were 4 failures:
+1) oneStateReadDrivesEndpointAvailabilityStateAndScope(app.dsh.mobile.engine.NativeHostInfoSnapshotTest)
+org.junit.ComparisonFailure: expected:<[Healthy]> but was:<[Starting]>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at app.dsh.mobile.engine.NativeHostInfoSnapshotTest.assertReady(NativeHostInfoSnapshotTest.kt:92)
+	at app.dsh.mobile.engine.NativeHostInfoSnapshotTest.oneStateReadDrivesEndpointAvailabilityStateAndScope(NativeHostInfoSnapshotTest.kt:206)
+2) sameDomainRolloverCannotMixAEndpointWithBIdentity(app.dsh.mobile.engine.NativeEngineInfoProjectionTest)
+org.junit.ComparisonFailure: expected:<[Healthy]> but was:<[SafeMode]>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.race(NativeEngineInfoProjectionTest.kt:23)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.sameDomainRolloverCannotMixAEndpointWithBIdentity(NativeEngineInfoProjectionTest.kt:29)
+3) startingBDoesNotChangeAnAlreadyCapturedAResponse(app.dsh.mobile.engine.NativeEngineInfoProjectionTest)
+org.junit.ComparisonFailure: expected:<[Healthy]> but was:<[Starting]>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.race(NativeEngineInfoProjectionTest.kt:23)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.startingBDoesNotChangeAnAlreadyCapturedAResponse(NativeEngineInfoProjectionTest.kt:31)
+4) crossDomainRolloverCannotMixAEndpointWithBIdentity(app.dsh.mobile.engine.NativeEngineInfoProjectionTest)
+org.junit.ComparisonFailure: expected:<[Healthy]> but was:<[SafeMode]>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.race(NativeEngineInfoProjectionTest.kt:23)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.crossDomainRolloverCannotMixAEndpointWithBIdentity(NativeEngineInfoProjectionTest.kt:30)
+
+FAILURES!!!
+Tests run: 44,  Failures: 4
+

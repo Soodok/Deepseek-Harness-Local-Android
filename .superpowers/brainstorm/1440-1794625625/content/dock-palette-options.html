@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DSH 对话配色概念预览</title>
+<style>
+:root{
+  --bg:#0F1517; --bg-deep:#0B1012; --surface:#172023; --raised:#1E2A2D;
+  --text:#E3ECEA; --muted:#93A4A6; --faint:#74898B; --line:#2A383C;
+  --primary:#4FBFAE; --on-primary:#04201B; --primary-soft:rgba(79,191,174,.14);
+  --user:#1A2B2E; --plan:#7DB6D6; --question:#E6B45A; --think:#A99DD9;
+  --add:#6FCB90; --del:#E6877D; --warn:#E6B45A;
+  --motion:180ms; --ease:cubic-bezier(.2,.8,.2,1); --collapse:260ms; --collapse-ease:cubic-bezier(.65,0,.35,1);
+}
+html[data-theme="ember"]{--bg:#17130F;--bg-deep:#120E0B;--surface:#211B16;--raised:#2A231C;--text:#EEE6DA;--muted:#ABA08F;--faint:#8A7E6D;--line:#3A3128;--primary:#E28A50;--on-primary:#1F0E03;--primary-soft:rgba(226,138,80,.14);--user:#2C241C;--plan:#CDAE6E;--question:#86BCE6;--think:#BBA5CC;--add:#93C67D;--del:#E57C6C;--warn:#E2A24A;}
+html[data-theme="indigo"]{--bg:#0F121B;--bg-deep:#0A0C13;--surface:#171B27;--raised:#1E2436;--text:#E4E7F1;--muted:#9098AF;--faint:#727A90;--line:#2A3047;--primary:#7B8CFF;--on-primary:#0A0D26;--primary-soft:rgba(123,140,255,.14);--user:#1D2233;--plan:#66C6DB;--question:#F0B95F;--think:#B9A0F2;--add:#5FD1A2;--del:#F18C9C;--warn:#F0B95F;}
+html[data-theme="paper"]{--bg:#F6F2EA;--bg-deep:#EFE9DF;--surface:#EDE7DC;--raised:#E5DDD0;--text:#24211D;--muted:#6A6359;--faint:#8A8276;--line:#D8D0C1;--primary:#2F64D6;--on-primary:#FFFFFF;--primary-soft:rgba(47,100,214,.09);--user:#E7E0D3;--plan:#1F6F82;--question:#9A5600;--think:#6B4CA6;--add:#1D7543;--del:#B2352C;--warn:#9A5600;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:#111;color:#ddd}
+body{font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.studio{display:flex;gap:28px;align-items:flex-start;justify-content:center;padding:28px 24px 48px;flex-wrap:wrap}
+.panel{width:min(640px,100%);display:flex;flex-direction:column;gap:16px}
+.banner{font-size:18px;font-weight:700;letter-spacing:.04em;background:#3a2a00;color:#ffe08a;border:1px solid #8a6a12;border-radius:10px;padding:12px 16px;text-align:center}
+.note{font-size:13px;line-height:1.6;color:#bdbdbd}
+.swatches{display:flex;gap:10px;flex-wrap:wrap}
+.themes{display:flex;gap:8px;flex-wrap:wrap}
+.themes button{min-height:48px;padding:0 16px;border-radius:10px;border:1px solid #444;font-weight:600}
+.themes button[aria-pressed="true"]{background:#fff;color:#111;border-color:#fff}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.controls button{min-height:48px;padding:0 14px;border-radius:10px;border:1px solid #444}
+.swatch{display:flex;align-items:center;gap:8px;font-size:12px;color:#bbb}
+.swatch i{width:22px;height:22px;border-radius:6px;border:1px solid #444;display:block}
+.phone{width:360px;max-width:100%;height:740px;flex:none;background:var(--bg);color:var(--text);border-radius:28px;border:1px solid #000;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.top{height:56px;display:flex;align-items:center;padding:0 4px 0 14px;gap:8px;flex:none}
+.top .ttl{font-weight:650;font-size:16px;letter-spacing:-.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iconbtn{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;position:relative;color:var(--text)}
+.iconbtn:hover{background:var(--surface)}
+.badge{position:absolute;top:8px;right:8px;min-width:16px;height:16px;border-radius:8px;background:var(--primary);color:var(--on-primary);font-size:10px;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.thread{flex:1;overflow-y:auto;padding:6px 18px 12px;min-height:0;min-width:0;overflow-wrap:anywhere}
+.msg{font-size:15.5px;line-height:1.62;margin:0 0 16px;white-space:pre-wrap}
+.msg.user{background:var(--user);border-radius:16px;padding:10px 14px;margin-left:28px}
+.fold{margin:0 0 14px}
+.fold>button{min-height:48px;display:flex;align-items:center;gap:8px;width:100%;text-align:left;color:var(--muted);font-size:13.5px}
+.chev{width:8px;height:8px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform var(--motion) var(--ease);flex:none}
+.fold.open .chev{transform:rotate(45deg)}
+.foldbody{display:none;padding:2px 0 6px 16px;border-left:2px solid var(--line);margin-left:3px}
+.fold.open .foldbody{display:block}
+.thinkline{color:var(--think);font-size:13.5px;line-height:1.6;margin:4px 0}
+.fileline{font-size:13.5px;line-height:1.7;font-family:Consolas,"Cascadia Mono",monospace}
+.fileline .p{color:var(--add)} .fileline .m{color:var(--del)} .fileline .n{color:var(--muted)}
+.diffbox{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;background:var(--bg-deep);border-radius:10px;overflow-x:auto;padding:8px 0;margin-top:6px;max-width:100%}
+.diffbox div{padding:0 12px;white-space:pre}
+.diffbox .a{background:color-mix(in srgb,var(--add) 16%,transparent);color:var(--add)}
+.diffbox .d{background:color-mix(in srgb,var(--del) 16%,transparent);color:var(--del)}
+html[data-theme="paper"] .diffbox .a,html[data-theme="paper"] .diffbox .d{background:none}
+.cmdsum{font-size:13.5px;color:var(--muted)}
+.cmdsum b{color:var(--text);font-weight:600}
+.outbox{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:var(--bg-deep);border-radius:10px;padding:8px 12px;margin-top:6px;color:var(--muted);white-space:pre;overflow-x:auto}
+.dockwrap{flex:none;padding:0 12px;display:flex;flex-direction:column;gap:8px;max-height:46%;overflow-y:auto}
+.plan{flex:none;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.plan>button{min-height:48px;width:100%;display:flex;align-items:center;gap:10px;padding:0 12px;text-align:left}
+.plan .mark{width:3px;height:16px;border-radius:2px;background:var(--plan);flex:none}
+.plan .label{color:var(--plan);font-size:12.5px;font-weight:700;flex:none}
+.plan .sum{font-size:13.5px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.planbody{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--collapse) var(--collapse-ease)}
+.plan.open .planbody{grid-template-rows:1fr}
+.plan.open .chev{transform:rotate(45deg)}
+.plan.manual .planbody{transition-duration:var(--motion);transition-timing-function:var(--ease)}
+.planinner{overflow:hidden;max-height:168px}
+.plan.open .planinner{overflow-y:auto}
+.qcard{flex:none;max-height:260px;overflow-y:auto;overscroll-behavior:contain}
+.phone.short{height:560px}
+.phone.short .planinner{max-height:72px}
+.phone.short .qcard{max-height:200px}
+.planinner ul{margin:0;padding:2px 16px 12px 34px;font-size:13.5px;line-height:1.7}
+.planinner li::marker{color:var(--plan)}
+.qcard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--question);border-radius:14px;padding:12px}
+.qcard h3{margin:0 0 8px;font-size:14.5px;font-weight:650}
+.opt{min-height:48px;width:100%;display:flex;align-items:center;gap:10px;border-radius:10px;padding:0 8px;text-align:left}
+.opt:hover{background:var(--raised)}
+.opt[aria-checked="true"]{background:var(--primary-soft)}
+.radio{width:18px;height:18px;border-radius:50%;border:1.6px solid var(--muted);flex:none;display:grid;place-items:center}
+.opt[aria-checked="true"] .radio{border-color:var(--question)}
+.opt[aria-checked="true"] .radio::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--question)}
+.free{width:100%;min-height:48px;margin-top:6px;background:var(--bg-deep);border:1px solid var(--line);border-radius:10px;padding:0 12px}
+.qactions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.qactions button{min-height:48px;padding:0 18px;border-radius:12px;font-weight:650}
+.qactions .go{background:var(--primary);color:var(--on-primary)}
+.qactions .go:disabled{opacity:.45}
+.qdone{font-size:13.5px;color:var(--muted);line-height:1.6}
+.qdone b{color:var(--text)}
+.composer{flex:none;margin:8px 12px 0;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:8px 8px 8px 16px;display:flex;align-items:flex-end;gap:8px}
+.composer textarea{flex:1;min-width:0;resize:none;border:0;background:transparent;outline:none;font-size:15.5px;line-height:1.5;max-height:96px;padding:8px 0}
+.send{width:48px;height:48px;border-radius:50%;background:var(--primary);color:var(--on-primary);display:grid;place-items:center;flex:none}
+.send:disabled{opacity:.4}
+.safe{height:max(14px,env(safe-area-inset-bottom,0px));flex:none}
+.sheet{position:absolute;inset:0;background:rgba(0,0,0,.46);display:none;align-items:flex-end}
+.sheet.show{display:flex}
+.sheetcard{background:var(--bg);width:100%;border-radius:20px 20px 0 0;padding:8px 8px 18px;max-height:78%;overflow-y:auto;border-top:1px solid var(--line)}
+.handle{width:36px;height:4px;border-radius:2px;background:var(--line);margin:6px auto 8px}
+.agent{min-height:48px;width:100%;display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:12px;text-align:left}
+.agent:hover{background:var(--surface)}
+.agent .nm{font-size:14.5px;font-weight:600}
+.agent .st{font-size:12.5px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.run{background:var(--plan)} .dot.wait{background:var(--warn)} .dot.done{background:var(--add)}
+.detail h2{font-size:16px;margin:6px 10px}
+.detail p{font-size:13.5px;color:var(--muted);margin:4px 10px 10px;line-height:1.6}
+.fake{margin:4px 10px;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:13.5px;line-height:1.6}
+.simnote{font-size:12px;color:var(--warn);margin:8px 10px}
+.toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:13px;display:none;width:max-content;max-width:calc(100% - 32px);overflow-wrap:anywhere}
+.toast.show{display:block}
+@media (max-width:640px){
+  .studio{padding:0 0 24px;gap:20px}
+  .phone{width:100%;max-width:432px;height:min(740px,100dvh);border-radius:0;border:0;box-shadow:none}
+  .phone.short{height:min(560px,100dvh)}
+  .panel{padding:0 16px}
+}
+@media (max-height:600px){
+  .phone{height:min(740px,100dvh)}
+  .phone .planinner{max-height:72px}
+  .phone .qcard{max-height:200px}
+}
+@media (prefers-reduced-motion:reduce){
+  .planbody,.chev{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="studio">
+  <div class="phone" id="phone">
+    <div class="top">
+      <button class="iconbtn" id="returnMain" aria-label="返回主对话（仅预览）" title="返回主对话" hidden><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M16 10H4m0 0 5-5m-5 5 5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="ttl" id="title">新对话 · 极简阅读</div>
+      <button class="iconbtn" id="agentBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="sheet" aria-label="子代理：2 个活动，3 个总数（概念预览）" title="子代理">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="6" cy="7" r="2.2" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="7" r="2.2" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 15.5c.4-2.2 2-3.4 3.5-3.4s3.1 1.2 3.5 3.4M10.5 15.5c.4-2.2 2-3.4 3.5-3.4s3.1 1.2 3.5 3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="badge">2</span>
+      </button>
+    </div>
+    <div class="thread" id="thread">
+      <p class="msg user">配色单调，给几套适合长阅读的方案，计划放输入框上方，提问不要自动藏起来。</p>
+      <div class="fold" id="think">
+        <button aria-expanded="false" aria-controls="thinkBody"><span class="chev"></span>思考了 6 秒</button>
+        <div class="foldbody" id="thinkBody">
+          <p class="thinkline">先看现有炭黑阅读面：正文对比足够，但表面、计划、提问共用同一灰度，层次只靠位置。</p>
+          <p class="thinkline">结论：差异放到阅读底色与语义色，而不是再加一张卡片。</p>
+        </div>
+      </div>
+      <div class="fold" id="diff">
+        <button aria-expanded="false" aria-controls="diffBody"><span class="chev"></span>示例改动 · 2 个文件</button>
+        <div class="foldbody" id="diffBody">
+          <div class="fileline"><span class="p">+42</span> <span class="m">−6</span> <span class="n">dsh_theme.dart</span></div>
+          <div class="fileline"><span class="p">+18</span> <span class="m">−2</span> <span class="n">composer.dart</span></div>
+          <div class="diffbox" tabindex="0" aria-label="差异，可横向滚动">
+<div class="d">- paper = #141414; surface = #202020;</div>
+<div class="a">+ paper = #0F1517; surface = #172023;</div>
+<div class="a">+ plan = #7DB6D6; question = #E6B45A;</div>
+          </div>
+        </div>
+      </div>
+      <div class="fold" id="cmd">
+        <button aria-expanded="false" aria-controls="cmdBody"><span class="chev"></span><span class="cmdsum">命令示例 <b>flutter analyze lib</b> · 退出码 0</span></button>
+        <div class="foldbody" id="cmdBody">
+          <div class="outbox" tabindex="0" aria-label="命令示例输出，未执行，可横向滚动">示例输出（未执行）
+Analyzing lib...
+No issues found! (2.4s)</div>
+        </div>
+      </div>
+      <p class="msg">四套方案共用同一布局。阅读底色从纯灰改成带色温的暗色或纸色，计划、提问、思考、增删各用独立语义色，发送按钮不再是页面上唯一的颜色。</p>
+    </div>
+    <div class="dockwrap" id="dock">
+      <div class="plan open" id="plan">
+        <button id="planBtn" aria-expanded="true" aria-controls="planBody">
+          <span class="mark"></span><span class="label">计划</span>
+          <span class="sum">补齐阅读层次并收起过程 · 4 步</span>
+          <span class="chev"></span>
+        </button>
+        <div class="planbody" id="planBody"><div class="planinner"><ul id="planList">
+          <li>把纯灰底换成带色温的阅读底</li>
+          <li>计划、提问、思考、差异各自独立语义色</li>
+          <li>新计划完整显示 2 秒后收到单行</li>
+          <li>提问常驻输入框上方，空间冲突时优先</li>
+        </ul></div></div>
+      </div>
+      <div class="qcard" id="qcard">
+        <div id="qAsk">
+          <h3 id="qTitle">阅读底色用哪一档？</h3>
+          <div role="radiogroup" aria-labelledby="qTitle">
+          <button class="opt" role="radio" aria-checked="false" tabindex="0" data-v="ink"><span class="radio"></span>墨青 · 冷色长阅读</button>
+          <button class="opt" role="radio" aria-checked="false" tabindex="-1" data-v="ember"><span class="radio"></span>余烬 · 暖色夜间</button>
+          <button class="opt" role="radio" aria-checked="false" tabindex="-1" data-v="paper"><span class="radio"></span>宣纸 · 日间浅底</button>
+          </div>
+          <input class="free" id="free" placeholder="或者自己写一个方向（可选）" aria-label="补充说明">
+          <div class="qactions"><button class="go" id="qGo" disabled>提交</button></div>
+        </div>
+        <div class="qdone" id="qDone" hidden>已选择（仅预览，未提交）：<b id="qAns"></b></div>
+      </div>
+    </div>
+    <div class="composer">
+      <textarea id="box" rows="1" placeholder="发消息…" aria-label="消息"></textarea>
+      <button class="send" id="send" disabled aria-label="发送">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M9 14V4M9 4l-4.5 4.5M9 4l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="safe"></div>
+    <div class="sheet" id="sheet">
+      <div class="sheetcard" role="dialog" aria-modal="true" aria-label="子代理概念预览">
+        <div class="handle"></div>
+        <div id="agentList">
+          <h2 id="sheetTitle" style="font-size:15px;margin:4px 10px 8px">子代理</h2>
+          <button class="agent" data-id="ag-7f3c"><span class="dot run"></span><span><span class="nm">梳理主题令牌</span><br><span class="st">运行中 · ag-7f3c</span></span></button>
+          <button class="agent" data-id="ag-91ab"><span class="dot wait"></span><span><span class="nm">核对对比度</span><br><span class="st">等待输入 · ag-91ab</span></span></button>
+          <button class="agent" data-id="ag-22e0"><span class="dot done"></span><span><span class="nm">整理语义色表</span><br><span class="st">已完成 · ag-22e0</span></span></button>
+        </div>
+        <div class="detail" id="agentDetail" hidden>
+          <h2 id="dTitle"></h2>
+          <p id="dMeta"></p>
+          <div class="fake" id="dBody"></div>
+          <p class="simnote">模拟预览：不会打开真实会话，也不会发送消息。</p>
+          <div class="qactions">
+            <button id="enterBtn">预览进入对话</button>
+            <button id="backBtn">返回列表</button>
+          </div>
+        </div>
+        <div class="qactions"><button id="sheetClose" style="margin-left:10px">关闭</button></div>
+      </div>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+  <div class="panel">
+    <div class="banner">概念预览 · 非 Flutter 实际页面</div>
+    <div class="themes" role="group" aria-label="配色方案">
+      <button data-theme="ink" aria-pressed="true">墨青 Ink</button>
+      <button data-theme="ember" aria-pressed="false">余烬 Ember</button>
+      <button data-theme="indigo" aria-pressed="false">夜蓝 Indigo</button>
+      <button data-theme="paper" aria-pressed="false">宣纸 Paper</button>
+    </div>
+    <div class="swatches" id="swatches"></div>
+    <div class="controls">
+      <button id="replay">重放首次计划</button>
+      <button id="toggleQ">显示 / 隐藏提问（仅预览）</button>
+      <button id="resetQ">重置提问</button>
+      <button id="shortBtn" aria-pressed="false">低高度 360×560</button>
+    </div>
+    <p class="note">四套方案共用同一 DOM。新计划完整展开 2000ms 后以 260ms cubic-bezier(.65,0,.35,1)（Flutter 精确值用 Cubic(.65,0,.35,1)）收到单行；手动展开用 180ms 并保持，快速连点会清掉旧定时器。提问不自动隐藏，低高度时 Dock 内部滚动且提问优先保留。子代理详情与命令输出均为模拟，进入预览后可点顶栏返回主对话。控件目标尺寸 ≥48px；方向键选择问题，Tab 留在弹层内，Escape 关闭弹层。</p>
+  </div>
+</div>
+<script>
+(function(){
+  var html = document.documentElement;
+  var plan = document.getElementById("plan");
+  var planBtn = document.getElementById("planBtn");
+  var timer = null, token = 0, pinned = false;
+  var lowHeight = window.matchMedia("(max-height: 600px)");
+  function setOpen(open, manual){
+    plan.classList.toggle("manual", !!manual);
+    plan.classList.toggle("open", open);
+    planBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  function clearTimer(){ token++; if(timer !== null){ clearTimeout(timer); timer = null; } }
+  function spaceConflict(){ return (phoneEl.classList.contains("short") || lowHeight.matches) && !document.getElementById("qcard").hidden; }
+  function enforceQuestionPriority(){ if(spaceConflict() && !pinned){ clearTimer(); setOpen(false); } }
+  function arm(){
+    clearTimer(); pinned = false; setOpen(!spaceConflict());
+    if(spaceConflict()) return;
+    var mine = token;
+    timer = setTimeout(function(){ if(mine !== token || pinned) return; timer = null; setOpen(false); }, 2000);
+  }
+  planBtn.addEventListener("click", function(){
+    clearTimer();
+    if(plan.classList.contains("open")){ pinned = false; setOpen(false, true); }
+    else { pinned = true; setOpen(true, true); }
+  });
+  document.getElementById("replay").addEventListener("click", arm);
+
+  document.querySelectorAll(".fold > button").forEach(function(b){
+    b.addEventListener("click", function(){
+      var fold = b.parentElement;
+      var open = !fold.classList.contains("open");
+      fold.classList.toggle("open", open);
+      b.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  });
+
+  var chosen = "", free = document.getElementById("free"), go = document.getElementById("qGo");
+  function refresh(){ go.disabled = !(chosen || free.value.trim()); }
+  var options = Array.from(document.querySelectorAll(".opt"));
+  options.forEach(function(o, index){
+    o.addEventListener("click", function(){
+      chosen = o.getAttribute("data-v");
+      options.forEach(function(x){ x.setAttribute("aria-checked", x === o ? "true" : "false"); x.tabIndex = x === o ? 0 : -1; });
+      refresh();
+    });
+    o.addEventListener("keydown", function(e){
+      var next = index;
+      if(e.key === "ArrowDown" || e.key === "ArrowRight") next = (index + 1) % options.length;
+      else if(e.key === "ArrowUp" || e.key === "ArrowLeft") next = (index + options.length - 1) % options.length;
+      else if(e.key === "Home") next = 0;
+      else if(e.key === "End") next = options.length - 1;
+      else return;
+      e.preventDefault(); options[next].focus(); options[next].click();
+    });
+  });
+  free.addEventListener("input", refresh);
+  go.addEventListener("click", function(){
+    var names = {ink:"墨青", ember:"余烬", paper:"宣纸"};
+    var text = (names[chosen] || "") + (free.value.trim() ? " · " + free.value.trim() : "");
+    document.getElementById("qAsk").hidden = true;
+    document.getElementById("qDone").hidden = false;
+    document.getElementById("qAns").textContent = text;
+  });
+  document.getElementById("resetQ").addEventListener("click", function(){
+    chosen = ""; free.value = "";
+    options.forEach(function(x, i){ x.setAttribute("aria-checked","false"); x.tabIndex = i === 0 ? 0 : -1; });
+    refresh();
+    document.getElementById("qAsk").hidden = false;
+    document.getElementById("qDone").hidden = true;
+    document.getElementById("qcard").hidden = false;
+    enforceQuestionPriority();
+  });
+  var phoneEl = document.getElementById("phone");
+  document.getElementById("shortBtn").addEventListener("click", function(){
+    var on = !phoneEl.classList.contains("short");
+    phoneEl.classList.toggle("short", on);
+    this.setAttribute("aria-pressed", on ? "true" : "false");
+    enforceQuestionPriority();
+  });
+  document.getElementById("toggleQ").addEventListener("click", function(){
+    var c = document.getElementById("qcard"); c.hidden = !c.hidden; enforceQuestionPriority();
+  });
+
+  var sheet = document.getElementById("sheet"), agentBtn = document.getElementById("agentBtn");
+  var lastFocus = null;
+  var agents = {
+    "ag-7f3c":["梳理主题令牌","运行中 · 可继续","正在把语义色拆成阅读底、表面、计划、提问四层。"],
+    "ag-91ab":["核对对比度","等待输入 · 只读","正文对底色 15:1，次级文字 7:1，按钮文字 7.6:1。"],
+    "ag-22e0":["整理语义色表","已完成 · 只读","四套方案的 HEX 已汇总，等待主对话采纳。"]
+  };
+  var background = document.querySelectorAll(".top, .thread, .dockwrap, .composer, .panel");
+  function openSheet(){ lastFocus = document.activeElement; showList(false); sheet.classList.add("show"); background.forEach(function(el){ el.inert = true; }); agentBtn.setAttribute("aria-expanded","true"); document.querySelector(".agent").focus(); }
+  function closeSheet(){ sheet.classList.remove("show"); background.forEach(function(el){ el.inert = false; }); agentBtn.setAttribute("aria-expanded","false"); showList(false); if(lastFocus) lastFocus.focus(); }
+  function showList(focus){ document.getElementById("agentList").hidden = false; document.getElementById("agentDetail").hidden = true; if(focus) document.querySelector(".agent").focus(); }
+  agentBtn.addEventListener("click", openSheet);
+  document.getElementById("sheetClose").addEventListener("click", closeSheet);
+  sheet.addEventListener("click", function(e){ if(e.target === sheet) closeSheet(); });
+  document.addEventListener("keydown", function(e){
+    if(!sheet.classList.contains("show")) return;
+    if(e.key === "Escape"){ e.preventDefault(); closeSheet(); return; }
+    if(e.key !== "Tab") return;
+    var items = Array.from(sheet.querySelectorAll("button, input, textarea, [tabindex]")).filter(function(el){ return !el.disabled && el.tabIndex >= 0 && !el.closest("[hidden]"); });
+    var first = items[0], last = items[items.length - 1];
+    if(!first) return;
+    if(e.shiftKey && (document.activeElement === first || !items.includes(document.activeElement))){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && (document.activeElement === last || !items.includes(document.activeElement))){ e.preventDefault(); first.focus(); }
+  });
+  var viewing = null;
+  document.querySelectorAll(".agent").forEach(function(a){
+    a.addEventListener("click", function(){
+      viewing = a.getAttribute("data-id");
+      var d = agents[viewing];
+      document.getElementById("dTitle").textContent = d[0];
+      document.getElementById("dMeta").textContent = d[1] + " · " + viewing;
+      document.getElementById("dBody").textContent = d[2];
+      document.getElementById("agentList").hidden = true;
+      document.getElementById("agentDetail").hidden = false;
+      document.getElementById("enterBtn").focus();
+    });
+  });
+  document.getElementById("backBtn").addEventListener("click", function(){ showList(true); });
+  document.getElementById("enterBtn").addEventListener("click", function(){
+    document.getElementById("title").textContent = "模拟 · " + agents[viewing][0];
+    closeSheet();
+    var back = document.getElementById("returnMain"); back.hidden = false; back.focus();
+    toast("模拟进入 " + viewing + "，未打开真实会话");
+  });
+  document.getElementById("returnMain").addEventListener("click", function(){
+    document.getElementById("title").textContent = "新对话 · 极简阅读";
+    this.hidden = true; agentBtn.focus(); toast("已返回主对话（概念预览）");
+  });
+
+  var box = document.getElementById("box"), send = document.getElementById("send");
+  box.addEventListener("input", function(){ send.disabled = !box.value.trim(); this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 96) + "px"; });
+  send.addEventListener("click", function(){
+    if(!box.value.trim()) return;
+    var p = document.createElement("p"); p.className = "msg user"; p.textContent = box.value.trim();
+    document.getElementById("thread").appendChild(p);
+    box.value = ""; send.disabled = true; box.style.height = "auto";
+    document.getElementById("thread").scrollTop = 99999;
+  });
+  var toastEl = document.getElementById("toast"), toastTimer = null;
+  function toast(t){ toastEl.textContent = t; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(function(){ toastEl.classList.remove("show"); }, 2200); }
+
+  var names = {bg:"背景",surface:"表面",text:"正文",muted:"次级",line:"边线",primary:"主按钮",plan:"计划",question:"提问",think:"思考",add:"新增",del:"删除"};
+  function paint(){
+    var cs = getComputedStyle(document.getElementById("phone"));
+    var box = document.getElementById("swatches"); box.innerHTML = "";
+    Object.keys(names).forEach(function(k){
+      var s = document.createElement("span"); s.className = "swatch";
+      var v = cs.getPropertyValue("--" + k).trim();
+      s.innerHTML = "<i style=\"background:" + v + "\"></i>" + names[k] + " " + v;
+      box.appendChild(s);
+    });
+  }
+  document.querySelectorAll(".themes button").forEach(function(b){
+    b.addEventListener("click", function(){
+      html.setAttribute("data-theme", b.getAttribute("data-theme") === "ink" ? "" : b.getAttribute("data-theme"));
+      document.querySelectorAll(".themes button").forEach(function(x){ x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      paint();
+    });
+  });
+  lowHeight.addEventListener("change", enforceQuestionPriority);
+  window.addEventListener("pagehide", function(){ clearTimer(); clearTimeout(toastTimer); });
+  paint();
+  arm();
+})();
+</script>
+</body>
+</html>

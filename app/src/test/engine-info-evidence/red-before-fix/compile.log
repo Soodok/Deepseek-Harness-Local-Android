@@ -1,0 +1,6 @@
+src\test\engine-info-evidence\red-before-fix\EngineSupervisor.kt:1099:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+src\test\engine-info-evidence\red-before-fix\NativeHostInfoSnapshotTest.kt:76:25: warning: type mismatch: inferred type is Any? but Any was expected
+            return View(method!!.invoke(supervisor))
+                        ^

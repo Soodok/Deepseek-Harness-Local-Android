@@ -234,12 +234,14 @@ open class ThemedActivity : Activity() {
 
     override fun setContentView(layoutResID: Int) {
         super.setContentView(layoutResID)
+        if (usesSettingsBackground) applyDshCardStyles(this)
         applySettingsBackground()
         applyAccentTint()
     }
 
     override fun setContentView(view: View) {
         super.setContentView(view)
+        if (usesSettingsBackground) applyDshCardStyles(this)
         applySettingsBackground()
         applyAccentTint()
     }
@@ -247,7 +249,10 @@ open class ThemedActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // 从外观页选完图返回时立即生效，不需要用户手动刷新
-        if (usesSettingsBackground) applySettingsBackground()
+        if (usesSettingsBackground) {
+            applyDshCardStyles(this)
+            applySettingsBackground()
+        }
         // 强调色可能在别的页面被改过（主题页重建的只是它自己），
         // 回本页时重新铺一次；未改色时是幂等的空操作。
         applyAccentTint()

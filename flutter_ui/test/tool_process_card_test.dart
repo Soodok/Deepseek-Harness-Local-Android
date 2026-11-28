@@ -7,6 +7,7 @@ import 'package:dsh_native_chat/src/model/chat_model.dart';
 import 'package:dsh_native_chat/src/model/tool_content.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
 import 'package:dsh_native_chat/src/ui/tool_process_card.dart';
+import 'package:dsh_native_chat/src/ui/tool_run_card.dart';
 
 ToolRun _run({
   String id = 'run-1',
@@ -32,6 +33,7 @@ Future<void> _pump(
   WidgetTester tester,
   ToolRun tool, {
   double width = 390,
+  bool compact = false,
 }) async {
   tester.view.physicalSize = Size(width, 1200);
   tester.view.devicePixelRatio = 1;
@@ -43,7 +45,7 @@ Future<void> _pump(
       home: Scaffold(
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(12),
-          child: ToolProcessCard(tool: tool),
+          child: ToolProcessCard(tool: tool, compact: compact),
         ),
       ),
     ),
@@ -62,6 +64,261 @@ Future<void> _tap(WidgetTester tester, String key) async {
 }
 
 void main() {
+  testWidgets(
+    'compact ordinary tool title is 12sp and keeps its output action',
+    (tester) async {
+      const tool = ToolRun(
+        id: 'ordinary-run',
+        name: 'read_file',
+        status: ToolStatus.complete,
+        detail: 'ordinary tool output',
+      );
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ToolRunCard(tool: tool, compact: true),
+            ),
+          ),
+        ),
+      );
+
+      final title = find.text('read_file');
+      expect(tester.widget<Text>(title).style?.fontSize, 12);
+      await tester.tap(title);
+      await tester.pumpAndSettle();
+      expect(find.text('ordinary tool output'), findsOneWidget);
+      expect(find.text('查看完整输出'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'compact structured tools combine reasoning and command in one disclosure',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ToolProcessCard(
+                tool: _run(
+                  reasoning: '{"description":"preview"}\nsecond reasoning line',
+                  command: const CommandResult(
+                    command: 'dsh-request-permission --capability qa-preview',
+                    stdout: 'approved',
+                    exitCode: 0,
+                  ),
+                ),
+                compact: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final card = find.byType(ToolProcessCard);
+      expect(_key('process-reasoning-run-1'), findsNothing);
+      expect(find.text('思考'), findsNothing);
+      expect(tester.getSize(card).height, lessThanOrEqualTo(48));
+      expect(
+        tester.getSize(_key('process-command-run-1')).height,
+        greaterThanOrEqualTo(48),
+      );
+      expect(tester.getSize(_key('process-command-run-1')).height, 48);
+      expect(find.text('{"description":"preview"}'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('process-copy-run-1-command')),
+        findsNothing,
+      );
+
+      await _tap(tester, 'process-command-run-1');
+      expect(find.text('{"description":"preview"}'), findsOneWidget);
+      expect(find.text('approved'), findsOneWidget);
+      expect(tester.getSize(card).height, lessThanOrEqualTo(112));
+      expect(find.text('暂无输出'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('process-copy-run-1-command')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('process-copy-run-1-stdout')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('process-menu-run-1-command')),
+        findsOneWidget,
+      );
+      await tester.tap(_key('process-menu-run-1-command'));
+      await tester.pumpAndSettle();
+      expect(find.text('复制思考内容'), findsOneWidget);
+      expect(find.text('查看完整思考内容'), findsOneWidget);
+      expect(find.text('复制全部'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'compact generated command details render as one short parameter-result block',
+    (tester) async {
+      await _pump(
+        tester,
+        _run(
+          id: 'generated-detail',
+          reasoning: [
+            '参数',
+            '{"command":"dsh-request-permission","description":"preview"}',
+            '结果',
+            'rejected: User did not approve within 20 seconds.',
+            '[timed out after 20000ms]',
+          ].join('\n'),
+          command: const CommandResult(
+            command: 'dsh-request-permission --capability qa-preview',
+            exitCode: 1,
+          ),
+        ),
+        compact: true,
+      );
+      await _tap(tester, 'process-command-generated-detail');
+
+      expect(find.text('参数与结果'), findsOneWidget);
+      expect(find.text('参数'), findsNothing);
+      expect(find.text('结果'), findsNothing);
+      expect(find.text('暂无输出'), findsNothing);
+      final detail = _key('process-output-generated-detail-generated-detail');
+      expect(detail, findsOneWidget);
+      expect(tester.widget<Text>(detail).maxLines, lessThanOrEqualTo(1));
+      expect(tester.widget<Text>(detail).style?.fontSize, 12);
+      expect(
+        tester
+            .getSize(
+              _key('process-output-section-generated-detail-generated-detail'),
+            )
+            .height,
+        lessThanOrEqualTo(40),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('compact detail remains readable at large text scale', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.light(),
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.6)),
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: ToolProcessCard(
+                compact: true,
+                tool: _run(
+                  command: const CommandResult(
+                    command: 'echo density',
+                    stdout: 'DENSITY OUTPUT',
+                    exitCode: 0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _tap(tester, 'process-command-run-1');
+    final header = _key('process-command-run-1');
+    final command = _key('process-output-run-1-command');
+    final stdout = _key('process-output-run-1-stdout');
+    expect(tester.getSize(header).height, greaterThanOrEqualTo(48));
+    expect(tester.widget<Text>(command).data, 'echo density');
+    expect(tester.widget<Text>(stdout).data, 'DENSITY OUTPUT');
+    expect(
+      tester.getRect(command).bottom,
+      lessThan(tester.getRect(stdout).top),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact copy action keeps its real lower-edge hit target', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const output = 'DENSITY-COPY-OUTPUT';
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.light(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ToolProcessCard(
+              tool: _run(
+                command: const CommandResult(
+                  command: 'echo density',
+                  stdout: output,
+                ),
+              ),
+              compact: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await _tap(tester, 'process-command-run-1');
+
+    final section = _key('process-output-section-run-1-stdout');
+    final copy = _key('process-copy-run-1-stdout');
+    expect(tester.getSize(section).height, lessThanOrEqualTo(56));
+    expect(copy, findsNothing);
+    expect(
+      tester.getTopLeft(_key('process-output-run-1-stdout')).dy -
+          tester.getBottomLeft(_key('process-output-run-1-command')).dy,
+      lessThanOrEqualTo(30),
+    );
+
+    await tester.tap(_key('process-menu-run-1-command'));
+    await tester.pumpAndSettle();
+    expect(find.text('复制输出'), findsOneWidget);
+    await tester.tap(
+      find.ancestor(
+        of: find.text('复制输出'),
+        matching: find.byType(PopupMenuItem<String>),
+      ),
+    );
+    await tester.pump();
+    expect(copied, output);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'reduced motion settles process disclosures without timed transitions',
     (tester) async {
@@ -621,7 +878,7 @@ void main() {
                 .widgetList<Text>(find.byType(Text))
                 .map((text) => text.style)) {
           if (style?.fontSize != null)
-            expect(style!.fontSize, greaterThanOrEqualTo(12.5));
+            expect(style!.fontSize, greaterThanOrEqualTo(12));
         }
       },
     );
@@ -634,5 +891,42 @@ void main() {
     expect(find.text('思考'), findsNothing);
     expect(find.text('命令'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MEASURE-BASELINE compact short command block', (tester) async {
+    tester.view.physicalSize = const Size(393, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DshTheme.light(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ToolProcessCard(
+              compact: true,
+              tool: _run(
+                id: 'short-command',
+                command: const CommandResult(
+                  command: 'pwd',
+                  cwd: 'flutter_ui',
+                  stdout: '/project/flutter_ui',
+                  exitCode: 0,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final card = find.byType(ToolProcessCard);
+    await _tap(tester, 'process-command-short-command');
+    final expanded = tester.getSize(card).height;
+    final command = tester.getRect(
+      _key('process-output-short-command-command'),
+    );
+    final stdout = tester.getRect(_key('process-output-short-command-stdout'));
+    expect(expanded, lessThanOrEqualTo(96));
+    expect(stdout.top - command.bottom, lessThanOrEqualTo(24));
   });
 }

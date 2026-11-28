@@ -1,0 +1,23 @@
+compile exit=0
+src\test\workspace-publication-evidence\final-mutant-native-unwired\EngineSupervisor.kt:1099:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+src\test\workspace-publication-evidence\final-mutant-native-unwired\EngineSupervisor.kt:1578:13: warning: variable 'nativeDomain' is never used
+        val nativeDomain = nativeEnv.singleOrNull { it.startsWith("DSH_HOME=") }
+            ^
+
+tests exit=1
+JUnit version 4.13.2
+..........E.......
+Time: 0.134
+There was 1 failure:
+1) bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: native spawn must publish the actual environment domain
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(NativeWorkspacePublicationTest.kt:195)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+
+

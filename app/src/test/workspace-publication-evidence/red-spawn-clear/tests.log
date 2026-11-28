@@ -1,0 +1,14 @@
+JUnit version 4.13.2
+..........E.......
+Time: 0.126
+There was 1 failure:
+1) bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: a stale spawn must not clear a newer scope outside the ownership guard
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(NativeWorkspacePublicationTest.kt:189)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+

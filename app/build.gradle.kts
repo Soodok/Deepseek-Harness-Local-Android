@@ -383,14 +383,17 @@ android {
         // v1.6.0-beta.115: Consume the workspace on successful creation and keep long selectors above the composer.
         // v1.6.0-beta.119 (2026-11-26): Add the native Flutter entry to existing pet settings.
         // v1.6.0-beta.120 (2026-11-26): Preserve fade timing on slow foreground frames.
-        versionCode = 513
+        // v1.6.0-beta.140 (2026-11-27 17:48 +08:00): Refine native-chat tools and register authorized workspace directories.
+        // v1.6.0-beta.142 (2026-11-28): Tighten tool output disclosure and preserve full-output access.
+        // v1.6.0-beta.144 (2026-11-28): Merge compact command and reasoning rows.
+        versionCode = 519
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
         // 2026-11-16 17:40: conversation body excludes internal context; readable turn failures.
-        versionName = "1.6.0-beta.138"
+        versionName = "1.6.0-beta.144"
 
         ndk {
             abiFilters += listOf(targetAbi)

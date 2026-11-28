@@ -14,6 +14,7 @@ import 'message_action_bar.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'execution_group.dart';
 import 'conversation_search.dart';
+import 'conversation_edge_blur.dart';
 import 'file_delivery_card.dart';
 import 'tool_run_card.dart';
 import 'turn_notice_card.dart';
@@ -37,6 +38,7 @@ class ConversationFlow extends StatefulWidget {
     this.onFileTap,
     this.onFileShare,
     this.padding,
+    this.edgeBlurInsets,
     this.historyPageSize,
     this.pendingApproval,
   });
@@ -65,6 +67,9 @@ class ConversationFlow extends StatefulWidget {
   /// Room reserved for floating chrome above and below the transcript. The
   /// horizontal gutter stays whatever this layout computes.
   final EdgeInsets? padding;
+
+  /// Insets reserved for floating chrome; the edge effect stays below controls.
+  final EdgeInsets? edgeBlurInsets;
 
   @override
   State<ConversationFlow> createState() => _ConversationFlowState();
@@ -388,7 +393,17 @@ class _ConversationFlowState extends State<ConversationFlow> {
         widget.leading.isEmpty &&
         widget.trailing.isEmpty &&
         widget.empty != null) {
-      return widget.empty!;
+      final empty = widget.empty!;
+      final insets = widget.edgeBlurInsets;
+      if (insets == null) return empty;
+      return ConversationEdgeBlur(
+        contentInsets: insets,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: empty,
+        ),
+      );
     }
     final activePlanId = widget.hideDockContent
         ? widget.tools
@@ -518,7 +533,7 @@ class _ConversationFlowState extends State<ConversationFlow> {
         rows.add((
           key: ValueKey('row-tool-' + tool.id),
           build: (context) => Padding(
-            padding: const EdgeInsets.only(left: 8, bottom: 2),
+            padding: const EdgeInsets.only(left: 8),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(
@@ -545,7 +560,8 @@ class _ConversationFlowState extends State<ConversationFlow> {
       List<ToolRun> leadingTools = const [],
       List<ChatMessage> fragments = const [],
     }) {
-      if (tools.isNotEmpty) {
+      final hasDisclosure = tools.length > 1;
+      if (hasDisclosure) {
         rows.add((
           key: ValueKey('execution-group-' + id),
           build: (_) => ExecutionGroupHeader(
@@ -558,7 +574,7 @@ class _ConversationFlowState extends State<ConversationFlow> {
           ),
         ));
       }
-      final expanded = _expanded.contains(id);
+      final expanded = !hasDisclosure || _expanded.contains(id);
       // A call-only assistant creates no transcript row: its tools can belong
       // to the preceding user or prose. Keep those before later step thoughts.
       addTools(
@@ -746,8 +762,18 @@ class _ConversationFlowState extends State<ConversationFlow> {
         ),
       ),
     );
+    final transcriptContent = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: widget.edgeBlurInsets == null
+          ? list
+          : ConversationEdgeBlur(
+              contentInsets: widget.edgeBlurInsets!,
+              child: list,
+            ),
+    );
     final overlay = <Widget>[
-      Positioned.fill(child: list),
+      Positioned.fill(child: transcriptContent),
       // The collapsed opener sits above the transcript without claiming a
       // layout strip of its own, so a closed search costs no vertical space.
       if (!_searchOpen)
@@ -948,10 +974,15 @@ class ConversationMessage extends StatelessWidget {
                     : '思考过程',
                 id: 'message-reasoning-' + message.id,
               ),
+              compactExecution: compactExecution,
             ),
           if (message.text.trim().isNotEmpty ||
               message.reasoning.trim().isEmpty)
-            _MessageText(key: ValueKey(('body', message.id)), message: message),
+            _MessageText(
+              key: ValueKey(('body', message.id)),
+              message: message,
+              compactExecution: compactExecution,
+            ),
           for (final file in files)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -993,8 +1024,13 @@ typedef _MessagePart = ({String text, String? label, String? id});
 
 /// Parsing is retained when tool/status updates rebuild an unchanged message.
 class _MessageText extends StatefulWidget {
-  const _MessageText({super.key, required this.message});
+  const _MessageText({
+    super.key,
+    required this.message,
+    this.compactExecution = false,
+  });
   final ChatMessage message;
+  final bool compactExecution;
   @override
   State<_MessageText> createState() => _MessageTextState();
 }
@@ -1020,7 +1056,8 @@ class _MessageTextState extends State<_MessageText> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.message.text != widget.message.text ||
         oldWidget.message.role != widget.message.role ||
-        oldWidget.message.isStreaming != widget.message.isStreaming) {
+        oldWidget.message.isStreaming != widget.message.isStreaming ||
+        oldWidget.compactExecution != widget.compactExecution) {
       _parts = _parseMessage(widget.message);
       _body = _buildBody(context);
     }
@@ -1041,7 +1078,11 @@ class _MessageTextState extends State<_MessageText> {
                 : part.text,
           )
         else
-          _MessageBlock(key: ValueKey(part.id), part: part),
+          _MessageBlock(
+            key: ValueKey(part.id),
+            part: part,
+            compactExecution: widget.compactExecution,
+          ),
     ],
   );
 }
@@ -1137,8 +1178,13 @@ List<_MessagePart> _parseMessage(ChatMessage message) {
 }
 
 class _MessageBlock extends StatefulWidget {
-  const _MessageBlock({super.key, required this.part});
+  const _MessageBlock({
+    super.key,
+    required this.part,
+    this.compactExecution = false,
+  });
   final _MessagePart part;
+  final bool compactExecution;
   @override
   State<_MessageBlock> createState() => _MessageBlockState();
 }
@@ -1165,10 +1211,24 @@ class _MessageBlockState extends State<_MessageBlock> {
   @override
   Widget build(BuildContext context) {
     final part = widget.part;
+    final isReasoning = part.id!.startsWith('message-reasoning-');
     final isJson = part.id!.startsWith('message-structured-');
-    final prefix = isJson ? 'message-structured' : 'message-code';
+    final prefix = isReasoning
+        ? 'message-reasoning'
+        : isJson
+        ? 'message-structured'
+        : 'message-code';
     final suffix = part.id!.substring(prefix.length + 1);
     final colors = DshPalette.of(context);
+    final compactReasoning = widget.compactExecution && isReasoning;
+    final preview = _messagePreview(
+      part.text,
+      maxLines: compactReasoning
+          ? 3
+          : isReasoning
+          ? 6
+          : 12,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -1197,7 +1257,7 @@ class _MessageBlockState extends State<_MessageBlock> {
                     part.label!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13),
+                    style: TextStyle(fontSize: compactReasoning ? 12 : 13),
                   ),
                 ),
               ),
@@ -1215,32 +1275,44 @@ class _MessageBlockState extends State<_MessageBlock> {
         ),
         if (_expanded)
           Padding(
-            padding: const EdgeInsets.only(left: 8, bottom: 4),
+            padding: EdgeInsets.only(
+              left: compactReasoning ? 6 : 8,
+              bottom: compactReasoning ? 0 : 4,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SelectableText(
-                  _messagePreview(part.text),
-                  maxLines: 12,
+                  preview,
+                  maxLines: compactReasoning
+                      ? 3
+                      : isReasoning
+                      ? 6
+                      : 12,
                   style: TextStyle(
                     color: colors.inkSoft,
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    height: 1.45,
+                    fontFamily: isReasoning ? null : 'monospace',
+                    fontSize: compactReasoning
+                        ? 12
+                        : isReasoning
+                        ? 12.5
+                        : 13,
+                    height: compactReasoning ? 1.3 : 1.45,
                   ),
                 ),
-                TextButton(
-                  key: ValueKey(prefix + '-full-' + suffix),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => _MessageContentPage(part: part),
+                if (isJson || preview.length < part.text.length)
+                  TextButton(
+                    key: ValueKey(prefix + '-full-' + suffix),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => _MessageContentPage(part: part),
+                      ),
                     ),
+                    style: TextButton.styleFrom(
+                      minimumSize: DshDisplayScope.targetSize(context),
+                    ),
+                    child: const Text('查看完整内容'),
                   ),
-                  style: TextButton.styleFrom(
-                    minimumSize: DshDisplayScope.targetSize(context),
-                  ),
-                  child: const Text('查看完整内容'),
-                ),
               ],
             ),
           ),
@@ -1249,11 +1321,11 @@ class _MessageBlockState extends State<_MessageBlock> {
   }
 }
 
-String _messagePreview(String text) {
+String _messagePreview(String text, {int maxLines = 12}) {
   var end = text.length.clamp(0, 1200);
   var lines = 0;
   for (var i = 0; i < end; i++) {
-    if (text.codeUnitAt(i) == 10 && ++lines == 12) {
+    if (text.codeUnitAt(i) == 10 && ++lines == maxLines) {
       end = i;
       break;
     }
@@ -1269,30 +1341,33 @@ class _MessageContentPage extends StatelessWidget {
   const _MessageContentPage({required this.part});
   final _MessagePart part;
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(part.label!)),
-    body: ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: (part.text.length / 1200).ceil(),
-      itemBuilder: (context, index) {
-        var start = index * 1200;
-        var end = ((index + 1) * 1200).clamp(0, part.text.length);
-        if (start > 0 && (part.text.codeUnitAt(start - 1) & 0xfc00) == 0xd800)
-          start--;
-        if (end < part.text.length &&
-            (part.text.codeUnitAt(end - 1) & 0xfc00) == 0xd800)
-          end--;
-        return SelectableText(
-          part.text.substring(start, end),
-          style: const TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 13,
-            height: 1.5,
-          ),
-        );
-      },
-    ),
-  );
+  Widget build(BuildContext context) {
+    final isReasoning = part.id!.startsWith('message-reasoning-');
+    return Scaffold(
+      appBar: AppBar(title: Text(part.label!)),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: (part.text.length / 1200).ceil(),
+        itemBuilder: (context, index) {
+          var start = index * 1200;
+          var end = ((index + 1) * 1200).clamp(0, part.text.length);
+          if (start > 0 && (part.text.codeUnitAt(start - 1) & 0xfc00) == 0xd800)
+            start--;
+          if (end < part.text.length &&
+              (part.text.codeUnitAt(end - 1) & 0xfc00) == 0xd800)
+            end--;
+          return SelectableText(
+            part.text.substring(start, end),
+            style: TextStyle(
+              fontFamily: isReasoning ? null : 'monospace',
+              fontSize: 13,
+              height: 1.5,
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _StreamingMark extends StatelessWidget {

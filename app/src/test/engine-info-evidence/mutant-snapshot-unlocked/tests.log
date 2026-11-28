@@ -1,0 +1,14 @@
+JUnit version 4.13.2
+..........E..................................
+Time: 0.185
+There was 1 failure:
+1) snapshotCannotReadBeforeTheExistingPublicationLockIsReleased(app.dsh.mobile.engine.NativeHostInfoSnapshotTest)
+java.lang.AssertionError: real snapshot must wait for the publication lock expected:<BLOCKED> but was:<TERMINATED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at app.dsh.mobile.engine.NativeHostInfoSnapshotTest.snapshotCannotReadBeforeTheExistingPublicationLockIsReleased(NativeHostInfoSnapshotTest.kt:227)
+
+FAILURES!!!
+Tests run: 44,  Failures: 1
+

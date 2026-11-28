@@ -1,0 +1,80 @@
+{
+  "scope": "Offline cached Kotlin/JVM: complete production supervisor + real snapshot calls; exact native engineInfo/engineState source bodies executed in a JVM projection shell (currentRuntimeWire fixture). Static MethodChannel dispatch binding only; NOT Android Activity or MethodChannel execution.",
+  "mutation": null,
+  "compileExit": 0,
+  "testExit": 1,
+  "inputs": [
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\EngineSupervisor.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\EngineSupervisor.kt",
+      "sha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "compiledSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\NativeWorkspaceScope.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeWorkspaceScope.kt",
+      "sha256": "06c357dcb6a6bef8e1cd790a87f8e879122eb2357d5a2ced351434cef88b3bdb",
+      "compiledSha256": "06c357dcb6a6bef8e1cd790a87f8e879122eb2357d5a2ced351434cef88b3bdb"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\EngineModeSelector.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\EngineModeSelector.kt",
+      "sha256": "507cf413c0533c795d54baa5e7df67536a647a8f64808a942290b2ff169a8104",
+      "compiledSha256": "507cf413c0533c795d54baa5e7df67536a647a8f64808a942290b2ff169a8104"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\coldentry\\ColdEntryCoordinator.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\ColdEntryCoordinator.kt",
+      "sha256": "c1ab1475f3d0af0892005f390d38e6f54f313b6e66f1bcd7a7c3c7d59bd163b1",
+      "compiledSha256": "c1ab1475f3d0af0892005f390d38e6f54f313b6e66f1bcd7a7c3c7d59bd163b1"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeHostInfoSnapshotTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeHostInfoSnapshotTest.kt",
+      "sha256": "b0aab787bace87ddd179359db6e35f8d48973988263eeadda41f5214b10c1220",
+      "compiledSha256": "b0aab787bace87ddd179359db6e35f8d48973988263eeadda41f5214b10c1220"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspaceScopeTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeWorkspaceScopeTest.kt",
+      "sha256": "2e8b4f5d3f322a97ef57a1bccb21839a73a89608b74cf76dd64c3c8a4b98132d",
+      "compiledSha256": "2e8b4f5d3f322a97ef57a1bccb21839a73a89608b74cf76dd64c3c8a4b98132d"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspacePublicationTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeWorkspacePublicationTest.kt",
+      "sha256": "e9bb1a77ed8cc3d66b40a0f8d9610406e22bba5f7ad2ffc8be19e7e9c33b609e",
+      "compiledSha256": "e9bb1a77ed8cc3d66b40a0f8d9610406e22bba5f7ad2ffc8be19e7e9c33b609e"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\NativeChatRuntimeSwitchContractTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeChatRuntimeSwitchContractTest.kt",
+      "sha256": "3210c7e3a44aef1f74148cae8a02b1d644695e514d4104c797ac6c734edf7ec5",
+      "compiledSha256": "3210c7e3a44aef1f74148cae8a02b1d644695e514d4104c797ac6c734edf7ec5"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\NativeChatActivity.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeChatActivity.source.kt",
+      "sha256": "91f30260e027f4dae84efa26c2f28cee789ca343fc763802c2f1fe8875d99deb",
+      "compiledSha256": "91f30260e027f4dae84efa26c2f28cee789ca343fc763802c2f1fe8875d99deb"
+    }
+  ],
+  "generated": [
+    {
+      "path": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeEngineInfoProjection.kt",
+      "sha256": "765138f3730200d3734b1af13e76a73779d79188692b785d5b183b366444889d"
+    },
+    {
+      "path": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\red-before-fix\\NativeEngineInfoProjectionTest.kt",
+      "sha256": "b8104074129d188f3c621ce87a6f07ab0b8f4e4cde82973c02ff065490d99c71"
+    }
+  ],
+  "runner": {
+    "path": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-offline.mjs",
+    "sha256": "5bea97f18923298b5864beaf1864a4cc144b96e7c1d46812e7246c503e25df9e"
+  },
+  "sourceStillMatches": true,
+  "androidRun": false,
+  "methodChannelRun": false,
+  "deviceTouched": false
+}

@@ -1,0 +1,43 @@
+package app.dsh.mobile.coldentry
+
+import java.io.File
+import org.junit.Assert.*
+import org.junit.Test
+
+class BackdropOwnershipTest {
+    @Test fun pixelCopyContinuationRevalidatesForegroundHostAndAttemptBeforeWriter() {
+        for (invalid in listOf("pause", "destroy", "boot", "phase", "url", "deadline")) {
+            val f=Fixture(); f.click(); val lease=f.ports.allocated.single()
+            assertTrue(f.sut.permitsCapture(lease))
+            when(invalid) {
+                "pause" -> { f.sut.onPause(); f.sut.onResume() }
+                "destroy" -> f.sut.onDestroy()
+                "boot" -> f.ports.host=HostSnapshot("changed",HostPhase.Healthy,true)
+                "phase" -> f.ports.host=HostSnapshot("boot-7",HostPhase.Starting,true)
+                "url" -> f.ports.host=HostSnapshot("boot-7",HostPhase.Healthy,false)
+                "deadline" -> f.scheduler.clock=100
+            }
+            assertFalse(invalid,f.sut.permitsCapture(lease)); assertTrue(lease.abandoned)
+        }
+    }
+    @Test fun latePixelCopyCannotCancelNewCaptureAndStageCannotBeRepeated() {
+        val f=Fixture(); f.click(); val old=f.ports.allocated.single()
+        f.sut.onPause(); f.sut.onResume(); f.click(); val fresh=f.ports.allocated.last()
+        assertFalse(f.sut.permitsCapture(old)); assertTrue(f.sut.permitsCapture(fresh))
+        f.ports.capture(1); assertFalse(f.sut.permitsCapture(fresh))
+        f.ports.session(); assertFalse(f.sut.permitsCapture(fresh))
+        assertTrue(f.ports.files.containsKey(fresh.path))
+    }
+    @Test fun realExclusiveFilesAreNotUnlinkedUntilWriterHasClosed() {
+        val root=File("src/test/b01-evidence/fs-"+java.util.UUID.randomUUID()).apply { mkdirs() }
+        val a=BackdropFiles.reserve(root) { fail("unexpected deletion error") }
+        val b=BackdropFiles.reserve(root) { fail("unexpected deletion error") }
+        assertNotEquals(a.path,b.path)
+        java.io.FileOutputStream(a.path).use { writer ->
+            a.release(); assertTrue(File(a.path).exists()); writer.write(byteArrayOf(1,2,3))
+        }
+        a.writerFinished(true); assertFalse(File(a.path).exists()); assertTrue(File(b.path).exists())
+        b.writerFinished(false); b.release(); assertFalse(File(b.path).exists())
+        assertTrue(root.delete())
+    }
+}

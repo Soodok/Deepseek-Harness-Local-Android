@@ -1,0 +1,3 @@
+<resources>
+    <string name="native_session_handoff_failed">未能打开该会话，请从会话列表选择。</string>
+</resources>

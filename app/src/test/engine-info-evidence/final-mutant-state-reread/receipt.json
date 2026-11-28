@@ -1,0 +1,80 @@
+{
+  "scope": "Offline cached Kotlin/JVM: complete production supervisor + real snapshot calls; exact native engineInfo/engineState source bodies executed in a JVM projection shell (currentRuntimeWire fixture). Static MethodChannel dispatch binding only; NOT Android Activity or MethodChannel execution.",
+  "mutation": "state-reread",
+  "compileExit": 0,
+  "testExit": 1,
+  "inputs": [
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\EngineSupervisor.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\EngineSupervisor.kt",
+      "sha256": "de70991a1807330e220b31efd5fc110da4c343214e43e56a25e0635bd032e389",
+      "compiledSha256": "9343a1f1671fd0dfe8ca9b5c22a1d2af8b46500c215bb624dd6b0bb012872503"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\NativeWorkspaceScope.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeWorkspaceScope.kt",
+      "sha256": "06c357dcb6a6bef8e1cd790a87f8e879122eb2357d5a2ced351434cef88b3bdb",
+      "compiledSha256": "06c357dcb6a6bef8e1cd790a87f8e879122eb2357d5a2ced351434cef88b3bdb"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\EngineModeSelector.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\EngineModeSelector.kt",
+      "sha256": "507cf413c0533c795d54baa5e7df67536a647a8f64808a942290b2ff169a8104",
+      "compiledSha256": "507cf413c0533c795d54baa5e7df67536a647a8f64808a942290b2ff169a8104"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\coldentry\\ColdEntryCoordinator.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\ColdEntryCoordinator.kt",
+      "sha256": "c1ab1475f3d0af0892005f390d38e6f54f313b6e66f1bcd7a7c3c7d59bd163b1",
+      "compiledSha256": "c1ab1475f3d0af0892005f390d38e6f54f313b6e66f1bcd7a7c3c7d59bd163b1"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeHostInfoSnapshotTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeHostInfoSnapshotTest.kt",
+      "sha256": "335423f947574503db23bb86296493b3c406a9e777627a6bd6a7aa14f85b4982",
+      "compiledSha256": "335423f947574503db23bb86296493b3c406a9e777627a6bd6a7aa14f85b4982"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspaceScopeTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeWorkspaceScopeTest.kt",
+      "sha256": "2e8b4f5d3f322a97ef57a1bccb21839a73a89608b74cf76dd64c3c8a4b98132d",
+      "compiledSha256": "2e8b4f5d3f322a97ef57a1bccb21839a73a89608b74cf76dd64c3c8a4b98132d"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspacePublicationTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeWorkspacePublicationTest.kt",
+      "sha256": "e9bb1a77ed8cc3d66b40a0f8d9610406e22bba5f7ad2ffc8be19e7e9c33b609e",
+      "compiledSha256": "e9bb1a77ed8cc3d66b40a0f8d9610406e22bba5f7ad2ffc8be19e7e9c33b609e"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\NativeChatRuntimeSwitchContractTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeChatRuntimeSwitchContractTest.kt",
+      "sha256": "3210c7e3a44aef1f74148cae8a02b1d644695e514d4104c797ac6c734edf7ec5",
+      "compiledSha256": "3210c7e3a44aef1f74148cae8a02b1d644695e514d4104c797ac6c734edf7ec5"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\NativeChatActivity.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeChatActivity.source.kt",
+      "sha256": "8c58c1a93470a58c2b5bf57217c2089db7a38dbfa70e8a442f0a9ac64c0ae5cb",
+      "compiledSha256": "8c58c1a93470a58c2b5bf57217c2089db7a38dbfa70e8a442f0a9ac64c0ae5cb"
+    }
+  ],
+  "generated": [
+    {
+      "path": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeEngineInfoProjection.kt",
+      "sha256": "905b9ae128c53c77ff261a4d3acd164df1fe87749612359850dd26021e85aad2"
+    },
+    {
+      "path": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-evidence\\final-mutant-state-reread\\NativeEngineInfoProjectionTest.kt",
+      "sha256": "b8104074129d188f3c621ce87a6f07ab0b8f4e4cde82973c02ff065490d99c71"
+    }
+  ],
+  "runner": {
+    "path": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\engine-info-offline.mjs",
+    "sha256": "dd9e04b6a1d1dc0e170504deff73422d5eafd897a3000ccdc69b47b9e018b510"
+  },
+  "sourceStillMatches": true,
+  "androidRun": false,
+  "methodChannelRun": false,
+  "deviceTouched": false
+}

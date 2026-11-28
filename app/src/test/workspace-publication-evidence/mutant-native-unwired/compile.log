@@ -1,0 +1,6 @@
+src\test\workspace-publication-evidence\mutant-native-unwired\EngineSupervisor.kt:1099:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+src\test\workspace-publication-evidence\mutant-native-unwired\EngineSupervisor.kt:1578:13: warning: variable 'nativeDomain' is never used
+        val nativeDomain = nativeEnv.singleOrNull { it.startsWith("DSH_HOME=") }
+            ^

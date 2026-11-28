@@ -43,6 +43,7 @@ class MaintenanceActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_maintenance)
+        applyDshCardStyles(this)
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 

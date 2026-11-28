@@ -1,0 +1,13 @@
+JUnit version 4.13.2
+..........E.......
+Time: 0.13
+There was 1 failure:
+1) bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: Linux spawn must publish the actual spec domain
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(NativeWorkspacePublicationTest.kt:193)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+

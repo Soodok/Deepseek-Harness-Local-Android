@@ -63,6 +63,7 @@ class PermissionCenterActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_permission_center)
+        applyDshCardStyles(this)
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).apply {
             setNavigationOnClickListener { finish() }

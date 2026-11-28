@@ -5,6 +5,87 @@ import 'package:material_ui/material_ui.dart';
 import '../../model/settings_model.dart';
 import '../../theme/display_scale.dart';
 import '../../theme/dsh_theme.dart';
+import '../glass_panel.dart';
+
+class SettingsDialogSurface extends StatelessWidget {
+  const SettingsDialogSurface({
+    super.key,
+    required this.title,
+    required this.child,
+    this.actions = const [],
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    backgroundColor: Colors.transparent,
+    surfaceTintColor: Colors.transparent,
+    elevation: 0,
+    insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+    child: GlassPanel(
+      radius: 24,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            child,
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: actions,
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class SettingsConfirmDialog extends StatelessWidget {
+  const SettingsConfirmDialog({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.confirmKey,
+    required this.confirmLabel,
+  });
+
+  final String title;
+  final String message;
+  final Key confirmKey;
+  final String confirmLabel;
+
+  @override
+  Widget build(BuildContext context) => SettingsDialogSurface(
+    title: title,
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(false),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        key: confirmKey,
+        onPressed: () => Navigator.of(context).pop(true),
+        child: Text(confirmLabel),
+      ),
+    ],
+    child: Text(message, style: const TextStyle(fontSize: 14, height: 1.45)),
+  );
+}
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
@@ -90,9 +171,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final matches = SettingsDestination.values
         .where(
           (destination) =>
-              query.isEmpty ||
-              destination.title.toLowerCase().contains(query) ||
-              destination.subtitle.toLowerCase().contains(query),
+              query.isEmpty || _settingsSearchText(destination).contains(query),
         )
         .toSet();
     return Scaffold(
@@ -224,7 +303,8 @@ class _SettingsPageState extends State<SettingsPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
-        final stackLogout = profile != null &&
+        final stackLogout =
+            profile != null &&
             constraints.maxWidth < 300 + 80 * (textScale - 1);
         final logout = profile == null
             ? null
@@ -277,7 +357,11 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               if (profile == null) ...[
                 const SizedBox(width: 8),
-                Icon(Icons.chevron_right_rounded, color: colors.inkSoft, size: 22),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: colors.inkSoft,
+                  size: 22,
+                ),
               ] else if (!stackLogout)
                 logout!,
             ],
@@ -299,10 +383,7 @@ class _SettingsPageState extends State<SettingsPage> {
             else
               identity,
             if (stackLogout)
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: logout!,
-              ),
+              Align(alignment: AlignmentDirectional.centerEnd, child: logout!),
           ],
         );
       },
@@ -386,7 +467,10 @@ class _SettingsPageState extends State<SettingsPage> {
     final error = _refreshError ?? widget.error;
     return Material(
       color: colors.surface,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colors.line.withValues(alpha: .34)),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Column(
@@ -529,7 +613,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   _legend('高', colors.ice, colors),
                 ],
               ),
-
             ] else ...[
               const SizedBox(height: 12),
               Text(
@@ -766,7 +849,10 @@ class _SettingsPageState extends State<SettingsPage> {
           Material(
             color: colors.surface,
             clipBehavior: Clip.antiAlias,
-            borderRadius: BorderRadius.circular(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: colors.line.withValues(alpha: .34)),
+            ),
             child: Column(
               children: [
                 for (var index = 0; index < rows.length; index++) ...[
@@ -829,7 +915,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 height: 30,
                 decoration: BoxDecoration(
                   color: tint.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(icon, size: 18, color: tint),
               ),
@@ -935,6 +1021,26 @@ const _groups = [
   ]),
   _SettingsGroup('更多', [SettingsDestination.about]),
 ];
+
+String _settingsSearchText(SettingsDestination destination) {
+  final terms = switch (destination) {
+    SettingsDestination.models => '模型配置 模型 服务提供商 API Key API密钥 接口协议 服务地址 模型 ID',
+    SettingsDestination.plugins => '插件管理 插件 社区插件 安装 更新',
+    SettingsDestination.extensions => '扩展编译环境 编译器 SDK JDK Git Python',
+    SettingsDestination.containers => '容器环境选择 容器 Linux Alpine 运行环境',
+    SettingsDestination.connections => '连接与远程 SSH Windows Linux 主机 本机引擎',
+    SettingsDestination.language => '语言 中文 English 应用显示语言',
+    SettingsDestination.appearance => '个性化主题 外观 显示大小 深浅模式 配色 主题 布局 横屏 全屏',
+    SettingsDestination.pet => '悬浮桌宠 桌宠 权限 资源包',
+    SettingsDestination.permissions => '权限管理 对话工具 系统权限 设备能力 工具访问范围',
+    SettingsDestination.webUi => '切换 Web UI 网页 完整界面',
+    SettingsDestination.diagnostics => '诊断与日志 运行状态 日志',
+    SettingsDestination.backup => '备份与恢复 本地设置 数据',
+    SettingsDestination.about => '关于 版本 许可 项目说明',
+  };
+  return (destination.title + ' ' + destination.subtitle + ' ' + terms)
+      .toLowerCase();
+}
 
 DateTime _date(DateTime value) => DateTime(value.year, value.month, value.day);
 String _iso(DateTime value) =>

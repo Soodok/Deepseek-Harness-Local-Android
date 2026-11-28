@@ -14,7 +14,6 @@ import '../transport/dsh_transport.dart';
 import 'chat_shell.dart' show ChatLayout;
 import 'composer_surface.dart';
 import 'conversation_flow.dart';
-import 'conversation_edge_blur.dart';
 import 'glass_panel.dart';
 import 'interaction_haptics.dart';
 import 'floating_conversation_layout.dart';
@@ -332,6 +331,7 @@ class SubagentChatPage extends StatefulWidget {
 class _SubagentChatPageState extends State<SubagentChatPage> {
   SubagentController? _child;
   final _input = TextEditingController();
+  final _focusNode = FocusNode();
   int _draftVersion = 0;
   String _draftText = '';
 
@@ -402,6 +402,7 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
     _unbind();
     _input.removeListener(_draftChanged);
     _input.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -415,7 +416,12 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
     // a refused, empty, repeated or failed one stays silent. A late answer for a
     // page that already switched children never reaches here.
     if (ok) InteractionHaptics.sendAccepted();
-    if (ok && version == _draftVersion) _input.clear();
+    if (ok) {
+      if (version == _draftVersion) _input.clear();
+      if (_focusNode.hasFocus) _focusNode.unfocus();
+    } else {
+      _focusNode.requestFocus();
+    }
   }
 
   String? get _restriction {
@@ -524,6 +530,7 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                   ? ComposerSurface(
                       textController: _input,
                       inputKey: const ValueKey('subagent-input'),
+                      focusNode: _focusNode,
                       hintText: '发给' + widget.agent.name,
                       controls: [
                         const Spacer(),
@@ -538,6 +545,7 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                           canStop: false,
                           stopInFlight: false,
                           canSend: child.canSend,
+                          sendInFlight: child.sending,
                           hasContent: _input.text.trim().isNotEmpty,
                           onSend: _send,
                           onStop: () {},
@@ -556,27 +564,25 @@ class _SubagentChatPageState extends State<SubagentChatPage> {
                       ),
                     ),
             ),
-            transcriptBuilder: (context, insets) => ConversationEdgeBlur(
-              contentInsets: insets,
-              child: ConversationFlow(
-                conversationIdentity: child,
-                listKey: const ValueKey('subagent-messages'),
-                messages: flowMessages,
-                tools: child?.conversation?.tools ?? const [],
-                leading: header,
-                padding: insets,
-                trailing: [
-                  if (receipt != null)
-                    Padding(
-                      key: const ValueKey('subagent-receipt'),
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _receiptLabel(receipt.delivery),
-                        style: _meta(context),
-                      ),
+            transcriptBuilder: (context, insets) => ConversationFlow(
+              conversationIdentity: child,
+              listKey: const ValueKey('subagent-messages'),
+              messages: flowMessages,
+              tools: child?.conversation?.tools ?? const [],
+              leading: header,
+              padding: insets,
+              edgeBlurInsets: insets,
+              trailing: [
+                if (receipt != null)
+                  Padding(
+                    key: const ValueKey('subagent-receipt'),
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _receiptLabel(receipt.delivery),
+                      style: _meta(context),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
         ),

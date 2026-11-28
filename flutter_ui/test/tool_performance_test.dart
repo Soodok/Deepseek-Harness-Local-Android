@@ -51,36 +51,43 @@ void main() {
     },
   );
 
-  testWidgets('many short output lines have a bounded inline preview', (
-    tester,
-  ) async {
-    final detail = List.generate(500, (i) => 'line $i').join('\n');
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: DshTheme.light(),
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: ToolRunCard(
-              tool: ToolRun(
-                id: 'lines',
-                name: 'read',
-                status: ToolStatus.complete,
-                detail: detail,
+  testWidgets(
+    'compact ordinary tool row keeps its target and bounded preview',
+    (tester) async {
+      final detail = List.generate(500, (i) => 'line $i').join('\n');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DshTheme.light(),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ToolRunCard(
+                compact: true,
+                tool: ToolRun(
+                  id: 'lines',
+                  name: 'read',
+                  status: ToolStatus.complete,
+                  detail: detail,
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.byKey(const ValueKey('tool-card-lines')));
-    await tester.pumpAndSettle();
-    final preview = tester.widget<SelectableText>(
-      find.byType(SelectableText).first,
-    );
-    expect(preview.data!.split('\n').length, lessThanOrEqualTo(12));
-    expect(preview.maxLines, 12);
-    expect(find.text('查看完整输出'), findsOneWidget);
-  });
+      );
+      final row = find.byKey(const ValueKey('tool-card-lines'));
+      final rowSize = tester.getSize(row);
+      expect(rowSize.height, greaterThanOrEqualTo(48));
+      final rowRect = tester.getRect(row);
+      await tester.tapAt(Offset(rowRect.center.dx, rowRect.bottom - 1));
+      await tester.pumpAndSettle();
+      final preview = tester.widget<SelectableText>(
+        find.byType(SelectableText).first,
+      );
+      // Compact previews bound what is painted; the full text stays reachable.
+      expect(preview.data!.split('\n').length, lessThanOrEqualTo(3));
+      expect(preview.maxLines, 3);
+      expect(find.text('查看完整输出'), findsOneWidget);
+    },
+  );
 
   testWidgets('collapsed logs are not built and long logs remain accessible', (
     t,

@@ -152,6 +152,7 @@ class ComposerActionButton extends StatelessWidget {
     required this.hasContent,
     required this.onSend,
     required this.onStop,
+    this.sendInFlight = false,
     this.busyLabel = '排队到下一轮',
     this.noStopLabel = '当前会话不支持停止',
   });
@@ -165,6 +166,7 @@ class ComposerActionButton extends StatelessWidget {
   final bool hasContent;
   final VoidCallback onSend;
   final VoidCallback onStop;
+  final bool sendInFlight;
   final String busyLabel;
   final String noStopLabel;
 
@@ -208,10 +210,18 @@ class ComposerActionButton extends StatelessWidget {
     }
     final waitingOnlyStop = running && !hasContent;
     return Tooltip(
-      message: waitingOnlyStop ? noStopLabel : (running ? busyLabel : '发送'),
+      message: sendInFlight
+          ? '发送中'
+          : waitingOnlyStop
+          ? noStopLabel
+          : running
+          ? busyLabel
+          : '发送',
       child: IconButton.filled(
         key: sendKey,
-        onPressed: !waitingOnlyStop && canSend && hasContent ? onSend : null,
+        onPressed: !sendInFlight && !waitingOnlyStop && canSend && hasContent
+            ? onSend
+            : null,
         style: IconButton.styleFrom(
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
@@ -224,13 +234,22 @@ class ComposerActionButton extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: !waitingOnlyStop && canSend && hasContent
+            color: sendInFlight || (!waitingOnlyStop && canSend && hasContent)
                 ? DshPalette.of(context).sendBlue
                 : DshPalette.of(context).sendBlueMuted,
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
-          child: const Icon(Icons.arrow_upward_rounded, size: 21),
+          child: sendInFlight
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.arrow_upward_rounded, size: 21),
         ),
       ),
     );

@@ -1,0 +1,31 @@
+{
+  "versionName": "1.6.0-beta.80",
+  "versionCode": 455,
+  "apkBytes": 248203946,
+  "apkSha256": "284d71b60cc426ea2576208222ae722280d46474739e48cdeaf445075a615e6a",
+  "abi": "x86_64",
+  "device": "emulator-5570 (Android 34, 1080x2340, density 440)",
+  "source": "Flutter WebView-free native chat; fixture session history, real engine",
+  "screenshots": [
+    {
+      "file": "fc80-chat-1.png",
+      "bytes": 276597,
+      "sha256": "dec95bc9794f6bac5f3d73de223221b77951fb94daed312f849e0643a0e39ff2"
+    },
+    {
+      "file": "fc80-under-header2.png",
+      "bytes": 342990,
+      "sha256": "973a02e1c1359515cc817033329a3a39beabe90a4baad88010bd832a1e0e3f19"
+    },
+    {
+      "file": "fc80-under-composer.png",
+      "bytes": 286903,
+      "sha256": "e20e07a997537ac37588791c7b68154c92a5887dab2aa437ba3dbf04dd47b260"
+    },
+    {
+      "file": "fc80-high-contrast.png",
+      "bytes": 288288,
+      "sha256": "214822b97a5bc803e5444b6012e0fcde74fd1b39e2504933ddd393db2477b66c"
+    }
+  ]
+}

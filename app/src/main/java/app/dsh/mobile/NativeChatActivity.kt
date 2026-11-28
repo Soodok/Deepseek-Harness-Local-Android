@@ -14,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
  */
 class NativeChatActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
+    private var workspaceBridge: app.dsh.mobile.workspace.NativeWorkspaceBridge? = null
     private val draftIo = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     /**
@@ -262,6 +263,10 @@ class NativeChatActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        workspaceBridge?.close()
+        workspaceBridge = app.dsh.mobile.workspace.NativeWorkspaceBridge(
+            this, flutterEngine.dartExecutor.binaryMessenger,
+        ) { supervisorOrNull()?.nativeWorkspaceScope() }
         channel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL,
@@ -471,6 +476,7 @@ class NativeChatActivity : FlutterActivity() {
     /** 文件选择器的结果：拿到 Uri 才写，取消就丢弃待存文本。 */
     @Deprecated("FlutterActivity 继承 android.app.Activity，结果走这个回调")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (workspaceBridge?.onActivityResult(requestCode, resultCode, data) == true) return
         if (requestCode == REQUEST_SAVE_TEXT) {
             val text = pendingSaveText
             pendingSaveText = null
@@ -494,6 +500,8 @@ class NativeChatActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        workspaceBridge?.close()
+        workspaceBridge = null
         draftIo.shutdown()
         runtimeIo.shutdown()
         handler.removeCallbacksAndMessages(null)
@@ -503,6 +511,8 @@ class NativeChatActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        workspaceBridge?.close()
+        workspaceBridge = null
         channel?.setMethodCallHandler(null)
         channel = null
         super.cleanUpFlutterEngine(flutterEngine)

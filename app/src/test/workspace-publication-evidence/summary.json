@@ -1,0 +1,233 @@
+{
+  "scope": "Independent Kotlin/JVM regression of complete current EngineSupervisor and actual accessor, with synthetic ownership/process fields; Android classes only linked. NOT Android runtime/build/device evidence.",
+  "baseline": {
+    "worktree": "E:/tmp/wt-flutter-native-chat",
+    "branch": "feat/flutter-native-chat",
+    "head": "f8e39a86960d516b35acfe387389608cbc1dcab2"
+  },
+  "writtenSourceFiles": [
+    {
+      "file": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\EngineSupervisor.kt",
+      "sha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134"
+    },
+    {
+      "file": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspacePublicationTest.kt",
+      "sha256": "e9bb1a77ed8cc3d66b40a0f8d9610406e22bba5f7ad2ffc8be19e7e9c33b609e"
+    },
+    {
+      "file": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-offline.mjs",
+      "sha256": "ebbd0cfe7bed1895eefca81cb5866c2ed2b9088287c747a596f9e06224f3babe"
+    }
+  ],
+  "productionDelta": "Only workspace accessor, same-file guarded publication helper, spawn-start scope invalidation, and actual Linux/native scope publication calls. Existing B01 State/bootId/ownership/stop wiring unchanged.",
+  "red": {
+    "name": "red-read-interleaving",
+    "compileExit": 0,
+    "testExit": 1,
+    "sourceStillMatches": true,
+    "sourceSha256": "4145f09f63cbde0e9bf5ed98378c98feadde39b7f85d7daf56b0a43776c234c4",
+    "counts": [
+      "Tests run: 14,  Failures: 7"
+    ],
+    "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\red-read-interleaving\\receipt.json",
+    "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\red-read-interleaving\\tests.log"
+  },
+  "spawnClearRed": {
+    "name": "red-spawn-clear",
+    "compileExit": 0,
+    "testExit": 1,
+    "sourceStillMatches": true,
+    "sourceSha256": "de0601e7e9fbc68d9682501242aade554875400481ff70f549929027abe0e0a3",
+    "counts": [
+      "Tests run: 17,  Failures: 1"
+    ],
+    "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\red-spawn-clear\\receipt.json",
+    "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\red-spawn-clear\\tests.log"
+  },
+  "green": {
+    "name": "delivery-green",
+    "compileExit": 0,
+    "testExit": 0,
+    "sourceStillMatches": true,
+    "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+    "counts": [
+      "OK (17 tests)"
+    ],
+    "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\delivery-green\\receipt.json",
+    "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\delivery-green\\tests.log"
+  },
+  "mutations": [
+    {
+      "name": "final-mutant-old-accessor",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 7"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-old-accessor\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-old-accessor\\tests.log"
+    },
+    {
+      "name": "final-mutant-read-unlocked",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-read-unlocked\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-read-unlocked\\tests.log"
+    },
+    {
+      "name": "final-mutant-no-scope-generation",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-no-scope-generation\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-no-scope-generation\\tests.log"
+    },
+    {
+      "name": "final-mutant-no-ready-owner",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 2"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-no-ready-owner\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-no-ready-owner\\tests.log"
+    },
+    {
+      "name": "final-mutant-no-url-check",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-no-url-check\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-no-url-check\\tests.log"
+    },
+    {
+      "name": "final-mutant-publish-unlocked",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-unlocked\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-unlocked\\tests.log"
+    },
+    {
+      "name": "final-mutant-publish-stale",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-stale\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-stale\\tests.log"
+    },
+    {
+      "name": "final-mutant-publish-stopped",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-stopped\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-stopped\\tests.log"
+    },
+    {
+      "name": "final-mutant-publish-maintenance",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-maintenance\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-publish-maintenance\\tests.log"
+    },
+    {
+      "name": "final-mutant-linux-unwired",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-linux-unwired\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-linux-unwired\\tests.log"
+    },
+    {
+      "name": "final-mutant-native-unwired",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-native-unwired\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-native-unwired\\tests.log"
+    },
+    {
+      "name": "final-mutant-unguarded-reset-retry",
+      "compileExit": 0,
+      "testExit": 1,
+      "sourceStillMatches": true,
+      "sourceSha256": "919f172beea26096070eb8507a83b2a02145f6f9df9763cdd166769e20422134",
+      "counts": [
+        "Tests run: 17,  Failures: 1"
+      ],
+      "receipt": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-unguarded-reset-retry\\receipt.json",
+      "log": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\final-mutant-unguarded-reset-retry\\tests.log"
+    }
+  ],
+  "b01": {
+    "compileExit": 0,
+    "testExit": 0,
+    "counts": [
+      "RESULT total=55 failed=0",
+      "OK (32 tests)"
+    ],
+    "tests": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\b01-evidence\\workspace-publication-delivery\\tests.json",
+    "snapshotMatches": true,
+    "mainActivityUnchangedFromPriorB01Delivery": true
+  },
+  "commands": {
+    "cwd": "E:/tmp/wt-flutter-native-chat",
+    "green": "node app/src/test/workspace-publication-offline.mjs delivery-green",
+    "b01": "node app/src/test/b01-offline.mjs workspace-publication-delivery",
+    "mutations": "node app/src/test/workspace-publication-offline.mjs <unique-name> <mutation-name> (all 12 listed in mutations)"
+  },
+  "limits": [
+    "No Gradle, Flutter, ADB, network, device, build/version, preference bridge, Host protocol, log ledger, commit or reset operations.",
+    "36/173 Android counts are prechange Lead baseline only; postchange Android targeted/full tests/build/device remain with Lead.",
+    "No SharedPreferences cross-interface transaction or session/create same-ID path atomicity claim."
+  ],
+  "warnings": [
+    "Pre-existing unused pluginRecoveryRequested=false assignment warning in EngineSupervisor; unchanged.",
+    "One outer transport hit its 120000ms deadline during final mutant 12. No jobs or java process remained. Completed 11 controls preserved; only incomplete unguarded-reset rerun in unique directory, followed by fresh green+B01."
+  ],
+  "rollback": "Do not reset or restore whole EngineSupervisor: it contains pre-existing WIP/B01. Reverse only the four scope-related diff hunks against red-read-interleaving/EngineSupervisor.kt.",
+  "writeWindow": "Released at handoff; no background jobs or device/toolchain window held."
+}

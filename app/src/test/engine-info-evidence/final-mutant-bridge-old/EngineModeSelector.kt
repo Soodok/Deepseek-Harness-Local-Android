@@ -1,0 +1,181 @@
+package app.dsh.mobile.engine
+
+import android.content.Context
+import android.util.Log
+
+/**
+ * 引擎运行模式选择器 —— 决定 DSH 引擎跑在 Android 原生还是 Linux 容器里。
+ *
+ * ## 三种状态
+ *
+ * | 状态 | 引擎跑在哪 | 何时出现 |
+ * |---|---|---|
+ * | [Mode.NATIVE] | 原生 bionic node + engine/lib 下的 dsh | 默认；或用户手动关掉 Linux 模式 |
+ * | [Mode.LINUX] | 容器内 musl node + **同一份** bind 进的 dsh | 用户开启且 [LinuxEngineLauncher.readiness] 通过 |
+ * | [Mode.NATIVE_FALLBACK] | 原生 | 用户开了 Linux 但环境没就绪 |
+ *
+ * ## 为什么要有 FALLBACK 而不直接报错
+ *
+ * 用户的诉求是「打开就能聊」。如果 Linux 环境因为 rootfs 还没下载 / node 没装 /
+ * rootfs 损坏而不可用，直接拒绝启动会让 App 变成砖。回退到原生至少保住核心
+ * 功能。
+ *
+ * 但**绝不静默回退**：`NATIVE_FALLBACK` 会被写进 [lastReason]，UI 据此显示
+ * 「当前为兼容模式：<原因>」。用户必须知道自己在用哪个模式 —— 否则他会以为
+ * 完整 Linux 环境在工作，装了 gcc 却发现编不了。
+ *
+ * ## 开关存储
+ *
+ * 与项目现有范式一致（`MainActivity.officialMobileUiEnabled`）：SharedPreferences
+ * `dsh_ui` + 布尔键。默认 **false**（原生模式），原因见 [DEFAULT_ENABLED]。
+ */
+object EngineModeSelector {
+
+    private const val TAG = "EngineMode"
+
+    private const val PREFS = "dsh_ui"
+    private const val KEY_LINUX_MODE = "engine_linux_mode"
+
+    /**
+     * 默认值：**false**。
+     *
+     * 理由：Linux 模式需要 rootfs 部署 + node 安装两步准备工作。默认开启会让
+     * 所有存量用户在升级后第一次启动就走回退路径（多一次探测开销、日志里多一条
+     * 告警），体验倒退。让它成为用户主动开启的选项，等安装向导做完善后再考虑
+     * 改成默认开。
+     */
+    private const val DEFAULT_ENABLED = false
+
+    enum class Mode { NATIVE, LINUX, NATIVE_FALLBACK }
+
+    /** 上一次判定的结果与原因（UI 读取用；进程内缓存） */
+    @Volatile
+    var lastMode: Mode = Mode.NATIVE
+        private set
+
+    @Volatile
+    var lastReason: String = ""
+        private set
+
+    /** Startup snapshot; UI preferences may change before the engine restarts. */
+    @Volatile
+    var lastDistro: String = ""
+        private set
+
+    /**
+     * [resolve] 是否已经跑过一次。
+     *
+     * 启动遮罩要在引擎起来之前就把「原生 / Linux」告诉用户，而 [lastMode] 的
+     * 默认值 NATIVE 与「还没判定」无法区分 —— 直接读会把 Linux 模式在判定
+     * 完成前的一小段时间显示成原生。加这个标记让 UI 能显示「检测中」。
+     */
+    @Volatile
+    var resolved: Boolean = false
+        private set
+
+    fun isLinuxEnabled(ctx: Context): Boolean =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LINUX_MODE, DEFAULT_ENABLED)
+
+    /**
+     * 尽早给出**能立刻确定**的结论，供启动遮罩在第一时间显示模式。
+     *
+     * ## 为什么需要
+     *
+     * [resolve] 排在 `spawnEngine` 里 —— 实测冷启时它要到 1.2~2.4 秒才被调用
+     * （前面还有孤儿回收、preflight、runtime-install、hardssh、profile-plugins）。
+     * 在那之前 [resolved] 是 false，遮罩只能显示「检测运行环境」占位。用户看到
+     * 的就是「启动 1.4 秒之后运行环境才检测出来」。
+     *
+     * 但这里**根本不需要等**：Linux 模式默认关闭，关闭时判定只是读一个布尔值，
+     * 不碰任何文件。「检测」本身从来没慢过（实测 0~6ms），慢的是它排队的位置。
+     *
+     * ## 只做能确定的那一半
+     *
+     * 这里**只处理 Linux 关闭的快路径**。Linux 开启时要跑 readiness() —— 它会
+     * 做 SELinux 哨兵检查（实测 14~93ms）、写 distro 配置、装兼容 shim，并且
+     * 可能与 owner-check 的 chown 抢同一棵树。那部分必须留在 [resolve] 里串行执行，
+     * 不能为了提早几百毫秒就把它挪到并行块里制造竞争。
+     *
+     * @return true 表示已确定（调用方无需再等）；false 表示仍要等 [resolve]
+     */
+    fun resolveEarly(ctx: Context): Boolean {
+        if (resolved) return true
+        if (isLinuxEnabled(ctx)) return false
+        lastMode = Mode.NATIVE
+        lastReason = "linux mode disabled"
+        resolved = true
+        return true
+    }
+
+    fun setLinuxEnabled(ctx: Context, on: Boolean) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_LINUX_MODE, on).apply()
+        Log.i(TAG, "linux engine mode = $on")
+    }
+
+    /**
+     * 决定这次启动用哪个模式，并记录原因。
+     *
+     * 只在用户开了 Linux 模式时才做探测（探测本身要跑一次容器命令，几十毫秒）。
+     */
+    fun resolve(ctx: Context): Mode {
+        // Linux 关闭时判定恒等，复用 resolveEarly 让两处只有一份实现。
+        // 注意不能反过来「resolveEarly 里调 resolve」—— resolve 会进 readiness()
+        // 的重量级分支，那正是我们要推迟到 spawnEngine 的部分。
+        if (!isLinuxEnabled(ctx)) {
+            resolveEarly(ctx)
+            return Mode.NATIVE
+        }
+        val launcher = LinuxEngineLauncher.get(ctx)
+        return when (val r = launcher.readiness()) {
+            is LinuxEngineLauncher.Readiness.Ready -> {
+                lastDistro = runCatching { LinuxEnvironmentManager.get(ctx).activeOption().displayName }.getOrDefault("")
+                lastMode = Mode.LINUX
+                lastReason = ""
+                resolved = true
+                Mode.LINUX
+            }
+            is LinuxEngineLauncher.Readiness.NeedsDeploy -> {
+                lastMode = Mode.NATIVE_FALLBACK
+                lastReason = "linux rootfs not deployed"
+                Log.w(TAG, "linux mode requested but rootfs not deployed — falling back to native")
+                resolved = true
+                Mode.NATIVE_FALLBACK
+            }
+            is LinuxEngineLauncher.Readiness.NeedsPackages -> {
+                lastMode = Mode.NATIVE_FALLBACK
+                lastReason = r.reason
+                Log.w(TAG, "linux mode requested but packages missing: ${r.reason} — falling back to native")
+                resolved = true
+                Mode.NATIVE_FALLBACK
+            }
+            is LinuxEngineLauncher.Readiness.Unavailable -> {
+                lastMode = Mode.NATIVE_FALLBACK
+                lastReason = r.reason
+                Log.w(TAG, "linux mode requested but unavailable: ${r.reason} — falling back to native")
+                resolved = true
+                Mode.NATIVE_FALLBACK
+            }
+        }
+    }
+
+    /** 供 UI 展示的一行说明（不含中文，交由资源层本地化） */
+    fun statusLine(ctx: Context): StatusLine {
+        val enabled = isLinuxEnabled(ctx)
+        val st = LinuxEnvironmentManager.get(ctx).status()
+        return StatusLine(
+            enabled = enabled,
+            running = lastMode,
+            rootfsReady = st.state == LinuxEnvironmentManager.State.READY,
+            reason = lastReason,
+        )
+    }
+
+    data class StatusLine(
+        val enabled: Boolean,
+        val running: Mode,
+        val rootfsReady: Boolean,
+        val reason: String,
+    )
+}

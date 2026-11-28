@@ -1,0 +1,20 @@
+compile exit=0
+src\test\workspace-publication-evidence\mutant-linux-unwired\EngineSupervisor.kt:1099:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+
+tests exit=1
+JUnit version 4.13.2
+..........E.......
+Time: 0.154
+There was 1 failure:
+1) bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: Linux spawn must publish the actual spec domain
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.bothActualSpawnBranchesPublishTheirCapturedLaunchDomain(NativeWorkspacePublicationTest.kt:187)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+
+

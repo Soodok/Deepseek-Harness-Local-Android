@@ -213,11 +213,13 @@ void main() {
     await tester.tap(codeToggle);
     await tester.pump();
     expect(find.text('const answer = 42;\n'), findsOneWidget);
-    await tester.tap(
+    // A single tool no longer nests under a group disclosure, so the code block
+    // is the only disclosure left here: adding rows must not close it.
+    expect(
       find.byKey(const ValueKey('execution-toggle-message-reply')),
+      findsNothing,
     );
-    await tester.pump();
-    expect(find.text('const answer = 42;\n'), findsOneWidget);
+    expect(find.byType(ToolRunCard), findsOneWidget);
     await pump();
     expect(find.text('const answer = 42;\n'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsNothing);
@@ -517,16 +519,21 @@ void main() {
       expect(find.textContaining('200项失败'), findsOneWidget);
       expect(find.byType(ToolRunCard), findsNothing);
       // A new child/controller identity must not inherit a prior disclosure.
+      // Two tools keep this a real disclosure: one tool always renders in place.
       await tester.pumpWidget(
         _app(
           ConversationFlow(
             conversationIdentity: Object(),
             messages: const [_message],
-            tools: [_command('other')],
+            tools: [_command('other'), _command('other-2')],
           ),
         ),
       );
       expect(find.byType(ToolRunCard), findsNothing);
+      expect(
+        find.byKey(const ValueKey('execution-toggle-message-reply')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -555,10 +562,12 @@ void main() {
                 ],
               ),
             ),
+            _command('plan-peer'),
           ],
         ),
       ),
     );
+    // Two tools keep the trace collapsed, which is the state this test is about.
     await tester.tap(
       find.byKey(const ValueKey('execution-toggle-message-reply')),
     );

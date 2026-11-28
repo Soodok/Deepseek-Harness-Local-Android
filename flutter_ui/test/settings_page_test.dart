@@ -125,7 +125,9 @@ void main() {
     expect(logouts, 1);
   });
 
-  testWidgets('signed in layout remains usable at 360dp and 2x text', (tester) async {
+  testWidgets('signed in layout remains usable at 360dp and 2x text', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -136,10 +138,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('logout is beside the account and usage follows immediately', (tester) async {
+  testWidgets('logout is beside the account and usage follows immediately', (
+    tester,
+  ) async {
     await _pump(tester, profile: _profile, usage: _history([]));
     final name = tester.getRect(find.text(_profile.displayName));
-    final logout = tester.getRect(find.byKey(const ValueKey('settings-logout')));
+    final logout = tester.getRect(
+      find.byKey(const ValueKey('settings-logout')),
+    );
     final usage = tester.getRect(find.text('Token 记录'));
     expect(logout.left, greaterThan(name.right));
     expect(logout.center.dy, closeTo(name.center.dy, 24));
@@ -203,6 +209,32 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'settings search reaches detail controls by their visible terms',
+    (tester) async {
+      await _pump(tester);
+      final search = find.byKey(const ValueKey('settings-search'));
+      await tester.enterText(search, 'API Key');
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('settings-destination-models')),
+        findsOneWidget,
+      );
+      await tester.enterText(search, 'SSH');
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('settings-destination-connections')),
+        findsOneWidget,
+      );
+      await tester.enterText(search, '显示大小');
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('settings-destination-appearance')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets(
     'selecting a supplied day shows real input output and combined totals',

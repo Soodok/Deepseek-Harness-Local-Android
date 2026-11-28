@@ -1,11 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dsh_native_chat/src/model/chat_model.dart';
 import 'package:dsh_native_chat/src/state/chat_controller.dart';
 import 'package:dsh_native_chat/src/transport/fixture_transport.dart';
 import 'package:dsh_native_chat/src/ui/chat_shell.dart';
+import 'package:dsh_native_chat/src/ui/execution_group.dart';
 import 'package:dsh_native_chat/src/ui/message_list.dart';
 import 'package:dsh_native_chat/src/ui/overflow_title.dart';
 import 'package:dsh_native_chat/src/theme/dsh_theme.dart';
@@ -178,13 +177,9 @@ void main() {
       of: find.byKey(const ValueKey('approval-approve')),
       matching: find.byKey(const ValueKey('conversation-list')),
     ), findsOneWidget);
-    final trace = find.byWidgetPredicate(
-      (w) =>
-          w.key is ValueKey<String> &&
-          (w.key as ValueKey<String>).value.startsWith('execution-toggle-'),
-    );
+    final tool = find.text('读取项目状态');
     await tester.scrollUntilVisible(
-      trace,
+      tool,
       120,
       scrollable: find
           .descendant(
@@ -193,43 +188,8 @@ void main() {
           )
           .first,
     );
-    // 输入区收紧后，滚到底时这一行仍可能被输入卡片压住一截，点击会落在
-    // 输入区上（tap 只警告不失败，随后"行没展开"才是真正的失败）。先把
-    // 它在列表里抬到完整可见，再点它 —— 断言的仍是"点这一行会展开"。
-    // Chrome floats above the transcript now, so a row parked at the very top
-    // sits under the header pane and a tap there hits glass instead of the
-    // row. Centring it lands it in the readable band between the panes.
-    await Scrollable.ensureVisible(tester.element(trace), alignment: .5);
-    await tester.pump();
-    final listState = tester.state<ScrollableState>(
-      find
-          .descendant(
-            of: find.byKey(const ValueKey('conversation-list')),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
-    // ensureVisible only knows the viewport, not the floating panes: the row
-    // counts as visible while it still sits under the composer glass. Park its
-    // centre in the clear band between the header and the composer instead.
-    final bandTop = tester
-        .getRect(find.byKey(const ValueKey('floating-header-extent')))
-        .bottom;
-    final bandBottom = tester
-        .getRect(find.byKey(const ValueKey('floating-composer-extent')))
-        .top;
-    final traceCentre = tester.getRect(trace).center.dy;
-    final position = listState.position;
-    position.jumpTo(
-      math.min(
-        position.maxScrollExtent,
-        math.max(0, traceCentre - (bandTop + bandBottom) / 2),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(trace);
-    await tester.pump();
-    expect(find.text('读取项目状态'), findsOneWidget);
+    expect(tool, findsOneWidget);
+    expect(find.byType(ExecutionGroupHeader), findsNothing);
     expect(find.byKey(const ValueKey('approval-approve')), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const ValueKey('approval-approve')));
@@ -372,13 +332,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('approval-stop')));
     await tester.pump();
 
-    final trace = find.byWidgetPredicate(
-      (w) =>
-          w.key is ValueKey<String> &&
-          (w.key as ValueKey<String>).value.startsWith('execution-toggle-'),
-    );
+    final stopped = find.text('已停止');
     await tester.scrollUntilVisible(
-      trace,
+      stopped,
       120,
       scrollable: find
           .descendant(
@@ -387,9 +343,8 @@ void main() {
           )
           .first,
     );
-    await tester.tap(trace);
-    await tester.pump();
-    expect(find.text('已停止'), findsOneWidget);
+    expect(stopped, findsOneWidget);
+    expect(find.byType(ExecutionGroupHeader), findsNothing);
     expect(find.byKey(const ValueKey('approval-card')), findsNothing);
     controller.dispose();
   });

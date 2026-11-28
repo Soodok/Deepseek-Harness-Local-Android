@@ -233,7 +233,8 @@ class PluginStoreActivity : ThemedActivity() {
 
     /** 选中的分类用实心强调色，其余描边 */
     private fun refreshChipStyles() {
-        val accent = Accent.current(this)
+        val accent = dshColor(R.attr.dshAccent, R.color.accent)
+        val onAccent = dshColor(R.attr.dshOnAccent, R.color.on_accent)
         for (i in 0 until categoryChips.childCount) {
             val tv = categoryChips.getChildAt(i) as? TextView ?: continue
             val id = chipIds.getOrElse(i) { "" }
@@ -248,14 +249,14 @@ class PluginStoreActivity : ThemedActivity() {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = r
                 if (id == selectedCategory) {
-                    setColor(accent.argb)
+                    setColor(accent)
                 } else {
                     setColor(0x00000000)
-                    setStroke(dp(1).coerceAtLeast(1), accent.argb)
+                    setStroke(dp(1).coerceAtLeast(1), accent)
                 }
             }
             tv.background = bg
-            tv.setTextColor(if (id == selectedCategory) 0xFFFFFFFF.toInt() else accent.argb)
+            tv.setTextColor(if (id == selectedCategory) onAccent else accent)
         }
     }
 

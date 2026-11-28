@@ -66,14 +66,17 @@ class _SettingsHome extends StatelessWidget {
               if (await HostBridge.openSettingsSection(destination)) return;
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('无法打开${destination.title}，请从 Android 设置重试。')),
+                SnackBar(
+                  content: Text('无法打开${destination.title}，请从 Android 设置重试。'),
+                ),
               );
               return;
             }
             if (!context.mounted) return;
             await Navigator.of(context).push<void>(
               MaterialPageRoute(
-                builder: (_) => UnavailableSettingsPage(destination: destination),
+                builder: (_) =>
+                    UnavailableSettingsPage(destination: destination),
               ),
             );
             return;
@@ -83,12 +86,20 @@ class _SettingsHome extends StatelessWidget {
   }
 }
 
-Future<void> showModelConfiguration(BuildContext context, ChatController chat) async {
+Future<void> showModelConfiguration(
+  BuildContext context,
+  ChatController chat,
+) async {
   final service = SettingsScope.maybeOf(context)?.service;
-  final providers = service is ModelProviderSettings ? service as ModelProviderSettings : null;
-  await Navigator.of(context).push<void>(MaterialPageRoute(
-    builder: (_) => ModelConfigurationPage(controller: chat, providers: providers),
-  ));
+  final providers = service is ModelProviderSettings
+      ? service as ModelProviderSettings
+      : null;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      builder: (_) =>
+          ModelConfigurationPage(controller: chat, providers: providers),
+    ),
+  );
 }
 
 Future<void> openSettingsWeb(BuildContext context) async {
@@ -139,9 +150,8 @@ Future<void> startAccountSignIn(
   if (controller.isDemo) {
     final preview = await showDialog<bool>(
       context: context,
-      builder: (dialog) => AlertDialog(
-        title: const Text('账号资料预览'),
-        content: const Text('当前未连接手机引擎。这里仅展示头像和个人资料的界面效果，不会登录真实 DeepSeek 账号。'),
+      builder: (dialog) => SettingsDialogSurface(
+        title: '账号资料预览',
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialog).pop(false),
@@ -152,6 +162,7 @@ Future<void> startAccountSignIn(
             child: const Text('查看演示'),
           ),
         ],
+        child: const Text('当前未连接手机引擎。这里仅展示头像和个人资料的界面效果，不会登录真实 DeepSeek 账号。'),
       ),
     );
     if (preview == true) await controller.signIn();
@@ -164,15 +175,15 @@ Future<void> startAccountSignIn(
       onPopInvokedWithResult: (didPop, result) {
         if (didPop && controller.busy) unawaited(controller.cancelSignIn());
       },
-      child: AlertDialog(
-        title: const Text('登录 DeepSeek'),
-        content: const Text('请在系统浏览器中完成授权。账号凭据由本机引擎保管，完成后会自动显示个人资料。'),
+      child: SettingsDialogSurface(
+        title: '登录 DeepSeek',
         actions: [
           TextButton(
             onPressed: () => controller.cancelSignIn(),
             child: const Text('取消登录'),
           ),
         ],
+        child: const Text('请在系统浏览器中完成授权。账号凭据由本机引擎保管，完成后会自动显示个人资料。'),
       ),
     ),
   );
@@ -191,20 +202,11 @@ Future<void> confirmAccountSignOut(
   if (controller.busy || controller.profile == null) return;
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (dialog) => AlertDialog(
-      title: const Text('退出 DeepSeek 账号？'),
-      content: const Text('使用此账号的运行中任务可能受到影响。API Key 配置会保留，退出不会删除对话记录。'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialog).pop(false),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          key: const ValueKey('confirm-signout'),
-          onPressed: () => Navigator.of(dialog).pop(true),
-          child: const Text('退出登录'),
-        ),
-      ],
+    builder: (_) => SettingsConfirmDialog(
+      title: '退出 DeepSeek 账号？',
+      message: '使用此账号的运行中任务可能受到影响。API Key 配置会保留，退出不会删除对话记录。',
+      confirmKey: const ValueKey('confirm-signout'),
+      confirmLabel: '退出登录',
     ),
   );
   if (confirmed == true) await controller.signOut();

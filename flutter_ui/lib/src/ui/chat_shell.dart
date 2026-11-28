@@ -35,7 +35,6 @@ import 'turn_notice_card.dart';
 import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import 'composer.dart';
-import 'conversation_edge_blur.dart';
 import 'interaction_haptics.dart';
 import 'message_list.dart';
 import 'session_drawer.dart';
@@ -83,10 +82,9 @@ class ChatShell extends StatefulWidget {
     this.workspaceOptions = const [],
     this.selectedWorkspaceId,
     this.onSelectWorkspace,
-    this.onSaveDefaultWorkspace,
-    this.onClearDefaultWorkspace,
     this.onRetryWorkspace,
     this.workspaceStatus,
+    this.workspaceConfirmed = false,
   });
 
   final ChatController controller;
@@ -131,10 +129,12 @@ class ChatShell extends StatefulWidget {
   final List<EngineWorkspace> workspaceOptions;
   final String? selectedWorkspaceId;
   final Future<bool> Function(String?)? onSelectWorkspace;
-  final Future<bool> Function()? onSaveDefaultWorkspace,
-      onClearDefaultWorkspace;
   final VoidCallback? onRetryWorkspace;
   final String? workspaceStatus;
+
+  /// Whether the persisted default workspace was read back. A null selection
+  /// only means Home once this is true.
+  final bool workspaceConfirmed;
 
   /// The composer text owned by the screen that hosts this shell.
   ///
@@ -1059,39 +1059,33 @@ class _ChatShellState extends State<ChatShell> with WidgetsBindingObserver {
                       onSubmitEdit: _submitEdit,
                     ),
                     transcriptBuilder: (context, insets) =>
-                        ConversationEdgeBlur(
-                          contentInsets: insets,
-                          child: TurnNoticeActionScope(
-                            actions: _noticeActions,
-                            child: MessageList(
-                              controller: widget.controller,
-                              actions: _bindings,
-                              onFileTap: widget.fileDelivery == null
-                                  ? null
-                                  : (file, action) =>
-                                        unawaited(_handleFileTap(file, action)),
-                              onFileShare: widget.fileDelivery == null
-                                  ? null
-                                  : (file) => unawaited(_shareFile(file)),
-                              editingMessageId: _actions?.editing?.messageId,
-                              padding: insets,
-                              onStarter: _draft.append,
-                              agentPresets: widget.agentPresets,
-                              selectedAgentPresetId:
-                                  widget.selectedAgentPresetId,
-                              onSelectAgentPreset: widget.agentPresetLocked
-                                  ? null
-                                  : widget.onSelectAgentPreset,
-                              workspaceOptions: widget.workspaceOptions,
-                              selectedWorkspaceId: widget.selectedWorkspaceId,
-                              onSelectWorkspace: widget.onSelectWorkspace,
-                              onSaveDefaultWorkspace:
-                                  widget.onSaveDefaultWorkspace,
-                              onClearDefaultWorkspace:
-                                  widget.onClearDefaultWorkspace,
-                              onRetryWorkspace: widget.onRetryWorkspace,
-                              workspaceStatus: widget.workspaceStatus,
-                            ),
+                        TurnNoticeActionScope(
+                          actions: _noticeActions,
+                          child: MessageList(
+                            controller: widget.controller,
+                            actions: _bindings,
+                            onFileTap: widget.fileDelivery == null
+                                ? null
+                                : (file, action) =>
+                                      unawaited(_handleFileTap(file, action)),
+                            onFileShare: widget.fileDelivery == null
+                                ? null
+                                : (file) => unawaited(_shareFile(file)),
+                            editingMessageId: _actions?.editing?.messageId,
+                            padding: insets,
+                            edgeBlurInsets: insets,
+                            onStarter: _draft.append,
+                            agentPresets: widget.agentPresets,
+                            selectedAgentPresetId: widget.selectedAgentPresetId,
+                            onSelectAgentPreset: widget.agentPresetLocked
+                                ? null
+                                : widget.onSelectAgentPreset,
+                            workspaceOptions: widget.workspaceOptions,
+                            selectedWorkspaceId: widget.selectedWorkspaceId,
+                            onSelectWorkspace: widget.onSelectWorkspace,
+                            onRetryWorkspace: widget.onRetryWorkspace,
+                            workspaceStatus: widget.workspaceStatus,
+                            workspaceConfirmed: widget.workspaceConfirmed,
                           ),
                         ),
                   ),

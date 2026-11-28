@@ -1,0 +1,50 @@
+{
+  "scope": "Offline Kotlin/JVM helpers + exact extracted State values and source adapter contracts; NOT Android/Flutter/device execution",
+  "mutant": "writer-unlink-early",
+  "inputs": [
+    {
+      "file": "NativeChatColdEntryTest.kt",
+      "sha256": "8d8c4b4dce3c2fdd5586b33a53a88cbd1f8f4c83941ecde161c809bb3eb4b833"
+    },
+    {
+      "file": "NativeChatLaunchHandshakeTest.kt",
+      "sha256": "296b70a303a8a399844d95d8a2eb574923feb85eb6da929637069bf6d1cb3c02"
+    },
+    {
+      "file": "BackdropFiles.kt",
+      "sha256": "11af86e34bf8d4cdd4ba13e49fa321871e0d8eb1edd0dba094714614f6d1fd74"
+    },
+    {
+      "file": "ColdEntryCoordinator.kt",
+      "sha256": "fb00273d4c785ef64e8a4cf7d2761fb34721540a066ddb7aaa723aed589ef4f6"
+    },
+    {
+      "file": "EntryResultRoutes.kt",
+      "sha256": "aa4a448f7aecbee9a11aa1250e2e7335231dfd215d70f65bbb9d49ebde950d45"
+    },
+    {
+      "file": "BackdropOwnershipTest.kt",
+      "sha256": "fa2f743a2ee58f3ead8d3d2338488f34cfeb7125ddc11ea09c1da0945d38ea4a"
+    },
+    {
+      "file": "ColdEntryBehaviorTest.kt",
+      "sha256": "f4712c6958e0910ca8dda01c63efc8a4e4652b4b9a2cbbb5a82a161584502325"
+    },
+    {
+      "file": "EntryResultRoutesTest.kt",
+      "sha256": "c7670216341c361f8627d67843c2bbfb92382fff712e7d5579dd048ed308422b"
+    },
+    {
+      "file": "HostPublicationTest.kt",
+      "sha256": "79b91cd94a56bda488f8ba2a47087b381736d83c9652e90b4ccb2d56f84487f2"
+    },
+    {
+      "file": "ProductionWiringTest.kt",
+      "sha256": "37b98c973964ac98f906b0d0368ea2b112bdc4043aaefc64b5025b44109e6bbd"
+    },
+    {
+      "file": "SupervisorState.kt",
+      "sha256": "1dd430dd132cbde8b25d7f29b1f355654f4c790fec8769b7b0601a33b73d335c"
+    }
+  ]
+}

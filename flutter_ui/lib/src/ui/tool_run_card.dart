@@ -1,12 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../model/chat_model.dart';
+import '../theme/display_scale.dart';
 import '../theme/dsh_theme.dart';
 import '../bridge/host_bridge.dart';
 import 'tool_content_view.dart';
 import 'tool_process_card.dart';
-
-import 'package:flutter/services.dart';
 
 class ToolRunCard extends StatefulWidget {
   const ToolRunCard({
@@ -56,6 +55,11 @@ class _ToolRunCardState extends State<ToolRunCard> {
       ToolStatus.cancelled => DshPalette.of(context).inkFaint,
     };
     final detail = tool.detail;
+    final detailPreview = toolOutputPreview(
+      detail,
+      maxLines: widget.compact ? 3 : 12,
+      maxCharacters: widget.compact ? 480 : 1200,
+    );
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
@@ -64,11 +68,16 @@ class _ToolRunCardState extends State<ToolRunCard> {
         tilePadding: widget.compact
             ? const EdgeInsets.only(right: 4)
             : const EdgeInsets.fromLTRB(10, 0, 6, 0),
+        minTileHeight: widget.compact
+            ? DshDisplayScope.minTargetOf(context)
+            : null,
+        shape: widget.compact ? const Border() : null,
+        collapsedShape: widget.compact ? const Border() : null,
         childrenPadding: EdgeInsets.fromLTRB(
-          10,
+          widget.compact ? 8 : 10,
           0,
-          10,
-          widget.compact ? 4 : 12,
+          widget.compact ? 8 : 10,
+          widget.compact ? 0 : 12,
         ),
         leading: running
             ? SizedBox(
@@ -89,7 +98,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: DshPalette.of(context).inkSoft,
-                  fontSize: 13.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -130,23 +139,28 @@ class _ToolRunCardState extends State<ToolRunCard> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: SelectableText(
-                      _outputPreview(detail),
-                      maxLines: 12,
+                      detailPreview,
+                      maxLines: widget.compact ? 3 : 12,
                       style: TextStyle(
                         color: DshPalette.of(context).inkSoft,
-                        fontSize: 13,
-                        height: 1.5,
+                        fontSize: widget.compact ? 12 : 13,
+                        height: widget.compact ? 1.35 : 1.5,
                       ),
                     ),
                   ),
-                if (detail.isNotEmpty)
+                if (detail.isNotEmpty &&
+                    (!widget.compact || detailPreview.length < detail.length))
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) =>
-                              _FullOutput(title: tool.name, text: detail),
+                          builder: (_) => ToolFullOutputPage(
+                            id: 'detail-' + tool.id,
+                            title: tool.name,
+                            text: detail,
+                            monospace: false,
+                          ),
                         ),
                       ),
                       child: const Text('查看完整输出'),
@@ -187,62 +201,4 @@ class _ToolRunCardState extends State<ToolRunCard> {
 
   static String _elapsed(int ms) =>
       ms < 1000 ? ms.toString() + ' 毫秒' : (ms / 1000).toStringAsFixed(1) + ' 秒';
-}
-
-String _outputPreview(String text) {
-  var end = text.length.clamp(0, 1200);
-  var lines = 1;
-  for (var i = 0; i < end; i++) {
-    if (text.codeUnitAt(i) == 10 && ++lines > 12) {
-      end = i;
-      break;
-    }
-  }
-  if (end > 0 &&
-      end < text.length &&
-      (text.codeUnitAt(end - 1) & 0xfc00) == 0xd800)
-    end--;
-  return text.substring(0, end);
-}
-
-class _FullOutput extends StatelessWidget {
-  const _FullOutput({required this.title, required this.text});
-  final String title;
-  final String text;
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(title),
-      actions: [
-        TextButton(
-          onPressed: () async {
-            var success = false;
-            try {
-              await Clipboard.setData(ClipboardData(text: text));
-              success = true;
-            } catch (_) {
-              success = false;
-            }
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(success ? '已复制完整输出' : '复制失败，请重试')),
-              );
-            }
-          },
-          child: const Text('复制全部'),
-        ),
-      ],
-    ),
-    body: ListView.builder(
-      padding: const EdgeInsets.all(18),
-      itemCount: (text.length / 1600).ceil(),
-      itemBuilder: (_, i) => SelectableText(
-        text.substring(
-          i * 1600,
-          (i + 1) * 1600 < text.length ? (i + 1) * 1600 : text.length,
-        ),
-        style: const TextStyle(fontSize: 13, height: 1.5),
-      ),
-    ),
-  );
 }

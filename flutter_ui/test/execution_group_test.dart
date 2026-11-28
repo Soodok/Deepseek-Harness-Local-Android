@@ -73,7 +73,9 @@ void main() {
       await tester.tap(toggle);
       await tester.pumpAndSettle();
       expect(find.textContaining('flutter analyze'), findsOneWidget);
-      expect(find.text('执行命令'), findsNothing);
+      // Compact command rows label themselves with the tool's own name, so the
+      // expanded trace names the command instead of the anonymous 「命令」 row.
+      expect(find.text('执行命令'), findsOneWidget);
       final command = find.byKey(const ValueKey('process-command-shell'));
       await tester.ensureVisible(command);
       await tester.tap(command);
@@ -91,7 +93,18 @@ void main() {
     'tool updates preserve manual expansion and show failure in collapsed summary',
     (tester) async {
       final c = _Controller();
-      c.publish([_command]);
+      // Two tools are what makes a trace collapsible at all: a single tool now
+      // renders its own row instead of hiding behind a group disclosure.
+      c.publish([
+        const ToolRun(
+          id: 'thought',
+          name: '思考过程',
+          messageId: 'turn-1',
+          status: ToolStatus.complete,
+          content: null,
+        ),
+        _command,
+      ]);
       await tester.pumpWidget(
         MaterialApp(
           theme: DshTheme.light(),
@@ -108,6 +121,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('tool-card-shell')), findsOneWidget);
       c.publish([
+        const ToolRun(
+          id: 'thought',
+          name: '思考过程',
+          messageId: 'turn-1',
+          status: ToolStatus.complete,
+          content: null,
+        ),
         _command.copyWith(status: ToolStatus.failed, detail: '真实失败正文'),
       ]);
       await tester.pumpAndSettle();

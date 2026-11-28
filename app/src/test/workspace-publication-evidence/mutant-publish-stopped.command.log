@@ -1,0 +1,21 @@
+compile exit=0
+src\test\workspace-publication-evidence\mutant-publish-stopped\EngineSupervisor.kt:1099:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+
+tests exit=1
+JUnit version 4.13.2
+.........E........
+Time: 0.143
+There was 1 failure:
+1) lateSpawnCannotReplaceNewGenerationScopeAndStoppedPublicationIsRejected(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: publication during stopping must be ignored expected:<NativeWorkspaceScope(domain=storage-b, generation=boot-B)> but was:<NativeWorkspaceScope(domain=must-not-publish, generation=boot-B)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.lateSpawnCannotReplaceNewGenerationScopeAndStoppedPublicationIsRejected(NativeWorkspacePublicationTest.kt:177)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+
+

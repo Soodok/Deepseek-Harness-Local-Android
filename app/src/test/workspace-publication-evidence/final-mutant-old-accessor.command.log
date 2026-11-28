@@ -1,0 +1,59 @@
+compile exit=0
+src\test\workspace-publication-evidence\final-mutant-old-accessor\EngineSupervisor.kt:1096:29: warning: the value 'false' assigned to 'var pluginRecoveryRequested: Boolean defined in app.dsh.mobile.engine.EngineSupervisor.supervisionLoop' is never used
+                            pluginRecoveryRequested = false
+                            ^
+
+tests exit=1
+JUnit version 4.13.2
+.....E...E...E..E.E.E.E.
+Time: 0.139
+There were 7 failures:
+1) stoppedMissingExitedOrMaintenanceHostHasNoScope(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: expected null, but was:<NativeWorkspaceScope(domain=storage-a, generation=boot-A)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.stoppedMissingExitedOrMaintenanceHostHasNoScope(NativeWorkspacePublicationTest.kt:121)
+2) readyARejectsNewSpawnOwnershipBeforeBBecomesReady(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: expected null, but was:<NativeWorkspaceScope(domain=storage-a, generation=boot-A)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.readyARejectsNewSpawnOwnershipBeforeBBecomesReady(NativeWorkspacePublicationTest.kt:96)
+3) missingScopeOwnerOrLoadableUrlFailsClosed(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: expected null, but was:<NativeWorkspaceScope(domain=storage-a, generation=boot-A)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.missingScopeOwnerOrLoadableUrlFailsClosed(NativeWorkspacePublicationTest.kt:127)
+4) absentOrBlankReadyIdentityIsNeverInferredFromTheUrl(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: missing identity: null safe=false expected null, but was:<NativeWorkspaceScope(domain=storage-a, generation=boot-A)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.absentOrBlankReadyIdentityIsNeverInferredFromTheUrl(NativeWorkspacePublicationTest.kt:105)
+5) readyARejectsMismatchingScopeEvenInTheSameStorageDomain(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: boot-A must not authorize boot-B in storage-a expected null, but was:<NativeWorkspaceScope(domain=storage-a, generation=boot-B)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.readyARejectsMismatchingScopeEvenInTheSameStorageDomain(NativeWorkspacePublicationTest.kt:89)
+6) processReadAndReadyScopeSelectionShareTheProductionPublicationLock(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: accessor must block on the actual publication lock expected:<BLOCKED> but was:<TERMINATED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.processReadAndReadyScopeSelectionShareTheProductionPublicationLock(NativeWorkspacePublicationTest.kt:152)
+7) readyReadCannotAuthorizeStartingScopePublishedDuringThatRead(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: A readiness must never expose starting B in storage-a: NativeWorkspaceScope(domain=storage-a, generation=boot-B)
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.readyReadCannotAuthorizeStartingScopePublishedDuringThatRead(NativeWorkspacePublicationTest.kt:239)
+
+FAILURES!!!
+Tests run: 17,  Failures: 7
+
+

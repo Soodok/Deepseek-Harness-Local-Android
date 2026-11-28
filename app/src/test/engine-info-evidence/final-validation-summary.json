@@ -1,0 +1,167 @@
+{
+  "scope": "offline cached Kotlin/JVM only; no Android Activity, real MethodChannel, Gradle, Flutter, ADB, emulator, browser, network, preference write or session/create execution",
+  "results": [
+    {
+      "name": "final-mutant-deny-all",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-deny-all",
+        "deny-all"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 12",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-deny-all/receipt.json"
+    },
+    {
+      "name": "final-mutant-scope-required",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-scope-required",
+        "scope-required"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 3",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-scope-required/receipt.json"
+    },
+    {
+      "name": "final-mutant-snapshot-unlocked",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-snapshot-unlocked",
+        "snapshot-unlocked"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 1",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-snapshot-unlocked/receipt.json"
+    },
+    {
+      "name": "final-mutant-state-reread",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-state-reread",
+        "state-reread"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 4",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-state-reread/receipt.json"
+    },
+    {
+      "name": "final-mutant-scope-generation",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-scope-generation",
+        "scope-generation"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 1",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-scope-generation/receipt.json"
+    },
+    {
+      "name": "final-mutant-owner-bypass",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-owner-bypass",
+        "owner-bypass"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 1",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-owner-bypass/receipt.json"
+    },
+    {
+      "name": "final-mutant-safe-denied",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-safe-denied",
+        "safe-denied"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 8",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-safe-denied/receipt.json"
+    },
+    {
+      "name": "final-mutant-bridge-available-reread",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-bridge-available-reread",
+        "bridge-available-reread"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 4",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-bridge-available-reread/receipt.json"
+    },
+    {
+      "name": "final-mutant-bridge-state-reread",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-bridge-state-reread",
+        "bridge-state-reread"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 4",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-bridge-state-reread/receipt.json"
+    },
+    {
+      "name": "final-mutant-bridge-old",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-mutant-bridge-old",
+        "bridge-old"
+      ],
+      "compile": 0,
+      "tests": 1,
+      "expected": true,
+      "summary": "Tests run: 44,  Failures: 4",
+      "receipt": "app/src/test/engine-info-evidence/final-mutant-bridge-old/receipt.json"
+    },
+    {
+      "name": "final-green",
+      "command": [
+        "app/src/test/engine-info-offline.mjs",
+        "final-green"
+      ],
+      "compile": 0,
+      "tests": 0,
+      "expected": true,
+      "summary": "OK (44 tests)",
+      "receipt": "app/src/test/engine-info-evidence/final-green/receipt.json"
+    }
+  ],
+  "supervisorOutsidePatchUnchanged": true,
+  "activityOutsideEngineInfoUnchanged": true,
+  "fingerprints": [
+    {
+      "path": "app/src/main/java/app/dsh/mobile/engine/EngineSupervisor.kt",
+      "sha256": "de70991a1807330e220b31efd5fc110da4c343214e43e56a25e0635bd032e389"
+    },
+    {
+      "path": "app/src/main/java/app/dsh/mobile/NativeChatActivity.kt",
+      "sha256": "8c58c1a93470a58c2b5bf57217c2089db7a38dbfa70e8a442f0a9ac64c0ae5cb"
+    },
+    {
+      "path": "app/src/test/java/app/dsh/mobile/engine/NativeHostInfoSnapshotTest.kt",
+      "sha256": "335423f947574503db23bb86296493b3c406a9e777627a6bd6a7aa14f85b4982"
+    },
+    {
+      "path": "app/src/test/engine-info-offline.mjs",
+      "sha256": "dd9e04b6a1d1dc0e170504deff73422d5eafd897a3000ccdc69b47b9e018b510"
+    }
+  ]
+}

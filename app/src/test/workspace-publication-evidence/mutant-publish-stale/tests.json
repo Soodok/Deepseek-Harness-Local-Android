@@ -1,0 +1,19 @@
+{
+  "executable": "C:/Users/Qt/.jwmv/candidates/java/17.35-tem/bin/java.exe",
+  "args": [
+    "-XX:-UsePerfData",
+    "-Dfile.encoding=UTF-8",
+    "-Djava.io.tmpdir=E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-publish-stale",
+    "-Dworkspace.supervisor.source=E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-publish-stale\\EngineSupervisor.kt",
+    "-cp",
+    "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-publish-stale\\tests.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/1.9.24/9928532f12c66ad816a625b3f9984f8368ca6d2b/kotlin-stdlib-1.9.24.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-script-runtime/1.9.24/96771497da90fbc5af1c90fce148db2595a62502/kotlin-script-runtime-1.9.24.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-reflect/1.6.10/1cbe9c92c12a94eea200d23c2bbaedaf3daf5132/kotlin-reflect-1.6.10.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.jetbrains.intellij.deps/trove4j/1.0.20200330/3afb14d5f9ceb459d724e907a21145e8ff394f02/trove4j-1.0.20200330.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.jetbrains/annotations/13.0/919f0dfe192fb4e063e7dacadee7f8bb9a2672a9/annotations-13.0.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/junit/junit/4.13.2/8ac9e16d933b6fb43bc7f576336b8f4d7eb5ba12/junit-4.13.2.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.hamcrest/hamcrest-core/1.3/42a25dc3219429f0e5d060061f71acb49bf010a0/hamcrest-core-1.3.jar;C:/Users/Qt/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.8.1/bb0e192bd7c2b6b8217440d36e9758e377e450/kotlinx-coroutines-core-jvm-1.8.1.jar;E:\\tmp\\wt-flutter-native-chat\\app\\build\\intermediates\\built_in_kotlinc\\debug\\compileDebugKotlin\\classes;E:\\tmp\\wt-flutter-native-chat\\app\\build\\intermediates\\javac\\debug\\compileDebugJavaWithJavac\\classes;E:\\tmp\\wt-flutter-native-chat\\app\\build\\intermediates\\compile_and_runtime_r_class_jar\\debug\\processDebugResources\\R.jar;E:/Android/Sdk/platforms/android-36/android.jar",
+    "org.junit.runner.JUnitCore",
+    "app.dsh.mobile.engine.NativeWorkspaceScopeTest",
+    "app.dsh.mobile.engine.NativeWorkspacePublicationTest"
+  ],
+  "exitCode": 1,
+  "signal": null,
+  "error": null,
+  "stdout": "JUnit version 4.13.2\r\n.........E........\r\nTime: 0.136\r\nThere was 1 failure:\r\n1) lateSpawnCannotReplaceNewGenerationScopeAndStoppedPublicationIsRejected(app.dsh.mobile.engine.NativeWorkspacePublicationTest)\r\njava.lang.AssertionError: late A must not erase B expected:<NativeWorkspaceScope(domain=storage-b, generation=boot-B)> but was:<null>\r\n\tat org.junit.Assert.fail(Assert.java:89)\r\n\tat org.junit.Assert.failNotEquals(Assert.java:835)\r\n\tat org.junit.Assert.assertEquals(Assert.java:120)\r\n\tat app.dsh.mobile.engine.NativeWorkspacePublicationTest.lateSpawnCannotReplaceNewGenerationScopeAndStoppedPublicationIsRejected(NativeWorkspacePublicationTest.kt:169)\r\n\r\nFAILURES!!!\r\nTests run: 17,  Failures: 1\r\n\r\n",
+  "stderr": ""
+}

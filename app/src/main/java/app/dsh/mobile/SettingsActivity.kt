@@ -28,6 +28,7 @@ import app.dsh.mobile.engine.RemoteAccess
 import app.dsh.mobile.engine.RemoteAccessServer
 import app.dsh.mobile.update.AppUpdateBus
 import app.dsh.mobile.update.Phase
+import kotlin.math.roundToInt
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -59,6 +60,7 @@ class SettingsActivity : ThemedActivity() {
         // v1.5.x：大屏跟随偏好、手机锁竖屏；用户可在外观页打开「设置页跟随屏幕方向」
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings)
+        applyDshCardStyles(this)
 
         // v1.6.0-beta.6：双端同步入口按 [PEERSYNC_UI_ENABLED] 决定是否出现。
         // 必须赶在 applyResponsiveLayout() 之前 —— 它会调 sections() 把「卡片内行数」
@@ -988,12 +990,19 @@ class SettingsActivity : ThemedActivity() {
                             gridCell(row, rowHasControl)
                             val cell = com.google.android.material.card.MaterialCardView(this).apply {
                                 layoutParams = row.layoutParams
-                                setCardBackgroundColor(com.google.android.material.color.MaterialColors.getColor(
-                                    this, com.google.android.material.R.attr.colorSurfaceContainer,
-                                ))
-                                radius = resources.getDimension(R.dimen.md3_card_radius)
+                                setCardBackgroundColor(dshColor(R.attr.dshSurface, R.color.surface))
+                                radius = StylePref.dimension(
+                                    this@SettingsActivity,
+                                    R.attr.dshGridCellRadius,
+                                    dp(16).toFloat(),
+                                )
                                 cardElevation = 0f
-                                strokeWidth = 0
+                                strokeWidth = StylePref.dimension(
+                                    this@SettingsActivity,
+                                    R.attr.dshCardStroke,
+                                    dp(1).toFloat(),
+                                ).roundToInt().coerceAtLeast(0)
+                                setStrokeColor(dshColor(R.attr.dshStroke, R.color.stroke))
                             }
                             row.layoutParams = android.widget.FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,

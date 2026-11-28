@@ -7,7 +7,6 @@ import 'package:dsh_native_chat/src/state/settings_controller.dart';
 import 'package:dsh_native_chat/src/transport/dsh_rpc_connection.dart';
 import 'package:dsh_native_chat/src/transport/native_session_transport.dart';
 import 'package:dsh_native_chat/src/ui/chat_shell.dart';
-import 'package:dsh_native_chat/src/ui/native_workspace_picker.dart';
 import 'package:dsh_native_chat/src/ui/overflow_title.dart';
 import 'package:dsh_native_chat/src/ui/settings/settings_page.dart';
 import 'package:dsh_native_chat/src/ui/settings/settings_scope.dart';
@@ -24,6 +23,7 @@ class _Rpc extends DshRpcConnection {
   final streams = <StreamController<Map<String, Object?>>>[];
   Future<Object?>? catalog;
   Future<Object?>? creation;
+  Object? workspaceRegistration;
   List<Map<String, Object?>>? workspaceItems;
   StreamController<Map<String, Object?>>? workspaceStream;
   StreamController<Map<String, Object?>>? sessionStream;
@@ -70,6 +70,8 @@ class _Rpc extends DshRpcConnection {
         return selectedPreset == null
             ? args['agentPreset']
             : await selectedPreset!;
+      case 'workspace/create':
+        return workspaceRegistration;
       case 'session/create':
         if (failCreation) {
           throw const DshRpcException(
@@ -242,14 +244,36 @@ const _alphaRequest = {
 const _bravoRequest = {
   'request': {'workspaceId': 'bravo'},
 };
+const _alphaTarget = {'workspaceId': 'alpha', 'path': '/engine/alpha'};
+const _bravoTarget = {'workspaceId': 'bravo', 'path': '/engine/bravo'};
+const _homeTarget = {'home': true};
+const _localDomain = 'local-native-domain';
+const _directoryChannel = MethodChannel('app.dsh.mobile/native_workspace');
+final _preferenceRetry = find.byKey(
+  const ValueKey('workspace-preference-retry'),
+);
+bool _validatesAlpha(MethodCall call) =>
+    call.method == 'validateRegisteredWorkspaceDirectory' &&
+    (call.arguments as Map)['path'] == '/engine/alpha';
+
 Future<void> _chooseWorkspace(WidgetTester tester, String label) async {
   final capsule = find.byKey(const ValueKey('welcome-workspace-capsule'));
   await tester.tap(capsule);
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 350));
-  await tester.tap(find.text(label));
+  await tester.tap(
+    find.descendant(
+      of: find.byKey(const ValueKey('welcome-workspace-glass')),
+      matching: find.text(label),
+    ),
+  );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 350));
+  await _settle(tester);
+}
+
+Future<void> _bootstrapCreate(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('engine-bootstrap-retry')));
   await _settle(tester);
 }
 
@@ -276,21 +300,410 @@ void main() {
   const nativeChannel = MethodChannel('app.dsh.mobile/native_chat');
   final nativeMessenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  late _WorkspacePrefs defaultPrefs;
+  final validations = <Map<Object?, Object?>>[];
   setUp(() {
+    defaultPrefs = _WorkspacePrefs();
     nativeMessenger.setMockMethodCallHandler(
       nativeChannel,
-      (call) async => call.method == 'readDefaultWorkspace'
-          ? {
-              'domain': 'local-native-domain',
-              'generation': 'boot-1',
-              'target': null,
-            }
-          : null,
+      defaultPrefs.handle,
     );
+    validations.clear();
+    nativeMessenger.setMockMethodCallHandler(_directoryChannel, (call) async {
+      if (call.method != 'validateRegisteredWorkspaceDirectory') return null;
+      validations.add(Map<Object?, Object?>.from(call.arguments as Map));
+      return true;
+    });
   });
   tearDown(() {
     nativeMessenger.setMockMethodCallHandler(nativeChannel, null);
+    nativeMessenger.setMockMethodCallHandler(_directoryChannel, null);
   });
+
+  for (final mismatch in [false, true]) {
+    testWidgets(
+      mismatch ? 'directory registration rejects a different Host path' : 'confirmed directory registration persists the Host group for new conversations',
+      (tester) async {
+        _workspacePhone(tester);
+        const directoryChannel = MethodChannel(
+          'app.dsh.mobile/native_workspace',
+        );
+        const uri =
+            'content://com.android.externalstorage.documents/tree/primary%3ADocuments';
+        const path = '/storage/emulated/0/Documents';
+        final methods = <String>[];
+        nativeMessenger.setMockMethodCallHandler(directoryChannel, (
+          call,
+        ) async {
+          if (_validatesAlpha(call)) return true;
+          methods.add(call.method);
+          switch (call.method) {
+            case 'pickSharedWorkspace':
+            case 'validateWorkspaceDirectory':
+              return {
+                'domain': 'local-native-domain',
+                'generation': 'boot-1',
+                'kind': 'shared',
+                'name': 'Documents',
+                'path': path,
+                'uri': uri,
+              };
+            case 'rememberWorkspaceDirectory':
+            case 'validateRegisteredWorkspaceDirectory':
+              return true;
+            default:
+              return null;
+          }
+        });
+        addTearDown(
+          () =>
+              nativeMessenger.setMockMethodCallHandler(directoryChannel, null),
+        );
+        final workspace = _workspace('documents', 'Documents', []);
+        workspace['path'] = mismatch ? '/engine/other' : path;
+        final catalog = _Rpc()
+          ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
+          ..workspaceRegistration = {'created': true, 'workspace': workspace}
+          ..catalog = Future.value({
+            'items': [_row('initial', blank: true)],
+          });
+        await tester.pumpWidget(
+          MaterialApp(
+            home: EngineHome(
+              host: _host('directory-registration'),
+              createRpc: (_) => catalog,
+            ),
+          ),
+        );
+        await _settle(tester);
+        await _chooseWorkspace(tester, 'Alpha');
+        await _chooseWorkspace(tester, '选择手机共享目录');
+        expect(
+          catalog.calls
+              .where((c) => c.endpoint == 'workspace/create')
+              .map((c) => c.args),
+          [
+            {
+              'request': {'path': path},
+            },
+          ],
+        );
+        expect(_transport(tester).sessionId, 'initial');
+        expect(_workspaceRequests(catalog), isEmpty);
+        expect(find.text('工作区：Alpha'), findsOneWidget);
+        if (mismatch) {
+          expect(defaultPrefs.disk[_localDomain], _alphaTarget);
+          expect(find.textContaining('工作区目录不可用'), findsOneWidget);
+          expect(methods, [
+            'pickSharedWorkspace',
+            'validateWorkspaceDirectory',
+          ]);
+        } else {
+          catalog.workspaceItems = [
+            _workspace('alpha', 'Alpha', []),
+            workspace,
+          ];
+          catalog.emitWorkspaceBaseline();
+          await _settle(tester);
+          expect(find.text('工作区：Documents'), findsOneWidget);
+          expect(defaultPrefs.disk[_localDomain], {
+            'workspaceId': 'documents',
+            'path': path,
+          });
+          expect(_workspaceRequests(catalog), isEmpty);
+          catalog.creation = Future.value({'sessionId': 'in-documents'});
+          await _ordinaryWorkspaceCreate(tester);
+          expect(_transport(tester).sessionId, 'in-documents');
+          expect(_workspaceRequests(catalog), [
+            {
+              'request': {'workspaceId': 'documents'},
+            },
+          ]);
+          expect(methods, [
+            'pickSharedWorkspace',
+            'validateWorkspaceDirectory',
+            'rememberWorkspaceDirectory',
+            'validateRegisteredWorkspaceDirectory',
+          ]);
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
+  testWidgets(
+    'directory authorization waits for a post-registration workspace feed frame',
+    (tester) async {
+      _workspacePhone(tester);
+      const directoryChannel = MethodChannel('app.dsh.mobile/native_workspace');
+      const uri =
+          'content://com.android.externalstorage.documents/tree/primary%3ADocuments';
+      const path = '/storage/emulated/0/Documents';
+      final methods = <String>[];
+      final remembered = Completer<bool>();
+      nativeMessenger.setMockMethodCallHandler(directoryChannel, (call) async {
+        if (_validatesAlpha(call)) return true;
+        methods.add(call.method);
+        switch (call.method) {
+          case 'pickSharedWorkspace':
+          case 'validateWorkspaceDirectory':
+            return {
+              'domain': 'local-native-domain',
+              'generation': 'boot-1',
+              'kind': 'shared',
+              'name': 'Documents',
+              'path': path,
+              'uri': uri,
+            };
+          case 'rememberWorkspaceDirectory':
+            return remembered.future;
+          default:
+            return null;
+        }
+      });
+      addTearDown(
+        () => nativeMessenger.setMockMethodCallHandler(directoryChannel, null),
+      );
+      final alpha = _workspace('alpha', 'Alpha', []);
+      final documents = _workspace('documents', 'Documents', []);
+      documents['path'] = path;
+      final catalog = _Rpc()
+        ..workspaceItems = [alpha, documents]
+        ..workspaceRegistration = {'created': false, 'workspace': documents}
+        ..catalog = Future.value({
+          'items': [_row('initial', blank: true)],
+        });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(
+            host: _host('directory-feed-confirm'),
+            createRpc: (_) => catalog,
+          ),
+        ),
+      );
+      await _settle(tester);
+      await _chooseWorkspace(tester, 'Alpha');
+      catalog.holdWorkspaceBaseline = true;
+      await _chooseWorkspace(tester, '选择手机共享目录');
+
+      expect(
+        catalog.calls.where((call) => call.endpoint == 'workspace/follow'),
+        hasLength(2),
+      );
+      expect(methods, ['pickSharedWorkspace', 'validateWorkspaceDirectory']);
+      expect(find.text('工作区：Alpha'), findsOneWidget);
+      expect(defaultPrefs.writes.single['target'], _alphaTarget);
+
+      catalog.holdWorkspaceBaseline = false;
+      catalog.emitWorkspaceBaseline();
+      await _settle(tester);
+      expect(methods, [
+        'pickSharedWorkspace',
+        'validateWorkspaceDirectory',
+        'rememberWorkspaceDirectory',
+      ]);
+      expect(defaultPrefs.writes.single['target'], _alphaTarget);
+      expect(_workspaceRequests(catalog), isEmpty);
+      remembered.complete(true);
+      await _settle(tester);
+      expect(defaultPrefs.writes.map((write) => write['target']), [
+        _alphaTarget,
+        {'workspaceId': 'documents', 'path': path},
+      ]);
+      expect(find.text('工作区：Documents'), findsOneWidget);
+      expect(_workspaceRequests(catalog), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('cancelled directory selection retains the previous target', (
+    tester,
+  ) async {
+    _workspacePhone(tester);
+    const directoryChannel = MethodChannel('app.dsh.mobile/native_workspace');
+    final methods = <String>[];
+    nativeMessenger.setMockMethodCallHandler(directoryChannel, (call) async {
+      if (_validatesAlpha(call)) return true;
+      methods.add(call.method);
+      return null;
+    });
+    addTearDown(
+      () => nativeMessenger.setMockMethodCallHandler(directoryChannel, null),
+    );
+    final catalog = _Rpc()
+      ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
+      ..catalog = Future.value({
+        'items': [_row('initial', blank: true)],
+      });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EngineHome(
+          host: _host('directory-cancel'),
+          createRpc: (_) => catalog,
+        ),
+      ),
+    );
+    await _settle(tester);
+    await _chooseWorkspace(tester, 'Alpha');
+    await _chooseWorkspace(tester, '选择手机共享目录');
+
+    expect(methods, ['pickSharedWorkspace']);
+    expect(
+      catalog.calls.where((call) => call.endpoint == 'workspace/create'),
+      isEmpty,
+    );
+    expect(_workspaceRequests(catalog), isEmpty);
+    expect(find.text('工作区：Alpha'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'recovery picker registers a directory without opening until retry',
+    (tester) async {
+      _workspacePhone(tester);
+      const directoryChannel = MethodChannel('app.dsh.mobile/native_workspace');
+      const uri =
+          'content://com.android.externalstorage.documents/tree/primary%3ADocuments';
+      const path = '/storage/emulated/0/Documents';
+      final methods = <String>[];
+      nativeMessenger.setMockMethodCallHandler(directoryChannel, (call) async {
+        methods.add(call.method);
+        switch (call.method) {
+          case 'pickSharedWorkspace':
+          case 'validateWorkspaceDirectory':
+            return {
+              'domain': 'local-native-domain',
+              'generation': 'boot-1',
+              'kind': 'shared',
+              'name': 'Documents',
+              'path': path,
+              'uri': uri,
+            };
+          case 'rememberWorkspaceDirectory':
+          case 'validateRegisteredWorkspaceDirectory':
+            return true;
+          default:
+            return null;
+        }
+      });
+      addTearDown(
+        () => nativeMessenger.setMockMethodCallHandler(directoryChannel, null),
+      );
+      final workspace = _workspace('documents', 'Documents', []);
+      workspace['path'] = path;
+      final catalog = _Rpc()
+        ..failCreation = true
+        ..workspaceRegistration = {'created': true, 'workspace': workspace};
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(
+            host: _host('directory-recovery'),
+            createRpc: (_) => catalog,
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('engine-bootstrap-retry')),
+        findsOneWidget,
+      );
+      expect(_workspaceRequests(catalog), [_homeRequest]);
+
+      await _chooseWorkspace(tester, '选择手机共享目录');
+      catalog.workspaceItems = [workspace];
+      catalog.emitWorkspaceBaseline();
+      await _settle(tester);
+      expect(find.text('工作区：Documents'), findsOneWidget);
+      expect(_workspaceRequests(catalog), [_homeRequest]);
+      expect(methods, [
+        'pickSharedWorkspace',
+        'validateWorkspaceDirectory',
+        'rememberWorkspaceDirectory',
+      ]);
+
+      catalog.failCreation = false;
+      catalog.creation = Future.value({'sessionId': 'recovery-directory'});
+      await tester.tap(find.byKey(const ValueKey('engine-bootstrap-retry')));
+      await _settle(tester);
+      expect(_transport(tester).sessionId, 'recovery-directory');
+      expect(_workspaceRequests(catalog), [
+        _homeRequest,
+        {
+          'request': {'workspaceId': 'documents'},
+        },
+      ]);
+      expect(methods.last, 'validateRegisteredWorkspaceDirectory');
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'invalid registered-directory authorization blocks session creation',
+    (tester) async {
+      _workspacePhone(tester);
+      const directoryChannel = MethodChannel('app.dsh.mobile/native_workspace');
+      const uri =
+          'content://com.android.externalstorage.documents/tree/primary%3ADocuments';
+      const path = '/storage/emulated/0/Documents';
+      final methods = <String>[];
+      nativeMessenger.setMockMethodCallHandler(directoryChannel, (call) async {
+        if (_validatesAlpha(call)) return true;
+        methods.add(call.method);
+        switch (call.method) {
+          case 'pickSharedWorkspace':
+          case 'validateWorkspaceDirectory':
+            return {
+              'domain': 'local-native-domain',
+              'generation': 'boot-1',
+              'kind': 'shared',
+              'name': 'Documents',
+              'path': path,
+              'uri': uri,
+            };
+          case 'rememberWorkspaceDirectory':
+            return true;
+          case 'validateRegisteredWorkspaceDirectory':
+            return false;
+          default:
+            return null;
+        }
+      });
+      addTearDown(
+        () => nativeMessenger.setMockMethodCallHandler(directoryChannel, null),
+      );
+      final workspace = _workspace('documents', 'Documents', []);
+      workspace['path'] = path;
+      final catalog = _Rpc()
+        ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
+        ..workspaceRegistration = {'created': true, 'workspace': workspace}
+        ..catalog = Future.value({
+          'items': [_row('initial', blank: true)],
+        });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(
+            host: _host('directory-revoked'),
+            createRpc: (_) => catalog,
+          ),
+        ),
+      );
+      await _settle(tester);
+      await _chooseWorkspace(tester, 'Alpha');
+      await _chooseWorkspace(tester, '选择手机共享目录');
+      catalog.workspaceItems = [_workspace('alpha', 'Alpha', []), workspace];
+      catalog.emitWorkspaceBaseline();
+      await _settle(tester);
+      expect(find.text('工作区：Documents'), findsOneWidget);
+
+      await _ordinaryWorkspaceCreate(tester);
+      expect(methods.last, 'validateRegisteredWorkspaceDirectory');
+      expect(_workspaceRequests(catalog), isEmpty);
+      expect(find.textContaining('工作区目录已失效'), findsOneWidget);
+      expect(find.text('工作区：Documents'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets(
     'workspace feed orders groups and rows and creates in that group',
@@ -384,9 +797,8 @@ void main() {
         catalog.calls.where((c) => c.endpoint == 'workspace/follow'),
         hasLength(1),
       );
-      tester
-          .widget<NativeWorkspacePicker>(find.byType(NativeWorkspacePicker))
-          .onRetry!();
+      await tester.pump();
+      await tester.tap(_preferenceRetry);
       await tester.pump();
       expect(
         catalog.calls.where((c) => c.endpoint == 'workspace/follow'),
@@ -424,6 +836,8 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('workspace-once-home')));
       await _settle(tester);
+      expect(prefs.writes, isEmpty);
+      expect(prefs.clears, isEmpty);
       expect(_workspaceRequests(catalog), [_homeRequest]);
       expect(_transport(tester).sessionId, 'pending-explicit-home');
       wait.complete({
@@ -460,11 +874,13 @@ void main() {
       ),
     );
     await _settle(tester);
-    final save = tester
-        .widget<NativeWorkspacePicker>(find.byType(NativeWorkspacePicker))
-        .onSaveDefault;
-    await _chooseWorkspace(tester, '设为默认');
-    if (save != null) await save();
+    await tester.tap(find.byKey(const ValueKey('welcome-workspace-capsule')));
+    await _settle(tester);
+    expect(find.text('Home'), findsOneWidget);
+    for (final oldAction in ['设为默认', '清除默认', '仅本次 Home', '重试读取工作区与默认']) {
+      expect(find.text(oldAction), findsNothing);
+    }
+    await tester.binding.handlePopRoute();
     await _settle(tester);
     expect(
       prefs.writes,
@@ -478,7 +894,7 @@ void main() {
   });
 
   testWidgets(
-    'explicit Home after failed read can save exactly one Home target',
+    'choosing Home after a failed read persists exactly one Home target',
     (tester) async {
       _workspacePhone(tester);
       final prefs = _WorkspacePrefs()..failReads = true;
@@ -496,10 +912,8 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _chooseWorkspace(tester, 'Home');
-      expect(prefs.writes, isEmpty);
       prefs.failReads = false;
-      await _chooseWorkspace(tester, '设为默认');
+      await _chooseWorkspace(tester, 'Home');
       expect(prefs.writes, [
         {
           'domain': 'local-native-domain',
@@ -511,13 +925,13 @@ void main() {
       expect(prefs.disk['local-native-domain'], {'home': true});
       expect(_workspaceRequests(catalog), isEmpty);
       expect(_transport(tester).sessionId, 'existing');
-      expect(find.text('默认工作区已保存并回读确认'), findsOneWidget);
+      expect(find.text('工作区：Home'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
   testWidgets(
-    'normal clear removes only current domain and preserves one-time target and session',
+    'selecting a workspace changes only its domain after readback and keeps the session',
     (tester) async {
       _workspacePhone(tester);
       final prefs = _WorkspacePrefs()
@@ -538,35 +952,39 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: EngineHome(
-            host: _host('clear-default'),
+            host: _host('choose-workspace'),
             createRpc: (_) => catalog,
           ),
         ),
       );
       await _settle(tester);
       final before = _transport(tester);
-      await _chooseWorkspace(tester, 'Bravo');
       final readsBefore = prefs.reads.length;
-      await tester.tap(find.byKey(const ValueKey('welcome-workspace-capsule')));
-      await _settle(tester);
-      expect(find.text('清除默认'), findsOneWidget);
-      await tester.tap(find.text('清除默认'));
-      await _settle(tester);
-      expect(prefs.clears, [
-        {'domain': 'local-native-domain', 'generation': 'boot-1'},
+      final readback = Completer<Object?>();
+      prefs.pendingRead = readback.future;
+      await _chooseWorkspace(tester, 'Bravo');
+      expect(prefs.writes, [
+        {
+          'domain': _localDomain,
+          'generation': 'boot-1',
+          'target': _bravoTarget,
+        },
       ]);
-      expect(prefs.writes, isEmpty);
+      expect(prefs.clears, isEmpty);
       expect(prefs.reads.length, readsBefore + 1);
       expect(prefs.disk, {
+        _localDomain: _bravoTarget,
         'other-domain': {'home': true},
       });
-      expect(find.text('默认工作区未设置，已回读确认'), findsOneWidget);
-      expect(
-        tester
-            .widget<NativeWorkspacePicker>(find.byType(NativeWorkspacePicker))
-            .selected,
-        'bravo',
-      );
+      expect(find.text('工作区：Alpha'), findsOneWidget);
+      expect(_workspaceRequests(catalog), isEmpty);
+      readback.complete({
+        'domain': _localDomain,
+        'generation': 'boot-1',
+        'target': _bravoTarget,
+      });
+      await _settle(tester);
+      expect(find.text('工作区：Bravo'), findsOneWidget);
       expect(identical(_transport(tester), before), isTrue);
       expect(_transport(tester).sessionId, 'existing');
       expect(_workspaceRequests(catalog), isEmpty);
@@ -582,8 +1000,10 @@ void main() {
     'other-domain',
     'read-error',
     'missing-target',
+    'null-target',
+    'wrong-path',
   ]) {
-    testWidgets('clear rejects $failure without claiming unset', (
+    testWidgets('selection keeps confirmed Alpha after $failure', (
       tester,
     ) async {
       _workspacePhone(tester);
@@ -595,19 +1015,24 @@ void main() {
         ..disk['other-domain'] = {'home': true};
       nativeMessenger.setMockMethodCallHandler(nativeChannel, prefs.handle);
       final catalog = _Rpc()
-        ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
+        ..workspaceItems = [
+          _workspace('alpha', 'Alpha', []),
+          _workspace('bravo', 'Bravo', []),
+        ]
         ..catalog = Future.value({
           'items': [_row('existing', blank: true)],
         });
       await tester.pumpWidget(
         MaterialApp(
           home: EngineHome(
-            host: _host('clear-failure'),
+            host: _host('selection-failure'),
             createRpc: (_) => catalog,
           ),
         ),
       );
       await _settle(tester);
+      expect(find.text('工作区：Alpha'), findsOneWidget);
+      final readsBefore = prefs.reads.length;
       prefs.failWrites = failure == 'commit';
       prefs.mismatchReadback = failure == 'unchanged';
       prefs.failReads = failure == 'read-error';
@@ -616,6 +1041,8 @@ void main() {
         'old-generation',
         'other-domain',
         'missing-target',
+        'null-target',
+        'wrong-path',
       ].contains(failure)) {
         prefs.forcedReceipt = {
           'domain': failure == 'other-domain'
@@ -623,35 +1050,43 @@ void main() {
               : 'local-native-domain',
           'generation': failure == 'old-generation' ? 'old-boot' : 'boot-1',
           if (failure != 'missing-target')
-            'target': failure == 'Home' ? {'home': true} : null,
+            'target': switch (failure) {
+              'Home' => _homeTarget,
+              'null-target' => null,
+              'wrong-path' => {..._bravoTarget, 'path': '/old/bravo'},
+              _ => _bravoTarget,
+            },
         };
       }
-      await tester.tap(find.byKey(const ValueKey('welcome-workspace-capsule')));
-      await _settle(tester);
-      expect(find.text('清除默认'), findsOneWidget);
-      await tester.tap(find.text('清除默认'));
-      await _settle(tester);
-      expect(prefs.clears, [
-        {'domain': 'local-native-domain', 'generation': 'boot-1'},
+      await _chooseWorkspace(tester, 'Bravo');
+      expect(prefs.writes, [
+        {
+          'domain': _localDomain,
+          'generation': 'boot-1',
+          'target': _bravoTarget,
+        },
       ]);
-      expect(prefs.writes, isEmpty);
-      expect(prefs.disk['other-domain'], {'home': true});
-      expect(find.text('默认工作区未设置，已回读确认'), findsNothing);
-      expect(find.text('默认工作区已保存并回读确认'), findsNothing);
+      expect(prefs.clears, isEmpty);
+      if (failure != 'commit')
+        expect(prefs.reads.length, greaterThan(readsBefore));
+      expect(prefs.disk['other-domain'], _homeTarget);
+      expect(find.text('工作区：Alpha'), findsOneWidget);
+      expect(_preferenceRetry, findsOneWidget);
       expect(_transport(tester).sessionId, 'existing');
       expect(_workspaceRequests(catalog), isEmpty);
       await _ordinaryWorkspaceCreate(tester);
       expect(
         _workspaceRequests(catalog),
-        isEmpty,
-        reason: 'Unconfirmed clear cannot turn unknown into Home',
+        anyOf(isEmpty, equals([_alphaRequest])),
+        reason:
+            'An uncertain readback can block creation or use confirmed Alpha.',
       );
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
 
   testWidgets(
-    'empty list clear stays recoverable and never auto creates a session',
+    'choosing Home in recovery saves it and waits for explicit creation',
     (tester) async {
       _workspacePhone(tester);
       final prefs = _WorkspacePrefs()
@@ -666,33 +1101,25 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: EngineHome(
-            host: _host('empty-clear'),
+            host: _host('empty-select-home'),
             createRpc: (_) => catalog,
           ),
         ),
       );
       await _settle(tester);
       expect(_workspaceRequests(catalog), isEmpty);
-      await _chooseWorkspace(tester, '清除默认');
-      expect(prefs.clears, [
-        {'domain': 'local-native-domain', 'generation': 'boot-1'},
+      await _chooseWorkspace(tester, 'Home');
+      expect(prefs.writes, [
+        {'domain': _localDomain, 'generation': 'boot-1', 'target': _homeTarget},
       ]);
-      expect(prefs.writes, isEmpty);
-      expect(prefs.disk.containsKey('local-native-domain'), isFalse);
+      expect(prefs.clears, isEmpty);
+      expect(prefs.disk[_localDomain], _homeTarget);
       expect(_workspaceRequests(catalog), isEmpty);
       expect(
         find.byKey(const ValueKey('engine-bootstrap-retry')),
         findsOneWidget,
       );
-      expect(find.byKey(const ValueKey('workspace-once-home')), findsOneWidget);
-      expect(
-        tester
-            .widget<NativeWorkspacePicker>(find.byType(NativeWorkspacePicker))
-            .onRetry,
-        isNotNull,
-      );
-      await tester.tap(find.byKey(const ValueKey('workspace-once-home')));
-      await _settle(tester);
+      await _bootstrapCreate(tester);
       expect(_workspaceRequests(catalog), [_homeRequest]);
       expect(_transport(tester).sessionId, 'explicit-recovery');
       await tester.pumpWidget(const SizedBox.shrink());
@@ -700,7 +1127,7 @@ void main() {
   );
 
   testWidgets(
-    'late clear readback from replaced Host cannot claim unset or replace new default',
+    'late selection readback from replaced Host cannot replace the current selection',
     (tester) async {
       _workspacePhone(tester);
       final prefs = _WorkspacePrefs()
@@ -722,7 +1149,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: EngineHome(
-            host: _host('old-clear-host'),
+            host: _host('old-selection-host'),
             createRpc: (_) => old,
           ),
         ),
@@ -730,9 +1157,8 @@ void main() {
       await _settle(tester);
       final wait = Completer<Object?>();
       prefs.pendingRead = wait.future;
-      await _chooseWorkspace(tester, '清除默认');
-      expect(prefs.clears.length, 1);
-      expect(find.text('默认工作区未设置，已回读确认'), findsNothing);
+      await _chooseWorkspace(tester, 'Home');
+      expect(prefs.writes.single['target'], _homeTarget);
       prefs.pendingRead = null;
       prefs.disk['local-native-domain'] = {
         'workspaceId': 'bravo',
@@ -741,7 +1167,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: EngineHome(
-            host: _host('new-clear-host', generation: 'boot-2'),
+            host: _host('new-selection-host', generation: 'boot-2'),
             createRpc: (_) => next,
           ),
         ),
@@ -750,22 +1176,16 @@ void main() {
       wait.complete({
         'domain': 'local-native-domain',
         'generation': 'boot-1',
-        'target': null,
+        'target': _homeTarget,
       });
       await _settle(tester);
-      expect(find.text('默认工作区未设置，已回读确认'), findsNothing);
-      expect(
-        tester
-            .widget<NativeWorkspacePicker>(find.byType(NativeWorkspacePicker))
-            .selected,
-        'bravo',
-      );
+      expect(find.text('工作区：Bravo'), findsOneWidget);
       expect(_transport(tester).sessionId, 'new-host-session');
       expect(_workspaceRequests(old), isEmpty);
       expect(_workspaceRequests(next), isEmpty);
-      expect(prefs.writes, isEmpty);
-      expect(prefs.clears, [
-        {'domain': 'local-native-domain', 'generation': 'boot-1'},
+      expect(prefs.clears, isEmpty);
+      expect(prefs.writes, [
+        {'domain': _localDomain, 'generation': 'boot-1', 'target': _homeTarget},
       ]);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -794,7 +1214,6 @@ void main() {
       await _chooseWorkspace(tester, 'Alpha');
       expect(_workspaceRequests(catalog), isEmpty);
       expect(_transport(tester).sessionId, 'existing');
-      await _chooseWorkspace(tester, '设为默认');
       expect(prefs.writes, [
         {
           'domain': 'local-native-domain',
@@ -802,7 +1221,8 @@ void main() {
           'target': {'workspaceId': 'alpha', 'path': '/engine/alpha'},
         },
       ]);
-      expect(find.text('默认工作区已保存并回读确认'), findsOneWidget);
+      expect(find.text('工作区：Alpha'), findsOneWidget);
+      expect(validations.map((c) => c['path']), ['/engine/alpha']);
       await tester.pumpWidget(const SizedBox.shrink());
       final cold = _Rpc()
         ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
@@ -821,13 +1241,21 @@ void main() {
       cold.creation = Future.value({'sessionId': 'cold-second'});
       await _ordinaryWorkspaceCreate(tester);
       expect(_workspaceRequests(cold), [_alphaRequest, _alphaRequest]);
+      expect(validations, [
+        for (final generation in ['boot-1', 'boot-2', 'boot-2'])
+          {
+            'domain': _localDomain,
+            'generation': generation,
+            'path': '/engine/alpha',
+          },
+      ]);
       expect(_transport(tester).sessionId, 'cold-second');
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
   testWidgets(
-    'one-time Home failure retains override while explicit groups never consume it',
+    'selected Home persists through drawer group creation, failure and retry',
     (tester) async {
       _workspacePhone(tester);
       final prefs = _WorkspacePrefs()
@@ -854,6 +1282,8 @@ void main() {
       );
       await _settle(tester);
       await _chooseWorkspace(tester, 'Home');
+      expect(_workspaceRequests(catalog), isEmpty);
+      expect(prefs.disk[_localDomain], _homeTarget);
       catalog.creation = Future.value({'sessionId': 'group-bravo'});
       await _groupWorkspaceCreate(tester, 'bravo');
       expect(_transport(tester).sessionId, 'group-bravo');
@@ -862,27 +1292,26 @@ void main() {
       expect(_workspaceRequests(catalog), [_bravoRequest, _homeRequest]);
       expect(_transport(tester).sessionId, 'group-bravo');
       catalog.failCreation = false;
-      catalog.creation = Future.value({'sessionId': 'once-home'});
+      catalog.creation = Future.value({'sessionId': 'retried-home'});
       await _ordinaryWorkspaceCreate(tester);
-      expect(_transport(tester).sessionId, 'once-home');
-      catalog.creation = Future.value({'sessionId': 'back-to-default'});
+      expect(_transport(tester).sessionId, 'retried-home');
+      catalog.creation = Future.value({'sessionId': 'home-again'});
       await _ordinaryWorkspaceCreate(tester);
       expect(_workspaceRequests(catalog), [
         _bravoRequest,
         _homeRequest,
         _homeRequest,
-        _alphaRequest,
+        _homeRequest,
       ]);
-      expect(prefs.disk['local-native-domain'], {
-        'workspaceId': 'alpha',
-        'path': '/engine/alpha',
-      });
+      expect(prefs.disk[_localDomain], _homeTarget);
+      expect(prefs.writes, hasLength(1));
+      expect(validations.map((c) => c['path']), ['/engine/bravo']);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
   testWidgets(
-    'explicit drawer Home exceeds workspace override without consuming it',
+    'explicit drawer Home leaves the selected workspace for subsequent creations',
     (tester) async {
       _workspacePhone(tester);
       final prefs = _WorkspacePrefs()
@@ -909,18 +1338,24 @@ void main() {
       );
       await _settle(tester);
       await _chooseWorkspace(tester, 'Alpha');
+      expect(_workspaceRequests(catalog), isEmpty);
       catalog.creation = Future.value({'sessionId': 'explicit-home'});
       await _groupWorkspaceCreate(tester, 'ungrouped');
       expect(_workspaceRequests(catalog), [_homeRequest]);
       catalog.creation = Future.value({'sessionId': 'retained-alpha'});
       await _ordinaryWorkspaceCreate(tester);
-      catalog.creation = Future.value({'sessionId': 'default-bravo'});
+      catalog.creation = Future.value({'sessionId': 'second-alpha'});
       await _ordinaryWorkspaceCreate(tester);
       expect(_workspaceRequests(catalog), [
         _homeRequest,
         _alphaRequest,
-        _bravoRequest,
+        _alphaRequest,
       ]);
+      expect(prefs.disk[_localDomain], _alphaTarget);
+      expect(
+        validations.map((c) => c['path']),
+        List.filled(3, '/engine/alpha'),
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -963,7 +1398,10 @@ void main() {
       await tester.tap(find.byTooltip('关闭会话抽屉'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
-      await _chooseWorkspace(tester, '重试读取工作区与默认');
+      await tester.tap(_preferenceRetry);
+      await _settle(tester);
+      expect(prefs.writes, isEmpty);
+      expect(_workspaceRequests(catalog), [_homeRequest]);
       catalog.creation = Future.value({'sessionId': 'retried-home'});
       await _ordinaryWorkspaceCreate(tester);
       expect(_workspaceRequests(catalog), [_homeRequest, _homeRequest]);
@@ -1025,12 +1463,11 @@ void main() {
       await _settle(tester);
       expect(_workspaceRequests(catalog), isEmpty);
       await _chooseWorkspace(tester, 'Alpha');
-      await _settle(tester);
+      expect(prefs.disk[_localDomain], _alphaTarget);
+      expect(_workspaceRequests(catalog), isEmpty);
+      await _bootstrapCreate(tester);
       expect(_workspaceRequests(catalog), [_alphaRequest]);
       expect(_transport(tester).sessionId, 'reselected-alpha');
-      // Save is unchanged until explicitly requested; next implicit create blocks again.
-      await _ordinaryWorkspaceCreate(tester);
-      expect(_workspaceRequests(catalog), [_alphaRequest]);
       catalog.workspaceStream!.add({'type': 'remove', 'workspaceId': 'alpha'});
       await _settle(tester);
       await _ordinaryWorkspaceCreate(tester);
@@ -1039,37 +1476,127 @@ void main() {
     },
   );
 
-  testWidgets('failed save and mismatched readback never display saved', (
-    tester,
-  ) async {
-    _workspacePhone(tester);
-    final prefs = _WorkspacePrefs()..failWrites = true;
-    nativeMessenger.setMockMethodCallHandler(nativeChannel, prefs.handle);
-    final catalog = _Rpc()
-      ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
-      ..catalog = Future.value({
-        'items': [_row('existing', blank: true)],
-      });
-    await tester.pumpWidget(
-      MaterialApp(
-        home: EngineHome(host: _host('failed-save'), createRpc: (_) => catalog),
-      ),
+  for (final drawerGroup in [false, true]) {
+    final action = drawerGroup ? 'drawer group' : 'ordinary';
+    testWidgets(
+      'existing group selection and $action creation each wait for permission',
+      (tester) async {
+        _workspacePhone(tester);
+        defaultPrefs.disk[_localDomain] = _alphaTarget;
+        var permission = Completer<bool>();
+        final paths = <Object?>[];
+        nativeMessenger.setMockMethodCallHandler(_directoryChannel, (
+          call,
+        ) async {
+          if (call.method != 'validateRegisteredWorkspaceDirectory')
+            return null;
+          paths.add((call.arguments as Map)['path']);
+          return permission.future;
+        });
+        final catalog = _Rpc()
+          ..workspaceItems = [
+            _workspace('alpha', 'Alpha', []),
+            _workspace('bravo', 'Bravo', []),
+          ]
+          ..catalog = Future.value({
+            'items': [_row('existing', blank: true)],
+          });
+        await tester.pumpWidget(
+          MaterialApp(
+            home: EngineHome(
+              host: _host('validate-existing'),
+              createRpc: (_) => catalog,
+            ),
+          ),
+        );
+        await _settle(tester);
+
+        await _chooseWorkspace(tester, 'Bravo');
+        expect(paths, ['/engine/bravo']);
+        expect(defaultPrefs.writes, isEmpty);
+        expect(_workspaceRequests(catalog), isEmpty);
+        permission.complete(false);
+        await _settle(tester);
+        expect(find.text('工作区：Alpha'), findsOneWidget);
+        expect(defaultPrefs.writes, isEmpty);
+        expect(defaultPrefs.disk[_localDomain], _alphaTarget);
+        expect(tester.takeException(), isNull);
+
+        permission = Completer<bool>();
+        await _chooseWorkspace(tester, 'Bravo');
+        expect(defaultPrefs.writes, isEmpty);
+        permission.complete(true);
+        await _settle(tester);
+        expect(defaultPrefs.writes.single['target'], _bravoTarget);
+        expect(find.text('工作区：Bravo'), findsOneWidget);
+        expect(_workspaceRequests(catalog), isEmpty);
+
+        permission = Completer<bool>();
+        if (drawerGroup) {
+          await _groupWorkspaceCreate(tester, 'alpha');
+        } else {
+          await _ordinaryWorkspaceCreate(tester);
+        }
+        expect(paths, [
+          '/engine/bravo',
+          '/engine/bravo',
+          drawerGroup ? '/engine/alpha' : '/engine/bravo',
+        ]);
+        expect(_workspaceRequests(catalog), isEmpty);
+        permission.complete(false);
+        await _settle(tester);
+        expect(_workspaceRequests(catalog), isEmpty);
+        expect(defaultPrefs.disk[_localDomain], _bravoTarget);
+        expect(_transport(tester).sessionId, 'existing');
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
     );
-    await _settle(tester);
-    await _chooseWorkspace(tester, 'Alpha');
-    await _chooseWorkspace(tester, '设为默认');
-    expect(find.text('默认工作区已保存并回读确认'), findsNothing);
-    expect(prefs.disk, isEmpty);
-    prefs.failWrites = false;
-    prefs.mismatchReadback = true;
-    await _chooseWorkspace(tester, '设为默认');
-    expect(find.text('默认工作区已保存并回读确认'), findsNothing);
-    expect(prefs.disk, isEmpty);
-    expect(prefs.writes, hasLength(2));
-    expect(_workspaceRequests(catalog), isEmpty);
-    expect(_transport(tester).sessionId, 'existing');
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }
+
+  testWidgets(
+    'cold bootstrap waits for native validation and blocks a revoked saved path',
+    (tester) async {
+      _workspacePhone(tester);
+      defaultPrefs.disk[_localDomain] = _alphaTarget;
+      final permission = Completer<bool>();
+      final attempts = <Map<Object?, Object?>>[];
+      nativeMessenger.setMockMethodCallHandler(_directoryChannel, (call) async {
+        if (call.method != 'validateRegisteredWorkspaceDirectory') return null;
+        attempts.add(Map<Object?, Object?>.from(call.arguments as Map));
+        return permission.future;
+      });
+      final catalog = _Rpc()
+        ..workspaceItems = [_workspace('alpha', 'Alpha', [])];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EngineHome(
+            host: _host('cold-revoke', generation: 'boot-2'),
+            createRpc: (_) => catalog,
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(attempts, [
+        {
+          'domain': _localDomain,
+          'generation': 'boot-2',
+          'path': '/engine/alpha',
+        },
+      ]);
+      expect(_workspaceRequests(catalog), isEmpty);
+      permission.complete(false);
+      await _settle(tester);
+      expect(_workspaceRequests(catalog), isEmpty);
+      expect(find.text('工作区：Alpha'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('workspace-once-home')));
+      await _settle(tester);
+      expect(_workspaceRequests(catalog), [_homeRequest]);
+      expect(defaultPrefs.disk[_localDomain], _alphaTarget);
+      expect(defaultPrefs.writes, isEmpty);
+      expect(defaultPrefs.clears, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets(
     'same workspace ID never crosses data domains and old generation receipt is ignored',
@@ -1114,7 +1641,11 @@ void main() {
       expect(find.byKey(const ValueKey('workspace-once-home')), findsOneWidget);
       current.creation = Future.value({'sessionId': 'explicit-new-domain'});
       await _chooseWorkspace(tester, 'Alpha');
-      await _settle(tester);
+      expect(_workspaceRequests(current), isEmpty);
+      expect(prefs.writes, [
+        {'domain': 'domain-b', 'generation': 'boot-2', 'target': _alphaTarget},
+      ]);
+      await _bootstrapCreate(tester);
       expect(_workspaceRequests(current), [_alphaRequest]);
       expect(_transport(tester).sessionId, 'explicit-new-domain');
       await tester.pumpWidget(const SizedBox.shrink());
@@ -1174,66 +1705,65 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-    'welcome workspace selection applies only to the next new session',
-    (tester) async {
-      final catalog = _Rpc()
-        ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
-        ..catalog = Future.value({'items': []})
-        ..creation = Future.value({'sessionId': 'initial'});
-      await tester.pumpWidget(
-        MaterialApp(
-          home: EngineHome(
-            host: _host('welcome-workspace'),
-            createRpc: (_) => catalog,
-          ),
+  testWidgets('welcome selection persists across two new sessions', (
+    tester,
+  ) async {
+    final catalog = _Rpc()
+      ..workspaceItems = [_workspace('alpha', 'Alpha', [])]
+      ..catalog = Future.value({'items': []})
+      ..creation = Future.value({'sessionId': 'initial'});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EngineHome(
+          host: _host('welcome-workspace'),
+          createRpc: (_) => catalog,
         ),
-      );
+      ),
+    );
+    await _settle(tester);
+
+    List<Map<String, Object?>> creates() => catalog.calls
+        .where((call) => call.endpoint == 'session/create')
+        .map((call) => call.args)
+        .toList();
+    const homeRequest = {'request': <String, Object?>{}};
+    const alphaRequest = {
+      'request': {'workspaceId': 'alpha'},
+    };
+    expect(find.text('工作区：Home'), findsOneWidget);
+    expect(creates(), [homeRequest]);
+    await tester.tap(find.byKey(const ValueKey('welcome-workspace-capsule')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('welcome-workspace-glass')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Alpha'));
+    await tester.pumpAndSettle();
+    expect(find.text('工作区：Alpha'), findsOneWidget);
+    expect(_transport(tester).sessionId, 'initial');
+    expect(creates(), [homeRequest]);
+
+    Future<void> createFromDrawer(String id) async {
+      catalog.creation = Future.value({'sessionId': id});
+      await tester.tap(find.byKey(const ValueKey('session-menu')));
       await _settle(tester);
+      await tester.tap(find.text('新建会话'));
+      await _settle(tester);
+    }
 
-      List<Map<String, Object?>> creates() => catalog.calls
-          .where((call) => call.endpoint == 'session/create')
-          .map((call) => call.args)
-          .toList();
-      const homeRequest = {'request': <String, Object?>{}};
-      const alphaRequest = {
-        'request': {'workspaceId': 'alpha'},
-      };
-      expect(find.text('工作区：Home'), findsOneWidget);
-      expect(creates(), [homeRequest]);
-      await tester.tap(find.byKey(const ValueKey('welcome-workspace-capsule')));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('welcome-workspace-glass')),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Alpha'));
-      await tester.pumpAndSettle();
-      expect(find.text('工作区：Alpha'), findsOneWidget);
-      expect(_transport(tester).sessionId, 'initial');
-      expect(creates(), [homeRequest]);
-
-      Future<void> createFromDrawer(String id) async {
-        catalog.creation = Future.value({'sessionId': id});
-        await tester.tap(find.byKey(const ValueKey('session-menu')));
-        await _settle(tester);
-        await tester.tap(find.text('新建会话'));
-        await _settle(tester);
-      }
-
-      await createFromDrawer('created-in-alpha');
-      expect(_transport(tester).sessionId, 'created-in-alpha');
-      expect(find.text('工作区：Home'), findsOneWidget);
-      expect(creates(), [homeRequest, alphaRequest]);
-      await createFromDrawer('created-in-home');
-      expect(_transport(tester).sessionId, 'created-in-home');
-      expect(creates(), [homeRequest, alphaRequest, homeRequest]);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+    await createFromDrawer('created-in-alpha');
+    expect(_transport(tester).sessionId, 'created-in-alpha');
+    expect(find.text('工作区：Alpha'), findsOneWidget);
+    expect(creates(), [homeRequest, alphaRequest]);
+    await createFromDrawer('second-in-alpha');
+    expect(_transport(tester).sessionId, 'second-in-alpha');
+    expect(creates(), [homeRequest, alphaRequest, alphaRequest]);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
-    'successful workspace creation is consumed after navigation changes',
+    'late session creation keeps navigation and the persistent workspace selection',
     (tester) async {
       final pendingCreate = Completer<Object?>();
       final catalog = _Rpc()
@@ -1285,16 +1815,13 @@ void main() {
       await _settle(tester);
       expect(_transport(tester).sessionId, 'existing');
 
-      catalog.creation = Future.value({'sessionId': 'created-in-home'});
+      catalog.creation = Future.value({'sessionId': 'second-in-alpha'});
       await tester.tap(find.byKey(const ValueKey('session-menu')));
       await _settle(tester);
       await tester.tap(find.text('新建会话'));
       await _settle(tester);
-      expect(creates(), [
-        alphaRequest,
-        {'request': <String, Object?>{}},
-      ]);
-      expect(_transport(tester).sessionId, 'created-in-home');
+      expect(creates(), [alphaRequest, alphaRequest]);
+      expect(_transport(tester).sessionId, 'second-in-alpha');
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

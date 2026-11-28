@@ -1,0 +1,14 @@
+JUnit version 4.13.2
+............E.....
+Time: 0.138
+There was 1 failure:
+1) scopePublisherSharesTheExistingProductionPublicationLock(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: scope publication must share the ownership lock expected:<BLOCKED> but was:<TERMINATED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.scopePublisherSharesTheExistingProductionPublicationLock(NativeWorkspacePublicationTest.kt:209)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+

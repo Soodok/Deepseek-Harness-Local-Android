@@ -1,0 +1,35 @@
+{
+  "scope": "Independent cached Kotlin/JVM compilation of complete current EngineSupervisor and real accessor tests; Android API/class caches only for linking, NOT Android runtime, Gradle, Flutter or device validation",
+  "mutation": "no-scope-generation",
+  "compileExit": 0,
+  "testExit": 1,
+  "inputs": [
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\EngineSupervisor.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-no-scope-generation\\EngineSupervisor.kt",
+      "sha256": "de0601e7e9fbc68d9682501242aade554875400481ff70f549929027abe0e0a3",
+      "compiledSha256": "a8db4b0edbe861eface024d4da9fcea8d4c44e2b672e65e4df7b19df67ee7c04"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\main\\java\\app\\dsh\\mobile\\engine\\NativeWorkspaceScope.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-no-scope-generation\\NativeWorkspaceScope.kt",
+      "sha256": "06c357dcb6a6bef8e1cd790a87f8e879122eb2357d5a2ced351434cef88b3bdb",
+      "compiledSha256": "06c357dcb6a6bef8e1cd790a87f8e879122eb2357d5a2ced351434cef88b3bdb"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspaceScopeTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-no-scope-generation\\NativeWorkspaceScopeTest.kt",
+      "sha256": "2e8b4f5d3f322a97ef57a1bccb21839a73a89608b74cf76dd64c3c8a4b98132d",
+      "compiledSha256": "2e8b4f5d3f322a97ef57a1bccb21839a73a89608b74cf76dd64c3c8a4b98132d"
+    },
+    {
+      "source": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\java\\app\\dsh\\mobile\\engine\\NativeWorkspacePublicationTest.kt",
+      "target": "E:\\tmp\\wt-flutter-native-chat\\app\\src\\test\\workspace-publication-evidence\\mutant-no-scope-generation\\NativeWorkspacePublicationTest.kt",
+      "sha256": "a9d5ef52e72643665ae3b612f737fb776fed7f9ba9feb984dfdc514bd67f66af",
+      "compiledSha256": "a9d5ef52e72643665ae3b612f737fb776fed7f9ba9feb984dfdc514bd67f66af"
+    }
+  ],
+  "sourceStillMatches": true,
+  "androidRun": false,
+  "deviceTouched": false
+}

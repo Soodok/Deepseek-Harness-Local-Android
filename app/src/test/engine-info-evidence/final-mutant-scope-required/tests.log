@@ -1,0 +1,25 @@
+JUnit version 4.13.2
+........E.E........E...........................
+Time: 0.184
+There were 3 failures:
+1) missingReadyIdentityNeverInfersScopeFromEndpointOrStorageDomain(app.dsh.mobile.engine.NativeHostInfoSnapshotTest)
+java.lang.AssertionError: ordinary chat does not require a persistence identity
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at app.dsh.mobile.engine.NativeHostInfoSnapshotTest.missingReadyIdentityNeverInfersScopeFromEndpointOrStorageDomain(NativeHostInfoSnapshotTest.kt:165)
+2) readyHostWithoutScopeStillAllowsOrdinaryChatInBothReadyModes(app.dsh.mobile.engine.NativeHostInfoSnapshotTest)
+java.lang.AssertionError: missing persistence scope must not block ordinary chat
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at app.dsh.mobile.engine.NativeHostInfoSnapshotTest.readyHostWithoutScopeStillAllowsOrdinaryChatInBothReadyModes(NativeHostInfoSnapshotTest.kt:138)
+3) bothReadyModesAllowOrdinaryChatWithoutPersistenceScope(app.dsh.mobile.engine.NativeEngineInfoProjectionTest)
+java.lang.AssertionError: expected:<true> but was:<false>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at app.dsh.mobile.engine.NativeEngineInfoProjectionTest.bothReadyModesAllowOrdinaryChatWithoutPersistenceScope(NativeEngineInfoProjectionTest.kt:37)
+
+FAILURES!!!
+Tests run: 44,  Failures: 3
+

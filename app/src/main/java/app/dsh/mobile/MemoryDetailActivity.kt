@@ -199,7 +199,7 @@ class MemoryDetailActivity : ThemedActivity() {
             }
             addView(iv)
         }
-        android.app.AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.mem_shots_title)
             .setView(view)
             .setPositiveButton(android.R.string.ok, null)

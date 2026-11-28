@@ -16,12 +16,14 @@ import '../transport/native_action_transport.dart';
 import '../transport/native_file_delivery_service.dart';
 import '../transport/native_session_transport.dart';
 import '../ui/chat_shell.dart';
+import '../ui/native_workspace_directory_sheet.dart';
 import '../ui/session_drawer.dart';
 import '../ui/settings/settings_detail_pages.dart';
 import '../ui/settings/settings_home.dart';
 import '../ui/settings/settings_page.dart';
 import '../ui/settings/settings_scope.dart';
 import 'host_bridge.dart';
+import 'native_workspace_directories.dart';
 import 'native_workspace_policy.dart';
 import '../ui/native_workspace_picker.dart';
 
@@ -43,6 +45,20 @@ class EngineSessionService {
 
   Stream<Map<String, Object?>> followWorkspaces() =>
       rpc.follow('workspace/follow', const {});
+
+  Future<EngineWorkspace> registerWorkspace(String path) async {
+    final value = await rpc.call('workspace/create', {
+      'request': {'path': path},
+    });
+    if (value is! Map || value['created'] is! bool) {
+      throw const FormatException('Host 工作区注册回执无效');
+    }
+    final row = EngineWorkspace.fromWire(value['workspace']);
+    if (row.id.trim().isEmpty || row.path != path) {
+      throw const FormatException('Host 返回路径与授权目录不一致');
+    }
+    return row;
+  }
 
   Future<List<EngineAgentPreset>> listAgentPresets() async =>
       EngineAgentPreset.fromResponse(
@@ -253,8 +269,8 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
   String? _workspaceError;
   bool _workspaceOnline = false;
   late final NativeWorkspacePolicy _workspacePolicy;
-  Future<void>? _workspacePreferenceRead;
   bool _savingWorkspaceDefault = false;
+  bool _awaitingExplicitCreate = false;
   bool _refreshAfterLoad = false;
   bool _creating = false;
   List<EngineAgentPreset> _agentPresets = const [];
@@ -264,6 +280,34 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
   bool _selectingPreset = false;
   Future<void>? _presetRead;
   Future<String?>? _initialSessionFuture;
+  ({
+    EngineWorkspace expected,
+    int afterRevision,
+    Completer<EngineWorkspace?> ready,
+  })?
+  _directoryConfirmation;
+  int _workspaceFeedRevision = 0;
+  bool _pickingDirectory = false;
+  NativeWorkspaceDirectory? _selectedDirectory;
+
+  bool get _workspaceBusy =>
+      _creating || _pickingDirectory || _savingWorkspaceDefault;
+  bool get _directoryActionsAvailable =>
+      widget.host.available &&
+      widget.host.workspaceDomain.isNotEmpty &&
+      widget.host.workspaceGeneration.isNotEmpty;
+
+  Widget _withWorkspaceDirectoryActions(Widget child) =>
+      NativeWorkspaceDirectoryScope(
+        selectedDirectory: _selectedDirectory,
+        onPickPrivate: !_directoryActionsAvailable || _workspaceBusy
+            ? null
+            : () => _pickDirectory(shared: false),
+        onPickShared: !_directoryActionsAvailable || _workspaceBusy
+            ? null
+            : () => _pickDirectory(shared: true),
+        child: child,
+      );
 
   @override
   void initState() {
@@ -277,7 +321,7 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
           HostBridge.writeDefaultWorkspace(host, target.toWire()),
       remove: () => HostBridge.clearDefaultWorkspace(host),
     );
-    _workspacePreferenceRead = _readWorkspacePreference();
+    unawaited(_readWorkspacePreference());
     final rpc = widget.rpc;
     if (rpc != null) {
       _followWorkspaces(rpc);
@@ -290,6 +334,7 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
   void dispose() {
     _catalogRetry?.cancel();
     _workspaceRetry?.cancel();
+    _cancelDirectoryConfirmation();
     unawaited(_workspaceFeed?.cancel());
     final drafts = _drafts;
     unawaited(drafts.flushAll().whenComplete(drafts.dispose));
@@ -305,7 +350,12 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
       _catalogRetry = null;
       _catalogRetrySeconds = 1;
       _initialSessionFuture = null;
-      _workspacePolicy.override = null;
+      _awaitingExplicitCreate = false;
+      _selectedDirectory = null;
+      _cancelDirectoryConfirmation();
+      _workspaceFeedRevision = 0;
+      _pickingDirectory = false;
+      _creating = false;
       _controller = null;
       _currentSessionId = null;
       _openRequest++;
@@ -334,7 +384,7 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
   /// the engine's own default applies instead of an invented path.
   Future<void> _bootstrap() async {
     final rpc = widget.rpc;
-    if (rpc == null || _bootstrapping) return;
+    if (rpc == null || _bootstrapping || _awaitingExplicitCreate) return;
     _bootstrapping = true;
     try {
       // Read the catalogue and handoff together, retaining the original handoff
@@ -345,7 +395,7 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
             const Duration(milliseconds: 400),
           );
       final results = await Future.wait<Object?>([_loadSessions(rpc), handoff]);
-      if (!_currentCatalog(rpc)) return;
+      if (!_currentCatalog(rpc) || _awaitingExplicitCreate) return;
       final rows = results[0] as List<EngineSession>?;
       final handedOver = results[1] as String?;
       if (rows == null) {
@@ -466,7 +516,8 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
             _workspaceError = null;
             _workspaceRetrySeconds = 1;
           });
-          if (_controller == null && !_creating) unawaited(_bootstrap());
+          _confirmRegisteredDirectory(frame, ++_workspaceFeedRevision);
+          if (_controller == null && !_workspaceBusy) unawaited(_bootstrap());
           if (unknownMembers && _controller != null)
             unawaited(_refreshSessions());
         } on Object catch (error) {
@@ -548,93 +599,180 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
     await _workspacePolicy.refresh();
     if (!mounted || !widget.current()) return;
     setState(() {});
-    if (_controller == null && !_creating) unawaited(_bootstrap());
+    if (_controller == null && !_workspaceBusy) unawaited(_bootstrap());
   }
 
   Future<void> _retryWorkspace() async {
     final rpc = widget.rpc;
-    if (rpc == null || _creating || _savingWorkspaceDefault) return;
+    if (rpc == null || _workspaceBusy) return;
     _workspaceRetry?.cancel();
     _workspaceRetry = null;
     setState(() => _workspaceOnline = false);
     _followWorkspaces(rpc);
-    _workspacePreferenceRead = _readWorkspacePreference();
-    await _workspacePreferenceRead;
-    if (!_currentCatalog(rpc)) return;
-    if (_controller == null) await _bootstrap();
+    await _readWorkspacePreference();
   }
 
-  WorkspaceTarget? get _displayWorkspace =>
-      _workspacePolicy.override ??
-      (_workspacePolicy.known ? _workspacePolicy.defaultTarget : null);
+  WorkspaceTarget? get _displayWorkspace => _workspacePolicy.defaultTarget;
 
-  String? get _workspaceStatus =>
-      _workspacePolicy.error ??
-      (!_workspacePolicy.known
-          ? '默认工作区尚未确认，可重试或仅本次选择'
-          : (_workspacePolicy.defaultTarget == null ? '默认工作区：未设置' : null));
+  String? get _workspaceStatus => _workspacePolicy.error ?? _workspaceError;
 
   Future<bool> _selectWelcomeWorkspace(String? id) async {
-    if (!mounted || !widget.current() || _creating) return false;
+    final rpc = widget.rpc;
+    if (rpc == null || !_currentCatalog(rpc) || _workspaceBusy) return false;
     final row = _workspaces.workspaces.where((row) => row.id == id).firstOrNull;
     if (id != null && (!_workspaceOnline || row == null)) return false;
-    setState(
-      () => _workspacePolicy.override = row == null
-          ? const WorkspaceTarget.home()
-          : WorkspaceTarget.workspace(row.id, row.path),
-    );
-    if (_controller == null) unawaited(_bootstrap());
-    return true;
+    final target = row == null
+        ? const WorkspaceTarget.home()
+        : WorkspaceTarget.workspace(row.id, row.path);
+    setState(() {
+      _savingWorkspaceDefault = true;
+      if (_controller == null) _awaitingExplicitCreate = true;
+    });
+    try {
+      if (row != null) {
+        await NativeWorkspaceDirectories(widget.host)
+            .validateRegistered(row.path);
+        if (!_currentCatalog(rpc)) return false;
+        _requireCurrentWorkspace(row);
+      }
+      final saved = await _workspacePolicy.save(target);
+      if (!_currentCatalog(rpc) || !saved) return false;
+      if (row == null || row.path != _selectedDirectory?.path) {
+        _selectedDirectory = null;
+      }
+      return true;
+    } finally {
+      if (_currentCatalog(rpc)) setState(() => _savingWorkspaceDefault = false);
+    }
   }
 
-  Future<bool> _saveDefaultWorkspace() async {
-    if (!mounted || !widget.current() || _creating || _savingWorkspaceDefault)
-      return false;
-    // A display fallback is not an explicit Home choice after an unknown read.
-    if (!_workspacePolicy.known && _workspacePolicy.override == null)
-      return false;
-    final target = _displayWorkspace ?? const WorkspaceTarget.home();
+  void _cancelDirectoryConfirmation() {
+    final pending = _directoryConfirmation;
+    _directoryConfirmation = null;
+    if (pending != null && !pending.ready.isCompleted) {
+      pending.ready.complete(null);
+    }
+  }
+
+  void _confirmRegisteredDirectory(Map<String, Object?> frame, int revision) {
+    final pending = _directoryConfirmation;
+    if (pending == null ||
+        pending.ready.isCompleted ||
+        !_workspaceOnline ||
+        revision <= pending.afterRevision) {
+      return;
+    }
+    final candidates = switch (frame['type']) {
+      'upsert' => [frame['workspace']],
+      'baseline' || 'replace' =>
+        (frame['value'] is Map && (frame['value'] as Map)['items'] is List)
+            ? ((frame['value'] as Map)['items'] as List)
+            : const <Object?>[],
+      _ => const <Object?>[],
+    };
+    final receipt = candidates
+        .whereType<Map>()
+        .where((item) => item['workspaceId'] == pending.expected.id)
+        .firstOrNull;
+    if (receipt == null) return;
+    if (receipt['path'] != pending.expected.path) {
+      pending.ready.completeError(const FormatException('Host 工作区路径已变化，请重新选择'));
+      return;
+    }
+    final row = _workspaces.workspaces
+        .where((item) => item.id == pending.expected.id)
+        .firstOrNull;
+    if (row != null && row.path == pending.expected.path) {
+      pending.ready.complete(row);
+    }
+  }
+
+  Future<EngineWorkspace?> _awaitRegisteredDirectory(
+    DshRpcConnection rpc,
+    EngineWorkspace expected,
+    int afterRevision,
+  ) async {
+    final ready = Completer<EngineWorkspace?>();
+    _directoryConfirmation = (
+      expected: expected,
+      afterRevision: afterRevision,
+      ready: ready,
+    );
+    final confirmed = ready.future.timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => throw StateError('Host 工作区列表未确认此目录，请刷新后重选'),
+    );
     try {
-      _workspacePolicy.resolve(
-        rows: _workspaces.workspaces,
-        online: _workspaceOnline,
-        explicit: target,
-      );
-    } on Object catch (error) {
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(SnackBar(content: Text('默认工作区未保存：' + error.toString())));
+      _followWorkspaces(rpc);
+      return await confirmed;
+    } finally {
+      if (identical(_directoryConfirmation?.ready, ready)) {
+        _directoryConfirmation = null;
+      }
+    }
+  }
+
+  Future<bool> _pickDirectory({required bool shared}) async {
+    final rpc = widget.rpc;
+    if (rpc == null ||
+        !_currentCatalog(rpc) ||
+        _workspaceBusy ||
+        !_directoryActionsAvailable) {
       return false;
     }
-    setState(() => _savingWorkspaceDefault = true);
-    final ok = await _workspacePolicy.save(target);
-    if (!mounted || !widget.current()) return false;
-    setState(() => _savingWorkspaceDefault = false);
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok ? '默认工作区已保存并回读确认' : (_workspacePolicy.error ?? '默认工作区未保存'),
-        ),
-      ),
-    );
-    return ok;
+    final directories = NativeWorkspaceDirectories(widget.host);
+    setState(() {
+      _pickingDirectory = true;
+      if (_controller == null) _awaitingExplicitCreate = true;
+    });
+    try {
+      final selected = shared
+          ? await directories.pickShared()
+          : await showPrivateWorkspaceDirectorySheet(context, directories);
+      if (selected == null || !_currentCatalog(rpc)) return false;
+      final checked = await directories.validate(selected);
+      if (!_currentCatalog(rpc)) return false;
+      final feedRevision = _workspaceFeedRevision;
+      final registered = await EngineSessionService(rpc)
+          .registerWorkspace(checked.path);
+      if (!_currentCatalog(rpc)) return false;
+      final row = await _awaitRegisteredDirectory(
+        rpc,
+        registered,
+        feedRevision,
+      );
+      if (row == null || !_currentCatalog(rpc)) return false;
+      await directories.remember(checked);
+      if (!_currentCatalog(rpc)) return false;
+      _requireCurrentWorkspace(row);
+      final saved = await _workspacePolicy.save(
+        WorkspaceTarget.workspace(row.id, row.path),
+      );
+      if (!_currentCatalog(rpc)) return false;
+      if (!saved) {
+        throw StateError(_workspacePolicy.error ?? '默认工作区保存失败，请重试');
+      }
+      setState(() => _selectedDirectory = checked);
+      return true;
+    } on Object catch (error) {
+      if (mounted && _currentCatalog(rpc)) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text('工作区目录不可用：' + error.toString())),
+        );
+      }
+      return false;
+    } finally {
+      if (_currentCatalog(rpc)) setState(() => _pickingDirectory = false);
+    }
   }
 
-  Future<bool> _clearDefaultWorkspace() async {
-    if (!mounted || !widget.current() || _creating || _savingWorkspaceDefault)
-      return false;
-    setState(() => _savingWorkspaceDefault = true);
-    final ok = await _workspacePolicy.clear();
-    if (!mounted || !widget.current()) return false;
-    setState(() => _savingWorkspaceDefault = false);
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok ? '默认工作区未设置，已回读确认' : (_workspacePolicy.error ?? '默认工作区未清除'),
-        ),
-      ),
-    );
-    return ok;
+  void _requireCurrentWorkspace(EngineWorkspace expected) {
+    if (!_workspaceOnline ||
+        !_workspaces.workspaces.any(
+          (row) => row.id == expected.id && row.path == expected.path,
+        )) {
+      throw StateError('工作区目录已变化，请刷新后重新选择');
+    }
   }
 
   Future<void> _createBlank(
@@ -642,7 +780,7 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
     EngineWorkspace? workspace,
     bool explicitWorkspace = false,
   }) async {
-    if (!_currentCatalog(rpc) || _creating) return;
+    if (!_currentCatalog(rpc) || _workspaceBusy) return;
     final intent = _openRequest;
     try {
       final explicit = explicitWorkspace
@@ -656,11 +794,16 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
         explicit: explicit,
       );
       setState(() => _creating = true);
+      final resolvedWorkspace = resolution.workspace;
+      if (resolvedWorkspace != null) {
+        await NativeWorkspaceDirectories(widget.host)
+            .validateRegistered(resolvedWorkspace.path);
+        if (!_currentCatalog(rpc)) return;
+        _requireCurrentWorkspace(resolvedWorkspace);
+      }
       final row = await EngineSessionService(rpc)
-          .createSession(workspace: resolution.workspace);
+          .createSession(workspace: resolvedWorkspace);
       if (!_currentCatalog(rpc)) return;
-      // Consume only the actual successful override, even if navigation changed.
-      setState(() => _workspacePolicy.consume(resolution));
       if (_openRequest != intent) return;
       await _open(row);
     } on Object catch (error) {
@@ -805,77 +948,86 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
     final rpc = widget.rpc;
     final controller = _controller;
     if (rpc == null || controller == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('本机引擎')),
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (rpc == null)
-                    const Icon(Icons.hourglass_empty, size: 40)
-                  else if (_sessionsError != null)
-                    const Icon(Icons.error_outline_rounded, size: 40)
-                  else
-                    const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2.4),
-                    ),
-                  const SizedBox(height: 16),
-                  Text(
-                    rpc == null
-                        ? (widget.error ?? '等待本机引擎就绪')
-                        : (_sessionsError ?? '正在准备会话…'),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text('引擎状态：' + widget.host.state),
-                  if (rpc != null &&
-                      _sessionsError?.startsWith('新建会话失败：') == true) ...[
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      key: const ValueKey('engine-bootstrap-retry'),
-                      onPressed: () => unawaited(_bootstrap()),
-                      child: const Text('重新准备会话'),
+      return _withWorkspaceDirectoryActions(
+        Scaffold(
+          appBar: AppBar(title: const Text('本机引擎')),
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (rpc == null)
+                      const Icon(Icons.hourglass_empty, size: 40)
+                    else if (_sessionsError != null)
+                      const Icon(Icons.error_outline_rounded, size: 40)
+                    else
+                      const SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      ),
+                    const SizedBox(height: 16),
+                    Text(
+                      rpc == null
+                          ? (widget.error ?? '等待本机引擎就绪')
+                          : (_sessionsError ?? '正在准备会话…'),
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
-                    NativeWorkspacePicker(
-                      workspaces: _workspaces.workspaces,
-                      selected: _displayWorkspace?.id,
-                      onSelect: _selectWelcomeWorkspace,
-                      onSaveDefault: _savingWorkspaceDefault
-                          ? null
-                          : _saveDefaultWorkspace,
-                      onClearDefault: _savingWorkspaceDefault
-                          ? null
-                          : _clearDefaultWorkspace,
-                      onRetry: () => unawaited(_retryWorkspace()),
-                      status: _workspaceStatus,
+                    Text('引擎状态：' + widget.host.state),
+                    if (rpc != null &&
+                        _sessionsError?.startsWith('新建会话失败：') == true) ...[
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        key: const ValueKey('engine-bootstrap-retry'),
+                        onPressed: _workspaceBusy
+                            ? null
+                            : () => unawaited(_createBlank(rpc)),
+                        child: const Text('新建会话'),
+                      ),
+                      const SizedBox(height: 8),
+                      NativeWorkspacePicker(
+                        workspaces: _workspaces.workspaces,
+                        selected: _displayWorkspace?.id,
+                        confirmed: _workspacePolicy.known,
+                        onSelect: _selectWelcomeWorkspace,
+                        onRetry: () => unawaited(_retryWorkspace()),
+                        status: _workspaceStatus,
+                        onPickPrivate:
+                            _directoryActionsAvailable && !_workspaceBusy
+                            ? () => _pickDirectory(shared: false)
+                            : null,
+                        onPickShared:
+                            _directoryActionsAvailable && !_workspaceBusy
+                            ? () => _pickDirectory(shared: true)
+                            : null,
+                      ),
+                      TextButton(
+                        key: const ValueKey('workspace-once-home'),
+                        onPressed: _workspaceBusy
+                            ? null
+                            : () => unawaited(
+                                _createBlank(rpc, explicitWorkspace: true),
+                              ),
+                        child: const Text('本次在 Home 新建'),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      key: const ValueKey('engine-settings'),
+                      onPressed: _settings,
+                      icon: const Icon(Icons.settings_outlined),
+                      label: const Text('设置'),
                     ),
                     TextButton(
-                      key: const ValueKey('workspace-once-home'),
-                      onPressed: _creating
-                          ? null
-                          : () => unawaited(_selectWelcomeWorkspace(null)),
-                      child: const Text('仅本次 Home'),
+                      key: const ValueKey('engine-web'),
+                      onPressed: () => openSettingsWeb(context),
+                      child: const Text('打开完整 Web'),
                     ),
                   ],
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    key: const ValueKey('engine-settings'),
-                    onPressed: _settings,
-                    icon: const Icon(Icons.settings_outlined),
-                    label: const Text('设置'),
-                  ),
-                  TextButton(
-                    key: const ValueKey('engine-web'),
-                    onPressed: () => openSettingsWeb(context),
-                    child: const Text('打开完整 Web'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -890,52 +1042,57 @@ class _EngineHomeContentState extends State<_EngineHomeContent> {
               .where((row) => row.id == _currentSessionId)
               .firstOrNull
               ?.title;
-    return SessionWorkspaceScope(
-      catalog: _workspaces,
-      online: _workspaceOnline,
-      error: _workspaceError,
-      onCreate: _creating
-          ? null
-          : (workspace) => unawaited(
-              _createBlank(rpc, workspace: workspace, explicitWorkspace: true),
-            ),
-      child: ChatShell(
-        key: ObjectKey(controller),
-        controller: controller,
-        disposeController: true,
-        hostInfo: widget.host,
-        sessionTitle: currentTitle,
-        currentSessionId: _currentSessionId,
-        sessions: _sessions,
-        sessionsLoading: _sessionsLoading,
-        sessionsError: _sessionsError,
-        onRefreshSessions: () =>
-            unawaited(_refreshSessions(refreshPresets: true)),
-        onOpenSession: (row) => unawaited(_open(row)),
-        onNewSession: _creating ? null : () => unawaited(_createBlank(rpc)),
-        workspaceOptions: _workspaces.workspaces,
-        selectedWorkspaceId: _displayWorkspace?.id,
-        onSelectWorkspace: _selectWelcomeWorkspace,
-        onSaveDefaultWorkspace: _savingWorkspaceDefault
+    return _withWorkspaceDirectoryActions(
+      SessionWorkspaceScope(
+        catalog: _workspaces,
+        online: _workspaceOnline,
+        error: _workspaceError,
+        onCreate: _workspaceBusy
             ? null
-            : _saveDefaultWorkspace,
-        onClearDefaultWorkspace: _savingWorkspaceDefault
-            ? null
-            : _clearDefaultWorkspace,
-        onRetryWorkspace: () => unawaited(_retryWorkspace()),
-        workspaceStatus: _workspaceStatus,
-        agentPresets: _agentPresets,
-        selectedAgentPresetId: _selectedAgentPresetId ?? _defaultPresetId,
-        agentPresetLocked: _agentPresetLocked,
-        onSelectAgentPreset:
-            _agentPresetReady && !_agentPresetLocked && !_selectingPreset
-            ? _selectAgentPreset
-            : null,
-        actions: _actions,
-        fileDelivery: _fileDelivery,
-        draft: _draft,
-        onOpenForkSession: _openFork,
-        onOpenWebFallback: () => openSettingsWeb(context),
+            : (workspace) => unawaited(
+                _createBlank(
+                  rpc,
+                  workspace: workspace,
+                  explicitWorkspace: true,
+                ),
+              ),
+        child: ChatShell(
+          key: ObjectKey(controller),
+          controller: controller,
+          disposeController: true,
+          hostInfo: widget.host,
+          sessionTitle: currentTitle,
+          currentSessionId: _currentSessionId,
+          sessions: _sessions,
+          sessionsLoading: _sessionsLoading,
+          sessionsError: _sessionsError,
+          onRefreshSessions: () =>
+              unawaited(_refreshSessions(refreshPresets: true)),
+          onOpenSession: (row) => unawaited(_open(row)),
+          onNewSession: _workspaceBusy
+              ? null
+              : () => unawaited(_createBlank(rpc)),
+          workspaceOptions: _workspaces.workspaces,
+          selectedWorkspaceId: _displayWorkspace?.id,
+          onSelectWorkspace: _selectWelcomeWorkspace,
+          onRetryWorkspace: () => unawaited(_retryWorkspace()),
+          workspaceStatus: _workspaceStatus,
+          // A null selection only means Home once the persisted default was
+          // read back; before that the picker must not paint Home as chosen.
+          workspaceConfirmed: _workspacePolicy.known,
+          agentPresets: _agentPresets,
+          selectedAgentPresetId: _selectedAgentPresetId ?? _defaultPresetId,
+          agentPresetLocked: _agentPresetLocked,
+          onSelectAgentPreset:
+              _agentPresetReady && !_agentPresetLocked && !_selectingPreset
+              ? _selectAgentPreset
+              : null,
+          actions: _actions,
+          fileDelivery: _fileDelivery,
+          draft: _draft,
+          onOpenForkSession: _openFork,
+          onOpenWebFallback: () => openSettingsWeb(context),
+        ),
       ),
     );
   }

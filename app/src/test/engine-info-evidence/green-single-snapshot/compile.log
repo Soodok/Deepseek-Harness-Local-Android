@@ -1,0 +1,570 @@
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:238:72: error: unexpected tokens (use ';' to separate expressions on the same line)
+            launchedWorkspaceScope?.takeIf { it.generation == bootId } else null
+                                                                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1653:12: error: unexpected tokens (use ';' to separate expressions on the same line)
+    private fun portInUse(timeoutMs: Int = 120): Boolean {
+           ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1867:14: error: unexpected tokens (use ';' to separate expressions on the same line)
+    companion object {
+             ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1870:2: error: missing '}
+}
+ ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:147:21: error: unresolved reference: logFile
+            val f = logFile()
+                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:158:29: error: overload resolution ambiguity: 
+public constructor RandomAccessFile(p0: File!, p1: String!) defined in java.io.RandomAccessFile
+public constructor RandomAccessFile(p0: String!, p1: String!) defined in java.io.RandomAccessFile
+                    java.io.RandomAccessFile(f, "r").use { raf ->
+                            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:158:60: error: cannot infer a type for this parameter. Please specify it explicitly.
+                    java.io.RandomAccessFile(f, "r").use { raf ->
+                                                           ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:159:37: error: unresolved reference: logOffsetAtSpawn
+                        val start = logOffsetAtSpawn.coerceIn(0L, raf.length())
+                                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:166:34: error: overload resolution ambiguity: 
+public final operator fun plus(other: Byte): Int defined in kotlin.Int
+public final operator fun plus(other: Double): Double defined in kotlin.Int
+public final operator fun plus(other: Float): Float defined in kotlin.Int
+public final operator fun plus(other: Int): Int defined in kotlin.Int
+public final operator fun plus(other: Long): Long defined in kotlin.Int
+public final operator fun plus(other: Short): Int defined in kotlin.Int
+                            read += n
+                                 ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:209:13: error: unresolved reference: stopping
+        if (stopping || maintenanceStop || proc.exitFuture.isDone) return@synchronized null
+            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:209:25: error: unresolved reference: maintenanceStop
+        if (stopping || maintenanceStop || proc.exitFuture.isDone) return@synchronized null
+                        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:226:52: error: type mismatch: inferred type is `<no name provided>` but EngineSupervisor.NativeHostSnapshot was expected
+    fun nativeHostSnapshot(): NativeHostSnapshot = synchronized(entryPublicationLock) {
+                                                   ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:228:45: error: unresolved reference: stopping
+        val scopeAllowed = proc != null && !stopping && !maintenanceStop && !proc.exitFuture.isDone
+                                            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:228:58: error: unresolved reference: maintenanceStop
+        val scopeAllowed = proc != null && !stopping && !maintenanceStop && !proc.exitFuture.isDone
+                                                         ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:237:30: error: 'if' must have both main and 'else' branches if used as an expression
+        val workspaceScope = if (scopeAllowed && ready.hasLoadableUrl && bootId != null && entryBootId == bootId) {
+                             ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:239:52: error: unresolved reference: workspaceScope
+        NativeHostSnapshot(publishedState, webUrl, workspaceScope)
+                                                   ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:243:5: error: modifier 'private' is not applicable to 'local function'
+    private fun publishWorkspaceScope(bootId: String, domain: String?) {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:245:43: error: unresolved reference: stopping
+            if (entryBootId == bootId && !stopping && !maintenanceStop) {
+                                          ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:245:56: error: unresolved reference: maintenanceStop
+            if (entryBootId == bootId && !stopping && !maintenanceStop) {
+                                                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:251:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var recoveredPlugin: String? = null
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:251:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var recoveredPlugin: String? = null
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:253:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var logOffsetAtSpawn = 0L
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:253:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var logOffsetAtSpawn = 0L
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:254:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var loopJob: Job? = null
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:254:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var loopJob: Job? = null
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:261:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var userStop = false
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:261:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var userStop = false
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:270:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:271:5: error: modifier 'private' is not applicable to 'local variable'
+    private var stopping = false
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:272:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var scopeRef: CoroutineScope? = null
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:272:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var scopeRef: CoroutineScope? = null
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:294:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile var onExplicitExit: (() -> Unit)? = null
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:318:5: error: modifier 'private' is not applicable to 'local function'
+    private fun dispatchExplicitExit() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:321:19: error: cannot access 'TAG': it is private in file
+            Log.i(TAG, "explicit exit: no live Activity; killing process instead")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:326:40: error: cannot access 'TAG': it is private in file
+                    .onFailure { Log.w(TAG, "explicit exit callback failed: ${it.message}") }
+                                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:331:17: error: unresolved reference: killAppProcess
+                killAppProcess()
+                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:344:5: error: modifier 'private' is not applicable to 'local function'
+    private fun killAppProcess() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:345:15: error: cannot access 'TAG': it is private in file
+        Log.i(TAG, "explicit exit: finishing app process")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:357:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "killProcess failed (${it.message}); falling back to exit")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:363:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var restarting = false
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:363:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var restarting = false
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:370:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var maintenanceStop = false
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:370:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var maintenanceStop = false
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:372:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile private var restartStartedAt: Long? = null
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:372:15: error: modifier 'private' is not applicable to 'local variable'
+    @Volatile private var restartStartedAt: Long? = null
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:373:5: error: modifier 'private' is not applicable to 'local variable'
+    private val guardian by lazy { ProfileGuardian(ctx) }
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:381:19: error: cannot access 'TAG': it is private in file
+            Log.i(TAG, "start ignored: maintenance window active (dsh-home being reset)")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:395:55: error: unresolved reference: supervisionLoop
+        loopJob = scope.launch(Dispatchers.Default) { supervisionLoop() }
+                                                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:427:23: error: unresolved reference: cleanupOrphanEngine
+        runCatching { cleanupOrphanEngine() }
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:440:39: error: cannot access 'TAG': it is private in file
+                if (killed > 0) Log.i(TAG, "explicit exit: reaped $killed orphan process(es)")
+                                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:441:33: error: cannot access 'TAG': it is private in file
+            }.onFailure { Log.w(TAG, "explicit exit orphan reap failed: ${it.message}") }
+                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:450:24: error: unresolved reference: awaitPortFree
+        val portFree = awaitPortFree(800)
+                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:454:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "stop incomplete: alive=$alive portFree=$portFree (engine may still hold files)")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:460:5: error: modifier 'private' is not applicable to 'local function'
+    private fun awaitPortFree(timeoutMs: Long): Boolean {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:463:18: error: unresolved reference: portInUse
+            if (!portInUse(200)) return true
+                 ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:466:17: error: unresolved reference: portInUse
+        return !portInUse(300)
+                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:485:19: error: cannot access 'TAG': it is private in file
+            Log.i(TAG, "restart already in progress, ignoring duplicate tap")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:488:15: error: cannot access 'TAG': it is private in file
+        Log.i(TAG, "restart: hot restart requested by user")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:499:23: error: cannot access 'TAG': it is private in file
+                Log.i(TAG, "restart: previous engine stopped (${System.currentTimeMillis() - t0}ms)")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:503:23: error: cannot access 'TAG': it is private in file
+                Log.w(TAG, "restart failed: ${e.message}")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:522:13: error: unresolved reference: reclaimPort
+            reclaimPort()
+            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:525:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "manual port reclaim failed: ${it.message}")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:528:15: error: cannot access 'TAG': it is private in file
+        Log.i(TAG, "manual port reclaim: ok=$ok — restarting engine")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:546:15: error: cannot access 'TAG': it is private in file
+        Log.i(TAG, "maintenance stop: halting engine before dsh-home surgery")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:555:32: error: cannot access 'TAG': it is private in file
+            .onFailure { Log.w(TAG, "maintenance stop: ${it.message}") }
+                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:558:23: error: unresolved reference: reclaimPort
+        runCatching { reclaimPort() }
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:559:15: error: cannot access 'TAG': it is private in file
+        Log.i(TAG, "maintenance stop: engine is down, safe to modify dsh-home")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:582:5: error: modifier 'private' is not applicable to 'local function'
+    private fun failTerminal(
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:591:55: error: unresolved reference: healthyEverReached
+                neverBooted = neverBootedOverride ?: !healthyEverReached.get(),
+                                                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:623:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "triage unavailable: ${e.message}")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:630:15: error: cannot access 'TAG': it is private in file
+        Log.e(TAG, "terminal failure: ${EngineTriage.summarize(diag)}")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:639:5: error: modifier 'private' is not applicable to 'local variable'
+    private val healthyEverReached = java.util.concurrent.atomic.AtomicBoolean(false)
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:646:5: error: modifier 'private' is not applicable to 'local function'
+    private fun failureSignature(status: Int?): String {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:676:5: error: modifier 'private' is not applicable to 'local function'
+    private fun looksLikeAuthFailure(): Boolean = runCatching {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:699:5: error: modifier 'private' is not applicable to 'local function'
+    private fun looksLikePortConflict(): Boolean = runCatching {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:724:5: error: modifier 'private' is not applicable to 'local function'
+    private suspend fun shouldExitLoop(): Boolean =
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:727:5: error: modifier 'private' is not applicable to 'local function'
+    private suspend fun supervisionLoop() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:761:21: error: cannot access 'TAG': it is private in file
+                    TAG,
+                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:801:23: error: cannot access 'TAG': it is private in file
+                Log.i(TAG, "boot step $name: ${now - stepT}ms (total ${now - bootT0}ms)")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:850:35: error: cannot access 'TAG': it is private in file
+                            Log.w(TAG, "found files with broken ownership/permissions (root residue or bad labels); healing")
+                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:852:35: error: cannot access 'TAG': it is private in file
+                            Log.w(TAG, "attribute healing ${if (fixed) "succeeded" else "unavailable (no shizuku/su)"}")
+                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:869:39: error: cannot access 'TAG': it is private in file
+                if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
+                                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:883:29: error: cannot access 'TAG': it is private in file
+                            TAG,
+                            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:915:74: error: type mismatch: inferred type is Unit but Boolean was expected
+                                val lockHeal = StaleLockHealer.heal(ctx) { portInUse(120) }
+                                                                         ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:915:76: error: unresolved reference: portInUse
+                                val lockHeal = StaleLockHealer.heal(ctx) { portInUse(120) }
+                                                                           ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:919:37: error: cannot access 'TAG': it is private in file
+                                    TAG,
+                                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:979:68: error: cannot access 'TAG': it is private in file
+                            .onSuccess { v -> if (v != null) Log.i(TAG, "bundled ssh plugin ready: $v") }
+                                                                   ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:980:48: error: cannot access 'TAG': it is private in file
+                            .onFailure { Log.w(TAG, "bundled ssh plugin setup failed: ${it.message}") }
+                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:984:48: error: cannot access 'TAG': it is private in file
+                            .onFailure { Log.w(TAG, "extension migration failed: ${it.message}") }
+                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1010:25: error: cannot access 'TAG': it is private in file
+                        TAG,
+                        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1029:58: error: unresolved reference: spawnEngine
+                val proc = withContext(Dispatchers.IO) { spawnEngine(bootId) }
+                                                         ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1032:35: error: type mismatch: inferred type is Unit but EngineProcess? was expected
+                        process = proc
+                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1037:56: error: unresolved reference: stop
+                    withContext(Dispatchers.IO) { proc.stop() }
+                                                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1040:22: error: unresolved reference: exitFuture
+                proc.exitFuture.whenComplete { _, _ ->
+                     ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1040:48: error: cannot infer a type for this parameter. Please specify it explicitly.
+                proc.exitFuture.whenComplete { _, _ ->
+                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1040:51: error: cannot infer a type for this parameter. Please specify it explicitly.
+                proc.exitFuture.whenComplete { _, _ ->
+                                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1042:54: error: operator '===' cannot be applied to 'EngineProcess?' and 'Unit'
+                        if (entryBootId == bootId && process === proc) {
+                                                     ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1051:31: error: unresolved reference: pollHealth
+                val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1059:64: error: unresolved reference: awaitPluginHealth
+                    val health = withContext(Dispatchers.IO) { awaitPluginHealth(proc, bootId) }
+                                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1062:57: error: unresolved reference: ok
+                            "plugin health: ok=${health.ok} " +
+                                                        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1063:52: error: unresolved reference: missingServices
+                                "missing=[${health.missingServices.joinToString(",")}] " +
+                                                   ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1064:51: error: unresolved reference: failedEntries
+                                "failed=[${health.failedEntries.joinToString(",") { "${it.id}:${it.name}" }}]"
+                                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1064:88: error: unresolved reference: it
+                                "failed=[${health.failedEntries.joinToString(",") { "${it.id}:${it.name}" }}]"
+                                                                                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1064:97: error: unresolved reference: it
+                                "failed=[${health.failedEntries.joinToString(",") { "${it.id}:${it.name}" }}]"
+                                                                                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1065:31: error: cannot access 'TAG': it is private in file
+                        Log.i(TAG, summary)
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1073:31: error: cannot access 'TAG': it is private in file
+                        Log.w(TAG, "plugin health marker missing or unreadable; keeping engine available")
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1081:33: error: unresolved reference: ok
+                    if (health?.ok == true) {
+                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1084:51: error: unresolved reference: ok
+                    if (health != null && !health.ok) {
+                                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1085:102: error: type mismatch: inferred type is Unit but PluginRecovery.Health was expected
+                        val action = withContext(Dispatchers.IO) { PluginRecovery.quarantineOne(ctx, health) }
+                                                                                                     ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1091:33: error: cannot access 'TAG': it is private in file
+                                TAG,
+                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1097:34: error: unresolved reference: stop
+                            proc.stop(graceMs = 1_500)
+                                 ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1110:35: error: cannot access 'TAG': it is private in file
+                            Log.e(TAG, "plugin recovery: no safe candidate; leaving profile unchanged")
+                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1119:33: error: cannot access 'TAG': it is private in file
+                                TAG,
+                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1130:37: error: unresolved reference: ok
+                        if (health?.ok != false) {
+                                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1136:35: error: cannot access 'TAG': it is private in file
+                            Log.w(TAG, "plugin health degraded; keeping previous last-good snapshot")
+                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1152:31: error: cannot access 'TAG': it is private in file
+                        Log.i(TAG, (if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}") + restartMs)
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1156:64: error: unresolved reference: ok
+                        val degradedNow = health?.takeIf { !it.ok }?.let { h ->
+                                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1158:53: error: unresolved reference: missingServices
+                                missingServices = h.missingServices,
+                                                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1159:51: error: unresolved reference: failedEntries
+                                failedEntries = h.failedEntries.map { it.name },
+                                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1159:71: error: unresolved reference: it
+                                failedEntries = h.failedEntries.map { it.name },
+                                                                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1164:33: error: cannot access 'TAG': it is private in file
+                                TAG,
+                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1170:58: error: operator '===' cannot be applied to 'EngineProcess?' and 'Unit'
+                            if (entryBootId == bootId && process === proc && !stopping && !maintenanceStop && !proc.exitFuture.isDone) {
+                                                         ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1178:64: error: unresolved reference: stop
+                            withContext(Dispatchers.IO) { proc.stop() }
+                                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1183:48: error: cannot access 'TAG': it is private in file
+                            .onFailure { Log.w(TAG, "runtime markHealthy failed: ${it.message}") }
+                                               ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1205:43: error: unresolved reference: exitFuture
+                        val status = proc.exitFuture.get()
+                                          ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1207:31: error: cannot access 'TAG': it is private in file
+                        Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1226:55: error: unresolved reference: reclaimPort
+                        withContext(Dispatchers.IO) { reclaimPort() }
+                                                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1227:31: error: cannot access 'TAG': it is private in file
+                        Log.i(TAG, "post-crash: port ${EngineConfig.DEFAULT_PORT} thoroughly reclaimed before restart")
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1234:33: error: unresolved reference: exitFuture
+                } else if (proc.exitFuture.isDone) {
+                                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1236:61: error: unresolved reference: lastExitStatus
+                    deterministicFailure = failureSignature(lastExitStatus)
+                                                            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1240:26: error: unresolved reference: stop
+                    proc.stop()
+                         ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1244:23: error: cannot access 'TAG': it is private in file
+                Log.e(TAG, "supervision failure", e)
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1255:27: error: cannot access 'TAG': it is private in file
+                    Log.w(TAG, "su unavailable right now — treating as transient, not a config failure")
+                          ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1264:23: error: cannot access 'TAG': it is private in file
+                Log.e(TAG, "runtime architecture mismatch — stopping (retrying cannot help)", e)
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1272:23: error: cannot access 'TAG': it is private in file
+                Log.e(TAG, "supervision failure", e)
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1314:23: error: cannot access 'TAG': it is private in file
+                Log.e(TAG, "auth/credential failure detected — retrying cannot help, asking user to re-authenticate")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1322:47: error: unresolved reference: reclaimPort
+                withContext(Dispatchers.IO) { reclaimPort() }
+                                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1323:23: error: cannot access 'TAG': it is private in file
+                Log.i(TAG, "crash detected — thorough port reclaim done, next attempt starts clean")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1326:17: error: unresolved reference: portInUse
+                portInUse() && (deterministicFailure != null || looksLikePortConflict())
+                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1332:51: error: unresolved reference: reclaimPort
+                    withContext(Dispatchers.IO) { reclaimPort() }
+                                                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1344:25: error: cannot access 'TAG': it is private in file
+                        TAG,
+                        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1377:29: error: cannot access 'TAG': it is private in file
+                            TAG,
+                            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1399:31: error: cannot access 'TAG': it is private in file
+                        Log.w(TAG, "guardian: rolled back profiles to last-good")
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1403:31: error: cannot access 'TAG': it is private in file
+                        Log.e(TAG, "guardian: verified persistent crash, entering SAFE MODE")
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1427:5: error: modifier 'private' is not applicable to 'local function'
+    private suspend fun awaitPluginHealth(
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1435:23: error: cannot access 'TAG': it is private in file
+                Log.i(TAG, "plugin health marker received (ok=${health.ok})")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1450:5: error: modifier 'private' is not applicable to 'local variable'
+    private val lastExitStatus: Int?
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1451:9: error: unresolved reference. None of the following candidates is applicable because of receiver type mismatch: 
+public operator fun MatchGroupCollection.get(name: String): MatchGroup? defined in kotlin.text
+        get() = process?.exitFuture?.takeIf { it.isDone }?.get()
+        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1453:5: error: modifier 'private' is not applicable to 'local function'
+    private fun spawnEngine(bootId: String): EngineProcess {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1462:19: error: cannot access 'TAG': it is private in file
+            Log.d(TAG, "spawn step $name: ${now - spT}ms")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1469:9: error: unresolved reference: cleanupOrphanEngine
+        cleanupOrphanEngine()
+        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1494:25: error: cannot access 'TAG': it is private in file
+                        TAG,
+                        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1516:23: error: cannot access 'TAG': it is private in file
+                Log.i(TAG, "healed pnpm-workspace.yaml (dropped obsolete build whitelist keys)")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1555:40: error: cannot access 'TAG': it is private in file
+                    .onFailure { Log.w(TAG, "linux gate redeploy failed: ${it.message}") }
+                                       ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1563:21: error: cannot access 'TAG': it is private in file
+                    TAG,
+                    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1584:23: error: cannot access 'TAG': it is private in file
+                Log.e(TAG, "linux container spawn failed, falling back to native: ${e.message}", e)
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1586:17: error: unresolved reference: lastLinuxFailure
+                lastLinuxFailure = "container spawn failed: ${e.message}"
+                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1629:5: error: this annotation is not applicable to target 'local variable'
+    @Volatile
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1631:9: error: unresolved reference: private
+        private set
+        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1653:5: error: unresolved reference: private
+    private fun portInUse(timeoutMs: Int = 120): Boolean {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1683:5: error: modifier 'private' is not applicable to 'local function'
+    private fun reclaimPort() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1687:9: error: unresolved reference: reclaimPortByPort
+        reclaimPortByPort()
+        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1702:5: error: modifier 'private' is not applicable to 'local function'
+    private fun reclaimPortByPort() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1704:15: error: cannot access 'TAG': it is private in file
+        Log.w(TAG, "port $port — thorough reclaim (kill every holder of this port)")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1714:23: error: cannot access 'TAG': it is private in file
+                Log.w(TAG, "thorough reclaim: same-uid sweep timed out (4s)")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1719:9: error: unresolved reference: waitPortFree
+        waitPortFree(2_000)
+        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1721:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "port still in use after thorough sweep — retrying via su")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1723:13: error: unresolved reference: waitPortFree
+            waitPortFree(2_000)
+            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1732:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "port $port still held after port-based sweep — falling back to cmdline sweep")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1744:31: error: cannot access 'TAG': it is private in file
+                        Log.w(TAG, "cmdline sweep timed out (4s)")
+                              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1748:17: error: unresolved reference: waitPortFree
+                waitPortFree(2_000)
+                ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1763:19: error: cannot access 'TAG': it is private in file
+            Log.i(TAG, "port $port is free after thorough reclaim")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1765:19: error: cannot access 'TAG': it is private in file
+            Log.e(TAG, "port $port STILL in use after thorough sweeps — next boot will likely fail")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1770:5: error: modifier 'private' is not applicable to 'local function'
+    private fun reclaimEngineNodesOnly() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1771:15: error: cannot access 'TAG': it is private in file
+        Log.w(TAG, "port ${EngineConfig.DEFAULT_PORT} in use — reclaiming (orphan engine node)")
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1787:23: error: cannot access 'TAG': it is private in file
+                Log.w(TAG, "reclaimPort: same-uid sweep timed out (3s) — continuing")
+                      ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1793:9: error: unresolved reference: waitPortFree
+        waitPortFree(1_800)
+        ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1795:19: error: cannot access 'TAG': it is private in file
+            Log.w(TAG, "port still in use after first sweep — retrying via su")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1797:13: error: unresolved reference: waitPortFree
+            waitPortFree(1_800)
+            ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1800:19: error: cannot access 'TAG': it is private in file
+            Log.e(TAG, "port ${EngineConfig.DEFAULT_PORT} STILL in use after sweeps — next boot will likely fail")
+                  ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1805:5: error: modifier 'private' is not applicable to 'local function'
+    private fun waitPortFree(budgetMs: Long): Boolean {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1815:5: error: modifier 'private' is not applicable to 'local function'
+    private fun cleanupOrphanEngine() {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1821:5: error: modifier 'private' is not applicable to 'local function'
+    private suspend fun awaitStable(proc: EngineProcess, windowMs: Long): Boolean {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1831:5: error: modifier 'private' is not applicable to 'local function'
+    private suspend fun pollHealth(port: Int, proc: EngineProcess): Boolean = withContext(Dispatchers.IO) {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1867:5: error: unresolved reference: companion
+    companion object {
+    ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1867:15: error: type mismatch: inferred type is `<no name provided>` but EngineSupervisor.NativeHostSnapshot was expected
+    companion object {
+              ^
+src\test\engine-info-evidence\green-single-snapshot\EngineSupervisor.kt:1868:17: error: const 'val' are only allowed on top level, in named objects, or in companion objects
+        private const val TAG = "EngineSupervisor"
+                ^

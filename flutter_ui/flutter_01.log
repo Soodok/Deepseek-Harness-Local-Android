@@ -1,0 +1,103 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter test --no-pub --concurrency=1 test/composer_controls_test.dart --plain-name editing is inline without growing the composer
+
+## exception
+
+PathExistsException: PathExistsException: Cannot copy file to 'E:\tmp\wt-flutter-native-chat\flutter_ui\build\unit_test_assets\NativeAssetsManifest.json', path = 'E:\tmp\wt-flutter-native-chat\flutter_ui\build\native_assets\windows\native_assets.json' (OS Error: 当文件已存在时，无法创建该文件。, errno = 183)
+
+```
+#0      _checkForErrorResponse (dart:io/common.dart:58:9)
+#1      _File.copy.<anonymous closure> (dart:io/file_impl.dart:406:7)
+<asynchronous suspension>
+#2      ForwardingFile.copy (package:file/src/forwarding/forwarding_file.dart:29:51)
+<asynchronous suspension>
+#3      ErrorHandlingFile.copy.<anonymous closure> (package:flutter_tools/src/base/error_handling_io.dart:602:28)
+<asynchronous suspension>
+#4      _run (package:flutter_tools/src/base/error_handling_io.dart:1050:14)
+<asynchronous suspension>
+#5      ErrorHandlingFile.copy.<anonymous closure> (package:flutter_tools/src/base/error_handling_io.dart:602:28)
+<asynchronous suspension>
+#6      _run (package:flutter_tools/src/base/error_handling_io.dart:1050:14)
+<asynchronous suspension>
+#7      TestCommand.runCommand (package:flutter_tools/src/commands/test.dart:556:7)
+<asynchronous suspension>
+#8      FlutterCommand.run.<anonymous closure> (package:flutter_tools/src/runner/flutter_command.dart:1268:27)
+<asynchronous suspension>
+#9      AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#10     CommandRunner.runCommand (package:args/command_runner.dart:212:13)
+<asynchronous suspension>
+#11     FlutterCommandRunner.runCommand.<anonymous closure> (package:flutter_tools/src/runner/flutter_command_runner.dart:651:9)
+<asynchronous suspension>
+#12     AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#13     FlutterCommandRunner.runCommand (package:flutter_tools/src/runner/flutter_command_runner.dart:585:5)
+<asynchronous suspension>
+#14     FlutterCommandRunner.run (package:flutter_tools/src/runner/flutter_command_runner.dart:355:5)
+<asynchronous suspension>
+#15     run.<anonymous closure>.<anonymous closure>.<anonymous closure> (package:flutter_tools/runner.dart:167:15)
+<asynchronous suspension>
+#16     AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#17     AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#18     main (package:flutter_tools/executable.dart:115:3)
+<asynchronous suspension>
+```
+
+## flutter doctor
+
+```
+[!] Flutter (Channel stable, 3.50.0, on Microsoft Windows [版本 10.0.26200.9974], locale zh-CN) [728ms]
+    • Flutter version 3.50.0 on channel stable at E:\tools\flutter
+    ! The flutter binary is not on your path. Consider adding E:\tools\flutter\bin to your path.
+    ! The dart binary is not on your path. Consider adding E:\tools\flutter\bin to your path.
+    • Upstream repository https://github.com/flutter/flutter.git
+    • Framework revision ab2912035e (11 days ago), 2026-11-09 08:50:21 -0800
+    • Engine revision 371f77202a
+    • Dart version 3.14.0
+    • DevTools version 2.61.0
+    • Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop, enable-android, enable-ios, cli-animations, enable-native-assets, enable-record-use, enable-swift-package-manager, omit-legacy-version-file, enable-lldb-debugging, enable-uiscene-migration
+    • If those were intentional, you can disregard the above warnings; however it is recommended to use "git" directly to perform update checks and upgrades.
+
+[✓] Windows Version (Windows 11 or higher, 25H2, 2009) [1,929ms]
+
+[!] Android toolchain - develop for Android devices (Android SDK version 36.1.0) [6.5s]
+    • Android SDK at E:\Android\Sdk
+    • Emulator version 37.1.11.0 (build_id 15917651) (CL:N/A)
+    • Platform android-37.0, build-tools 36.1.0
+    • ANDROID_HOME = E:\Android\Sdk
+    • ANDROID_SDK_ROOT = E:\Android\Sdk
+    • Java binary at: D:\新建文件夹\jbr\bin\java
+      This is the JDK bundled with the latest Android Studio installation on this machine.
+      To manually set the JDK path, use: `flutter config --jdk-dir="path/to/jdk"`.
+    • Java version OpenJDK Runtime Environment (build 21.0.9+-14649483-b1163.86)
+    ! Some Android licenses not accepted. To resolve this, run: flutter doctor --android-licenses
+
+[✓] Chrome - develop for the web [466ms]
+    • Chrome at C:\Program Files\Google\Chrome\Application\chrome.exe
+
+[!] Visual Studio - develop Windows apps (Visual Studio 生成工具 2026 18.5.2) [462ms]
+    • Visual Studio at C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools
+    • Visual Studio 生成工具 2026 version 18.5.11723.231
+    • Windows 10 SDK version 10.0.26100.0
+    ✗ The current Visual Studio installation is incomplete.
+      Please use Visual Studio Installer to complete the installation or reinstall Visual Studio.
+
+[✓] Connected device (6 available) [1,715ms]
+    • PLZ110 (mobile)              • 192.168.101.21:9000 • android-arm64  • Android 16 (API 36)
+    • sdk gphone64 x86 64 (mobile) • emulator-5554       • android-x64    • Android 14 (API 34) (emulator)
+    • sdk gphone64 x86 64 (mobile) • emulator-5570       • android-x64    • Android 14 (API 34) (emulator)
+    • Windows (desktop)            • windows             • windows-x64    • Microsoft Windows [版本 10.0.26200.9974]
+    • Chrome (web)                 • chrome              • web-javascript • Google Chrome 157.0.8103.79
+    • Edge (web)                   • edge                • web-javascript • Microsoft Edge 157.0.4341.60
+
+[!] Network resources [19.8s]
+    ✗ A network error occurred while checking "https://maven.google.com/": 信号灯超时时间已到
+
+! Doctor found issues in 4 categories.
+```

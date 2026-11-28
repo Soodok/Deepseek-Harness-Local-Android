@@ -32,7 +32,10 @@ class _ProviderRpc extends DshRpcConnection {
       'value': {'providers': Map.of(providers)},
     };
     if (endpoint == 'settings/describe') {
-      return {'writable': true, 'namespaces': [section()]};
+      return {
+        'writable': true,
+        'namespaces': [section()],
+      };
     }
     if (endpoint == 'settings/mutate') {
       expect(args['ns'], 'llm-pi-ai');
@@ -57,9 +60,12 @@ class _ProviderRpc extends DshRpcConnection {
       return section();
     }
     if (endpoint == 'credentials/set') return null;
-    if (endpoint == 'llm/discoverModels') return [
-      {'id': 'model-a'}, {'id': 'kept-model'}, {'id': 'model-b'},
-    ];
+    if (endpoint == 'llm/discoverModels')
+      return [
+        {'id': 'model-a'},
+        {'id': 'kept-model'},
+        {'id': 'model-b'},
+      ];
     throw StateError('unexpected RPC: $endpoint');
   }
 }
@@ -87,9 +93,11 @@ Future<void> _showProviderPage(WidgetTester tester, _ProviderRpc rpc) async {
   );
   final chat = ChatController(FixtureTransport());
   addTearDown(chat.dispose);
-  await tester.pumpWidget(MaterialApp(home: ModelConfigurationPage(
-    controller: chat, providers: service,
-  )));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: ModelConfigurationPage(controller: chat, providers: service),
+    ),
+  );
   await settle(tester);
 }
 
@@ -109,50 +117,65 @@ Future<void> _fillProvider(WidgetTester tester, String id, String text) async {
 }
 
 void main() {
-  testWidgets('native provider edit retains settings that the form does not own', (tester) async {
-    final rpc = _ProviderRpc();
-    final original = _configuredProvider();
-    rpc.providers['test-local'] = original;
-    rpc.providers['untouched'] = original;
-    await _showProviderPage(tester, rpc);
-    await _tapProvider(tester, 'edit-test-local');
-    final route = tester.widget<TextField>(find.byKey(const ValueKey('provider-route')));
-    expect(route.controller?.text, 'test-local');
-    expect(route.enabled, isFalse);
-    await _fillProvider(tester, 'models', 'model-a, model-b');
-    await _tapProvider(tester, 'save');
-    expect(find.text('model-a、model-b'), findsOneWidget);
-    expect(rpc.providers['test-local'], {
-      ...original,
-      'models': [...original['models'] as List, {'id': 'model-b'}],
-    });
-    expect(rpc.providers['untouched'], original);
-    expect(rpc.calls.where((c) => c.$1.startsWith('credentials/')), isEmpty);
-    await _tapProvider(tester, 'edit-test-local');
-    final models = tester.widget<TextField>(find.byKey(const ValueKey('provider-models')));
-    expect(models.controller?.text, 'model-a, model-b');
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  testWidgets(
+    'native provider edit retains settings that the form does not own',
+    (tester) async {
+      final rpc = _ProviderRpc();
+      final original = _configuredProvider();
+      rpc.providers['test-local'] = original;
+      rpc.providers['untouched'] = original;
+      await _showProviderPage(tester, rpc);
+      await _tapProvider(tester, 'edit-test-local');
+      final route = tester.widget<TextField>(
+        find.byKey(const ValueKey('provider-route')),
+      );
+      expect(route.controller?.text, 'test-local');
+      expect(route.enabled, isFalse);
+      await _fillProvider(tester, 'models', 'model-a, model-b');
+      await _tapProvider(tester, 'save');
+      expect(find.text('model-a、model-b'), findsOneWidget);
+      expect(rpc.providers['test-local'], {
+        ...original,
+        'models': [
+          ...original['models'] as List,
+          {'id': 'model-b'},
+        ],
+      });
+      expect(rpc.providers['untouched'], original);
+      expect(rpc.calls.where((c) => c.$1.startsWith('credentials/')), isEmpty);
+      await _tapProvider(tester, 'edit-test-local');
+      final models = tester.widget<TextField>(
+        find.byKey(const ValueKey('provider-models')),
+      );
+      expect(models.controller?.text, 'model-a, model-b');
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
-  testWidgets('native provider removal requires confirmation and keeps shared credentials', (tester) async {
-    final rpc = _ProviderRpc();
-    final original = _configuredProvider();
-    rpc.providers['test-local'] = original;
-    rpc.providers['untouched'] = original;
-    await _showProviderPage(tester, rpc);
-    await _tapProvider(tester, 'remove-test-local');
-    await tester.tap(find.text('取消'));
-    await settle(tester);
-    expect(rpc.calls.where((c) => c.$1 == 'settings/mutate'), isEmpty);
-    await _tapProvider(tester, 'remove-test-local');
-    await _tapProvider(tester, 'confirm-remove');
-    expect(find.text('test-local'), findsNothing);
-    expect(rpc.providers.keys, ['untouched']);
-    expect(rpc.calls.where((c) => c.$1.startsWith('credentials/')), isEmpty);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  testWidgets(
+    'native provider removal requires confirmation and keeps shared credentials',
+    (tester) async {
+      final rpc = _ProviderRpc();
+      final original = _configuredProvider();
+      rpc.providers['test-local'] = original;
+      rpc.providers['untouched'] = original;
+      await _showProviderPage(tester, rpc);
+      await _tapProvider(tester, 'remove-test-local');
+      await tester.tap(find.text('取消'));
+      await settle(tester);
+      expect(rpc.calls.where((c) => c.$1 == 'settings/mutate'), isEmpty);
+      await _tapProvider(tester, 'remove-test-local');
+      await _tapProvider(tester, 'confirm-remove');
+      expect(find.text('test-local'), findsNothing);
+      expect(rpc.providers.keys, ['untouched']);
+      expect(rpc.calls.where((c) => c.$1.startsWith('credentials/')), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
-  testWidgets('native discovery calls the Host and fills only the draft', (tester) async {
+  testWidgets('native discovery calls the Host and fills only the draft', (
+    tester,
+  ) async {
     final rpc = _ProviderRpc();
     await _showProviderPage(tester, rpc);
     await _tapProvider(tester, 'add');
@@ -160,7 +183,9 @@ void main() {
     await _fillProvider(tester, 'key', 'fixture-key');
     await _fillProvider(tester, 'models', 'kept-model');
     await _tapProvider(tester, 'discover');
-    final field = tester.widget<TextField>(find.byKey(const ValueKey('provider-models')));
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('provider-models')),
+    );
     expect(field.controller?.text, 'kept-model, model-a, model-b');
     expect(rpc.calls.singleWhere((c) => c.$1 == 'llm/discoverModels').$2, {
       'settingsNs': 'llm-pi-ai',
@@ -170,64 +195,92 @@ void main() {
         'apiKey': 'fixture-key',
       },
     });
-    expect(rpc.calls.map((c) => c.$1), ['settings/describe', 'llm/discoverModels']);
+    expect(rpc.calls.map((c) => c.$1), [
+      'settings/describe',
+      'llm/discoverModels',
+    ]);
     expect(rpc.providers, isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('native model page saves a provider and stores its key separately', (tester) async {
-    final rpc = _ProviderRpc();
-    final settings = SettingsController(NativeSettingsService(
-      rpc: rpc,
-      callbackOrigin: Uri.parse('http://localhost:1234'),
-      openBrowser: (_) async => false,
-    ));
-    final chat = ChatController(FixtureTransport());
-    addTearDown(settings.dispose);
-    addTearDown(chat.dispose);
-    await tester.pumpWidget(SettingsScope(
-      controller: settings,
-      child: MaterialApp(home: Builder(builder: (context) => Scaffold(
-        body: TextButton(onPressed: () => showSettingsHome(context, chat), child: const Text('test settings')),
-      ))),
-    ));
-    await tester.tap(find.text('test settings'));
-    await settle(tester);
-    final search = find.byKey(const ValueKey('settings-search'));
-    await tester.enterText(search, '模型配置');
-    await settle(tester);
-    final models = find.byKey(const ValueKey('settings-destination-models'));
-    await tester.ensureVisible(models);
-    await tester.tap(models);
-    await settle(tester);
-    expect(find.text('完整模型配置'), findsNothing);
-    final add = find.byKey(const ValueKey('provider-add'));
-    await tester.ensureVisible(add);
-    await tester.tap(add);
-    await settle(tester);
-    for (final (key, value) in [
-      ('route', 'test-local'), ('url', 'http://127.0.0.1:8000/v1'),
-      ('models', 'model-a'), ('key', 'fixture-secret'),
-    ]) {
-      final field = find.byKey(ValueKey('provider-$key'));
-      await tester.ensureVisible(field);
-      await tester.enterText(field, value);
-    }
-    final save = find.byKey(const ValueKey('provider-save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
-    await settle(tester);
-    expect(find.text('test-local'), findsOneWidget);
-    final provider = rpc.providers['test-local'] as Map;
-    expect(provider['models'], [{'id': 'model-a'}]);
-    final reference = provider['apiKeyEnv'] as String;
-    expect(reference, matches(RegExp(r'^DSH_NATIVE_[A-F0-9]{32}_API_KEY$')));
-    expect(provider.toString(), isNot(contains('fixture-secret')));
-    expect(rpc.calls.where((c) => c.$1 == 'credentials/set').single.$2,
-      {'ref': reference, 'value': 'fixture-secret'});
-    expect(rpc.calls.where((c) => c.$1 == 'settings/describe'), hasLength(2));
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  testWidgets(
+    'native model page saves a provider and stores its key separately',
+    (tester) async {
+      final rpc = _ProviderRpc();
+      final settings = SettingsController(
+        NativeSettingsService(
+          rpc: rpc,
+          callbackOrigin: Uri.parse('http://localhost:1234'),
+          openBrowser: (_) async => false,
+        ),
+      );
+      final chat = ChatController(FixtureTransport());
+      addTearDown(settings.dispose);
+      addTearDown(chat.dispose);
+      await tester.pumpWidget(
+        SettingsScope(
+          controller: settings,
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => showSettingsHome(context, chat),
+                  child: const Text('test settings'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('test settings'));
+      await settle(tester);
+      final search = find.byKey(const ValueKey('settings-search'));
+      await tester.enterText(search, '模型配置');
+      await settle(tester);
+      final models = find.byKey(const ValueKey('settings-destination-models'));
+      await tester.ensureVisible(models);
+      await tester.tap(models);
+      await settle(tester);
+      expect(find.text('完整模型配置'), findsNothing);
+      final add = find.byKey(const ValueKey('provider-add'));
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await settle(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        find.byKey(const ValueKey('settings-provider-form')),
+        findsOneWidget,
+      );
+      for (final (key, value) in [
+        ('route', 'test-local'),
+        ('url', 'http://127.0.0.1:8000/v1'),
+        ('models', 'model-a'),
+        ('key', 'fixture-secret'),
+      ]) {
+        final field = find.byKey(ValueKey('provider-$key'));
+        await tester.ensureVisible(field);
+        await tester.enterText(field, value);
+      }
+      final save = find.byKey(const ValueKey('provider-save'));
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await settle(tester);
+      expect(find.text('test-local'), findsOneWidget);
+      final provider = rpc.providers['test-local'] as Map;
+      expect(provider['models'], [
+        {'id': 'model-a'},
+      ]);
+      final reference = provider['apiKeyEnv'] as String;
+      expect(reference, matches(RegExp(r'^DSH_NATIVE_[A-F0-9]{32}_API_KEY$')));
+      expect(provider.toString(), isNot(contains('fixture-secret')));
+      expect(rpc.calls.where((c) => c.$1 == 'credentials/set').single.$2, {
+        'ref': reference,
+        'value': 'fixture-secret',
+      });
+      expect(rpc.calls.where((c) => c.$1 == 'settings/describe'), hasLength(2));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
   testWidgets(
     'drawer account menu opens settings, preview sign-in and confirmed logout share identity',
     (tester) async {
@@ -285,12 +338,16 @@ void main() {
       c.dispose();
     },
   );
-  testWidgets('hosted drawer opens each Android management section', (tester) async {
+  testWidgets('hosted drawer opens each Android management section', (
+    tester,
+  ) async {
     final calls = <MethodCall>[];
     const channel = MethodChannel('app.dsh.mobile/native_chat');
-    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'openSettingsSection' || call.method == 'openWebFallback') {
+      if (call.method == 'openSettingsSection' ||
+          call.method == 'openWebFallback') {
         calls.add(call);
         return true;
       }
@@ -301,10 +358,12 @@ void main() {
     final chat = ChatController(FixtureTransport());
     addTearDown(settings.dispose);
     addTearDown(chat.dispose);
-    await tester.pumpWidget(SettingsScope(
-      controller: settings,
-      child: MaterialApp(home: ChatShell(controller: chat)),
-    ));
+    await tester.pumpWidget(
+      SettingsScope(
+        controller: settings,
+        child: MaterialApp(home: ChatShell(controller: chat)),
+      ),
+    );
     await settle(tester);
     await tester.tap(find.byTooltip('打开会话抽屉'));
     await settle(tester);
@@ -327,29 +386,48 @@ void main() {
       await tester.ensureVisible(search);
       await tester.enterText(search, destination.title);
       await settle(tester);
-      final row = find.byKey(ValueKey('settings-destination-${destination.name}'));
+      final row = find.byKey(
+        ValueKey('settings-destination-${destination.name}'),
+      );
       await tester.ensureVisible(row);
       await settle(tester);
       await tester.tap(row);
       await settle(tester);
-      expect(calls.lastOrNull?.method, 'openSettingsSection', reason: destination.name);
+      expect(
+        calls.lastOrNull?.method,
+        'openSettingsSection',
+        reason: destination.name,
+      );
       expect(calls.last.arguments, {'section': destination.name});
-      expect(search, findsOneWidget, reason: 'the underlying settings route stays mounted');
+      expect(
+        search,
+        findsOneWidget,
+        reason: 'the underlying settings route stays mounted',
+      );
     }
     expect(calls, hasLength(destinations.length));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('preview settings stay on local pages or explicit placeholders', (tester) async {
+  testWidgets('preview settings stay on local pages or explicit placeholders', (
+    tester,
+  ) async {
     final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('app.dsh.mobile/native_chat'), (call) async {
-        calls.add(call);
-        return call.method == 'openSettingsSection' ? true : null;
-      },
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('app.dsh.mobile/native_chat'),
+          (call) async {
+            calls.add(call);
+            return call.method == 'openSettingsSection' ? true : null;
+          },
+        );
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('app.dsh.mobile/native_chat'),
+            null,
+          ),
     );
-    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('app.dsh.mobile/native_chat'), null));
     await tester.pumpWidget(const DshApp(preview: true));
     await settle(tester);
     await tester.tap(find.byTooltip('打开会话抽屉'));
@@ -358,19 +436,34 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('设置'));
     await settle(tester);
-    for (final destination in SettingsDestination.values.where((d) => d != SettingsDestination.webUi)) {
+    for (final destination in SettingsDestination.values.where(
+      (d) => d != SettingsDestination.webUi,
+    )) {
       await tester.ensureVisible(find.byKey(const ValueKey('settings-search')));
-      await tester.enterText(find.byKey(const ValueKey('settings-search')), destination.title);
+      await tester.enterText(
+        find.byKey(const ValueKey('settings-search')),
+        destination.title,
+      );
       await settle(tester);
-      final row = find.byKey(ValueKey('settings-destination-${destination.name}'));
+      final row = find.byKey(
+        ValueKey('settings-destination-${destination.name}'),
+      );
       await tester.ensureVisible(row);
       await settle(tester);
       await tester.tap(row);
       await settle(tester);
       await tester.pump(const Duration(seconds: 2));
       expect(find.byType(AppBar), findsOneWidget, reason: destination.name);
-      expect(find.text(destination.title), findsOneWidget, reason: destination.name);
-      expect(calls.where((c) => c.method == 'openSettingsSection'), isEmpty, reason: destination.name);
+      expect(
+        find.text(destination.title),
+        findsOneWidget,
+        reason: destination.name,
+      );
+      expect(
+        calls.where((c) => c.method == 'openSettingsSection'),
+        isEmpty,
+        reason: destination.name,
+      );
       await tester.pageBack();
       await settle(tester);
       expect(find.byKey(const ValueKey('settings-search')), findsOneWidget);

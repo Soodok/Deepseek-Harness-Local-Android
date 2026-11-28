@@ -1,0 +1,16 @@
+✔ pet is a named settings destination, not an enable toggle (0.9468ms)
+✔ pet appears once in display and personalization with its own icon (0.8538ms)
+✔ the existing bridge forwards the destination name and fails closed (0.2992ms)
+✔ Android routes pet to the existing settings Activity only (0.4551ms)
+✔ the shared detector retains all three hard gates and bridge minimum (0.1598ms)
+✔ existing restore requires opt-in, common gates and no running service (0.1484ms)
+✔ each smallest wiring or gate mutation is rejected without editing the worktree (5.9975ms)
+ℹ 12 in-memory mutations rejected
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 89.9133

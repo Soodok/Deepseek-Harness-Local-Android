@@ -1,0 +1,14 @@
+JUnit version 4.13.2
+.........E........
+Time: 0.138
+There was 1 failure:
+1) lateSpawnCannotReplaceNewGenerationScopeAndStoppedPublicationIsRejected(app.dsh.mobile.engine.NativeWorkspacePublicationTest)
+java.lang.AssertionError: late A must not erase B expected:<NativeWorkspaceScope(domain=storage-b, generation=boot-B)> but was:<null>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at app.dsh.mobile.engine.NativeWorkspacePublicationTest.lateSpawnCannotReplaceNewGenerationScopeAndStoppedPublicationIsRejected(NativeWorkspacePublicationTest.kt:169)
+
+FAILURES!!!
+Tests run: 17,  Failures: 1
+
