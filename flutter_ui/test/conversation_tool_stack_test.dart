@@ -954,6 +954,76 @@ void main() {
   );
 
   testWidgets(
+    'step reasoning shares its tool row instead of adding a second 48dp row',
+    (tester) async {
+      await _pumpFlow(
+        tester,
+        messages: const [
+          ChatMessage(
+            id: 'read-one-message',
+            role: ChatRole.assistant,
+            text: '',
+            reasoning: 'ASSISTANT-THOUGHT-ONE',
+          ),
+          ChatMessage(
+            id: 'read-two-message',
+            role: ChatRole.assistant,
+            text: '',
+            reasoning: 'ASSISTANT-THOUGHT-TWO',
+          ),
+          ChatMessage(
+            id: 'answer',
+            role: ChatRole.assistant,
+            text: 'FINAL-ANSWER',
+            isFinalAnswer: true,
+          ),
+        ],
+        tools: [
+          for (final id in ['read-one', 'read-two'])
+            ToolRun(
+              id: id,
+              name: 'read',
+              messageId: id + '-message',
+              status: ToolStatus.complete,
+              content: ToolContent(
+                title: 'read',
+                reasoning: 'TOOL-DETAIL-' + id,
+              ),
+            ),
+        ],
+      );
+      await _openGroups(tester);
+
+      expect(
+        find.byKey(const ValueKey(('reasoning', 'read-one-message'))),
+        findsNothing,
+      );
+      expect(
+        tester.getRect(_card('read-one')).height,
+        greaterThanOrEqualTo(48),
+      );
+      expect(
+        tester.getRect(_card('read-one')).height,
+        lessThanOrEqualTo(48),
+      );
+      expect(
+        tester.getRect(_card('read-two')).top -
+            tester.getRect(_card('read-one')).top,
+        lessThanOrEqualTo(52),
+        reason: 'A step thought must not add a second collapsed row',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('process-reasoning-read-one')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('ASSISTANT-THOUGHT-ONE'), findsOneWidget);
+      expect(find.text('TOOL-DETAIL-read-one'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'reasoning stays between its real tool calls without new summaries',
     (tester) async {
       await _pumpFlow(
