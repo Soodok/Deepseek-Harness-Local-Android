@@ -282,6 +282,16 @@ adb -s emulator-5554 shell 'am force-stop app.dsh.mobile; am start -n app.dsh.mo
 2. **`adb push` 到 `/data/local/tmp` 后 `run-as` 删不掉**（`rm: Permission denied`）——
    app uid 对 `/data/local/tmp` 里的文件没有删除权。清理要 `adb shell rm`（shell uid）而不是 `run-as`。
 
+**落库**：`3f00b0cd` `fix(plugin): git 源插件的「批准并重试」永远不出现`（14 files / +1364 / −23）。
+`git push origin main` **直连失败**（`127.0.0.1:7892` 代理已死、裸连 443 被重置、`api.github.com` 200 可达），
+改走 `scripts/push-via-api.py` 成功：远端 `refs/heads/main` = `3f00b0cd4917f4d17a380e1f6f7049857ae2aec9`，
+**SHA 与本地一致**（该脚本按对象身份原样上传，不改写历史）。
+
+**给用户/下一位的关键提醒**：这个修复在**运行时层**（`patch-plugin-build-approval.py` 在
+`collect-termux-runtime.sh` 里打补丁），所以**已装的 APK 不会因此变好**——必须重新出包
+（`build-runtime.sh` → `assembleDebug -Ppackage=full`），把新 runtime 带进去才生效。
+单纯装新 APK 而 runtime 仍是旧的，用户还会看到同一句「请手动改 YAML」。
+
 ### 三·补2 仍未覆盖的部分（明确列出，不要当成已完成）
 
 - **`ask-bridge.mjs` 在真实引擎里的端到端**：本轮只验证到桥 API 与卡片显示，没跑"模型发起 `ask_user_question` → 插件接管 → 返回值过 `validateJsonSchemaValue`"这一整条。原因：需要真会话 + 真模型回合，模拟器里没有可用的 API key 会话。
